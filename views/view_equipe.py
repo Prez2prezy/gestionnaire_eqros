@@ -105,21 +105,37 @@ def show_equipe():
                 
                 if st.session_state.get('open_form_eq') == f"mod_{id_m}":
                     st.markdown("---\n#### ✏️ Modification")
-                    m_data = c.execute("SELECT nom, prenom, whatsapp, photo_path, numero_meditation, matricule FROM membres WHERE id=?", (id_m,)).fetchone()
+                    # 1. ON AJOUTE date_naissance ET date_adhesion DANS LA REQUÊTE
+                    m_data = c.execute("SELECT nom, prenom, date_naissance, whatsapp, photo_path, numero_meditation, date_adhesion, matricule FROM membres WHERE id=?", (id_m,)).fetchone()
                     if m_data:
                         with st.form(f"form_mod_eq_{id_m}"):
                             st.text_input("MatLoc", value=matloc, disabled=True)
                             new_nom, new_prenom = st.text_input("Nom", value=m_data[0]), st.text_input("Prénom", value=m_data[1])
-                            new_whatsapp, new_num_med = st.text_input("WhatsApp", value=m_data[2]), st.text_input("N° méditation", value=m_data[4] or "", max_chars=2)
-                            new_matricule = st.text_input("Matricule", value=m_data[5] or "")
+                            
+                            # 2. ON PRÉPARE LES DATES POUR LES AFFICHER CORRECTEMENT
+                            dn_initiale = safe_date(m_data[2]) if m_data[2] else date.today()
+                            da_initiale = safe_date(m_data[6]) if m_data[6] else date.today()
+                            
+                            new_whatsapp, new_num_med = st.text_input("WhatsApp", value=m_data[3]), st.text_input("N° méditation", value=m_data[5] or "", max_chars=2)
+                            
+                            # 3. ON AJOUTE LES CASES DATES COMME DANS LE FORMULAIRE D'AJOUT
+                            col_date, col_mle = st.columns(2)
+                            with col_date: 
+                                new_date_naissance = st.date_input("Date de naissance", value=dn_initiale)
+                                new_date_adhesion = st.date_input("Date d'adhésion", value=da_initiale)
+                            with col_mle: 
+                                new_matricule = st.text_input("Matricule", value=m_data[7] or "")
+                            
                             new_photo = st.file_uploader("Nouvelle photo", type=['jpg','png','jpeg'])
                             col1, col2 = st.columns(2)
                             with col1:
                                 if st.form_submit_button("❌ Annuler"): st.session_state['open_form_eq'] = None; st.rerun()
                             with col2:
                                 if st.form_submit_button("💾 Enregistrer"):
-                                    c.execute("UPDATE membres SET nom=?, prenom=?, whatsapp=?, numero_meditation=?, matricule=? WHERE id=?", (new_nom, new_prenom, new_whatsapp, new_num_med, new_matricule, id_m))
-                                    if new_photo: supprimer_photo(m_data[3]); c.execute("UPDATE membres SET photo_path=? WHERE id=?", (sauvegarder_photo(new_photo, matloc), id_m))
+                                    # 4. ON MET À JOUR LA BASE DE DONNÉES AVEC LES DATES
+                                    c.execute("UPDATE membres SET nom=?, prenom=?, date_naissance=?, whatsapp=?, numero_meditation=?, date_adhesion=?, matricule=? WHERE id=?", 
+                                              (new_nom, new_prenom, new_date_naissance.isoformat(), new_whatsapp, new_num_med, new_date_adhesion.isoformat(), new_matricule, id_m))
+                                    if new_photo: supprimer_photo(m_data[4]); c.execute("UPDATE membres SET photo_path=? WHERE id=?", (sauvegarder_photo(new_photo, matloc), id_m))
                                     commit_and_sync(); st.session_state['open_form_eq'] = None; st.success("Membre modifié"); st.rerun()
                 
                 elif st.session_state.get('open_form_eq') == f"arch_{id_m}":
