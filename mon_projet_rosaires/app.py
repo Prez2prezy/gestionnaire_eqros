@@ -29,7 +29,6 @@ st.markdown("""
     .stApp { background-color: #FFFFFF !important; }
     .main > div { background-color: #FFFFFF !important; }
     .stMarkdown, .stMarkdown p, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 { color: #1A237E !important; }
-    .streamlit-expanderHeader span:last-child { display: none !important; }
     .stMetric label, .stMetric .stMarkdown { color: #1A237E !important; }
     .stSidebar { background-color: #FFFFFF !important; }
     .stSidebar .stMarkdown, .stSidebar label { color: #1A237E !important; }
