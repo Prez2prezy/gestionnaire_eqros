@@ -171,7 +171,7 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
                 import urllib.parse
                 base_url = "https://gestionnaireeqros-4s9fbumnsa6wmyy6dw4rft.streamlit.app/" 
                 magic_link = f"{base_url}/?e={item[10]}"
-                message = f"Frères et sœurs, confirmez votre présence pour {item[2]} du {i_date.strftime('%d/%m/%Y')}.\n\nCliquez ici pour répondre :\n{magic_link}"
+          message = f"Frères et sœurs, confirmez votre présence pour {item[2]} du {i_date.strftime('%d/%m/%Y')}.\n\nCode de vérification:\n\nCliquez ici pour répondre :\n{magic_link}"
                 wa_link = f"https://wa.me/?text={urllib.parse.quote(message, safe=':/?=')}"
                 st.markdown("---")
                 st.markdown(f'<a href="{wa_link}" target="_blank" class="whatsapp-link">📱 Envoyer le lien de réponse sur WhatsApp</a>', unsafe_allow_html=True)
