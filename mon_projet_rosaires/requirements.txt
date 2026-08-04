@@ -1,7 +1,0 @@
-streamlit==1.36.0
-pandas
-openpyxl
-Pillow
-requests
-libsql-experimental
-cloudinary
