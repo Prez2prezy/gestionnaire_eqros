@@ -1,0 +1,7 @@
+streamlit
+pandas
+openpyxl
+Pillow
+requests
+libsql-experimental
+cloudinary
