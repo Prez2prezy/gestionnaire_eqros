@@ -218,14 +218,14 @@ def show_equipe():
                     new_montant = st.number_input("Montant (FCFA)", min_value=0, value=montant_actuel, step=500, key=f"mod_mont_{mod_id}")
                     col1, col2, col3 = st.columns(3)
                     with col1:
-                        if st.form_submit_button("💾 Mettre à jour", use_container_width=True):
+                        if st.form_submit_button("💾 Mettre à jour", width="stretch"):
                             type_str = "abonnement" if "Abonnement" in new_type else "reabonnement"
                             enregistrer_abonnement(mod_id, annee, new_montant, type_str); del st.session_state['modif_abo_id']; st.success("Modifié ✅"); st.rerun()
                     with col2:
-                        if st.form_submit_button("🗑️ Supprimer", use_container_width=True):
+                        if st.form_submit_button("🗑️ Supprimer", width="stretch"):
                             c.execute("DELETE FROM abonnements WHERE membre_id=? AND annee_debut=?", (mod_id, annee)); commit_and_sync(); del st.session_state['modif_abo_id']; st.warning("Supprimé."); st.rerun()
                     with col3:
-                        if st.form_submit_button("❌ Annuler", use_container_width=True): del st.session_state['modif_abo_id']; st.rerun()
+                        if st.form_submit_button("❌ Annuler", width="stretch"): del st.session_state['modif_abo_id']; st.rerun()
 
         st.markdown("---")
         tab_liste = st.tabs(["📝 Abonnés", "🔄 Réabonnés", "❌ Non enregistrés"])
@@ -234,21 +234,21 @@ def show_equipe():
             if abonnes:
                 # CORRECTION AFFICHAGE : Suppression du champ "N°" en double dans le dictionnaire
                 data = [{"Matricule": a[0], "Nom": a[1], "Prénom": a[2], "Date paiement": a[3], "Montant": f"{a[4]} FCFA"} for a in abonnes]
-                df = pd.DataFrame(data); df.index = df.index + 1; st.dataframe(df, use_container_width=True)
+                df = pd.DataFrame(data); df.index = df.index + 1; st.dataframe(df, width="stretch")
             else: st.info("Aucun abonné.")
         with tab_liste[1]:
             reabonnes = c.execute('''SELECT m.matricule, m.nom, m.prenom, a.date_paiement, a.montant FROM membres m JOIN abonnements a ON m.id=a.membre_id WHERE m.equipe_id=? AND a.annee_debut=? AND a.type_abonnement='reabonnement' AND a.statut='paye' ORDER BY m.nom''', (eid, annee)).fetchall()
             if reabonnes:
                 # CORRECTION AFFICHAGE : Suppression du champ "N°" en double
                 data = [{"Matricule": r[0], "Nom": r[1], "Prénom": r[2], "Date paiement": r[3], "Montant": f"{r[4]} FCFA"} for r in reabonnes]
-                df = pd.DataFrame(data); df.index = df.index + 1; st.dataframe(df, use_container_width=True)
+                df = pd.DataFrame(data); df.index = df.index + 1; st.dataframe(df, width="stretch")
             else: st.info("Aucun réabonné.")
         with tab_liste[2]:
             non_inscrits = c.execute('''SELECT m.matricule, m.nom, m.prenom FROM membres m WHERE m.equipe_id=? AND m.statut='actif' AND m.id NOT IN (SELECT a.membre_id FROM abonnements a WHERE a.annee_debut=? AND a.statut='paye') ORDER BY m.nom''', (eid, annee)).fetchall()
             if non_inscrits:
                 # CORRECTION AFFICHAGE : Suppression du champ "N°" en double
                 data = [{"Matricule": n[0], "Nom": n[1], "Prénom": n[2]} for n in non_inscrits]
-                df = pd.DataFrame(data); df.index = df.index + 1; st.dataframe(df, use_container_width=True)
+                df = pd.DataFrame(data); df.index = df.index + 1; st.dataframe(df, width="stretch")
             else: st.success("🎉 Tous les membres sont à jour !")
 
     elif menu == "📌 Suivi":
