@@ -66,7 +66,7 @@ def ajouter_evenement_agenda(equipe_id=None, paroisse_id=None, diocese_id=None, 
                     
                     faire_suivre_check = st.checkbox("📤 Demander à la Paroisse de faire suivre au Diocèse", value=False, key=f"faire_suivre_{prefix}")
             
-            if st.form_submit_button("📅 Enregistrer", use_container_width=True):
+            if st.form_submit_button("📅 Enregistrer", width="stretch"):
                 # 1. Création de l'événement principal
                 c.execute('''INSERT INTO evenements (equipe_id, paroisse_id, diocese_id, date_evenement, type_evenement, lieu, auteur_nom) VALUES (?,?,?,?,?,?,?)''',
                           (equipe_id, paroisse_id, diocese_id, date_ag.isoformat(), type_ag, lieu_ag, auteur_nom))
@@ -169,7 +169,7 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
 
             if item[10]: 
                 import urllib.parse
-                base_url = "https://gestionnaireeqros-4s9fbumnsa6wmyy6dw4rft.streamlit.app/" 
+                base_url = "https://gestion-rosaire-hw6wk9ckkfkqogcbm9ock6.streamlit.app/" 
                 magic_link = f"{base_url}/?e={item[10]}"
                 message = f"Frères et sœurs, confirmez votre présence pour {item[2]} du {i_date.strftime('%d/%m/%Y')}.\n\nCliquez ici pour répondre :\n{magic_link}"
                 wa_link = f"https://wa.me/?text={urllib.parse.quote(message, safe=':/?=')}"
@@ -356,9 +356,9 @@ def enregistrer_presence_equipe(equipe_id):
             
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
-                submitted = st.form_submit_button("💾 Enregistrer la communion", use_container_width=True)
+                submitted = st.form_submit_button("💾 Enregistrer la communion", width="stretch")
             with col_btn2:
-                clear = st.form_submit_button("🗑️ Effacer cette séance", use_container_width=True)
+                clear = st.form_submit_button("🗑️ Effacer cette séance", width="stretch")
             
             if submitted:
                 if event_id:
@@ -457,7 +457,7 @@ def afficher_etat_presences_globales(equipe_id):
         
     # CORRECTION : Plus besoin du "démimage" lourd, ignore_index=True règle le problème PyArrow tout seul
     df_final = pd.concat([df_affichage, df_ligne_equipe], ignore_index=True)
-    st.dataframe(df_final, use_container_width=True)
+    st.dataframe(df_final, width="stretch")
     
     # Le reste pour le téléchargement
     st.markdown("---")
@@ -470,7 +470,7 @@ def afficher_etat_presences_globales(equipe_id):
         out_team = io.BytesIO()
         with pd.ExcelWriter(out_team, engine='openpyxl') as w: df_excel_complet.to_excel(w, index=False, sheet_name="Bilan Equipe")
         out_team.seek(0)
-        st.download_button(label="📥 Télécharger le bilan de l'équipe", data=out_team, file_name=f"bilan_equipe_Sept{choix_annee}.xlsx", key="dl_team_report", use_container_width=True)
+        st.download_button(label="📥 Télécharger le bilan de l'équipe", data=out_team, file_name=f"bilan_equipe_Sept{choix_annee}.xlsx", key="dl_team_report", width="stretch")
         
     with col_btn2:
         st.markdown("**👤 Rapport individuel**")
@@ -481,7 +481,7 @@ def afficher_etat_presences_globales(equipe_id):
             out_indiv = io.BytesIO()
             with pd.ExcelWriter(out_indiv, engine='openpyxl') as w: df_indiv.to_excel(w, index=False, sheet_name=f"Bilan {choix_membre.split()[0]}")
             out_indiv.seek(0)
-            st.download_button(label=f"📥 Télécharger le bilan de {choix_membre.split()[0]}", data=out_indiv, file_name=f"bilan_{choix_membre.replace(' ', '_')}_Sept{choix_annee}.xlsx", key="dl_indiv_report", use_container_width=True)
+            st.download_button(label=f"📥 Télécharger le bilan de {choix_membre.split()[0]}", data=out_indiv, file_name=f"bilan_{choix_membre.replace(' ', '_')}_Sept{choix_annee}.xlsx", key="dl_indiv_report", width="stretch")
 
 
 def afficher_etat_presences_paroisse(paroisse_id):
@@ -548,13 +548,13 @@ def afficher_etat_presences_paroisse(paroisse_id):
         
     # CORRECTION CRITIQUE : Plus de "démimage" nécessaire, et c'est bien 'Equipe' désormais
     df_final = pd.concat([df_affichage, df_ligne_paroisse], ignore_index=True)
-    st.dataframe(df_final, use_container_width=True)
+    st.dataframe(df_final, width="stretch")
     
     out = io.BytesIO()
     with pd.ExcelWriter(out, engine='openpyxl') as w:
         pd.concat([pivot, pd.DataFrame([taux_paroisse])], ignore_index=True).to_excel(w, index=False, sheet_name="Bilan Paroisse")
     out.seek(0)
-    st.download_button("📥 Télécharger le bilan de la paroisse", data=out, file_name=f"bilan_paroisse_Sept{choix_annee}.xlsx", key="dl_par_report", use_container_width=True)
+    st.download_button("📥 Télécharger le bilan de la paroisse", data=out, file_name=f"bilan_paroisse_Sept{choix_annee}.xlsx", key="dl_par_report", width="stretch")
 
 def afficher_historique_paroisse(paroisse_id, filtre_type="Tous"):
     # CORRECTION : Utilisation de COUNT(DISTINCT sp.membre_id) pour éviter de multiplier les présences
@@ -631,7 +631,7 @@ def afficher_page_reponse_membre(event_id):
             matloc_saisi = st.text_input("MatLoc", placeholder="Ex: GBA-A1B2C", label_visibility="collapsed").upper().strip()
         with col2:
             st.write("")
-            bouton_verifier = st.button("Vérifier", use_container_width=True)
+            bouton_verifier = st.button("Vérifier", width="stretch")
 
         if bouton_verifier and matloc_saisi:
             membre = c.execute("""
@@ -666,7 +666,7 @@ def afficher_page_reponse_membre(event_id):
             horizontal=False
         )
 
-        if st.button("✅ Confirmer ma réponse", use_container_width=True, type="primary"):
+        if st.button("✅ Confirmer ma réponse", width="stretch", type="primary"):
             if deja_repondu:
                 c.execute("UPDATE suivi_presences SET statut=? WHERE membre_id=? AND evenement_id=?", (choix, membre[0], event_id))
             else:
