@@ -29,7 +29,6 @@ st.markdown("""
     .stApp { background-color: #FFFFFF !important; }
     .main > div { background-color: #FFFFFF !important; }
     .stMarkdown, .stMarkdown p, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 { color: #1A237E !important; }
-    .streamlit-expanderHeader span:last-child { display: none !important; }
     .stMetric label, .stMetric .stMarkdown { color: #1A237E !important; }
     .stSidebar { background-color: #FFFFFF !important; }
     .stSidebar .stMarkdown, .stSidebar label { color: #1A237E !important; }
@@ -128,6 +127,23 @@ def afficher_logo():
 # --- AUTH ---
 if 'logged_in' not in st.session_state:
     afficher_logo()
+    
+    st.caption("🔒 Application réservée aux gestionnaires autorisés.")
+    with st.expander("📜 Mentions Légales & Confidentialité"):
+        st.markdown("""
+        **Responsable de traitement :** Diocèse de Grand-Bassam.
+        
+        **Finalité :** Gestion administrative, spirituelle et logistique des membres des équipes du Rosaire (contacts, présences, abonnements, photos).
+        
+        **Données collectées :** Nom, prénom, date de naissance, numéro WhatsApp, photo d'identité.
+        
+        **Durée de conservation :** Les données sont conservées tant que le membre est actif, puis archivées. Elles sont supprimées 3 ans après le départ définitif.
+        
+        **Vos droits :** Vous pouvez demander au responsable de votre équipe de modifier ou supprimer vos informations en lui envoyant un message WhatsApp.
+        
+        *Conformément aux principes de protection des données personnelles.*
+        """)
+
     st.sidebar.title("🔐 Connexion")
     
     # Ajout de clés explicites pour éviter les conflits de mémoire de Streamlit
