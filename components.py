@@ -169,9 +169,9 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
 
             if item[10]: 
                 import urllib.parse
-                base_url = "https://gestionnaireeqros-4s9fbumnsa6wmyy6dw4rft.streamlit.app/" 
+                base_url = "https://gestion-rosaire-hw6wk9ckkfkqogcbm9ock6.streamlit.app/" 
                 magic_link = f"{base_url}/?e={item[10]}"
-                message = f"Frères et sœurs, confirmez votre présence pour {item[2]} du {i_date.strftime('%d/%m/%Y')}.\n\nCode de vérification:\n\nCliquez ici pour répondre :\n{magic_link}"
+                message = f"Frères et sœurs, confirmez votre présence pour {item[2]} du {i_date.strftime('%d/%m/%Y')}.\n\nCliquez ici pour répondre :\n{magic_link}"
                 wa_link = f"https://wa.me/?text={urllib.parse.quote(message, safe=':/?=')}"
                 st.markdown("---")
                 st.markdown(f'<a href="{wa_link}" target="_blank" class="whatsapp-link">📱 Envoyer le lien de réponse sur WhatsApp</a>', unsafe_allow_html=True)
@@ -594,6 +594,7 @@ def afficher_historique_paroisse(paroisse_id, filtre_type="Tous"):
                     st.write(f"{label} : " + ", ".join([f"{r[0]} {r[1]} ({r[2]})" for r in rows]))
 
 def afficher_page_reponse_membre(event_id):
+    st.caption("🔒 En saisissant votre identifiant, vous acceptez que vos données de présence soient enregistrées par les responsables de votre équipe.")
     st.markdown("<h2 style='text-align:center; color:#1A237E; font-size: 1.5rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>📿 Réponse de Communion</h2>", unsafe_allow_html=True)
     
     try:
