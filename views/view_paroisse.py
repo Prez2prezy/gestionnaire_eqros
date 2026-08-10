@@ -72,7 +72,7 @@ def show_paroisse():
         
         if st.session_state.get('new_equipe_info'):
             info = st.session_state['new_equipe_info']
-            st.success(f"✅ Équipe '{info['nom']}' créée !")
+            st.success(f"✅ '{info['nom']}' créée !")
             st.markdown(f"<div style='background:#e8f5e9;padding:20px;border-radius:10px;border:1px solid #c8e6c9;'><p><strong>🔑 Identifiant :</strong> <code style='color:#d84315;font-size:1.2rem;'>{info['user']}</code></p><p><strong>🔒 Mot de passe :</strong> <code style='color:#d84315;font-size:1.2rem;'>{info['mdp']}</code></p></div>", unsafe_allow_html=True)
             if st.button("OK"): del st.session_state['new_equipe_info']; st.rerun()
 
