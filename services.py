@@ -171,3 +171,18 @@ def cloturer_periode(entite_type, entite_id, annee_debut, auteur_nom):
         commit_and_sync()
         return True
     return False
+
+def sauvegarder_audio(fichier):
+    """Envoie un fichier audio (MP3) sur Cloudinary et retourne l'URL"""
+    if fichier:
+        try:
+            import streamlit as st
+            import cloudinary.uploader
+            # Cloudinary traite l'audio comme une ressource "video"
+            nom_fichier = fichier.name.split('.')[0]
+            res = cloudinary.uploader.upload(fichier, resource_type="video", public_id=f"rosaire_audio/{nom_fichier}", overwrite=True)
+            return res['secure_url']
+        except Exception as e:
+            print(f"Erreur upload audio: {e}")
+            return None
+    return None
