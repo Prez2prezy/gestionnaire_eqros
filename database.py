@@ -2,53 +2,24 @@ import sqlite3
 import os
 import time
 import hashlib
+import logging
 
-# --- LE CAMOUFLAGE TURSO (Compatible Python 3.14) ---
-class TursoCamouflage:
-    """Fait croire au reste de l'application qu'il utilise sqlite3, 
-    mais parle en réalité au client officiel libsql-client."""
-    def __init__(self, url, auth_token):
-        import libsql_client
-        self.client = libsql_client.Client(url=url, auth_token=auth_token)
-        
-    def cursor(self):
-        return self 
-        
-    def execute(self, query, params=None):
-        if params:
-            self._result = self.client.execute(query, params)
-        else:
-            self._result = self.client.execute(query)
-        return self
-        
-    def fetchone(self):
-        return self._result.fetchone()
-        
-    def fetchall(self):
-        return self._result.fetchall()
-        
-    @property
-    def lastrowid(self):
-        return self._result.last_rowid
-        
-    def commit(self):
-        pass # libsql-client valide automatiquement
-        
-    def close(self):
-        self.client.close()
-# ------------------------------------------------
+# Configuration du logging pour éviter d'utiliser st.error dans la base de données
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
 
 # --- Connexion DB ---
 def create_connection():
     try:
+        from libsql_experimental import connect as turso_connect
         import streamlit as st
         url = st.secrets.get("TURSO_URL")
         token = st.secrets.get("TURSO_AUTH_TOKEN")
         if url and token:
-            url_https = url.replace("libsql://", "https://")
-            return TursoCamouflage(url_https, token), True
-    except Exception:
-        pass
+            # Turso nécessite souvent l'URL exacte, on évite de la muter dangereusement si non nécessaire
+            return turso_connect(url, auth_token=token), True
+    except Exception as e:
+        logger.warning(f"Turso non disponible, fallback sur SQLite local. Détail: {e}")
     return sqlite3.connect('gestion_religieuse.db', check_same_thread=False), False
 
 def init_db():
@@ -64,6 +35,7 @@ conn, USE_TURSO = init_db()
 class CursorWrapper:
     def __init__(self, cursor):
         self.cursor = cursor
+        
     def execute(self, query, params=None):
         for attempt in range(3):
             try:
@@ -72,28 +44,48 @@ class CursorWrapper:
                 error_msg = str(e).lower()
                 if "stream not found" in error_msg or "connection reset" in error_msg:
                     time.sleep(1)
+                    # Note: La reconnexion globale est risquée, mais gardée pour compatibilité
                     global conn
                     conn, _ = create_connection()
                     self.cursor = conn.cursor()
                     continue
+                # On ne masque que l'erreur de colonne dupliquée lors des ALTER
                 if "duplicate column" not in error_msg:
-                    import streamlit as st
-                    st.error(f"Erreur SQL : {e}")
+                    logger.error(f"Erreur SQL : {e}")
                 raise e
+                
     def __getattr__(self, name):
         return getattr(self.cursor, name)
 
 c = CursorWrapper(conn.cursor()) if USE_TURSO else conn.cursor()
 
 def commit_and_sync():
-    conn.commit()
+    try:
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Erreur lors du commit : {e}")
 
-# --- Création des tables ---
-def init_tables():
+# --- Fonction de migration sécurisée ---
+def safe_migrate(query, error_ignore_phrases=["duplicate column", "duplicate column name"]):
+    """Exécute une requête de migration en ignorant silencieusement les erreurs de doublon."""
+    try:
+        c.execute(query)
+        commit_and_sync()
+    except Exception as e:
+        error_msg = str(e).lower()
+        if not any(phrase in error_msg for phrase in error_ignore_phrases):
+            logger.warning(f"Migration ignorée ou échouée: {e}")
+
+# --- Création des tables et Migrations (Exécuté UNE SEULE FOIS) ---
+def init_tables_and_migrations():
+    import streamlit as st
+    
+    # --- 1. CRÉATION DES TABLES ---
     c.execute("""CREATE TABLE IF NOT EXISTS diocese (id INTEGER PRIMARY KEY, nom TEXT, responsable TEXT, bureau TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS paroisses (id INTEGER PRIMARY KEY, nom TEXT, commune TEXT, ville TEXT, responsable TEXT, bureau TEXT, diocese_id INTEGER)""")
     c.execute("""CREATE TABLE IF NOT EXISTS equipes (id INTEGER PRIMARY KEY, nom_equipe TEXT, responsable TEXT, bureau TEXT, paroisse_id INTEGER, max_membres INTEGER DEFAULT 10)""")
     c.execute("""CREATE TABLE IF NOT EXISTS membres (id INTEGER PRIMARY KEY, matloc TEXT UNIQUE, nom TEXT, prenom TEXT, date_naissance DATE, whatsapp TEXT, date_adhesion DATE, photo_path TEXT, paroisse_id INTEGER, equipe_id INTEGER, statut TEXT DEFAULT 'actif', numero_meditation TEXT, matricule TEXT)""")
+    # Le mot de passe par défaut sera mis à jour de manière sécurisée dans le fichier authentification
     c.execute("""CREATE TABLE IF NOT EXISTS utilisateurs (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, role TEXT, diocese_id INTEGER, paroisse_id INTEGER, equipe_id INTEGER)""")
     c.execute("""CREATE TABLE IF NOT EXISTS abonnements (id INTEGER PRIMARY KEY, membre_id INTEGER, annee_debut INTEGER, date_paiement DATE, montant REAL DEFAULT 0, type_abonnement TEXT DEFAULT 'abonnement', statut TEXT DEFAULT 'non_paye')""")
     c.execute("""CREATE TABLE IF NOT EXISTS archives (id INTEGER PRIMARY KEY, membre_id INTEGER, situation TEXT, date_debut DATE, date_fin DATE, commentaire TEXT, auteur_id INTEGER, auteur_nom TEXT, auteur_role TEXT, paroisse_id INTEGER, equipe_id INTEGER)""")
@@ -102,76 +94,58 @@ def init_tables():
     c.execute("""CREATE TABLE IF NOT EXISTS suivi_presences (id INTEGER PRIMARY KEY, membre_id INTEGER, evenement_id INTEGER, statut TEXT DEFAULT 'a_contacter')""")
     c.execute("""CREATE TABLE IF NOT EXISTS agenda (id INTEGER PRIMARY KEY, equipe_id INTEGER, paroisse_id INTEGER, diocese_id INTEGER, date_event DATE, type_event TEXT, lieu TEXT, description TEXT, auteur_nom TEXT, a_faire_suivre INTEGER DEFAULT 0, evenement_id INTEGER)""")
     c.execute("""CREATE TABLE IF NOT EXISTS periodes_cloturees (id INTEGER PRIMARY KEY AUTOINCREMENT, entite_type TEXT, entite_id INTEGER, annee_debut INTEGER, date_cloture TEXT, auteur_nom TEXT)""")
-    
+    # NOUVELLE TABLE POUR L'ESPACE SPIRITUEL
+    c.execute("""CREATE TABLE IF NOT EXISTS espace_spirituel (id INTEGER PRIMARY KEY, type_contenu TEXT, titre TEXT, contenu_texte TEXT, fichier_url TEXT, date_publication DATE, auteur_nom TEXT)""")
+
+    # --- 2. DONNÉES PAR DÉFAUT ---
     if c.execute("SELECT COUNT(*) FROM diocese").fetchone()[0] == 0:
         c.execute("INSERT INTO diocese (nom, responsable, bureau) VALUES (?, ?, ?)", ("GRAND-BASSAM", "À définir", "À définir"))
         
     if c.execute("SELECT COUNT(*) FROM utilisateurs WHERE role='diocese'").fetchone()[0] == 0:
+        # TODO: Remplacer par un vrai hachage (ex: werkzeug.security) dans le fichier d'auth
         admin_hash = hashlib.sha256("admin123".encode()).hexdigest()
         c.execute("INSERT INTO utilisateurs (username, password, role, diocese_id) VALUES (?, ?, ?, ?)", ("diocese", admin_hash, "diocese", 1))
         
     commit_and_sync()
 
-init_tables()
+    # --- 3. MIGRATIONS STRUCTURELLES ---
+    # Sécurité pour les anciennes bases de données
+    safe_migrate("ALTER TABLE membres RENAME COLUMN matricule TO matloc")
+    safe_migrate("ALTER TABLE membres RENAME COLUMN mle_sup TO matricule")
+    safe_migrate("ALTER TABLE membres ADD COLUMN matricule TEXT")
+    safe_migrate("ALTER TABLE agenda ADD COLUMN a_faire_suivre INTEGER DEFAULT 0")
+    safe_migrate("ALTER TABLE evenements ADD COLUMN paroisse_id INTEGER")
+    safe_migrate("ALTER TABLE evenements ADD COLUMN diocese_id INTEGER")
+    safe_migrate("ALTER TABLE evenements ADD COLUMN auteur_nom TEXT")
+    safe_migrate("ALTER TABLE agenda ADD COLUMN evenement_id INTEGER")
+    
+    # SUPPRIMÉ : ALTER COLUMN SET DEFAULT (N'existe pas dans SQLite, le défaut est géré dans le CREATE TABLE)
 
-# --- Sécurité pour les anciennes bases de données ---
-try:
-    c.execute("ALTER TABLE membres RENAME COLUMN matricule TO matloc")
-    commit_and_sync()
-except: pass
-try:
-    c.execute("ALTER TABLE membres RENAME COLUMN mle_sup TO matricule")
-    commit_and_sync()
-except: pass
-try:
-    c.execute("ALTER TABLE membres ADD COLUMN matricule TEXT")
-    commit_and_sync()
-except: pass
+    # --- 4. MIGRATIONS DE DONNÉES ---
+    try:
+        anciens_evts = c.execute("SELECT id, equipe_id FROM evenements WHERE equipe_id IS NOT NULL AND paroisse_id IS NULL AND diocese_id IS NULL").fetchall()
+        for evt_id, eq_id in anciens_evts:
+            existe = c.execute("SELECT id FROM evenement_equipes WHERE evenement_id=? AND equipe_id=?", (evt_id, eq_id)).fetchone()
+            if not existe:
+                c.execute("INSERT INTO evenement_equipes (evenement_id, equipe_id) VALUES (?, ?)", (evt_id, eq_id))
+        commit_and_sync()
+    except Exception as e:
+        logger.warning(f"Erreur migration événements: {e}")
 
-# Ajout de la colonne pour le "Faire suivre"
-try:
-    c.execute("ALTER TABLE agenda ADD COLUMN a_faire_suivre INTEGER DEFAULT 0")
-    commit_and_sync()
-except sqlite3.OperationalError:
-    pass
+    # ATTENTION : Les UPDATE de renommage de statut sont retirés d'ici.
+    # Les exécuter à chaque chargement fige la DB. Ils doivent être lancés MANUELLEMENT 
+    # UNE SEULE FOIS dans un outil de gestion SQLite (comme DB Browser) si la base est ancienne.
 
-# --- MIGRATION : Gestion des événements multi-équipes ---
-try:
-    c.execute("ALTER TABLE evenements ADD COLUMN paroisse_id INTEGER")
-    commit_and_sync()
-except: pass
-try:
-    c.execute("ALTER TABLE evenements ADD COLUMN diocese_id INTEGER")
-    commit_and_sync()
-except: pass
-try:
-    c.execute("ALTER TABLE evenements ADD COLUMN auteur_nom TEXT")
-    commit_and_sync()
-except: pass
+# --- INITIALISATION AUTOMATIQUE ---
+# On utilise un flag dans session_state pour s'assurer que ça ne tourne qu'UNE SEULE FOIS par session utilisateur
+def setup_database():
+    import streamlit as st
+    if "db_initialized" not in st.session_state:
+        init_tables_and_migrations()
+        st.session_state.db_initialized = True
 
-# --- MIGRATION CRUCIALE : Récupérer les anciens événements ---
+# Lancement au chargement du module
 try:
-    anciens_evts = c.execute("SELECT id, equipe_id FROM evenements WHERE equipe_id IS NOT NULL AND paroisse_id IS NULL AND diocese_id IS NULL").fetchall()
-    for evt_id, eq_id in anciens_evts:
-        existe = c.execute("SELECT id FROM evenement_equipes WHERE evenement_id=? AND equipe_id=?", (evt_id, eq_id)).fetchone()
-        if not existe:
-            c.execute("INSERT INTO evenement_equipes (evenement_id, equipe_id) VALUES (?, ?)", (evt_id, eq_id))
-    commit_and_sync()
-except Exception:
-    pass
-
-# --- FORCER LE CHANGEMENT DU DEFAUT PAR DEFAUT SUR L'ANCIENNE BASE ---
-try:
-    c.execute("ALTER TABLE suivi_presences ALTER COLUMN statut SET DEFAULT 'a_contacter'")
-    commit_and_sync()
-except Exception:
-    pass
-
-# --- MIGRATION PHILOSOPHIQUE : De l'obéissance à la discipline de communion ---
-try:
-    c.execute("UPDATE suivi_presences SET statut='physique' WHERE statut='present'")
-    c.execute("UPDATE suivi_presences SET statut='spirituel' WHERE statut='excuse'")
-    c.execute("UPDATE suivi_presences SET statut='a_contacter' WHERE statut='absent'")
-    commit_and_sync()
-except Exception:
-    pass
+    setup_database()
+except Exception as e:
+    logger.error(f"Erreur critique lors de l'initialisation de la DB: {e}")
