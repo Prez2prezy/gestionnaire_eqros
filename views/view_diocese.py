@@ -6,7 +6,7 @@ import io
 from datetime import date
 from database import c, commit_and_sync
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation, 
-                      exporter_excel_diocese, periode_affichage, get_periode_pastorale) # AJOUT get_periode_pastorale
+                      exporter_excel_diocese, periode_affichage, sauvegarder_audio) # AJOUT ICI
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, 
                         afficher_whatsapp_tabs, afficher_historique_paroisse, 
                         afficher_etat_presences_paroisse)
@@ -18,7 +18,7 @@ def show_diocese():
     menu = st.sidebar.radio("Navigation", [
         "🏛️ Voir diocèse", "🏘️ Créer paroisses", "📋 Gérer paroisses", 
         "🔍 Rechercher matricule", "🔐 Gérer les accès", "📊 Statistiques", 
-        "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "📥 Export Excel", 
+        "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "🕊️ Espace spirituel", "📥 Export Excel",  # AJOUT ICI
         "📦 Archives", "🗑️ Réinitialiser"
     ])
 
@@ -374,6 +374,54 @@ def show_diocese():
                     st.write(f"**Paroisse :** {par_nom} | {eq_nom}")
                     st.write(f"**Ajouté par :** {a[10] or 'Inconnu'}")
                     if a[7]: st.write(f"**Commentaire :** {a[7]}")
+
+    elif menu == "🕊️ Espace spirituel":
+        st.markdown('<h2 style="color:#1A237E;">🕊️ Gestion de l\'Espace Spirituel</h2>', unsafe_allow_html=True)
+        st.caption("Ici, vous publiez les prières, méditations et musiques qui apparaîtront dans l'espace des membres.")
+        
+        tab_add, tab_manage = st.tabs(["➕ Publier du contenu", "📋 Contenu existant"])
+        
+        with tab_add:
+            with st.form("form_espace"):
+                type_contenu = st.selectbox("Type de contenu", ["priere", "meditation", "audio"], format_func=lambda x: {"priere": "🙏 Prière", "meditation": "📖 Méditation", "audio": "🎵 Musique/Chant"}[x])
+                titre = st.text_input("Titre")
+                
+                fichier_audio = None
+                contenu_texte = ""
+                
+                if type_contenu == "audio":
+                    fichier_audio = st.file_uploader("Fichier audio (MP3, WAV...)", type=["mp3", "wav", "ogg", "m4a"])
+                    st.info("Le fichier sera envoyé sur Cloudinary de manière sécurisée.")
+                else:
+                    contenu_texte = st.text_area("Texte de la prière ou de la méditation", height=300)
+                
+                if st.form_submit_button("✅ Publier", use_container_width=True):
+                    if titre:
+                        url_audio = sauvegarder_audio(fichier_audio) if fichier_audio else None
+                        c.execute("""INSERT INTO espace_spirituel (type_contenu, titre, contenu_texte, fichier_url, date_publication, auteur_nom) 
+                                     VALUES (?, ?, ?, ?, ?, ?)""", 
+                                  (type_contenu, titre, contenu_texte, url_audio, date.today().isoformat(), st.session_state['username']))
+                        commit_and_sync()
+                        st.success("Contenu publié avec succès ! Il est dès à présent visible par les membres.")
+                        st.rerun()
+                    else:
+                        st.error("Le titre est obligatoire.")
+
+        with tab_manage:
+            contenus = c.execute("SELECT id, type_contenu, titre, date_publication FROM espace_spirituel ORDER BY date_publication DESC").fetchall()
+            if not contenus:
+                st.info("Aucun contenu publié pour le moment.")
+            else:
+                for cont in contenus:
+                    icone = {"priere": "🙏", "meditation": "📖", "audio": "🎵"}.get(cont[1], "📌")
+                    c1, c2 = st.columns([4, 1])
+                    with c1:
+                        st.write(f"{icone} **{cont[2]}** - *{cont[3]}*")
+                    with c2:
+                        if st.button("🗑️", key=f"del_espace_{cont[0]}"):
+                            c.execute("DELETE FROM espace_spirituel WHERE id=?", (cont[0],))
+                            commit_and_sync()
+                            st.rerun()
 
     elif menu == "🗑️ Réinitialiser":
         st.markdown('<h2 style="color:#1A237E;">🗑️ RÉINITIALISATION COMPLÈTE</h2>', unsafe_allow_html=True)
