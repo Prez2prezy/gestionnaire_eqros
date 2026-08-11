@@ -186,3 +186,18 @@ def sauvegarder_audio(fichier):
             print(f"Erreur upload audio: {e}")
             return None
     return None
+
+def sauvegarder_illustration(fichier):
+    """Envoie une image d'illustration sur Cloudinary sans la rogner."""
+    if fichier:
+        try:
+            import streamlit as st
+            import cloudinary.uploader
+            nom_fichier = fichier.name.split('.')[0]
+            # On limite la largeur à 800px pour que ça ne soit pas trop lourd, mais on garde la hauteur automatique
+            res = cloudinary.uploader.upload(fichier, public_id=f"rosaire_illustrations/{nom_fichier}", overwrite=True, transformation=[{"width": 800, "crop": "limit"}])
+            return res['secure_url']
+        except Exception as e:
+            print(f"Erreur upload illustration: {e}")
+            return None
+    return None    
