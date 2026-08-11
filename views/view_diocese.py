@@ -6,7 +6,7 @@ import io
 from datetime import date
 from database import c, commit_and_sync
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation, 
-                      exporter_excel_diocese, periode_affichage, sauvegarder_audio) # AJOUT ICI
+                      exporter_excel_diocese, periode_affichage, sauvegarder_audio)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, 
                         afficher_whatsapp_tabs, afficher_historique_paroisse, 
                         afficher_etat_presences_paroisse)
