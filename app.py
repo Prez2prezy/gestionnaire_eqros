@@ -6,22 +6,34 @@ from services import hash_password
 # --- Configuration de la page ---
 st.set_page_config(page_title="Gestionnaire des Équipes du Rosaire - Diocèse de Grand-Bassam", layout="wide")
 
-# --- INTERCEPTION DU LIEN MAGIQUE (MEMBRE) ---
+# --- INTERCEPTION DES LIENS SPECIAUX ---
 try:
     params = st.query_params
-    if "e" in params:
-        event_id = params["e"]
+    
+    # 1. NOUVEAU : Lien Espace Membre (Public ou Personnalisé)
+    if "espace" in params:
+        espace_id = params["espace"]
+        if isinstance(espace_id, list): espace_id = espace_id[0]
         
-        # CORRECTION CRITIQUE : Les nouvelles versions de Streamlit renvoient une liste ex: ["11"] au lieu de "11"
-        if isinstance(event_id, list):
-            event_id = event_id[0]
-            
+        # On regarde si le lien contient un matloc (Espace personnalisé)
+        matloc_membre = None
+        if "matloc" in params:
+            matloc_membre = params["matloc"]
+            if isinstance(matloc_membre, list): matloc_membre = matloc_membre[0]
+        
+        from views.view_espace_membre import show_espace_membre
+        show_espace_membre(matloc_membre)
+        st.stop()
+        
+    # 2. ANCIEN : Lien Magic Link classique (Réponse à un événement)
+    elif "e" in params:
+        event_id = params["e"]
+        if isinstance(event_id, list): event_id = event_id[0]
         from components import afficher_page_reponse_membre
         afficher_page_reponse_membre(event_id)
-        st.stop() # On bloque l'affichage du reste de la page (donc pas de connexion demandée)
-except Exception as e:
-    pass # En cas d'erreur, on laisse l'application se charger normalement
-# -------------------------------------------------
+        st.stop()
+except Exception:
+    pass
 
 # --- CSS personnalisé ---
 st.markdown("""
