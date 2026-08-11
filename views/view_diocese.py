@@ -382,22 +382,43 @@ def show_diocese():
         tab_add, tab_manage = st.tabs(["➕ Publier du contenu", "📋 Contenu existant"])
         
         with tab_add:
+            # On donne une clé explicite au menu pour forcer la mise à jour
+            type_contenu = st.selectbox("Type de contenu", ["priere", "meditation", "audio"], 
+                                       format_func=lambda x: {"priere": "🙏 Prière", "meditation": "📖 Méditation", "audio": "🎵 Musique/Chant"}[x], 
+                                       key="type_espace_select")
+            
+            # On crée des espaces vides qui vont se vider/se remplir proprement
+            zone_audio = st.empty()
+            zone_texte = st.empty()
+            
+            fichier_audio = None
+            contenu_texte = ""
+            
+            # SI c'est de l'audio, on remplit la zone audio
+            if type_contenu == "audio":
+                with zone_audio.container():
+                    st.info("ℹ️ Sélectionnez votre fichier audio ci-dessous, puis cliquez sur Publier.")
+                    fichier_audio = st.file_uploader("🎵 Fichier audio (MP3, WAV...)", type=["mp3", "wav", "ogg", "m4a"], key="audio_espace")
+                    
+            # SINON, on remplit la zone de texte
+            else:
+                with zone_texte.container():
+                    contenu_texte = st.text_area("Texte de la prière ou de la méditation", height=300, key="texte_espace")
+
+            # LE FORMULAIRE (Séparé pour éviter les conflits)
             with st.form("form_espace"):
-                type_contenu = st.selectbox("Type de contenu", ["priere", "meditation", "audio"], format_func=lambda x: {"priere": "🙏 Prière", "meditation": "📖 Méditation", "audio": "🎵 Musique/Chant"}[x])
-                titre = st.text_input("Titre")
-                
-                fichier_audio = None
-                illustration = None
-                contenu_texte = ""
-                
-                if type_contenu == "audio":
-                    fichier_audio = st.file_uploader("Fichier audio (MP3, WAV...)", type=["mp3", "wav", "ogg", "m4a"])
-                    st.info("Le fichier sera envoyé sur Cloudinary de manière sécurisée.")
-                else:
-                    illustration = st.file_uploader("🖼️ Image d'illustration (optionnel)", type=["jpg", "png", "jpeg", "webp"], key="illus_espace")
-                    contenu_texte = st.text_area("Texte de la prière ou de la méditation", height=300)
+                titre = st.text_input("Titre", key="titre_espace")
+                illustration = st.file_uploader("🖼️ Image d'illustration (optionnel)", type=["jpg", "png", "jpeg", "webp"], key="illus_espace")
                 
                 if st.form_submit_button("✅ Publier", use_container_width=True):
+                    # Comme le file_uploader audio est en dehors du form, on le récupère proprement ici
+                    if fichier_audio is None and "audio_espace" in st.session_state:
+                        fichier_audio = st.session_state["audio_espace"]
+                    if 'texte_espace' not in st.session_state:
+                        contenu_texte = ""
+                    else:
+                        contenu_texte = st.session_state['texte_espace']
+                        
                     if titre:
                         url_audio = sauvegarder_audio(fichier_audio) if fichier_audio else None
                         url_illustration = sauvegarder_illustration(illustration) if illustration else None
