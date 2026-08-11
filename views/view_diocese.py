@@ -18,8 +18,8 @@ def show_diocese():
 
     menu = st.sidebar.radio("Navigation", [
         "🏛️ Voir diocèse", "🏘️ Créer paroisses", "📋 Gérer paroisses", 
-        "🔍 Rechercher matricule", "🔐 Gérer les accès", "📊 Statistiques", 
-        "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "🕊️ Espace spirituel", "📥 Export Excel",  # AJOUT ICI
+        "📅 Abonnements", "📌 Suivi", "🕊️ Espace spirituel", "💬 WhatsApp", 
+        "🔍 Rechercher matricule", "🔐 Gérer les accès", "📊 Statistiques", "📥 Export Excel",  # AJOUT ICI
         "📦 Archives", "🗑️ Réinitialiser"
     ])
 
@@ -137,60 +137,6 @@ def show_diocese():
                         with pd.ExcelWriter(out, engine='openpyxl') as w: df.to_excel(w, index=False)
                         out.seek(0)
                         st.download_button(f"📥 Exporter les équipiers de {nom}", data=out, file_name=f"equipiers_{nom}_{date.today()}.xlsx", key=f"export_par_{pid}")
-
-    elif menu == "🔍 Rechercher matricule":
-        st.markdown('<h2 style="color:#1A237E;">🔍 Recherche par matricule</h2>', unsafe_allow_html=True)
-        matricule = st.text_input("Matricule (MatLoc ou Matricule)")
-        if matricule:
-            # CORRECTION MAJEURE : Utilisation de LEFT JOIN pour trouver un membre 
-            # même s'il n'est pas encore assigné à une équipe ou une paroisse !
-            m = c.execute('''SELECT m.matloc, m.matricule, m.nom, m.prenom, m.whatsapp, p.nom, e.nom_equipe, m.photo_path
-                             FROM membres m 
-                             LEFT JOIN paroisses p ON m.paroisse_id = p.id 
-                             LEFT JOIN equipes e ON m.equipe_id = e.id
-                             WHERE (m.matloc = ? OR m.matricule = ?) AND m.statut = 'actif' ''', (matricule.upper(), matricule.upper())).fetchone()
-            if m:
-                st.success("Membre trouvé")
-                col1, col2 = st.columns([2,1])
-                with col1:
-                    st.write(f"**{m[2]} {m[3]}** - MatLoc: {m[0]} | Matricule: {m[1]}")
-                    st.write(f"💬 WhatsApp: {m[4] or 'Non renseigné'}")
-                    # Sécurisation des valeurs NULL
-                    st.markdown(f"🏘️ **Paroisse :** {m[5] or 'Non assignée'}  \n👥 **Équipe :** {m[6] or 'Non assignée'}")
-                with col2:
-                    if m[7]:
-                        # CORRECTION : except: nu interdit
-                        try: st.image(m[7], width=100)
-                        except Exception: pass
-            else:
-                st.error("Non trouvé ou membre archivé")
-
-    elif menu == "🔐 Gérer les accès":
-        st.markdown('<h2 style="color:#1A237E;">🔐 Gestion des accès</h2>', unsafe_allow_html=True)
-        st.markdown("### 🏘️ Paroisses")
-        for p in c.execute("SELECT id, nom, responsable FROM paroisses").fetchall():
-            user = c.execute("SELECT id, username FROM utilisateurs WHERE paroisse_id=? AND role='paroisse'", (p[0],)).fetchone()
-            if user:
-                with st.expander(f"🏛️ {p[1]} - {p[2]}"):
-                    st.write(f"**Identifiant :** `{user[1]}`")
-                    if st.button(f"🔄 Réinitialiser le mot de passe", key=f"reset_par_{p[0]}"):
-                        nouveau = generer_mot_de_passe()
-                        c.execute("UPDATE utilisateurs SET password=? WHERE id=?", (hash_password(nouveau), user[0]))
-                        commit_and_sync()
-                        st.session_state['new_pwd_par'] = {'user': user[1], 'pwd': nouveau}
-                    
-                    if st.session_state.get('new_pwd_par') and st.session_state['new_pwd_par']['user'] == user[1]:
-                        st.markdown(f"<div style='background:#e8f5e9;padding:15px;border-radius:10px;border:1px solid #c8e6c9;'>🔑 Nouveau mot de passe pour <code>{st.session_state['new_pwd_par']['user']}</code> : <code style='color:#d84315;font-size:1.2rem;'>{st.session_state['new_pwd_par']['pwd']}</code></div>", unsafe_allow_html=True)
-                        if st.button("OK, j'ai noté le mot de passe", key=f"ok_pwd_par_{p[0]}"):
-                            del st.session_state['new_pwd_par']
-                            st.rerun()
-
-    elif menu == "📊 Statistiques":
-        st.markdown('<h2 style="color:#1A237E;">📊 Statistiques générales</h2>', unsafe_allow_html=True)
-        c1, c2, c3 = st.columns(3)
-        c1.metric("🏘️ Paroisses", c.execute("SELECT COUNT(*) FROM paroisses").fetchone()[0])
-        c2.metric("👥 Équipes", c.execute("SELECT COUNT(*) FROM equipes").fetchone()[0])
-        c3.metric("👤 Membres actifs", c.execute("SELECT COUNT(*) FROM membres WHERE statut='actif'").fetchone()[0])
 
     elif menu == "📅 Abonnements":
         st.markdown('<h2 style="color:#1A237E;">📅 Suivi des abonnements (Diocèse)</h2>', unsafe_allow_html=True)
@@ -342,40 +288,6 @@ def show_diocese():
             else: 
                 st.info("Aucune paroisse créée.")
 
-    elif menu == "💬 WhatsApp":
-        st.markdown(f'<h2 style="color:#1A237E;">💬 Messages WhatsApp - {nom_dio}</h2>', unsafe_allow_html=True)
-        afficher_whatsapp_tabs(equipe_id=None)
-
-    elif menu == "📥 Export Excel":
-        st.markdown('<h2 style="color:#1A237E;">📥 Export des données</h2>', unsafe_allow_html=True)
-        if c.execute("SELECT COUNT(*) FROM membres").fetchone()[0] == 0: st.warning("Aucune donnée à exporter.")
-        else:
-            excel_file = exporter_excel_diocese()
-            st.download_button("📥 Télécharger l'export global", data=excel_file, file_name=f"export_diocese_{date.today()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    elif menu == "📦 Archives":
-        st.markdown('<h2 style="color:#1A237E; font-size: 1.4rem;">📦 Archives du diocèse</h2>', unsafe_allow_html=True)
-        archives = c.execute('''SELECT m.matloc, m.matricule, m.nom, m.prenom, a.situation, a.date_debut, a.date_fin, a.commentaire, a.equipe_id, a.paroisse_id, a.auteur_nom
-                                FROM archives a JOIN membres m ON a.membre_id = m.id ORDER BY a.date_fin DESC''').fetchall()
-        if not archives: st.info("Aucune archive.")
-        else:
-            for a in archives:
-                d1, d2 = safe_date(a[5]), safe_date(a[6])
-                duree = (d2 - d1).days // 365 if d1 and d2 else 0
-                eq_nom, par_nom = "N/A", "N/A"
-                if a[8]:
-                    eq_info = c.execute("SELECT e.nom_equipe, p.nom FROM equipes e JOIN paroisses p ON e.paroisse_id = p.id WHERE e.id=?", (a[8],)).fetchone()
-                    if eq_info: eq_nom, par_nom = eq_info[0], eq_info[1]
-                elif a[9]:
-                    par_info = c.execute("SELECT nom FROM paroisses WHERE id=?", (a[9],)).fetchone()
-                    if par_info: par_nom = par_info[0]
-                
-                header = f"📌 {a[2]} {a[3]} ({a[0]} / {a[1]}) – {afficher_situation(a[4])} – {duree} an(s)"
-                with st.expander(header):
-                    st.write(f"**Paroisse :** {par_nom} | {eq_nom}")
-                    st.write(f"**Ajouté par :** {a[10] or 'Inconnu'}")
-                    if a[7]: st.write(f"**Commentaire :** {a[7]}")
-
     elif menu == "🕊️ Espace spirituel":
         st.markdown('<h2 style="color:#1A237E;">🕊️ Gestion de l\'Espace Spirituel</h2>', unsafe_allow_html=True)
         st.caption("Ici, vous publiez les prières, méditations et musiques qui apparaîtront dans l'espace des membres.")
@@ -448,6 +360,95 @@ def show_diocese():
                             c.execute("DELETE FROM espace_spirituel WHERE id=?", (cont[0],))
                             commit_and_sync()
                             st.rerun()
+
+    elif menu == "💬 WhatsApp":
+        st.markdown(f'<h2 style="color:#1A237E;">💬 Messages WhatsApp - {nom_dio}</h2>', unsafe_allow_html=True)
+        afficher_whatsapp_tabs(equipe_id=None)
+
+    elif menu == "🔍 Rechercher matricule":
+        st.markdown('<h2 style="color:#1A237E;">🔍 Recherche par matricule</h2>', unsafe_allow_html=True)
+        matricule = st.text_input("Matricule (MatLoc ou Matricule)")
+        if matricule:
+            # CORRECTION MAJEURE : Utilisation de LEFT JOIN pour trouver un membre 
+            # même s'il n'est pas encore assigné à une équipe ou une paroisse !
+            m = c.execute('''SELECT m.matloc, m.matricule, m.nom, m.prenom, m.whatsapp, p.nom, e.nom_equipe, m.photo_path
+                             FROM membres m 
+                             LEFT JOIN paroisses p ON m.paroisse_id = p.id 
+                             LEFT JOIN equipes e ON m.equipe_id = e.id
+                             WHERE (m.matloc = ? OR m.matricule = ?) AND m.statut = 'actif' ''', (matricule.upper(), matricule.upper())).fetchone()
+            if m:
+                st.success("Membre trouvé")
+                col1, col2 = st.columns([2,1])
+                with col1:
+                    st.write(f"**{m[2]} {m[3]}** - MatLoc: {m[0]} | Matricule: {m[1]}")
+                    st.write(f"💬 WhatsApp: {m[4] or 'Non renseigné'}")
+                    # Sécurisation des valeurs NULL
+                    st.markdown(f"🏘️ **Paroisse :** {m[5] or 'Non assignée'}  \n👥 **Équipe :** {m[6] or 'Non assignée'}")
+                with col2:
+                    if m[7]:
+                        # CORRECTION : except: nu interdit
+                        try: st.image(m[7], width=100)
+                        except Exception: pass
+            else:
+                st.error("Non trouvé ou membre archivé")
+
+    elif menu == "🔐 Gérer les accès":
+        st.markdown('<h2 style="color:#1A237E;">🔐 Gestion des accès</h2>', unsafe_allow_html=True)
+        st.markdown("### 🏘️ Paroisses")
+        for p in c.execute("SELECT id, nom, responsable FROM paroisses").fetchall():
+            user = c.execute("SELECT id, username FROM utilisateurs WHERE paroisse_id=? AND role='paroisse'", (p[0],)).fetchone()
+            if user:
+                with st.expander(f"🏛️ {p[1]} - {p[2]}"):
+                    st.write(f"**Identifiant :** `{user[1]}`")
+                    if st.button(f"🔄 Réinitialiser le mot de passe", key=f"reset_par_{p[0]}"):
+                        nouveau = generer_mot_de_passe()
+                        c.execute("UPDATE utilisateurs SET password=? WHERE id=?", (hash_password(nouveau), user[0]))
+                        commit_and_sync()
+                        st.session_state['new_pwd_par'] = {'user': user[1], 'pwd': nouveau}
+                    
+                    if st.session_state.get('new_pwd_par') and st.session_state['new_pwd_par']['user'] == user[1]:
+                        st.markdown(f"<div style='background:#e8f5e9;padding:15px;border-radius:10px;border:1px solid #c8e6c9;'>🔑 Nouveau mot de passe pour <code>{st.session_state['new_pwd_par']['user']}</code> : <code style='color:#d84315;font-size:1.2rem;'>{st.session_state['new_pwd_par']['pwd']}</code></div>", unsafe_allow_html=True)
+                        if st.button("OK, j'ai noté le mot de passe", key=f"ok_pwd_par_{p[0]}"):
+                            del st.session_state['new_pwd_par']
+                            st.rerun()
+
+    elif menu == "📊 Statistiques":
+        st.markdown('<h2 style="color:#1A237E;">📊 Statistiques générales</h2>', unsafe_allow_html=True)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("🏘️ Paroisses", c.execute("SELECT COUNT(*) FROM paroisses").fetchone()[0])
+        c2.metric("👥 Équipes", c.execute("SELECT COUNT(*) FROM equipes").fetchone()[0])
+        c3.metric("👤 Membres actifs", c.execute("SELECT COUNT(*) FROM membres WHERE statut='actif'").fetchone()[0])
+
+
+    elif menu == "📥 Export Excel":
+        st.markdown('<h2 style="color:#1A237E;">📥 Export des données</h2>', unsafe_allow_html=True)
+        if c.execute("SELECT COUNT(*) FROM membres").fetchone()[0] == 0: st.warning("Aucune donnée à exporter.")
+        else:
+            excel_file = exporter_excel_diocese()
+            st.download_button("📥 Télécharger l'export global", data=excel_file, file_name=f"export_diocese_{date.today()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    elif menu == "📦 Archives":
+        st.markdown('<h2 style="color:#1A237E; font-size: 1.4rem;">📦 Archives du diocèse</h2>', unsafe_allow_html=True)
+        archives = c.execute('''SELECT m.matloc, m.matricule, m.nom, m.prenom, a.situation, a.date_debut, a.date_fin, a.commentaire, a.equipe_id, a.paroisse_id, a.auteur_nom
+                                FROM archives a JOIN membres m ON a.membre_id = m.id ORDER BY a.date_fin DESC''').fetchall()
+        if not archives: st.info("Aucune archive.")
+        else:
+            for a in archives:
+                d1, d2 = safe_date(a[5]), safe_date(a[6])
+                duree = (d2 - d1).days // 365 if d1 and d2 else 0
+                eq_nom, par_nom = "N/A", "N/A"
+                if a[8]:
+                    eq_info = c.execute("SELECT e.nom_equipe, p.nom FROM equipes e JOIN paroisses p ON e.paroisse_id = p.id WHERE e.id=?", (a[8],)).fetchone()
+                    if eq_info: eq_nom, par_nom = eq_info[0], eq_info[1]
+                elif a[9]:
+                    par_info = c.execute("SELECT nom FROM paroisses WHERE id=?", (a[9],)).fetchone()
+                    if par_info: par_nom = par_info[0]
+                
+                header = f"📌 {a[2]} {a[3]} ({a[0]} / {a[1]}) – {afficher_situation(a[4])} – {duree} an(s)"
+                with st.expander(header):
+                    st.write(f"**Paroisse :** {par_nom} | {eq_nom}")
+                    st.write(f"**Ajouté par :** {a[10] or 'Inconnu'}")
+                    if a[7]: st.write(f"**Commentaire :** {a[7]}")
 
     elif menu == "🗑️ Réinitialiser":
         st.markdown('<h2 style="color:#1A237E;">🗑️ RÉINITIALISATION COMPLÈTE</h2>', unsafe_allow_html=True)
