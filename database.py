@@ -96,7 +96,12 @@ def init_tables_and_migrations():
     c.execute("""CREATE TABLE IF NOT EXISTS periodes_cloturees (id INTEGER PRIMARY KEY AUTOINCREMENT, entite_type TEXT, entite_id INTEGER, annee_debut INTEGER, date_cloture TEXT, auteur_nom TEXT)""")
     # NOUVELLE TABLE POUR L'ESPACE SPIRITUEL
     c.execute("""CREATE TABLE IF NOT EXISTS espace_spirituel (id INTEGER PRIMARY KEY, type_contenu TEXT, titre TEXT, contenu_texte TEXT, fichier_url TEXT, date_publication DATE, auteur_nom TEXT)""")
-
+    # NOUVELLE TABLE POUR L'ESPACE SPIRITUEL
+    c.execute("""CREATE TABLE IF NOT EXISTS espace_spirituel (id INTEGER PRIMARY KEY, type_contenu TEXT, titre TEXT, contenu_texte TEXT, fichier_url TEXT, date_publication DATE, auteur_nom TEXT, image_url TEXT)""")
+    
+    # AJOUT DE LA COLONNE IMAGE SI ELLE N'EXISTE PAS ENCORE
+    safe_migrate("ALTER TABLE espace_spirituel ADD COLUMN image_url TEXT")
+    
     # --- 2. DONNÉES PAR DÉFAUT ---
     if c.execute("SELECT COUNT(*) FROM diocese").fetchone()[0] == 0:
         c.execute("INSERT INTO diocese (nom, responsable, bureau) VALUES (?, ?, ?)", ("GRAND-BASSAM", "À définir", "À définir"))
