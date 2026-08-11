@@ -6,7 +6,7 @@ import io
 from datetime import date
 from database import c, commit_and_sync
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation, 
-                      exporter_excel_diocese, periode_affichage, sauvegarder_audio)
+                      exporter_excel_diocese, periode_affichage, sauvegarder_audio, sauvegarder_illustration)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, 
                         afficher_whatsapp_tabs, afficher_historique_paroisse, 
                         afficher_etat_presences_paroisse)
@@ -387,22 +387,26 @@ def show_diocese():
                 titre = st.text_input("Titre")
                 
                 fichier_audio = None
+                illustration = None
                 contenu_texte = ""
                 
                 if type_contenu == "audio":
                     fichier_audio = st.file_uploader("Fichier audio (MP3, WAV...)", type=["mp3", "wav", "ogg", "m4a"])
                     st.info("Le fichier sera envoyé sur Cloudinary de manière sécurisée.")
                 else:
+                    illustration = st.file_uploader("🖼️ Image d'illustration (optionnel)", type=["jpg", "png", "jpeg", "webp"], key="illus_espace")
                     contenu_texte = st.text_area("Texte de la prière ou de la méditation", height=300)
                 
                 if st.form_submit_button("✅ Publier", use_container_width=True):
                     if titre:
                         url_audio = sauvegarder_audio(fichier_audio) if fichier_audio else None
-                        c.execute("""INSERT INTO espace_spirituel (type_contenu, titre, contenu_texte, fichier_url, date_publication, auteur_nom) 
-                                     VALUES (?, ?, ?, ?, ?, ?)""", 
-                                  (type_contenu, titre, contenu_texte, url_audio, date.today().isoformat(), st.session_state['username']))
+                        url_illustration = sauvegarder_illustration(illustration) if illustration else None
+                        
+                        c.execute("""INSERT INTO espace_spirituel (type_contenu, titre, contenu_texte, fichier_url, image_url, date_publication, auteur_nom) 
+                                     VALUES (?, ?, ?, ?, ?, ?, ?)""", 
+                                  (type_contenu, titre, contenu_texte, url_audio, url_illustration, date.today().isoformat(), st.session_state['username']))
                         commit_and_sync()
-                        st.success("Contenu publié avec succès ! Il est dès à présent visible par les membres.")
+                        st.success("Contenu publié avec succès !")
                         st.rerun()
                     else:
                         st.error("Le titre est obligatoire.")
