@@ -62,23 +62,26 @@ def show_espace_membre(matloc_membre=None):
 
     with tab_priere:
         st.markdown("### 🙏 Textes de prières")
-        # TODO: On ajoutera l'interface admin plus tard. Pour l'instant, on simule le vide.
-        prières = c.execute("SELECT titre, contenu_texte FROM espace_spirituel WHERE type_contenu='priere' ORDER BY date_publication DESC").fetchall()
+        prières = c.execute("SELECT titre, contenu_texte, image_url FROM espace_spirituel WHERE type_contenu='priere' ORDER BY date_publication DESC").fetchall()
         if not prières:
-            st.info("Aucune prière publiée pour le moment. L'espace sera bientôt enrichi par les responsables.")
+            st.info("Aucune prière publiée pour le moment.")
         else:
             for p in prières:
                 with st.expander(f"📖 {p[0]}"):
+                    if p[2]: # S'il y a une image d'illustration
+                        st.image(p[2], use_container_width=True)
                     st.write(p[1])
 
     with tab_meditation:
         st.markdown("### 📖 Textes de méditation")
-        meditations = c.execute("SELECT titre, contenu_texte FROM espace_spirituel WHERE type_contenu='meditation' ORDER BY date_publication DESC").fetchall()
+        meditations = c.execute("SELECT titre, contenu_texte, image_url FROM espace_spirituel WHERE type_contenu='meditation' ORDER BY date_publication DESC").fetchall()
         if not meditations:
             st.info("Aucune méditation disponible pour le moment.")
         else:
             for m in meditations:
                 with st.expander(f"📖 {m[0]}"):
+                    if m[2]: # S'il y a une image d'illustration
+                        st.image(m[2], use_container_width=True)
                     st.write(m[1])
 
     with tab_musique:
