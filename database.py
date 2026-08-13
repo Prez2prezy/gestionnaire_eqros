@@ -16,10 +16,33 @@ def create_connection():
         url = st.secrets.get("TURSO_URL")
         token = st.secrets.get("TURSO_AUTH_TOKEN")
         if url and token:
-            # Turso nécessite souvent l'URL exacte, on évite de la muter dangereusement si non nécessaire
-            return turso_connect(url, auth_token=token), True
+            # On fait 2 tentatives en cas de micro-coupure réseau
+            for attempt in range(2):
+                try:
+                    return turso_connect(url, auth_token=token), True
+                except Exception as e:
+                    if attempt == 0:
+                        import time
+                        time.sleep(1) # On attend 1 seconde et on réessaie
+                    else:
+                        raise e # Si ça rate 2 fois, on laisse planter l'app pour forcer un redémarrage propre
     except Exception as e:
-        logger.warning(f"Turso non disponible, fallback sur SQLite local. Détail: {e}")
+        # Vérification de sécurité : Les clés Turso sont-elles dans les paramètres ?
+        url = None
+        token = None
+        try:
+            import streamlit as st
+            url = st.secrets.get("TURSO_URL")
+            token = st.secrets.get("TURSO_AUTH_TOKEN")
+        except Exception:
+            pass
+        
+        # SI les clés Turso existent mais la connexion échoue, ON NE FAIT PAS DE FALLBACK.
+        # On lève une erreur pour forcer Streamlit Cloud à redémarrer l'app proprement.
+        if url and token:
+            raise Exception(f"Connexion à Turso perdue. Redémarrage en cours... ({e})")
+            
+    # Si Turso n'est pas configuré du tout, on utilise bien le fichier local
     return sqlite3.connect('gestion_religieuse.db', check_same_thread=False), False
 
 def init_db():
