@@ -81,7 +81,7 @@ def show_espace_membre(matloc_membre=None):
             for m in meditations:
                 with st.expander(f"📖 {m[0]}"):
                     if m[2]: # S'il y a une image d'illustration
-                        st.image(m[2], use_container_width=True)
+                        st.image(m[2], width="stretch")
                     st.write(m[1])
 
     with tab_musique:
