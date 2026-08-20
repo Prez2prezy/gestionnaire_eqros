@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 # --- Connexion DB ---
 def create_connection():
     try:
-        from libsql_experimental import connect as turso_connect
+        from libsql import connect as turso_connect
         import streamlit as st
         url = st.secrets.get("TURSO_URL")
         token = st.secrets.get("TURSO_AUTH_TOKEN")
@@ -37,15 +37,10 @@ def create_connection():
         except Exception:
             pass
         
-        # SI les clés Turso existent mais la connexion échoue
+        # SI les clés Turso existent mais la connexion échoue, ON NE FAIT PAS DE FALLBACK.
+        # On lève une erreur pour forcer Streamlit Cloud à redémarrer l'app proprement.
         if url and token:
-            import traceback
-            print("!!! DEBUT ERREUR TURSO !!!")
-            traceback.print_exc() # Ceci va écrire l'erreur vraie dans les logs
-            print("!!! FIN ERREUR TURSO !!!")
-            
-            # ON TEMPORAIREMENT LE COMMENTE pour que l'app démarre sur SQLite
-            # raise Exception(f"Connexion à Turso perdue. Redémarrage en cours... ({e})")
+            raise Exception(f"Connexion à Turso perdue. Redémarrage en cours... ({e})")
             
     # Si Turso n'est pas configuré du tout, on utilise bien le fichier local
     return sqlite3.connect('gestion_religieuse.db', check_same_thread=False), False
