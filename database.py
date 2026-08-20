@@ -40,7 +40,7 @@ def create_connection():
         # SI les clés Turso existent mais la connexion échoue, ON NE FAIT PAS DE FALLBACK.
         # On lève une erreur pour forcer Streamlit Cloud à redémarrer l'app proprement.
         if url and token:
-            raise Exception(f"Connexion à Turso perdue. Redémarrage en cours... ({e})")
+            raise Exception(f"ERREUR TURSO DÉTAILLÉE : {type(e).__name__} - {str(e)}")
             
     # Si Turso n'est pas configuré du tout, on utilise bien le fichier local
     return sqlite3.connect('gestion_religieuse.db', check_same_thread=False), False
