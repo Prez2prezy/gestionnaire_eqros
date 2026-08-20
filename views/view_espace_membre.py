@@ -69,7 +69,7 @@ def show_espace_membre(matloc_membre=None):
             for p in prières:
                 with st.expander(f"📖 {p[0]}"):
                     if p[2]: # S'il y a une image d'illustration
-                        st.image(p[2], use_container_width=True)
+                        st.image(p[2], width="stretch")
                     st.write(p[1])
 
     with tab_meditation:
