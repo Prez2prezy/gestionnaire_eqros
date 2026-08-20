@@ -1,6 +1,7 @@
 import streamlit as st
 from datetime import date
 from database import c
+from services import safe_date
 
 # --- Un design plus doux et apaisant pour l'espace de prière ---
 st.markdown("""
@@ -86,22 +87,29 @@ def show_espace_membre(matloc_membre=None):
 
     with tab_musique:
         st.markdown("### 🎵 Écouter des chants et méditations audio")
-        audios = c.execute("SELECT titre, fichier_url FROM espace_spirituel WHERE type_contenu='audio' ORDER BY date_publication DESC").fetchall()
+        # CORRECTION : On récupère maintenant l'image_url
+        audios = c.execute("SELECT titre, fichier_url, image_url FROM espace_spirituel WHERE type_contenu='audio' ORDER BY date_publication DESC").fetchall()
         if not audios:
             st.info("Aucun fichier audio n'a encore été ajouté.")
         else:
             for a in audios:
-                st.markdown(f"#### 🎵 {a[0]}")
-                if a[1]:
-                    st.audio(a[1])
                 st.markdown("---")
+                col_image, col_player = st.columns([1, 3])
+                with col_image:
+                    if a[2]: # S'il y a une image
+                        st.image(a[2], use_column_width="always")
+                    else:
+                        st.markdown("<div style='background:#f3e5f5; height:150px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:3rem;'>🎵</div>", unsafe_allow_html=True)
+                with col_player:
+                    st.markdown(f"#### {a[0]}")
+                    if a[1]:
+                        st.audio(a[1])
 
     with tab_evenements:
         st.markdown("### 📅 Événements à venir")
         if matloc_membre:
-            # S'il est connecté avec son matloc, on cherche ses événements à venir non passés
             evenements = c.execute('''
-                SELECT e.date_evenement, e.type_evenement, e.lieu 
+                SELECT e.id, e.date_evenement, e.type_evenement, e.lieu 
                 FROM evenements e 
                 JOIN evenement_equipes ee ON e.id = ee.evenement_id 
                 JOIN membres m ON ee.equipe_id = m.equipe_id 
@@ -113,6 +121,30 @@ def show_espace_membre(matloc_membre=None):
                 st.success("✅ Aucun événement à venir. Profitez de ce temps de repos !")
             else:
                 for ev in evenements:
-                    st.markdown(f"**{ev[1]}** - 📅 {ev[0]} - 📍 {ev[2] or 'Lieu à définir'}")
+                    ev_date = safe_date(ev[1])
+                    if not ev_date: continue
+                    
+                    # Calcul du délai
+                    delta = (ev_date - date.today()).days
+                    if delta == 0: delai = "🔴 Aujourd'hui !"
+                    elif delta == 1: delai = "🟠 Demain"
+                    elif delta <= 7: delai = f"🟡 Dans {delta} jours"
+                    else: delai = f"🟢 Dans {delta} jours"
+                    
+                    icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨", "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(ev[2], "📅")
+                    
+                    # Affichage en carte
+                    st.markdown(f"""
+                    <div style="background: white; padding: 15px; border-radius: 10px; border-left: 5px solid #4527a0; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                        <b>{icone} {ev[2]}</b><br>
+                        📅 {ev_date.strftime('%d/%m/%Y')} ({delai})<br>
+                        📍 {ev[3] or 'Lieu à définir'}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Bouton de réponse rapide
+                    base_url = "https://gestionnaireeqros-4s9fbumnsa6wmyy6dw4rft.streamlit.app/" 
+                    magic_link = f"{base_url}/?e={ev[0]}"
+                    st.markdown(f'<a href="{magic_link}" target="_blank" style="display: inline-block; background-color: #4527a0; color: white; padding: 5px 15px; border-radius: 20px; text-decoration: none; font-size: 0.9rem; margin-top: -10px;">✍️ Confirmer ma présence</a>', unsafe_allow_html=True)
         else:
             st.info("Connectez-vous avec votre lien personnel (contenant votre numéro MatLoc) pour voir vos prochains événements ici.")
