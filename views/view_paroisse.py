@@ -129,7 +129,7 @@ def show_paroisse():
                     mbrs = c.execute("SELECT matloc, matricule, nom, prenom, whatsapp, numero_meditation, date_adhesion FROM membres WHERE equipe_id=? AND statut='actif' ORDER BY nom", (eq_id,)).fetchall()
                     if mbrs:
                         df = pd.DataFrame(mbrs, columns=["MatLoc", "Matricule", "Nom", "Prénom", "WhatsApp", "N° méditation", "Date adhésion"]); df.index=df.index+1
-                        st.dataframe(df, use_container_width=True)
+                        st.dataframe(df, width="stretch")
 
     elif menu == "👤 Membres":
         st.markdown(f'<h2 style="color:#1A237E;">👤 Membres - {nom_p}</h2>', unsafe_allow_html=True)        
