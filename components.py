@@ -254,7 +254,9 @@ def afficher_historique_suivi(equipe_id, filtre_type="Tous"):
                     st.write(f"{label} : " + ", ".join([f"{r[0]} {r[1]}" for r in rows]))
 
 def afficher_whatsapp_tabs(equipe_id=None):
-    t1, t2 = st.tabs(["🎂 Anniversaires", "📢 Rappels réabonnement"])
+    # On ajoute le 3ème onglet ici
+    t1, t2, t3 = st.tabs(["🎂 Anniversaires", "📢 Rappels réabonnement", "📿 Espace de prière"])
+    
     with t1:
         ans = c.execute('''SELECT m.nom, m.prenom, m.whatsapp, e.nom_equipe, p.nom, m.date_naissance FROM membres m JOIN equipes e ON m.equipe_id=e.id JOIN paroisses p ON m.paroisse_id=p.id WHERE m.statut='actif' AND strftime('%m-%d', m.date_naissance) = ?''', (date.today().strftime('%m-%d'),)).fetchall()
         if ans:
@@ -265,6 +267,7 @@ def afficher_whatsapp_tabs(equipe_id=None):
                     if lien: st.markdown(f'<a href="{lien}" target="_blank" class="whatsapp-link">📱 Souhaiter</a>', unsafe_allow_html=True)
                 st.markdown("---")
         else: st.info("🎉 Aucun anniversaire aujourd'hui")
+        
     with t2:
         annee = st.number_input("Année de début", 2020, date.today().year+1, date.today().year, key="rappel_whats")
         query = '''SELECT m.nom, m.prenom, m.whatsapp, e.nom_equipe, p.nom FROM membres m JOIN equipes e ON m.equipe_id=e.id JOIN paroisses p ON m.paroisse_id=p.id WHERE m.statut='actif' AND m.id NOT IN (SELECT a.membre_id FROM abonnements a WHERE a.annee_debut=? AND a.statut='paye')'''
@@ -280,6 +283,44 @@ def afficher_whatsapp_tabs(equipe_id=None):
                     if lien: st.markdown(f'<a href="{lien}" target="_blank" class="whatsapp-link">📱 Rappeler</a>', unsafe_allow_html=True)
                 st.markdown("---")
         else: st.success(f"🎉 Tous à jour pour {periode_affichage(annee)} !")
+
+    # --- NOUVEAU 3ème ONGLET ---
+    with t3:
+        import urllib.parse
+        base_url = "https://gestionnaireeqros-4s9fbumnsa6wmyy6dw4rft.streamlit.app/" 
+        
+        st.markdown("#### 🌐 Lien Public (Pour tout le monde)")
+        st.caption("Partagez ce lien dans vos groupes familiaux ou avec des personnes intéressées par la prière.")
+        lien_public = f"{base_url}/?espace=1"
+        message_public = f"Frères et sœurs, voici l'Espace de Prière et Méditation du Diocèse de Grand-Bassam :\n{lien_public}\n\nBon temps de ressourcement ! 🙏"
+        wa_public = f"https://wa.me/?text={urllib.parse.quote(message_public, safe=':/?=')}"
+        st.markdown(f'<a href="{wa_public}" target="_blank" class="whatsapp-link">📱 Partager l'espace public sur WhatsApp</a>', unsafe_allow_html=True)
+        st.code(lien_public)
+        
+        # Si on est au niveau de l'équipe, on affiche les liens personnalisés
+        if equipe_id:
+            st.markdown("---")
+            st.markdown("#### 👤 Liens Personnalisés (Mon équipe)")
+            st.caption("Envoyez à chaque membre son lien d'accès privé pour voir ses événements à venir.")
+            
+            membres = c.execute("SELECT nom, prenom, whatsapp, matloc FROM membres WHERE equipe_id=? AND statut='actif' ORDER BY nom", (equipe_id,)).fetchall()
+            
+            if not membres:
+                st.info("Aucun membre actif dans l'équipe.")
+            else:
+                for m in membres:
+                    lien_perso = f"{base_url}/?espace=1&matloc={m[3]}"
+                    msg_perso = f"Bonjour {m[0]} {m[1]},\n\nVoici votre espace spirituel personnel avec les prières et le programme de votre équipe :\n{lien_perso}\n\nBon temps de prière ! 📿"
+                    
+                    col_nom, col_btn = st.columns([3, 1])
+                    with col_nom:
+                        st.write(f"**{m[0]} {m[1]}** (`{m[3]}`)")
+                    with col_btn:
+                        if m[2]: # S'il a un numéro WhatsApp
+                            wa_perso = f"https://wa.me/?text={urllib.parse.quote(msg_perso, safe=':/?=')}"
+                            st.markdown(f'<a href="{wa_perso}" target="_blank" class="whatsapp-link">📱 Envoyer</a>', unsafe_allow_html=True)
+                        else:
+                            st.caption("_Pas de numéro_")
 
 def enregistrer_presence_equipe(equipe_id):
     annee_pasto, debut_pasto, fin_pasto = get_periode_pastorale()
