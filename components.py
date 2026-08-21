@@ -294,7 +294,7 @@ def afficher_whatsapp_tabs(equipe_id=None):
         lien_public = f"{base_url}/?espace=1"
         message_public = f"Frères et sœurs, voici l'Espace de Prière et Méditation du Diocèse de Grand-Bassam :\n{lien_public}\n\nBon temps de ressourcement ! 🙏"
         wa_public = f"https://wa.me/?text={urllib.parse.quote(message_public, safe=':/?=')}"
-        st.markdown(f'<a href="{wa_public}" target="_blank" class="whatsapp-link">📱 Partager l'espace public sur WhatsApp</a>', unsafe_allow_html=True)
+        st.markdown(f"""<a href="{wa_public}" target="_blank" class="whatsapp-link">📱 Partager l'espace public sur WhatsApp</a>""", unsafe_allow_html=True)
         st.code(lien_public)
         
         # Si on est au niveau de l'équipe, on affiche les liens personnalisés
@@ -318,7 +318,7 @@ def afficher_whatsapp_tabs(equipe_id=None):
                     with col_btn:
                         if m[2]: # S'il a un numéro WhatsApp
                             wa_perso = f"https://wa.me/?text={urllib.parse.quote(msg_perso, safe=':/?=')}"
-                            st.markdown(f'<a href="{wa_perso}" target="_blank" class="whatsapp-link">📱 Envoyer</a>', unsafe_allow_html=True)
+                            st.markdown(f"""<a href="{wa_perso}" target="_blank" class="whatsapp-link">📱 Envoyer</a>""", unsafe_allow_html=True)
                         else:
                             st.caption("_Pas de numéro_")
 
