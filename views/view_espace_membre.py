@@ -33,8 +33,8 @@ def show_espace_membre(matloc_membre=None):
             st.markdown(f"""
             <div class="espace-header">
                 <h1 class="espace-title">🙏 Bienvenue {membre[1]} {membre[0]}</h1>
-                <p class="espace-subtitle">Équipe {membre[2]}</p>
-                <p class="espace-subtitle" style="font-size: 0.9rem; opacity: 0.8;">Voici votre espace de ressourcement spirituel</p>
+                <p class="espace-subtitle"> {membre[2]}</p>
+                <p class="espace-subtitle" style="font-size: 0.9rem; opacity: 0.8;">Ton espace de ressourcement spirituel</p>
             </div>
             """, unsafe_allow_html=True)
         else:
@@ -108,43 +108,93 @@ def show_espace_membre(matloc_membre=None):
     with tab_evenements:
         st.markdown("### 📅 Événements à venir")
         if matloc_membre:
-            evenements = c.execute('''
-                SELECT e.id, e.date_evenement, e.type_evenement, e.lieu 
-                FROM evenements e 
-                JOIN evenement_equipes ee ON e.id = ee.evenement_id 
-                JOIN membres m ON ee.equipe_id = m.equipe_id 
-                WHERE m.matloc = ? AND e.date_evenement >= ?
-                ORDER BY e.date_evenement ASC LIMIT 5
-            ''', (matloc_membre, date.today().isoformat())).fetchall()
+            # On récupère les infos du membre une seule fois
+            membre = c.execute("SELECT id, nom, prenom FROM membres WHERE matloc=? AND statut='actif'", (matloc_membre,)).fetchone()
             
-            if not evenements:
-                st.success("✅ Aucun événement à venir. Profitez de ce temps de repos !")
+            if not membre:
+                st.warning("Identifiant de membre introuvable.")
             else:
-                for ev in evenements:
-                    ev_date = safe_date(ev[1])
-                    if not ev_date: continue
+                # --- 1. LE FORMULAIRE DE RÉPONSE (S'il a cliqué sur Répondre) ---
+                if 'repondre_event_id' in st.session_state:
+                    evt_id = st.session_state['repondre_event_id']
+                    evt = c.execute("SELECT type_evenement, date_evenement, lieu FROM evenements WHERE id=?", (evt_id,)).fetchone())
                     
-                    # Calcul du délai
-                    delta = (ev_date - date.today()).days
-                    if delta == 0: delai = "🔴 Aujourd'hui !"
-                    elif delta == 1: delai = "🟠 Demain"
-                    elif delta <= 7: delai = f"🟡 Dans {delta} jours"
-                    else: delai = f"🟢 Dans {delta} jours"
-                    
-                    icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨", "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(ev[2], "📅")
-                    
-                    # Affichage en carte
-                    st.markdown(f"""
-                    <div style="background: white; padding: 15px; border-radius: 10px; border-left: 5px solid #4527a0; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
-                        <b>{icone} {ev[2]}</b><br>
-                        📅 {ev_date.strftime('%d/%m/%Y')} ({delai})<br>
-                        📍 {ev[3] or 'Lieu à définir'}
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Bouton de réponse rapide
-                    base_url = "https://gestionnaireeqros-4s9fbumnsa6wmyy6dw4rft.streamlit.app/" 
-                    magic_link = f"{base_url}/?e={ev[0]}"
-                    st.markdown(f'<a href="{magic_link}" target="_blank" style="display: inline-block; background-color: #4527a0; color: white; padding: 5px 15px; border-radius: 20px; text-decoration: none; font-size: 0.9rem; margin-top: -10px;">✍️ Confirmer ma présence</a>', unsafe_allow_html=True)
+                    if evt:
+                        date_evt = safe_date(evt[1])
+                        st.info(f"Vous répondez pour : **{evt[0]}** du {date_evt.strftime('%d/%m/%Y') if date_evt else '?'}")
+                        
+                        # On regarde s'il n'a pas déjà répondu pour pré-remplir
+                        deja_repondu = c.execute("SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=?", (membre[0], evt_id)).fetchone()
+                        index_defaut = 0
+                        if deja_repondu and deja_repondu[0] == 'spirituel': 
+                            index_defaut = 1
+
+                        choix = st.radio(
+                            "Votre engagement :", 
+                            ["physique", "spirituel"], 
+                            format_func=lambda x: {"physique": "🟢 Je serai présent physiquement", "spirituel": "🟡 Je prierai de chez moi (Spirituel)"}[x],
+                            index=index_defaut,
+                            horizontal=True
+                        )
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("✅ Confirmer ma réponse", type="primary", use_container_width=True):
+                                if deja_repondu:
+                                    c.execute("UPDATE suivi_presences SET statut=? WHERE membre_id=? AND evenement_id=?", (choix, membre[0], evt_id))
+                                else:
+                                    c.execute("INSERT INTO suivi_presences (membre_id, evenement_id, statut) VALUES (?, ?, ?)", (membre[0], evt_id, choix))
+                                commit_and_sync()
+                                del st.session_state['repondre_event_id']
+                                if choix == "physique": st.balloons()
+                                else: st.snow()
+                                st.success("Merci pour votre réponse ! 🙏")
+                                st.rerun()
+                        with col2:
+                            if st.button("❌ Annuler", use_container_width=True):
+                                del st.session_state['repondre_event_id']
+                                st.rerun()
+                                
+                        st.markdown("---")
+
+                # --- 2. LA LISTE DES ÉVÉNEMENTS ---
+                evenements = c.execute('''
+                    SELECT e.id, e.date_evenement, e.type_evenement, e.lieu 
+                    FROM evenements e 
+                    JOIN evenement_equipes ee ON e.id = ee.evenement_id 
+                    JOIN membres m ON ee.equipe_id = m.equipe_id 
+                    WHERE m.matloc = ? AND e.date_evenement >= ?
+                    ORDER BY e.date_evenement ASC LIMIT 5
+                ''', (matloc_membre, date.today().isoformat())).fetchall()
+                
+                if not evenements:
+                    st.success("✅ Aucun événement à venir. Profitez de ce temps de repos !")
+                else:
+                    for ev in evenements:
+                        ev_date = safe_date(ev[1])
+                        if not ev_date: continue
+                        
+                        delta = (ev_date - date.today()).days
+                        if delta == 0: delai = "🔴 Aujourd'hui !"
+                        elif delta == 1: delai = "🟠 Demain"
+                        elif delta <= 7: delai = f"🟡 Dans {delta} jours"
+                        else: delai = f"🟢 Dans {delta} jours"
+                        
+                        icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨", "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(ev[2], "📅")
+                        
+                        # La carte
+                        st.markdown(f"""
+                        <div style="background: white; padding: 15px; border-radius: 10px; border-left: 5px solid #4527a0; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                            <b>{icone} {ev[2]}</b><br>
+                            📅 {ev_date.strftime('%d/%m/%Y')} ({delai})<br>
+                            📍 {ev[3] or 'Lieu à définir'}
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Le bouton interactif natif (au lieu du lien WhatsApp)
+                        if st.button("✍️ Confirmer ma présence pour cet événement", key=f"rep_{ev[0]}"):
+                            st.session_state['repondre_event_id'] = ev[0]
+                            st.rerun()
+                            
         else:
             st.info("Connectez-vous avec votre lien personnel (contenant votre numéro MatLoc) pour voir vos prochains événements ici.")
