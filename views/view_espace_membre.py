@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import date
-from database import c
+from database import c, commit_and_sync
 from services import safe_date
 
 # --- Un design plus doux et apaisant pour l'espace de prière ---
@@ -33,8 +33,8 @@ def show_espace_membre(matloc_membre=None):
             st.markdown(f"""
             <div class="espace-header">
                 <h1 class="espace-title">🙏 Bienvenue {membre[1]} {membre[0]}</h1>
-                <p class="espace-subtitle"> {membre[2]}</p>
-                <p class="espace-subtitle" style="font-size: 0.9rem; opacity: 0.8;">Ton espace de ressourcement spirituel</p>
+                <p class="espace-subtitle">Équipe {membre[2]}</p>
+                <p class="espace-subtitle" style="font-size: 0.9rem; opacity: 0.8;">Voici votre espace de ressourcement spirituel</p>
             </div>
             """, unsafe_allow_html=True)
         else:
@@ -69,7 +69,7 @@ def show_espace_membre(matloc_membre=None):
         else:
             for p in prières:
                 with st.expander(f"📖 {p[0]}"):
-                    if p[2]: # S'il y a une image d'illustration
+                    if p[2] and p[2].startswith("http"): 
                         st.image(p[2], width="stretch")
                     st.write(p[1])
 
@@ -81,49 +81,39 @@ def show_espace_membre(matloc_membre=None):
         else:
             for m in meditations:
                 with st.expander(f"📖 {m[0]}"):
-                    if m[2]: # S'il y a une image d'illustration
+                    if m[2] and m[2].startswith("http"): 
                         st.image(m[2], width="stretch")
                     st.write(m[1])
 
     with tab_musique:
         st.markdown("### 🎵 Écouter des chants et méditations audio")
-        # CORRECTION : On récupère maintenant l'image_url
-        audios = c.execute("SELECT titre, fichier_url, image_url FROM espace_spirituel WHERE type_contenu='audio' ORDER BY date_publication DESC").fetchall()
+        audios = c.execute("SELECT titre, fichier_url FROM espace_spirituel WHERE type_contenu='audio' ORDER BY date_publication DESC").fetchall()
         if not audios:
             st.info("Aucun fichier audio n'a encore été ajouté.")
         else:
             for a in audios:
+                st.markdown(f"#### 🎵 {a[0]}")
+                if a[1]:
+                    st.audio(a[1])
                 st.markdown("---")
-                col_image, col_player = st.columns([1, 3])
-                with col_image:
-                    if a[2]: # S'il y a une image
-                        st.image(a[2], use_column_width="always")
-                    else:
-                        st.markdown("<div style='background:#f3e5f5; height:150px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:3rem;'>🎵</div>", unsafe_allow_html=True)
-                with col_player:
-                    st.markdown(f"#### {a[0]}")
-                    if a[1]:
-                        st.audio(a[1])
 
     with tab_evenements:
         st.markdown("### 📅 Événements à venir")
         if matloc_membre:
-            # On récupère les infos du membre une seule fois
             membre = c.execute("SELECT id, nom, prenom FROM membres WHERE matloc=? AND statut='actif'", (matloc_membre,)).fetchone()
             
             if not membre:
                 st.warning("Identifiant de membre introuvable.")
             else:
-                # --- 1. LE FORMULAIRE DE RÉPONSE (S'il a cliqué sur Répondre) ---
+                # --- 1. LE FORMULAIRE DE RÉPONSE ---
                 if 'repondre_event_id' in st.session_state:
                     evt_id = st.session_state['repondre_event_id']
-                    evt = c.execute("SELECT type_evenement, date_evenement, lieu FROM evenements WHERE id=?", (evt_id,)).fetchone())
+                    evt = c.execute("SELECT type_evenement, date_evenement, lieu FROM evenements WHERE id=?", (evt_id,)).fetchone()
                     
                     if evt:
                         date_evt = safe_date(evt[1])
                         st.info(f"Vous répondez pour : **{evt[0]}** du {date_evt.strftime('%d/%m/%Y') if date_evt else '?'}")
                         
-                        # On regarde s'il n'a pas déjà répondu pour pré-remplir
                         deja_repondu = c.execute("SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=?", (membre[0], evt_id)).fetchone()
                         index_defaut = 0
                         if deja_repondu and deja_repondu[0] == 'spirituel': 
@@ -139,7 +129,7 @@ def show_espace_membre(matloc_membre=None):
 
                         col1, col2 = st.columns(2)
                         with col1:
-                            if st.button("✅ Confirmer ma réponse", type="primary", use_container_width=True):
+                            if st.button("✅ Confirmer ma réponse", type="primary", width="stretch"):
                                 if deja_repondu:
                                     c.execute("UPDATE suivi_presences SET statut=? WHERE membre_id=? AND evenement_id=?", (choix, membre[0], evt_id))
                                 else:
@@ -151,7 +141,7 @@ def show_espace_membre(matloc_membre=None):
                                 st.success("Merci pour votre réponse ! 🙏")
                                 st.rerun()
                         with col2:
-                            if st.button("❌ Annuler", use_container_width=True):
+                            if st.button("❌ Annuler", width="stretch"):
                                 del st.session_state['repondre_event_id']
                                 st.rerun()
                                 
@@ -182,7 +172,6 @@ def show_espace_membre(matloc_membre=None):
                         
                         icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨", "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(ev[2], "📅")
                         
-                        # La carte
                         st.markdown(f"""
                         <div style="background: white; padding: 15px; border-radius: 10px; border-left: 5px solid #4527a0; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
                             <b>{icone} {ev[2]}</b><br>
@@ -191,7 +180,6 @@ def show_espace_membre(matloc_membre=None):
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # Le bouton interactif natif (au lieu du lien WhatsApp)
                         if st.button("✍️ Confirmer ma présence pour cet événement", key=f"rep_{ev[0]}"):
                             st.session_state['repondre_event_id'] = ev[0]
                             st.rerun()
