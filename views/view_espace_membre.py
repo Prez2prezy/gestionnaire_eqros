@@ -32,15 +32,15 @@ def show_espace_membre(matloc_membre=None):
         if membre:
             st.markdown(f"""
             <div class="espace-header">
-                <h1 class="espace-title">🙏 Bienvenue {membre[1]} {membre[0]}</h1>
-                <p class="espace-subtitle">Équipe {membre[2]}</p>
+                <h2 class="espace-title">🙏 Bienvenue {membre[1]} {membre[0]}</h2>
+                <p class="espace-subtitle">{membre[2]}</p>
                 <p class="espace-subtitle" style="font-size: 0.9rem; opacity: 0.8;">Voici votre espace de ressourcement spirituel</p>
             </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown("""
             <div class="espace-header">
-                <h1 class="espace-title">📿 Espace de Prière</h1>
+                <h2 class="espace-title">📿 Espace de Prière</h2>
                 <p class="espace-subtitle">Bienvenue dans cet espace de paix</p>
             </div>
             """, unsafe_allow_html=True)
