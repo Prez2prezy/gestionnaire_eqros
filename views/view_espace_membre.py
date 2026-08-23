@@ -141,7 +141,7 @@ def show_espace_membre(matloc_membre=None):
                                 else: st.snow()
                                 st.success("Merci pour votre réponse ! 🙏")
                                                                 
-                                time.sleep(1.5) # <-- MAGIE ICI : On laisse le temps à l'animation
+                                time.sleep(3.5) # <-- MAGIE ICI : On laisse le temps à l'animation
                                 st.rerun()
                         with col2:
                             if st.button("❌ Annuler", width="stretch"):
