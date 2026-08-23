@@ -311,7 +311,7 @@ def show_diocese():
             if type_contenu == "audio":
                 with zone_audio.container():
                     st.info("ℹ️ Sélectionnez votre fichier audio ci-dessous, puis cliquez sur Publier.")
-                    fichier_audio = st.file_uploader("🎵 Fichier audio (MP3, WAV...)", type=["mp3", "wav", "ogg", "m4a"], key="audio_espace")
+                    fichier_audio = st.file_uploader("🎵 Fichier audio ou vidéo (MP3, MP4, WAV...)", type=["mp3", "wav", "ogg", "m4a", "mp4", "mov", "avi"], key="audio_espace")
                     
             # SINON, on remplit la zone de texte
             else:
