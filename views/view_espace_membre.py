@@ -95,6 +95,7 @@ def show_espace_membre(matloc_membre=None):
             st.info("Aucun fichier audio n'a encore été ajouté.")
         else:
             # On prépare les données pour JavaScript
+            st.write("🔍 DEBUG BASE DE DONNÉES :", audios)            
             tracks_json = [{"title": a[0], "url": a[1]} for a in audios]
             
             # Le code du lecteur personnalisé
