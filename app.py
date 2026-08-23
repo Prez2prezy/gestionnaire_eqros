@@ -7,33 +7,27 @@ from services import hash_password
 st.set_page_config(page_title="Gestionnaire des Équipes du Rosaire - Diocèse de Grand-Bassam", layout="wide")
 
 # --- INTERCEPTION DES LIENS SPECIAUX ---
-try:
-    params = st.query_params
+params = st.query_params
+
+# Utilisation de .get() qui est la méthode moderne et fiable de Streamlit
+espace_val = params.get("espace", None)
+matloc_val = params.get("matloc", None)
+event_val = params.get("e", None)
+
+if espace_val:
+    # Au cas où Streamlit renvoie une liste au lieu d'une chaîne
+    if isinstance(espace_val, list): espace_val = espace_val[0]
+    if isinstance(matloc_val, list): matloc_val = matloc_val[0]
     
-    # 1. NOUVEAU : Lien Espace Membre (Public ou Personnalisé)
-    if "espace" in params:
-        espace_id = params["espace"]
-        if isinstance(espace_id, list): espace_id = espace_id[0]
-        
-        # On regarde si le lien contient un matloc (Espace personnalisé)
-        matloc_membre = None
-        if "matloc" in params:
-            matloc_membre = params["matloc"]
-            if isinstance(matloc_membre, list): matloc_membre = matloc_membre[0]
-        
-        from views.view_espace_membre import show_espace_membre
-        show_espace_membre(matloc_membre)
-        st.stop()
-        
-    # 2. ANCIEN : Lien Magic Link classique (Réponse à un événement)
-    elif "e" in params:
-        event_id = params["e"]
-        if isinstance(event_id, list): event_id = event_id[0]
-        from components import afficher_page_reponse_membre
-        afficher_page_reponse_membre(event_id)
-        st.stop()
-except Exception:
-    pass
+    from views.view_espace_membre import show_espace_membre
+    show_espace_membre(matloc_val)
+    st.stop()
+    
+elif event_val:
+    if isinstance(event_val, list): event_val = event_val[0]
+    from components import afficher_page_reponse_membre
+    afficher_page_reponse_membre(event_val)
+    st.stop()
 
 # --- CSS personnalisé ---
 st.markdown("""
