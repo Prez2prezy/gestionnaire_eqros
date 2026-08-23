@@ -1,4 +1,5 @@
 import streamlit as st
+import time
 from datetime import date
 from database import c, commit_and_sync
 from services import safe_date
@@ -139,6 +140,8 @@ def show_espace_membre(matloc_membre=None):
                                 if choix == "physique": st.balloons()
                                 else: st.snow()
                                 st.success("Merci pour votre réponse ! 🙏")
+                                                                
+                                time.sleep(1.5) # <-- MAGIE ICI : On laisse le temps à l'animation
                                 st.rerun()
                         with col2:
                             if st.button("❌ Annuler", width="stretch"):
