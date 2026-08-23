@@ -1,5 +1,6 @@
 import streamlit as st
 import time
+import streamlit.components.v1 as components
 from datetime import date
 from database import c, commit_and_sync
 from services import safe_date
@@ -87,16 +88,128 @@ def show_espace_membre(matloc_membre=None):
                     st.write(m[1])
 
     with tab_musique:
-        st.markdown("### 🎵 Écouter des chants et méditations audio")
+        st.markdown("### 🎵 Lecteur de chants et méditations")
         audios = c.execute("SELECT titre, fichier_url FROM espace_spirituel WHERE type_contenu='audio' ORDER BY date_publication DESC").fetchall()
+        
         if not audios:
             st.info("Aucun fichier audio n'a encore été ajouté.")
         else:
-            for a in audios:
-                st.markdown(f"#### 🎵 {a[0]}")
-                if a[1]:
-                    st.audio(a[1])
-                st.markdown("---")
+            # On prépare les données pour JavaScript
+            tracks_json = [{"title": a[0], "url": a[1]} for a in audios]
+            
+            # Le code du lecteur personnalisé
+            player_html = """
+            <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 15px; background: #fafafa;">
+                <h3 style="text-align:center; color:#4527a0; margin-top:0;">🎵 Lecteur Spirituel</h3>
+                
+                <div id="now-playing" style="text-align:center; font-weight:bold; font-size:1.1rem; margin-bottom:15px; min-height: 30px; color:#333;">
+                    Cliquez sur une piste
+                </div>
+                
+                <!-- Boutons de contrôle -->
+                <div style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px;">
+                    <button onclick="prevTrack()" style="background:none; border:none; font-size:24px; cursor:pointer;">⏮️</button>
+                    <button onclick="toggleShuffle()" id="btn-shuffle" style="background:none; border:none; font-size:24px; cursor:pointer; opacity:0.5;">🔀</button>
+                    <button onclick="toggleLoop()" id="btn-loop" style="background:none; border:none; font-size:24px; cursor:pointer; opacity:0.5;">🔁</button>
+                    <button onclick="nextTrack()" style="background:none; border:none; font-size:24px; cursor:pointer;">⏭️</button>
+                </div>
+
+                <!-- Le lecteur natif (gère play/pause/progression/barre de temps) -->
+                <audio id="audio-player" controls style="width: 100%; outline:none;"></audio>
+                
+                <!-- La liste des pistes -->
+                <ul id="playlist" style="list-style: none; padding: 0; margin-top: 20px; max-height: 300px; overflow-y: auto;"></ul>
+            </div>
+
+            <script>
+                const tracks = TRACKS_DATA;
+                let currentTrackIndex = 0;
+                let isShuffled = false;
+                let isLooping = false;
+                let playbackOrder = tracks.map((_, i) => i);
+
+                const audio = document.getElementById('audio-player');
+                const nowPlaying = document.getElementById('now-playing');
+                const playlistEl = document.getElementById('playlist');
+                const btnShuffle = document.getElementById('btn-shuffle');
+                const btnLoop = document.getElementById('btn-loop');
+
+                // Dessiner la liste de lecture
+                function renderPlaylist() {
+                    playlistEl.innerHTML = '';
+                    playbackOrder.forEach((origIndex) => {
+                        const li = document.createElement('li');
+                        li.style.padding = '10px';
+                        li.style.margin = '5px 0';
+                        li.style.background = origIndex === currentTrackIndex ? '#e1bee7' : 'white';
+                        li.style.borderRadius = '8px';
+                        li.style.cursor = 'pointer';
+                        li.style.borderLeft = origIndex === currentTrackIndex ? '5px solid #4527a0' : '5px solid transparent';
+                        li.innerHTML = '<span style="color:#4527a0">🎵</span> ' + tracks[origIndex].title;
+                        li.onclick = () => playTrack(origIndex);
+                        playlistEl.appendChild(li);
+                    });
+                }
+
+                function playTrack(index) {
+                    currentTrackIndex = index;
+                    audio.src = tracks[index].url;
+                    nowPlaying.innerText = tracks[index].title;
+                    audio.play();
+                    renderPlaylist();
+                }
+
+                function nextTrack() {
+                    let currentDisplayIndex = playbackOrder.indexOf(currentTrackIndex);
+                    if (currentDisplayIndex < playbackOrder.length - 1) {
+                        playTrack(playbackOrder[currentDisplayIndex + 1]);
+                    } else if (isLooping) {
+                        playTrack(playbackOrder[0]);
+                    }
+                }
+
+                function prevTrack() {
+                    if (audio.currentTime > 3) {
+                        audio.currentTime = 0; // Redémarre la piste si on est à plus de 3s
+                    } else {
+                        let currentDisplayIndex = playbackOrder.indexOf(currentTrackIndex);
+                        if (currentDisplayIndex > 0) {
+                            playTrack(playbackOrder[currentDisplayIndex - 1]);
+                        } else if (isLooping) {
+                            playTrack(playbackOrder[playbackOrder.length - 1]);
+                        }
+                    }
+                }
+
+                function toggleShuffle() {
+                    isShuffled = !isShuffled;
+                    btnShuffle.style.opacity = isShuffled ? '1' : '0.5';
+                    if (isShuffled) {
+                        for (let i = playbackOrder.length - 1; i > 0; i--) {
+                            const j = Math.floor(Math.random() * (i + 1));
+                            [playbackOrder[i], playbackOrder[j]] = [playbackOrder[j], playbackOrder[i]];
+                        }
+                    } else {
+                        playbackOrder = tracks.map((_, i) => i);
+                    }
+                    renderPlaylist();
+                }
+
+                function toggleLoop() {
+                    isLooping = !isLooping;
+                    btnLoop.style.opacity = isLooping ? '1' : '0.5';
+                }
+
+                // Quand une chanson se termine, on lance la suivante
+                audio.addEventListener('ended', () => { nextTrack(); });
+
+                // Initialisation
+                renderPlaylist();
+            </script>
+            """.replace("TRACKS_DATA", str(tracks_json))
+
+            # On affiche le lecteur (hauteur de 500px pour voir la liste)
+            components.html(player_html, height=500)
 
     with tab_evenements:
         st.markdown("### 📅 Événements à venir")
