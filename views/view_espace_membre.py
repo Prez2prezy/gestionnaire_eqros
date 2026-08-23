@@ -1,6 +1,7 @@
 import streamlit as st
 import time
 import streamlit.components.v1 as components
+import json
 from datetime import date
 from database import c, commit_and_sync
 from services import safe_date
@@ -94,9 +95,8 @@ def show_espace_membre(matloc_membre=None):
         if not audios:
             st.info("Aucun fichier audio n'a encore été ajouté.")
         else:
-            # On prépare les données pour JavaScript
-            st.write("🔍 DEBUG BASE DE DONNÉES :", audios)            
-            tracks_json = [{"title": a[0], "url": a[1]} for a in audios]
+            # On prépare les données pour JavaScript (en ignorant les URLS NULL de Cloudinary)
+            tracks_json = [{"title": a[0], "url": a[1]} for a in audios if a[1] is not None]
             
             # Le code du lecteur personnalisé
             player_html = """
@@ -107,7 +107,6 @@ def show_espace_membre(matloc_membre=None):
                     Cliquez sur une piste
                 </div>
                 
-                <!-- Boutons de contrôle -->
                 <div style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px;">
                     <button onclick="prevTrack()" style="background:none; border:none; font-size:24px; cursor:pointer;">⏮️</button>
                     <button onclick="toggleShuffle()" id="btn-shuffle" style="background:none; border:none; font-size:24px; cursor:pointer; opacity:0.5;">🔀</button>
@@ -115,10 +114,9 @@ def show_espace_membre(matloc_membre=None):
                     <button onclick="nextTrack()" style="background:none; border:none; font-size:24px; cursor:pointer;">⏭️</button>
                 </div>
 
-                <!-- Le lecteur natif (gère play/pause/progression/barre de temps) -->
-                <audio id="audio-player" controls style="width: 100%; outline:none;"></audio>
+                <!-- MODIFICATION ICI : video au lieu de audio pour les MP4 -->
+                <video id="audio-player" controls controlsList="nodownload" style="width: 100%; outline:none; max-height: 300px; background:black; border-radius:8px;"></video>
                 
-                <!-- La liste des pistes -->
                 <ul id="playlist" style="list-style: none; padding: 0; margin-top: 20px; max-height: 300px; overflow-y: auto;"></ul>
             </div>
 
@@ -135,7 +133,6 @@ def show_espace_membre(matloc_membre=None):
                 const btnShuffle = document.getElementById('btn-shuffle');
                 const btnLoop = document.getElementById('btn-loop');
 
-                // Dessiner la liste de lecture
                 function renderPlaylist() {
                     playlistEl.innerHTML = '';
                     playbackOrder.forEach((origIndex) => {
@@ -171,7 +168,7 @@ def show_espace_membre(matloc_membre=None):
 
                 function prevTrack() {
                     if (audio.currentTime > 3) {
-                        audio.currentTime = 0; // Redémarre la piste si on est à plus de 3s
+                        audio.currentTime = 0;
                     } else {
                         let currentDisplayIndex = playbackOrder.indexOf(currentTrackIndex);
                         if (currentDisplayIndex > 0) {
@@ -201,16 +198,13 @@ def show_espace_membre(matloc_membre=None):
                     btnLoop.style.opacity = isLooping ? '1' : '0.5';
                 }
 
-                // Quand une chanson se termine, on lance la suivante
                 audio.addEventListener('ended', () => { nextTrack(); });
-
-                // Initialisation
                 renderPlaylist();
             </script>
-            """.replace("TRACKS_DATA", str(tracks_json))
+            """.replace("TRACKS_DATA", json.dumps(tracks_json)) # <-- LA CORRECTION MAGIQUE ICI
 
-            # On affiche le lecteur (hauteur de 500px pour voir la liste)
             components.html(player_html, height=500)
+            
 
     with tab_evenements:
         st.markdown("### 📅 Événements à venir")
