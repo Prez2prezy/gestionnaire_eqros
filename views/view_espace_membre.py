@@ -88,6 +88,8 @@ def show_espace_membre(matloc_membre=None):
                         st.image(m[2], width="stretch")
                     st.write(m[1])
 
+
+
     with tab_musique:
         st.markdown("### 🎵 Lecteur de chants et méditations")
         audios = c.execute("SELECT titre, fichier_url FROM espace_spirituel WHERE type_contenu='audio' ORDER BY date_publication DESC").fetchall()
@@ -101,15 +103,14 @@ def show_espace_membre(matloc_membre=None):
                 st.warning("Les URL des fichiers doivent commencer par http:// ou https://")
             else:
                 player_html = """
-                <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 15px; background: #fafafa;">
+                <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 15px; border: 1px solid #e0e0e0; border-radius: 15px; background: #fafafa;">
                     <h3 style="text-align:center; color:#4527a0; margin-top:0;">🎵 Lecteur Spirituel</h3>
                     
-                    <div id="now-playing" style="text-align:center; font-weight:bold; font-size:1.1rem; margin-bottom:15px; min-height: 30px; color:#333;">
+                    <div id="now-playing" style="text-align:center; font-weight:bold; font-size:1.1rem; margin-bottom:10px; min-height: 30px; color:#333;">
                         Cliquez sur une piste
                     </div>
                     
-                    <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
-                        <!-- SUPPRESSION DES ONCLICK ICI -->
+                    <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
                         <button id="btn-prev" style="background:none; border:none; font-size:20px; cursor:pointer; padding:5px;">⏮️</button>
                         <button id="btn-shuffle" style="background:none; border:none; font-size:20px; cursor:pointer; opacity:0.5; padding:5px;">🔀</button>
                         <button id="btn-loop" style="background:none; border:none; font-size:20px; cursor:pointer; opacity:0.5; padding:5px;">🔁</button>
@@ -117,16 +118,18 @@ def show_espace_membre(matloc_membre=None):
                         <button id="btn-play-selection" style="background:#4527a0; color:white; border:none; font-size:14px; cursor:pointer; opacity:0.5; padding:5px 10px; border-radius:15px;">▶️ Sélection</button>
                     </div>
 
-                    <video id="audio-player" controls controlsList="nodownload" style="width: 100%; outline:none; max-height: 300px; background:black; border-radius:8px;"></video>
+                    <!-- HAUTEUR RÉDUITE à 150px pour laisser de la place à la liste -->
+                    <video id="audio-player" controls controlsList="nodownload" style="width: 100%; outline:none; max-height: 150px; background:black; border-radius:8px;"></video>
                     
-                    <ul id="playlist" style="list-style: none; padding: 0; margin-top: 20px; max-height: 300px; overflow-y: auto;"></ul>
+                    <!-- LISTE : max-height augmenté à 350px pour pouvoir défiler -->
+                    <ul id="playlist" style="list-style: none; padding: 0; margin-top: 15px; max-height: 350px; overflow-y: auto; border-top: 1px solid #ddd; padding-top: 10px;"></ul>
                 </div>
 
                 <script>
                     const tracks = TRACKS_DATA;
                     let currentTrackIndex = 0;
                     let isShuffled = false;
-                    let loopMode = 0; 
+                    let loopMode = 0; // 0: Aucune, 1: Toute la playlist, 2: Piste actuelle
                     let playbackOrder = tracks.map((_, i) => i);
                     let selectedTracks = new Set();
 
@@ -141,8 +144,8 @@ def show_espace_membre(matloc_membre=None):
                         playlistEl.innerHTML = '';
                         playbackOrder.forEach((origIndex) => {
                             const li = document.createElement('li');
-                            li.style.padding = '10px';
-                            li.style.margin = '5px 0';
+                            li.style.padding = '8px';
+                            li.style.margin = '4px 0';
                             li.style.background = origIndex === currentTrackIndex ? '#e1bee7' : 'white';
                             li.style.borderRadius = '8px';
                             li.style.cursor = 'pointer';
@@ -152,7 +155,8 @@ def show_espace_membre(matloc_membre=None):
                             checkbox.type = 'checkbox';
                             checkbox.checked = selectedTracks.has(origIndex);
                             checkbox.style.marginRight = '10px';
-                            checkbox.style.transform = 'scale(1.2)';
+                            checkbox.style.transform = 'scale(1.3)';
+                            checkbox.style.cursor = 'pointer';
                             checkbox.onclick = (e) => {
                                 e.stopPropagation(); 
                                 if (selectedTracks.has(origIndex)) selectedTracks.delete(origIndex);
@@ -233,33 +237,43 @@ def show_espace_membre(matloc_membre=None):
 
                     function toggleLoop() {
                         loopMode = (loopMode + 1) % 3;
-                        if (loopMode === 0) { btnLoop.style.opacity = '0.5'; btnLoop.innerText = '🔁'; }
-                        else if (loopMode === 1) { btnLoop.style.opacity = '1'; btnLoop.innerText = '🔁'; }
-                        else { btnLoop.style.opacity = '1'; btnLoop.innerText = '🔂'; }
+                        if (loopMode === 0) { 
+                            audio.loop = false; // Désactive la boucle native HTML
+                            btnLoop.style.opacity = '0.5'; 
+                            btnLoop.innerText = '🔁'; 
+                        }
+                        else if (loopMode === 1) { 
+                            audio.loop = false; // Désactive la boucle native (on utilise nextTrack)
+                            btnLoop.style.opacity = '1'; 
+                            btnLoop.innerText = '🔁'; 
+                        }
+                        else { 
+                            audio.loop = true; // LA MAGIE : Active la boucle native du lecteur HTML !
+                            btnLoop.style.opacity = '1'; 
+                            btnLoop.innerText = '🔂'; 
+                        }
                     }
 
+                    // Gestion de la fin de la piste (uniquement si on n'est pas en boucle native)
                     audio.addEventListener('ended', () => {
-                        if (loopMode === 2) {
-                            audio.play(); 
-                        } else {
+                        if (!audio.loop) {
                             nextTrack(); 
                         }
                     });
 
-                    // --- LA NOUVEAUTÉ QUI RÈGLE LE PROBLÈME ---
-                    // On relie les boutons à leurs fonctions via JavaScript
+                    // Liaison des boutons
                     document.getElementById('btn-prev').addEventListener('click', prevTrack);
                     document.getElementById('btn-next').addEventListener('click', nextTrack);
                     document.getElementById('btn-shuffle').addEventListener('click', toggleShuffle);
                     document.getElementById('btn-loop').addEventListener('click', toggleLoop);
                     document.getElementById('btn-play-selection').addEventListener('click', playSelection);
-                    // --------------------------------------------
 
                     renderPlaylist();
                 </script>
                 """.replace("TRACKS_DATA", json.dumps(tracks_json))
 
-                components.html(player_html, height=500)
+                # HAUTEUR AUGMENTÉE À 750 pour tout voir et pouvoir défiler !
+                components.html(player_html, height=750)
 
 
     with tab_evenements:
