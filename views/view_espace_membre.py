@@ -145,22 +145,22 @@ def show_espace_membre(matloc_membre=None):
                         li.style.cursor = 'pointer';
                         li.style.borderLeft = origIndex === currentTrackIndex ? '5px solid #4527a0' : '5px solid transparent';
                         
-                        // Case à cocher pour la sélection
                         const checkbox = document.createElement('input');
                         checkbox.type = 'checkbox';
                         checkbox.checked = selectedTracks.has(origIndex);
                         checkbox.style.marginRight = '10px';
                         checkbox.style.transform = 'scale(1.2)';
                         checkbox.onclick = (e) => {
-                            e.stopPropagation(); // Évite de lancer la musique quand on clique sur la case
+                            e.stopPropagation(); 
                             if (selectedTracks.has(origIndex)) selectedTracks.delete(origIndex);
                             else selectedTracks.add(origIndex);
                             updateSelectionButton();
                         };
                         li.prepend(checkbox);
 
+                        // CORRECTION ICI : Utilisation des backticks `` pour éviter les crashs avec les apostrophes
                         const textSpan = document.createElement('span');
-                        textSpan.innerHTML = '<span style="color:#4527a0">🎵</span> ' + tracks[origIndex].title;
+                        textSpan.innerHTML = `<span style="color:#4527a0">🎵</span> ${tracks[origIndex].title}`;
                         li.appendChild(textSpan);
                         
                         li.onclick = () => playTrack(origIndex);
@@ -172,7 +172,8 @@ def show_espace_membre(matloc_membre=None):
                 function updateSelectionButton() {
                     if (selectedTracks.size > 0) {
                         btnPlaySel.style.opacity = '1';
-                        btnPlaySel.innerText = '▶️ Lecture (' + selectedTracks.size + ')';
+                        // CORRECTION ICI AUSSI
+                        btnPlaySel.innerText = `▶️ Lecture (${selectedTracks.size})`;
                     } else {
                         btnPlaySel.style.opacity = '0.5';
                         btnPlaySel.innerText = '▶️ Sélection';
@@ -238,9 +239,9 @@ def show_espace_membre(matloc_membre=None):
 
                 audio.addEventListener('ended', () => {
                     if (loopMode === 2) {
-                        audio.play(); // Boucle la piste actuelle
+                        audio.play(); 
                     } else {
-                        nextTrack(); // Piste suivante ou fin
+                        nextTrack(); 
                     }
                 });
 
