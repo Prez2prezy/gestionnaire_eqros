@@ -340,6 +340,20 @@ def show_diocese():
                                      VALUES (?, ?, ?, ?, ?, ?, ?)""", 
                                   (type_contenu, titre, contenu_texte, url_audio, url_illustration, date.today().isoformat(), st.session_state['username']))
                         commit_and_sync()
+                        
+                        # --- LA SOLUTION : ON VIDE LES CHAMPS MANUELLEMENT ---
+                        cles_a_vider = [
+                            "type_espace_select", 
+                            "audio_espace", 
+                            "texte_espace", 
+                            "titre_espace", 
+                            "illus_espace"
+                        ]
+                        for cle in cles_a_vider:
+                            if cle in st.session_state:
+                                del st.session_state[cle]
+                        # ---------------------------------------------------
+                        
                         st.success("Contenu publié avec succès !")
                         st.rerun()
                     else:
