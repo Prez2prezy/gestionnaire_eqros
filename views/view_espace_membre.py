@@ -95,161 +95,171 @@ def show_espace_membre(matloc_membre=None):
         if not audios:
             st.info("Aucun fichier audio n'a encore été ajouté.")
         else:
-            # On prépare les données pour JavaScript (en ignorant les URLS NULL)
-            tracks_json = [{"title": a[0], "url": a[1]} for a in audios if a[1] is not None]
+            tracks_json = [{"title": a[0], "url": a[1]} for a in audios if a[1] is not None and str(a[1]).startswith("http")]
             
-            player_html = """
-            <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 15px; background: #fafafa;">
-                <h3 style="text-align:center; color:#4527a0; margin-top:0;">🎵 Lecteur Spirituel</h3>
-                
-                <div id="now-playing" style="text-align:center; font-weight:bold; font-size:1.1rem; margin-bottom:15px; min-height: 30px; color:#333;">
-                    Cliquez sur une piste
+            if not tracks_json:
+                st.warning("Les URL des fichiers doivent commencer par http:// ou https://")
+            else:
+                player_html = """
+                <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 15px; background: #fafafa;">
+                    <h3 style="text-align:center; color:#4527a0; margin-top:0;">🎵 Lecteur Spirituel</h3>
+                    
+                    <div id="now-playing" style="text-align:center; font-weight:bold; font-size:1.1rem; margin-bottom:15px; min-height: 30px; color:#333;">
+                        Cliquez sur une piste
+                    </div>
+                    
+                    <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                        <!-- SUPPRESSION DES ONCLICK ICI -->
+                        <button id="btn-prev" style="background:none; border:none; font-size:20px; cursor:pointer; padding:5px;">⏮️</button>
+                        <button id="btn-shuffle" style="background:none; border:none; font-size:20px; cursor:pointer; opacity:0.5; padding:5px;">🔀</button>
+                        <button id="btn-loop" style="background:none; border:none; font-size:20px; cursor:pointer; opacity:0.5; padding:5px;">🔁</button>
+                        <button id="btn-next" style="background:none; border:none; font-size:20px; cursor:pointer; padding:5px;">⏭️</button>
+                        <button id="btn-play-selection" style="background:#4527a0; color:white; border:none; font-size:14px; cursor:pointer; opacity:0.5; padding:5px 10px; border-radius:15px;">▶️ Sélection</button>
+                    </div>
+
+                    <video id="audio-player" controls controlsList="nodownload" style="width: 100%; outline:none; max-height: 300px; background:black; border-radius:8px;"></video>
+                    
+                    <ul id="playlist" style="list-style: none; padding: 0; margin-top: 20px; max-height: 300px; overflow-y: auto;"></ul>
                 </div>
-                
-                <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
-                    <button onclick="prevTrack()" style="background:none; border:none; font-size:20px; cursor:pointer; padding:5px;">⏮️</button>
-                    <button onclick="toggleShuffle()" id="btn-shuffle" style="background:none; border:none; font-size:20px; cursor:pointer; opacity:0.5; padding:5px;">🔀</button>
-                    <button onclick="toggleLoop()" id="btn-loop" style="background:none; border:none; font-size:20px; cursor:pointer; opacity:0.5; padding:5px;">🔁</button>
-                    <button onclick="nextTrack()" style="background:none; border:none; font-size:20px; cursor:pointer; padding:5px;">⏭️</button>
-                    <button onclick="playSelection()" id="btn-play-selection" style="background:#4527a0; color:white; border:none; font-size:14px; cursor:pointer; opacity:0.5; padding:5px 10px; border-radius:15px;">▶️ Sélection</button>
-                </div>
 
-                <video id="audio-player" controls controlsList="nodownload" style="width: 100%; outline:none; max-height: 300px; background:black; border-radius:8px;"></video>
-                
-                <ul id="playlist" style="list-style: none; padding: 0; margin-top: 20px; max-height: 300px; overflow-y: auto;"></ul>
-            </div>
+                <script>
+                    const tracks = TRACKS_DATA;
+                    let currentTrackIndex = 0;
+                    let isShuffled = false;
+                    let loopMode = 0; 
+                    let playbackOrder = tracks.map((_, i) => i);
+                    let selectedTracks = new Set();
 
-            <script>
-                const tracks = TRACKS_DATA;
-                let currentTrackIndex = 0;
-                let isShuffled = false;
-                let loopMode = 0; // 0: Aucune, 1: Toute la playlist, 2: Piste actuelle
-                let playbackOrder = tracks.map((_, i) => i);
-                let selectedTracks = new Set();
+                    const audio = document.getElementById('audio-player');
+                    const nowPlaying = document.getElementById('now-playing');
+                    const playlistEl = document.getElementById('playlist');
+                    const btnShuffle = document.getElementById('btn-shuffle');
+                    const btnLoop = document.getElementById('btn-loop');
+                    const btnPlaySel = document.getElementById('btn-play-selection');
 
-                const audio = document.getElementById('audio-player');
-                const nowPlaying = document.getElementById('now-playing');
-                const playlistEl = document.getElementById('playlist');
-                const btnShuffle = document.getElementById('btn-shuffle');
-                const btnLoop = document.getElementById('btn-loop');
-                const btnPlaySel = document.getElementById('btn-play-selection');
+                    function renderPlaylist() {
+                        playlistEl.innerHTML = '';
+                        playbackOrder.forEach((origIndex) => {
+                            const li = document.createElement('li');
+                            li.style.padding = '10px';
+                            li.style.margin = '5px 0';
+                            li.style.background = origIndex === currentTrackIndex ? '#e1bee7' : 'white';
+                            li.style.borderRadius = '8px';
+                            li.style.cursor = 'pointer';
+                            li.style.borderLeft = origIndex === currentTrackIndex ? '5px solid #4527a0' : '5px solid transparent';
+                            
+                            const checkbox = document.createElement('input');
+                            checkbox.type = 'checkbox';
+                            checkbox.checked = selectedTracks.has(origIndex);
+                            checkbox.style.marginRight = '10px';
+                            checkbox.style.transform = 'scale(1.2)';
+                            checkbox.onclick = (e) => {
+                                e.stopPropagation(); 
+                                if (selectedTracks.has(origIndex)) selectedTracks.delete(origIndex);
+                                else selectedTracks.add(origIndex);
+                                updateSelectionButton();
+                            };
+                            li.prepend(checkbox);
 
-                function renderPlaylist() {
-                    playlistEl.innerHTML = '';
-                    playbackOrder.forEach((origIndex) => {
-                        const li = document.createElement('li');
-                        li.style.padding = '10px';
-                        li.style.margin = '5px 0';
-                        li.style.background = origIndex === currentTrackIndex ? '#e1bee7' : 'white';
-                        li.style.borderRadius = '8px';
-                        li.style.cursor = 'pointer';
-                        li.style.borderLeft = origIndex === currentTrackIndex ? '5px solid #4527a0' : '5px solid transparent';
-                        
-                        const checkbox = document.createElement('input');
-                        checkbox.type = 'checkbox';
-                        checkbox.checked = selectedTracks.has(origIndex);
-                        checkbox.style.marginRight = '10px';
-                        checkbox.style.transform = 'scale(1.2)';
-                        checkbox.onclick = (e) => {
-                            e.stopPropagation(); 
-                            if (selectedTracks.has(origIndex)) selectedTracks.delete(origIndex);
-                            else selectedTracks.add(origIndex);
-                            updateSelectionButton();
-                        };
-                        li.prepend(checkbox);
-
-                        // CORRECTION ICI : Utilisation des backticks `` pour éviter les crashs avec les apostrophes
-                        const textSpan = document.createElement('span');
-                        textSpan.innerHTML = `<span style="color:#4527a0">🎵</span> ${tracks[origIndex].title}`;
-                        li.appendChild(textSpan);
-                        
-                        li.onclick = () => playTrack(origIndex);
-                        playlistEl.appendChild(li);
-                    });
-                    updateSelectionButton();
-                }
-
-                function updateSelectionButton() {
-                    if (selectedTracks.size > 0) {
-                        btnPlaySel.style.opacity = '1';
-                        // CORRECTION ICI AUSSI
-                        btnPlaySel.innerText = `▶️ Lecture (${selectedTracks.size})`;
-                    } else {
-                        btnPlaySel.style.opacity = '0.5';
-                        btnPlaySel.innerText = '▶️ Sélection';
+                            const textSpan = document.createElement('span');
+                            textSpan.innerHTML = '<span style="color:#4527a0">🎵</span> ' + tracks[origIndex].title;
+                            li.appendChild(textSpan);
+                            
+                            li.onclick = () => playTrack(origIndex);
+                            playlistEl.appendChild(li);
+                        });
+                        updateSelectionButton();
                     }
-                }
 
-                function playSelection() {
-                    if (selectedTracks.size === 0) return;
-                    playbackOrder = Array.from(selectedTracks);
-                    playTrack(playbackOrder[0]);
-                }
+                    function updateSelectionButton() {
+                        if (selectedTracks.size > 0) {
+                            btnPlaySel.style.opacity = '1';
+                            btnPlaySel.innerText = '▶️ Lecture (' + selectedTracks.size + ')';
+                        } else {
+                            btnPlaySel.style.opacity = '0.5';
+                            btnPlaySel.innerText = '▶️ Sélection';
+                        }
+                    }
 
-                function playTrack(index) {
-                    currentTrackIndex = index;
-                    audio.src = tracks[index].url;
-                    nowPlaying.innerText = tracks[index].title;
-                    audio.play();
-                    renderPlaylist();
-                }
-
-                function nextTrack() {
-                    let currentDisplayIndex = playbackOrder.indexOf(currentTrackIndex);
-                    if (currentDisplayIndex < playbackOrder.length - 1) {
-                        playTrack(playbackOrder[currentDisplayIndex + 1]);
-                    } else if (loopMode === 1) {
+                    function playSelection() {
+                        if (selectedTracks.size === 0) return;
+                        playbackOrder = Array.from(selectedTracks);
                         playTrack(playbackOrder[0]);
                     }
-                }
 
-                function prevTrack() {
-                    if (audio.currentTime > 3) {
-                        audio.currentTime = 0;
-                    } else {
+                    function playTrack(index) {
+                        currentTrackIndex = index;
+                        audio.src = tracks[index].url;
+                        nowPlaying.innerText = tracks[index].title;
+                        audio.play().catch(e => console.error("Erreur de lecture:", e));
+                        renderPlaylist();
+                    }
+
+                    function nextTrack() {
                         let currentDisplayIndex = playbackOrder.indexOf(currentTrackIndex);
-                        if (currentDisplayIndex > 0) {
-                            playTrack(playbackOrder[currentDisplayIndex - 1]);
+                        if (currentDisplayIndex < playbackOrder.length - 1) {
+                            playTrack(playbackOrder[currentDisplayIndex + 1]);
                         } else if (loopMode === 1) {
-                            playTrack(playbackOrder[playbackOrder.length - 1]);
+                            playTrack(playbackOrder[0]);
                         }
                     }
-                }
 
-                function toggleShuffle() {
-                    isShuffled = !isShuffled;
-                    btnShuffle.style.opacity = isShuffled ? '1' : '0.5';
-                    if (isShuffled) {
-                        for (let i = playbackOrder.length - 1; i > 0; i--) {
-                            const j = Math.floor(Math.random() * (i + 1));
-                            [playbackOrder[i], playbackOrder[j]] = [playbackOrder[j], playbackOrder[i]];
+                    function prevTrack() {
+                        if (audio.currentTime > 3) {
+                            audio.currentTime = 0;
+                        } else {
+                            let currentDisplayIndex = playbackOrder.indexOf(currentTrackIndex);
+                            if (currentDisplayIndex > 0) {
+                                playTrack(playbackOrder[currentDisplayIndex - 1]);
+                            } else if (loopMode === 1) {
+                                playTrack(playbackOrder[playbackOrder.length - 1]);
+                            }
                         }
-                    } else {
-                        playbackOrder = tracks.map((_, i) => i);
                     }
+
+                    function toggleShuffle() {
+                        isShuffled = !isShuffled;
+                        btnShuffle.style.opacity = isShuffled ? '1' : '0.5';
+                        if (isShuffled) {
+                            for (let i = playbackOrder.length - 1; i > 0; i--) {
+                                const j = Math.floor(Math.random() * (i + 1));
+                                [playbackOrder[i], playbackOrder[j]] = [playbackOrder[j], playbackOrder[i]];
+                            }
+                        } else {
+                            playbackOrder = tracks.map((_, i) => i);
+                        }
+                        renderPlaylist();
+                    }
+
+                    function toggleLoop() {
+                        loopMode = (loopMode + 1) % 3;
+                        if (loopMode === 0) { btnLoop.style.opacity = '0.5'; btnLoop.innerText = '🔁'; }
+                        else if (loopMode === 1) { btnLoop.style.opacity = '1'; btnLoop.innerText = '🔁'; }
+                        else { btnLoop.style.opacity = '1'; btnLoop.innerText = '🔂'; }
+                    }
+
+                    audio.addEventListener('ended', () => {
+                        if (loopMode === 2) {
+                            audio.play(); 
+                        } else {
+                            nextTrack(); 
+                        }
+                    });
+
+                    // --- LA NOUVEAUTÉ QUI RÈGLE LE PROBLÈME ---
+                    // On relie les boutons à leurs fonctions via JavaScript
+                    document.getElementById('btn-prev').addEventListener('click', prevTrack);
+                    document.getElementById('btn-next').addEventListener('click', nextTrack);
+                    document.getElementById('btn-shuffle').addEventListener('click', toggleShuffle);
+                    document.getElementById('btn-loop').addEventListener('click', toggleLoop);
+                    document.getElementById('btn-play-selection').addEventListener('click', playSelection);
+                    // --------------------------------------------
+
                     renderPlaylist();
-                }
+                </script>
+                """.replace("TRACKS_DATA", json.dumps(tracks_json))
 
-                function toggleLoop() {
-                    loopMode = (loopMode + 1) % 3;
-                    if (loopMode === 0) { btnLoop.style.opacity = '0.5'; btnLoop.innerText = '🔁'; }
-                    else if (loopMode === 1) { btnLoop.style.opacity = '1'; btnLoop.innerText = '🔁'; }
-                    else { btnLoop.style.opacity = '1'; btnLoop.innerText = '🔂'; }
-                }
-
-                audio.addEventListener('ended', () => {
-                    if (loopMode === 2) {
-                        audio.play(); 
-                    } else {
-                        nextTrack(); 
-                    }
-                });
-
-                renderPlaylist();
-            </script>
-            """.replace("TRACKS_DATA", json.dumps(tracks_json))
-
-            components.html(player_html, height=500)
+                components.html(player_html, height=500)
 
 
     with tab_evenements:
