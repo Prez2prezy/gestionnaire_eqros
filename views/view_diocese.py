@@ -316,7 +316,13 @@ def show_diocese():
             # SINON, on remplit la zone de texte
             else:
                 with zone_texte.container():
-                    contenu_texte = st.text_area("Texte de la prière ou de la méditation", height=300, key="texte_espace")
+                    st.info("""💡 **Comment enrichir votre contenu ?**
+                    - **Texte :** Tapez normalement.
+                    - **Image :** Tapez `![description](LIEN_DE_L_IMAGE)`
+                    - **Application/Web :** Tapez `<iframe src="LIEN_DE_L_APP" width="100%" height="500"></iframe>`""")
+                    
+                    # On augmente un peu la hauteur pour laisser de la place
+                    contenu_texte = st.text_area("Texte de la prière ou de la méditation", height=350, key="texte_espace")
 
             # LE FORMULAIRE (Séparé pour éviter les conflits)
             with st.form("form_espace"):
