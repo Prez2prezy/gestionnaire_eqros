@@ -496,8 +496,16 @@ def afficher_etat_presences_globales(equipe_id):
     df_ligne_equipe = pd.DataFrame([taux_equipe])
     for col in types_evenements + ['Taux global']: df_ligne_equipe[col] = df_ligne_equipe[col].apply(lambda x: f"{x:.1f}%")
         
-    # CORRECTION : Plus besoin du "démimage" lourd, ignore_index=True règle le problème PyArrow tout seul
-    df_final = pd.concat([df_affichage, df_ligne_equipe], ignore_index=True)
+    # 1. On décale l'index des membres pour qu'il commence à 1
+    df_affichage.index = df_affichage.index + 1
+    
+    # 2. On donne un index "vide" à la ligne du taux d'équipe 
+    df_ligne_equipe.index = [""]
+    
+    # 3. On fusionne SANS réinitialiser l'index (pour garder le 1, 2, 3 et le vide)
+    df_final = pd.concat([df_affichage, df_ligne_equipe])
+    
+    # 4. Affichage
     st.dataframe(df_final, width="stretch")
     
     # Le reste pour le téléchargement
