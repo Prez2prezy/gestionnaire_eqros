@@ -3,6 +3,7 @@ import shutil
 import streamlit as st
 import pandas as pd
 import io
+import base64
 from datetime import date
 from database import c, commit_and_sync
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation, 
@@ -318,11 +319,13 @@ def show_diocese():
                 with zone_texte.container():
                     st.info("""💡 **Comment enrichir votre contenu ?**
                     - **Texte :** Tapez normalement.
-                    - **Image :** Tapez `![description](LIEN_DE_L_IMAGE)`
-                    - **Application/Web :** Tapez `<iframe src="LIEN_DE_L_APP" width="100%" height="500"></iframe>`""")
+                    - **Image :** Tapez `![description](LIEN_DE_L_IMAGE)`""")
                     
-                    # On augmente un peu la hauteur pour laisser de la place
                     contenu_texte = st.text_area("Texte de la prière ou de la méditation", height=350, key="texte_espace")
+                    
+                    # --- NOUVEAU : Upload de PDF ---
+                    st.markdown("📎 **Ou joindre un document PDF (sera intégré au texte) :**")
+                    fichier_pdf = st.file_uploader("Choisir un PDF", type=["pdf"], key="pdf_espace")
 
             # LE FORMULAIRE (Séparé pour éviter les conflits)
             with st.form("form_espace"):
@@ -330,13 +333,23 @@ def show_diocese():
                 illustration = st.file_uploader("🖼️ Image d'illustration (optionnel)", type=["jpg", "png", "jpeg", "webp"], key="illus_espace")
                 
                 if st.form_submit_button("✅ Publier", use_container_width=True):
-                    # Comme le file_uploader audio est en dehors du form, on le récupère proprement ici
-                    if fichier_audio is None and "audio_espace" in st.session_state:
-                        fichier_audio = st.session_state["audio_espace"]
+                    # Récupération classique
                     if 'texte_espace' not in st.session_state:
                         contenu_texte = ""
                     else:
                         contenu_texte = st.session_state['texte_espace']
+                        
+                    # Récupération du PDF s'il a été uploadé
+                    pdf_uploader = st.session_state.get("pdf_espace")
+                    if pdf_uploader is not None and pdf_uploader.type == "application/pdf":
+                        # 1. On lit le fichier PDF
+                        bytes_pdf = pdf_uploader.read()
+                        # 2. On le transforme en chaîne de caractères (Base64)
+                        pdf_base64 = base64.b64encode(bytes_pdf).decode('utf-8')
+                        # 3. On crée le code HTML pour l'afficher
+                        code_iframe_pdf = f'<iframe src="data:application/pdf;base64,{pdf_base64}" width="100%" height="600" style="border:none; border-radius:10px;"></iframe>'
+                        # 4. On l'ajoute au tout début du texte de la prière
+                        contenu_texte = code_iframe_pdf + "\n\n" + contenu_texte
                         
                     if titre:
                         url_audio = sauvegarder_audio(fichier_audio) if fichier_audio else None
@@ -347,18 +360,19 @@ def show_diocese():
                                   (type_contenu, titre, contenu_texte, url_audio, url_illustration, date.today().isoformat(), st.session_state['username']))
                         commit_and_sync()
                         
-                        # --- LA SOLUTION : ON VIDE LES CHAMPS MANUELLEMENT ---
+                        # --- VIDER LES CHAMPS ---
                         cles_a_vider = [
                             "type_espace_select", 
                             "audio_espace", 
-                            "texte_espace", 
+                            "texte_espace",
+                            "pdf_espace",       # <--- NE PAS OUBLIER DE VIDER LE PDF
                             "titre_espace", 
                             "illus_espace"
                         ]
                         for cle in cles_a_vider:
                             if cle in st.session_state:
                                 del st.session_state[cle]
-                        # ---------------------------------------------------
+                        # -------------------------
                         
                         st.success("Contenu publié avec succès !")
                         st.rerun()
