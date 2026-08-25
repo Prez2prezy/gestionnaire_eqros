@@ -72,9 +72,14 @@ def show_espace_membre(matloc_membre=None):
         else:
             for p in prières:
                 with st.expander(f"📖 {p[0]}"):
+                    # L'image d'illustration (celle uploadée séparément) reste en en-tête
                     if p[2] and p[2].startswith("http"): 
                         st.image(p[2], width="stretch")
-                    st.write(p[1])
+                    
+                    # MODIFICATION ICI : st.write devient st.markdown avec unsafe_allow_html=True
+                    # Cela permet d'interpréter les ![](url) et les <iframe> tapés dans le texte
+                    if p[1]:
+                        st.markdown(p[1], unsafe_allow_html=True)
 
     with tab_meditation:
         st.markdown("### 📖 Textes de méditation")
@@ -84,9 +89,13 @@ def show_espace_membre(matloc_membre=None):
         else:
             for m in meditations:
                 with st.expander(f"📖 {m[0]}"):
+                    # L'image d'illustration (celle uploadée séparément) reste en en-tête
                     if m[2] and m[2].startswith("http"): 
                         st.image(m[2], width="stretch")
-                    st.write(m[1])
+                    
+                    # MODIFICATION ICI : st.write devient st.markdown avec unsafe_allow_html=True
+                    if m[1]:
+                        st.markdown(m[1], unsafe_allow_html=True)
 
     with tab_musique:
         st.markdown("### 🎵 Lecteur de chants")
