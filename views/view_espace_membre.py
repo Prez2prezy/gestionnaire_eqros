@@ -35,7 +35,7 @@ def show_espace_membre(matloc_membre=None):
         if membre:
             st.markdown(f"""
             <div class="espace-header">
-                <h2 class="espace-title">🙏 Bienvenue {membre[1]} {membre[0]}</h2>
+                <h3 class="espace-title">🙏 Bienvenue {membre[1]} {membre[0]}</h3>
                 <p class="espace-subtitle">{membre[2]}</p>
                 <p class="espace-subtitle" style="font-size: 0.9rem; opacity: 0.8;">Voici votre espace de ressourcement spirituel</p>
             </div>
@@ -43,7 +43,7 @@ def show_espace_membre(matloc_membre=None):
         else:
             st.markdown("""
             <div class="espace-header">
-                <h2 class="espace-title">📿 Espace de Prière</h2>
+                <h3 class="espace-title">📿 Espace de Prière</h3>
                 <p class="espace-subtitle">Bienvenue dans cet espace de paix</p>
             </div>
             """, unsafe_allow_html=True)
@@ -51,7 +51,7 @@ def show_espace_membre(matloc_membre=None):
     else:
         st.markdown("""
         <div class="espace-header">
-            <h1 class="espace-title">📿 Espace de Prière & Méditation</h1>
+            <h3 class="espace-title">📿 Espace de Prière & Méditation</h3>
             <p class="espace-subtitle">Diocèse de Grand-Bassam</p>
         </div>
         """, unsafe_allow_html=True)
@@ -88,10 +88,8 @@ def show_espace_membre(matloc_membre=None):
                         st.image(m[2], width="stretch")
                     st.write(m[1])
 
-
-
     with tab_musique:
-        st.markdown("### 🎵 Lecteur de chants et méditations")
+        st.markdown("### 🎵 Lecteur de chants")
         audios = c.execute("SELECT titre, fichier_url FROM espace_spirituel WHERE type_contenu='audio' ORDER BY date_publication DESC").fetchall()
         
         if not audios:
