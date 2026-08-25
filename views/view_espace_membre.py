@@ -73,7 +73,8 @@ def show_espace_membre(matloc_membre=None):
             for p in prières:
                 with st.expander(f"📖 {p[0]}"):
                     # L'image d'illustration (celle uploadée séparément) reste en en-tête
-                    if p[2] and p[2].startswith("http"): 
+                    # On vérifie d'abord que m contient bien au moins 3 éléments avant de lire m[2]
+                    if len(p) > 2 and p[2] and p[2].startswith("http"): 
                         st.image(p[2], width="stretch")
                     
                     # MODIFICATION ICI : st.write devient st.markdown avec unsafe_allow_html=True
