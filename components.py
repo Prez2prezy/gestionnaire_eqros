@@ -496,17 +496,17 @@ def afficher_etat_presences_globales(equipe_id):
     df_ligne_equipe = pd.DataFrame([taux_equipe])
     for col in types_evenements + ['Taux global']: df_ligne_equipe[col] = df_ligne_equipe[col].apply(lambda x: f"{x:.1f}%")
         
-    # 1. On décale l'index des membres pour qu'il commence à 1
-    df_affichage.index = df_affichage.index + 1
+    # 1. On crée une vraie colonne "N°" qui commence à 1
+    df_affichage.insert(0, 'N°', range(1, len(df_affichage) + 1))
     
-    # 2. On donne un index "vide" à la ligne du taux d'équipe 
-    df_ligne_equipe.index = [""]
+    # 2. On met une colonne "N°" vide pour la ligne de l'équipe
+    df_ligne_equipe.insert(0, 'N°', '')
     
-    # 3. On fusionne SANS réinitialiser l'index (pour garder le 1, 2, 3 et le vide)
-    df_final = pd.concat([df_affichage, df_ligne_equipe])
+    # 3. On fusionne
+    df_final = pd.concat([df_affichage, df_ligne_equipe], ignore_index=True)
     
-    # 4. Affichage
-    st.dataframe(df_final, width="stretch")
+    # 4. On affiche en CACHANT le numéro par défaut de Streamlit (hide_index=True)
+    st.dataframe(df_final, hide_index=True, width="stretch")
     
     # Le reste pour le téléchargement
     st.markdown("---")
