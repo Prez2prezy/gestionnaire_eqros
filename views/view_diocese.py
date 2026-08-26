@@ -296,88 +296,98 @@ def show_diocese():
         tab_add, tab_manage = st.tabs(["➕ Publier du contenu", "📋 Contenu existant"])
         
         with tab_add:
-            # On donne une clé explicite au menu pour forcer la mise à jour
-            type_contenu = st.selectbox("Type de contenu", ["priere", "meditation", "audio"], 
-                                       format_func=lambda x: {"priere": "🙏 Prière", "meditation": "📖 Méditation", "audio": "🎵 Musique/Chant"}[x], 
-                                       key="type_espace_select")
+            # On crée 3 sous-onglets pour séparer les espaces
+            s_tab_priere, s_tab_med, s_tab_audio = st.tabs(["🙏 Prière", "📖 Méditation", "🎵 Musique"])
             
-            # On crée des espaces vides qui vont se vider/se remplir proprement
-            zone_audio = st.empty()
-            zone_texte = st.empty()
-            
-            fichier_audio = None
-            contenu_texte = ""
-            
-            # SI c'est de l'audio, on remplit la zone audio
-            if type_contenu == "audio":
-                with zone_audio.container():
-                    st.info("ℹ️ Sélectionnez votre fichier audio ci-dessous, puis cliquez sur Publier.")
-                    fichier_audio = st.file_uploader("🎵 Fichier audio ou vidéo (MP3, MP4, WAV...)", key="audio_espace")
-                    
-            # SINON, on remplit la zone de texte
-            else:
-                with zone_texte.container():
-                    st.info("""💡 **Comment enrichir votre contenu ?**
-                    - **Texte :** Tapez normalement.
-                    - **Image :** Tapez `![description](LIEN_DE_L_IMAGE)`""")
-                    
-                    contenu_texte = st.text_area("Texte de la prière ou de la méditation", height=350, key="texte_espace")
-                    
-                    # --- NOUVEAU : Upload de PDF ---
-                    st.markdown("📎 **Ou joindre un document PDF (sera intégré au texte) :**")
-                    fichier_pdf = st.file_uploader("Choisir un PDF", type=["pdf"], key="pdf_espace")
-
-            # LE FORMULAIRE (Séparé pour éviter les conflits)
-            with st.form("form_espace"):
-                titre = st.text_input("Titre", key="titre_espace")
-                illustration = st.file_uploader("🖼️ Image d'illustration (optionnel)", type=["jpg", "png", "jpeg", "webp"], key="illus_espace")
+            # --- FONCTION COMMUNE POUR EVITER DE COPIER LE CODE 3 FOIS ---
+            def publier_texte(type_contenu, prefixe_cle):
+                titre = st.session_state.get(f"titre_{prefixe_cle}")
+                if not titre:
+                    st.error("Le titre est obligatoire.")
+                    return
                 
-                if st.form_submit_button("✅ Publier", use_container_width=True):
-                    # Récupération classique
-                    if 'texte_espace' not in st.session_state:
-                        contenu_texte = ""
-                    else:
-                        contenu_texte = st.session_state['texte_espace']
-                        
-                    # Récupération du PDF s'il a été uploadé
-                    pdf_uploader = st.session_state.get("pdf_espace")
-                    if pdf_uploader is not None and pdf_uploader.type == "application/pdf":
-                        # 1. On lit le fichier PDF
-                        bytes_pdf = pdf_uploader.read()
-                        # 2. On le transforme en chaîne de caractères (Base64)
-                        pdf_base64 = base64.b64encode(bytes_pdf).decode('utf-8')
-                        # 3. On crée le code HTML pour l'afficher
-                        code_iframe_pdf = f'<iframe src="data:application/pdf;base64,{pdf_base64}" width="100%" height="600" style="border:none; border-radius:10px;"></iframe>'
-                        # 4. On l'ajoute au tout début du texte de la prière
-                        contenu_texte = code_iframe_pdf + "\n\n" + contenu_texte
-                        
-                    if titre:
-                        url_audio = sauvegarder_audio(fichier_audio) if fichier_audio else None
-                        url_illustration = sauvegarder_illustration(illustration) if illustration else None
-                        
-                        c.execute("""INSERT INTO espace_spirituel (type_contenu, titre, contenu_texte, fichier_url, image_url, date_publication, auteur_nom) 
-                                     VALUES (?, ?, ?, ?, ?, ?, ?)""", 
-                                  (type_contenu, titre, contenu_texte, url_audio, url_illustration, date.today().isoformat(), st.session_state['username']))
-                        commit_and_sync()
-                        
-                        # --- VIDER LES CHAMPS ---
-                        cles_a_vider = [
-                            "type_espace_select", 
-                            "audio_espace", 
-                            "texte_espace",
-                            "pdf_espace",       # <--- NE PAS OUBLIER DE VIDER LE PDF
-                            "titre_espace", 
-                            "illus_espace"
-                        ]
-                        for cle in cles_a_vider:
-                            if cle in st.session_state:
-                                del st.session_state[cle]
-                        # -------------------------
-                        
-                        st.success("Contenu publié avec succès !")
-                        st.rerun()
-                    else:
-                        st.error("Le titre est obligatoire.")
+                contenu_texte = st.session_state.get(f"texte_{prefixe_cle}", "")
+                pdf_uploader = st.session_state.get(f"pdf_{prefixe_cle}")
+                
+                # Gestion du PDF s'il existe
+                if pdf_uploader is not None and pdf_uploader.type == "application/pdf":
+                    bytes_pdf = pdf_uploader.read()
+                    pdf_base64 = base64.b64encode(bytes_pdf).decode('utf-8')
+                    code_html_pdf = f'''
+                    <div style="text-align: center; margin: 20px 0; padding: 20px; background: #f3e5f5; border-radius: 10px; border: 1px dashed #4527a0;">
+                        <a href="data:application/pdf;base64,{pdf_base64}" target="_blank" style="background-color: #4527a0; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 1.1rem; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                            📄 Ouvrir le document PDF
+                        </a>
+                        <p style="margin-top: 10px; font-size: 0.9rem; color: #666;">Cliquez pour ouvrir le PDF dans un nouvel onglet</p>
+                    </div>'''
+                    contenu_texte = code_html_pdf + "\n\n" + contenu_texte
+                
+                url_illustration = sauvegarder_illustration(st.session_state.get(f"illus_{prefixe_cle}"))
+                
+                c.execute("""INSERT INTO espace_spirituel (type_contenu, titre, contenu_texte, fichier_url, image_url, date_publication, auteur_nom) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?)""", 
+                          (type_contenu, titre, contenu_texte, None, url_illustration, date.today().isoformat(), st.session_state['username']))
+                commit_and_sync()
+                
+                # Vider les champs de CET onglet précisément
+                for cle in [f"titre_{prefixe_cle}", f"texte_{prefixe_cle}", f"pdf_{prefixe_cle}", f"illus_{prefixe_cle}"]:
+                    if cle in st.session_state: del st.session_state[cle]
+                
+                st.success(f"Contenu publié avec succès !")
+                st.rerun()
+
+            # --- 1. ESPACE PRIERE ---
+            with s_tab_priere:
+                st.info("Rédigez une prière. Vous pouvez intégrer des images (Markdown) ou joindre un PDF.")
+                with st.form("form_priere"):
+                    st.text_input("Titre de la prière", key="titre_priere")
+                    st.text_area("Texte de la prière", height=300, key="texte_priere")
+                    st.markdown("📎 **Joindre un document PDF :**")
+                    st.file_uploader("Choisir un PDF", type=["pdf"], key="pdf_priere")
+                    st.file_uploader("🖼️ Image d'illustration (optionnel)", type=["jpg", "png", "jpeg", "webp"], key="illus_priere")
+                    if st.form_submit_button("✅ Publier la prière", use_container_width=True):
+                        publier_texte('priere', 'priere')
+
+            # --- 2. ESPACE MEDITATION ---
+            with s_tab_med:
+                st.info("Rédigez une méditation. Vous pouvez intégrer des images (Markdown) ou joindre un PDF.")
+                with st.form("form_med"):
+                    st.text_input("Titre de la méditation", key="titre_med")
+                    st.text_area("Texte de la méditation", height=300, key="texte_med")
+                    st.markdown("📎 **Joindre un document PDF :**")
+                    st.file_uploader("Choisir un PDF", type=["pdf"], key="pdf_med")
+                    st.file_uploader("🖼️ Image d'illustration (optionnel)", type=["jpg", "png", "jpeg", "webp"], key="illus_med")
+                    if st.form_submit_button("✅ Publier la méditation", use_container_width=True):
+                        publier_texte('meditation', 'med')
+
+            # --- 3. ESPACE MUSIQUE ---
+            with s_tab_audio:
+                st.info("Uploadez un fichier audio (MP3, WAV) ou vidéo (MP4).")
+                with st.form("form_audio"):
+                    st.text_input("Titre du chant ou de la musique", key="titre_audio")
+                    st.file_uploader("🎵 Fichier audio ou vidéo", key="fichier_audio")
+                    st.file_uploader("🖼️ Image d'illustration (optionnel)", type=["jpg", "png", "jpeg", "webp"], key="illus_audio")
+                    
+                    if st.form_submit_button("✅ Publier la musique", use_container_width=True):
+                        titre = st.session_state.get("titre_audio")
+                        if not titre:
+                            st.error("Le titre est obligatoire.")
+                        else:
+                            fichier_audio = st.session_state.get("fichier_audio")
+                            url_audio = sauvegarder_audio(fichier_audio) if fichier_audio else None
+                            url_illustration = sauvegarder_illustration(st.session_state.get("illus_audio"))
+                            
+                            c.execute("""INSERT INTO espace_spirituel (type_contenu, titre, contenu_texte, fichier_url, image_url, date_publication, auteur_nom) 
+                                         VALUES (?, ?, ?, ?, ?, ?, ?)""", 
+                                      ("audio", titre, None, url_audio, url_illustration, date.today().isoformat(), st.session_state['username']))
+                            commit_and_sync()
+                            
+                            # Vider les champs de l'audio
+                            for cle in ["titre_audio", "fichier_audio", "illus_audio"]:
+                                if cle in st.session_state: del st.session_state[cle]
+                                
+                            st.success("Musique publiée avec succès !")
+                            st.rerun()
 
         with tab_manage:
             contenus = c.execute("SELECT id, type_contenu, titre, date_publication FROM espace_spirituel ORDER BY date_publication DESC").fetchall()
