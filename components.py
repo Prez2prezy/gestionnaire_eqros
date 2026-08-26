@@ -496,17 +496,9 @@ def afficher_etat_presences_globales(equipe_id):
     df_ligne_equipe = pd.DataFrame([taux_equipe])
     for col in types_evenements + ['Taux global']: df_ligne_equipe[col] = df_ligne_equipe[col].apply(lambda x: f"{x:.1f}%")
         
-    # 1. On crée une vraie colonne "N°" qui commence à 1
-    df_affichage.insert(0, 'N°', range(1, len(df_affichage) + 1))
-    
-    # 2. On met une colonne "N°" vide pour la ligne de l'équipe
-    df_ligne_equipe.insert(0, 'N°', '')
-    
-    # 3. On fusionne
+    # CORRECTION : Plus besoin du "démimage" lourd, ignore_index=True règle le problème PyArrow tout seul
     df_final = pd.concat([df_affichage, df_ligne_equipe], ignore_index=True)
-    
-    # 4. On affiche en CACHANT le numéro par défaut de Streamlit (hide_index=True)
-    st.dataframe(df_final, hide_index=True, width="stretch")
+    st.dataframe(df_final, hide_index=True, use_container_width=True)
     
     # Le reste pour le téléchargement
     st.markdown("---")
