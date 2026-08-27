@@ -12,7 +12,7 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
 
 def get_max_membres(equipe_id):
     eq = c.execute("SELECT e.nom_equipe, p.nom FROM equipes e JOIN paroisses p ON e.paroisse_id = p.id WHERE e.id=?", (equipe_id,)).fetchone()
-    if eq and "notre dame de l'assomption" in eq[0].lower() and "koumassi" in eq[1].lower(): return 20
+    if eq and "Notre Dame de L'ASSOMPTION" in eq[0].lower() and "KOUMASSI" in eq[1].lower(): return 20
     return 12
 
 def show_equipe():
