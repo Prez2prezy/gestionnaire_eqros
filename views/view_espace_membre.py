@@ -77,7 +77,7 @@ def show_espace_membre(matloc_membre=None):
         st.markdown(f"""
         <div class="card-welcome">
             <h2 style="color:#4527a0; margin-top:0;">Bienvenue {membre[2]} {membre[1]} 🕊️</h2>
-            <p style="color:#6a1b9a; font-size:1.1rem;">Équipe : <b>{membre[7]}</b> | {membre[8]}</p>
+            <p style="color:#6a1b9a; font-size:1.1rem;"><b>{membre[7]}</b> | {membre[8]}</p>
             <p style="color:#888; font-size:0.9rem;">Retrouvez ici vos ressources pour la prière et la méditation.</p>
         </div>
         """, unsafe_allow_html=True)
