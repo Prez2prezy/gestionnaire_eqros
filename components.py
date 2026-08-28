@@ -723,3 +723,17 @@ def afficher_page_reponse_membre(event_id):
             else: 
                 st.snow()
                 st.success("Merci pour votre communion spirituelle, nous nous unirons à vous ! 🙏")
+            
+            # --- NOUVEAU : LE PONT VERS L'ESPACE SPIRITUEL ---
+            st.markdown("---")
+            base_url = "https://gestionnaireeqros-4s9fbumnsa6wmyy6dw4rft.streamlit.app/"
+            
+            st.markdown(f"""
+            <div style="text-align: center; margin-top: 30px; padding: 20px; background: #f3e5f5; border-radius: 15px;">
+                <p style="font-size: 1.1rem; color: #4527a0; font-weight: bold;">Découvrez les ressources de la semaine</p>
+                <a href="{base_url}/?espace=1" target="_blank" 
+                   style="background-color: #4527a0; color: white; padding: 12px 30px; text-decoration: none; border-radius: 30px; font-weight: bold; display: inline-block; font-size: 1.1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    🕊️ Accéder à l'Espace de Prière
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
