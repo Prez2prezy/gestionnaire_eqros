@@ -13,7 +13,7 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
 
 def generer_identifiant_equipe(nom_paroisse, nom_commune, nom_equipe, paroisse_id):
     nom_propre = nom_paroisse.lower()
-    motifs_exclus = [r"notre[\s\-]*dame", r"sainte?", r"st\.?", r"notre", r"dame", r"du\b", r"d'[\w]*", r"de\b"]
+    motifs_exclus = [r"notre[\s\-]*dame", r"sainte?", r"st\.?", r"notre", r"dame", r"du\b", r"d'[\w]*", r"l'[\w]*", r"de\b"]
     for motif in motifs_exclus: nom_propre = re.sub(motif, "", nom_propre, flags=re.IGNORECASE)
     nom_propre = re.sub(r"[\s'\-]", "", nom_propre)
     prefixe_par = sans_accents(nom_propre[:3])
