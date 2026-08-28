@@ -180,7 +180,7 @@ def show_espace_membre(matloc_membre=None):
                 <hr style="border: 1px solid #e0e0e0;">
                 <p style="font-size: 1.1rem;"><b>🪪 MatLoc :</b> <code style="background:#f3e5f5; padding:5px; border-radius:5px; color:#4527a0; font-weight:bold;">{membre[3]}</code></p>
                 <p><b>👥</b> {membre[8]}</p>
-                <p><b>📿 Méditation :</b> {membre[7] or 'Non défini'}</p>
+                <p><b>📿 N° de Méditation :</b> {membre[7] or 'Non défini'}</p>
                 <p><b>🏛️ Paroisse :</b> {membre[9]}</p>
                 <p><b>💬 WhatsApp :</b> {membre[4] or 'Non renseigné'}</p>
                 <p><b>📅 Fidélité :</b> {annees_fidelite} an(s)</p>
