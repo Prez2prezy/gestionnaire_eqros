@@ -28,12 +28,19 @@ def hash_password(p): return hashlib.sha256(p.encode()).hexdigest()
 
 def generer_mot_de_passe(l=8): return ''.join(random.choices(string.ascii_letters + string.digits, k=l))
 
-def safe_date(v):
-    if isinstance(v, date): return v
-    if isinstance(v, str):
-        try: return date.fromisoformat(v)
-        except: return None
-    return None
+def safe_date(date_str):
+    if not date_str: 
+        return None
+    
+    # On normalise les séparateurs (tirets ou slashs) en slashs pour éviter le plantage
+    formatted_date = str(date_str).replace('-', '/').replace('\\', '/')
+    
+    try:
+        parties = formatted_date.split('/')
+        if len(parties) == 3:
+            return date(int(parties[0]), int(parties[1]), int(parties[2]))
+    except:
+        return None
 
 def periode_affichage(a): return f"Sept {a} – Sept {a+1}"
 
@@ -200,4 +207,4 @@ def sauvegarder_illustration(fichier):
         except Exception as e:
             print(f"Erreur upload illustration: {e}")
             return None
-    return None    
+    return None
