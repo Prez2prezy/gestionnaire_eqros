@@ -6,14 +6,14 @@ from datetime import date
 from database import c, commit_and_sync
 from services import safe_date
 
-# --- Design doux et apaisant pour l'espace de prière ---
+# --- DESIGN DE L'ESPACE MEMBRE ---
 st.markdown("""
 <style>
     .card-welcome {
-        background: linear-gradient(135deg, #e8eaf6 0%, #f3e5f5 100%);
+        background: linear-gradient(135deg, #e8eaf6 0%, #f3e5f5 100%); /* LE FOND VIOLET ICI */
         padding: 25px;
         border-radius: 15px;
-        text-align: center;
+        text-align: center; /* LE CENTRAGE ICI */
         margin-bottom: 25px;
         border: 1px solid #e0e0e0;
     }
@@ -48,7 +48,7 @@ def show_espace_membre(matloc_membre=None):
 
     # --- L'ESPACE PERSONNALISE (Si MatLoc est fourni) ---
     membre = c.execute("""
-        SELECT m.id, m.nom, m.prenom, m.matloc, m.whatsapp, m.date_adhesion, m.photo_path, e.nom_equipe, p.nom 
+        SELECT m.id, m.nom, m.prenom, m.matloc, m.whatsapp, m.date_adhesion, m.photo_path, m.numero_meditation, e.nom_equipe, p.nom 
         FROM membres m 
         JOIN equipes e ON m.equipe_id = e.id 
         JOIN paroisses p ON m.paroisse_id = p.id 
@@ -74,10 +74,15 @@ def show_espace_membre(matloc_membre=None):
     with tab_ressources:
         # CARTE DE BIENVENUE
         st.markdown(f"""
-        <div class="card-welcome">
-            <h2 style="color:#4527a0; margin-top:0;">Bienvenue {membre[2]} {membre[1]} 🕊️</h2>
-            <p style="color:#6a1b9a; font-size:1.1rem;">Équipe : <b>{membre[7]}</b> | {membre[8]}</p>
-            <p style="color:#888; font-size:0.9rem;">Retrouvez ici vos ressources pour la prière et la méditation.</p>
+        <div class="card-profile" style="text-align: left; padding: 30px;">
+            <h2 style="color:#4527a0; margin-top:0; text-align:center;">{membre[2]} {membre[1]}</h2>
+            <hr style="border: 1px solid #e0e0e0;">
+            <p style="font-size: 1.1rem;"><b>🪪 MatLoc :</b> <code style="background:#f3e5f5; padding:5px; border-radius:5px; color:#4527a0; font-weight:bold;">{membre[3]}</code></p>
+            <p><b>👥</b> {membre[8]}</p>
+            <p><b>📿 Méditation :</b> {membre[7] or 'Non défini'}</p>
+            <p><b>🏛️ Paroisse :</b> {membre[9]}</p>
+            <p><b>💬 WhatsApp :</b> {membre[4] or 'Non renseigné'}</p>
+            <p><b>📅 Fidélité :</b> {annees_fidelite} an(s)</p>
         </div>
         """, unsafe_allow_html=True)
 
