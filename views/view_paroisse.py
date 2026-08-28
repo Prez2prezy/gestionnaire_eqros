@@ -28,7 +28,6 @@ def generer_identifiant_equipe(nom_paroisse, nom_commune, nom_equipe, paroisse_i
     return f"{prefixe_par}{prefixe_com}{suffixe}{nb_existant + 1}".lower()
 
 def get_max_membres(equipe_id):
-    # On va chercher le nom de la paroisse et sa commune à partir de l'ID de l'équipe
     paroisse_info = c.execute("""
         SELECT p.nom, p.commune 
         FROM equipes e 
@@ -36,14 +35,15 @@ def get_max_membres(equipe_id):
         WHERE e.id=?
     """, (equipe_id,)).fetchone()
     
-    # Si on a trouvé la paroisse, on vérifie ses informations
     if paroisse_info:
-        nom_paroisse = paroisse_info[0].lower() # ex: "notre dame de l'assomption"
-        commune = paroisse_info[1].lower()      # ex: "koumassi"
+        # On force la conversion en texte (str) au cas où la BDD renverrait un chiffre
+        nom_paroisse = str(paroisse_info[0]).lower() 
+        commune = str(paroisse_info[1]).lower()
         
-        # Condition : Toutes les équipes de cette paroisse précise ont 20 membres
         if "notre dame de l'assomption" in nom_paroisse and "koumassi" in commune:
             return 20
+            
+    return 12
             
     # Règle générale (par défaut) : Bloqué à 12
     return 12
