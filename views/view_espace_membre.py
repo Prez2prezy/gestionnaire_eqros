@@ -59,6 +59,10 @@ def show_espace_membre(matloc_membre=None):
         st.error("Identifiant de membre inconnu. Vérifiez votre lien MatLoc.")
         return
 
+    # --- LIGNE DE DEBUG TEMPORAIRE ---
+    st.error(f"⚠️ DEBUG : La requête a renvoyé {len(membre)} éléments. Détails : {membre}")
+    # ----------------------------------
+
     date_adh = safe_date(membre[5])
     annees_fidelite = (date.today() - date_adh).days // 365 if date_adh else 0
 
