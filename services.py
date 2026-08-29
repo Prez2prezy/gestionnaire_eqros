@@ -41,7 +41,7 @@ def safe_date(date_str):
             return date(int(parties[0]), int(parties[1]), int(parties[2]))
     except:
         return None
-
+        
 def periode_affichage(a): return f"Sept {a} – Sept {a+1}"
 
 def afficher_situation(s): return {"Déplacé": "a déménagé", "Radié": "indisponible", "Défunt": "est décédé(e)", "Transféré": "a été transféré(e)"}.get(s, s)
