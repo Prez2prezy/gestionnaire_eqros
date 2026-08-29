@@ -46,7 +46,9 @@ def show_espace_membre(matloc_membre=None):
         return
 
     # --- L'ESPACE PERSONNALISE (Si MatLoc est fourni) ---
-    # Indices : 0:id, 1:nom, 2:prenom, 3:matloc, 4:whatsapp, 5:date_adhesion, 6:photo, 7:meditation, 8:equipe, 9:paroisse
+    # ATTENTION : J'AI ENLEVÉ LE TRY...EXCEPT ICI. 
+    # Si quelque chose plante, Streamlit nous dira EXACTEMENT quoi, au lieu de parler des "10 éléments".
+    
     membre = c.execute("""
         SELECT m.id, m.nom, m.prenom, m.matloc, m.whatsapp, m.date_adhesion, m.photo_path, m.numero_meditation, e.nom_equipe, p.nom 
         FROM membres m 
@@ -59,17 +61,13 @@ def show_espace_membre(matloc_membre=None):
         st.error("Identifiant de membre inconnu. Vérifiez votre lien MatLoc.")
         return
 
-    # --- LIGNE DE DEBUG TEMPORAIRE ---
-    st.error(f"⚠️ DEBUG : La requête a renvoyé {len(membre)} éléments. Détails : {membre}")
-    # ----------------------------------
-
     date_adh = safe_date(membre[5])
     annees_fidelite = (date.today() - date_adh).days // 365 if date_adh else 0
 
     tab_ressources, tab_agenda, tab_profil = st.tabs(["🙏 Ressources", "📅 Mon Agenda", "👤 Mon Espace"])
 
     # --------------------------------------------------------------------
-    # ONGLET 1 : RESSOURCES SPIRITUELLES (Avec la vraie carte de bienvenue)
+    # ONGLET 1 : RESSOURCES SPIRITUELLES
     # --------------------------------------------------------------------
     with tab_ressources:
         st.markdown(f"""
@@ -112,7 +110,7 @@ def show_espace_membre(matloc_membre=None):
             
             st.markdown(f"""
             <div class="card-event">
-                <h3 style="color:#4527a0; margin-top:0;">{icone} {prochain_evt[2]}</h3>
+                <h3 style="color:#4527a0; margin-top:0;">{icone_evt} {prochain_evt[2]}</h3>
                 <p style="font-size:1.2rem; margin:10px 0;"><b>{delai}</b></p>
                 <p>🗓️ <b>{evt_date.strftime('%d/%m/%Y')}</b> &nbsp;&nbsp; 📍 {prochain_evt[3] or 'Lieu à définir'}</p>
             </div>
@@ -161,7 +159,7 @@ def show_espace_membre(matloc_membre=None):
             st.success("✅ Aucun événement à venir. Profitez de ce temps de repos !")
 
     # --------------------------------------------------------------------
-    # ONGLET 3 : MON ESPACE (Carte de profil avec Méditation)
+    # ONGLET 3 : MON ESPACE 
     # --------------------------------------------------------------------
     with tab_profil:
         st.markdown("### 👤 Ma Fiche Membre")
@@ -195,6 +193,7 @@ def show_espace_membre(matloc_membre=None):
 # ====================================================================
 # FONCTIONS PRIVÉES
 # ====================================================================
+
 def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
     """Gère l'affichage des prières, méditations et musiques"""
     
