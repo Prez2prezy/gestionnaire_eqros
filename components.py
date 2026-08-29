@@ -483,10 +483,14 @@ def afficher_etat_presences_globales(equipe_id):
     pivot['Membres'] = pivot['Nom'] + ' ' + pivot['Prenom']
     pivot = pivot.drop(columns=['Nom', 'Prenom'])
     
-    colonnes_finales = ['Membres'] + types_evenements + ['Taux global']
+    # AJOUT : Numérotation commençant à 1
+    pivot.insert(0, 'N°', range(1, len(pivot) + 1))
+    
+    colonnes_finales = ['N°', 'Membres'] + types_evenements + ['Taux global']
     pivot = pivot[colonnes_finales].round(1)
     
-    taux_equipe = {'Membres': '📊 Taux d\'engagement équipe'}
+    # AJOUT : Ligne de synthèse sans numéro
+    taux_equipe = {'N°': '', 'Membres': '📊 Taux d\'engagement équipe'}
     for t in types_evenements: taux_equipe[t] = pivot[t].mean().round(1)
     taux_equipe['Taux global'] = pivot['Taux global'].mean().round(1)
     
@@ -496,8 +500,8 @@ def afficher_etat_presences_globales(equipe_id):
     df_ligne_equipe = pd.DataFrame([taux_equipe])
     for col in types_evenements + ['Taux global']: df_ligne_equipe[col] = df_ligne_equipe[col].apply(lambda x: f"{x:.1f}%")
         
-    # CORRECTION : Plus besoin du "démimage" lourd, ignore_index=True règle le problème PyArrow tout seul
     df_final = pd.concat([df_affichage, df_ligne_equipe], ignore_index=True)
+    # hide_index=True masque l'index interne 0,1,2 de pandas
     st.dataframe(df_final, hide_index=True, use_container_width=True)
     
     # Le reste pour le téléchargement
@@ -545,7 +549,6 @@ def afficher_etat_presences_paroisse(paroisse_id):
     
     types_evenements = ["Prière mensuelle", "Prière commune", "Prière spéciale", "Pèlerinage", "Réunion", "Autre"]
     
-    # CORRECTION CRITIQUE : On lie evenement_equipes via l'équipe du membre pour éviter de multiplier les lignes
     presences = c.execute('''
         SELECT COALESCE(eq.nom_equipe, 'Événement Paroisse') as Equipe, e.type_evenement, sp.statut 
         FROM suivi_presences sp 
@@ -574,10 +577,14 @@ def afficher_etat_presences_paroisse(paroisse_id):
     pivot['Taux global'] = df.groupby('Equipe')['Est_Engage'].mean().mul(100).round(1)
     pivot = pivot.reset_index()
     
-    colonnes_finales = ['Equipe'] + types_evenements + ['Taux global']
+    # AJOUT : Numérotation commençant à 1
+    pivot.insert(0, 'N°', range(1, len(pivot) + 1))
+    
+    colonnes_finales = ['N°', 'Equipe'] + types_evenements + ['Taux global']
     pivot = pivot[colonnes_finales].round(1)
     
-    taux_paroisse = {'Equipe': '📊 Taux d\'engagement Paroisse'}
+    # AJOUT : Ligne de synthèse sans numéro
+    taux_paroisse = {'N°': '', 'Equipe': '📊 Taux d\'engagement Paroisse'}
     for t in types_evenements: taux_paroisse[t] = pivot[t].mean().round(1)
     taux_paroisse['Taux global'] = pivot['Taux global'].mean().round(1)
     
@@ -587,9 +594,9 @@ def afficher_etat_presences_paroisse(paroisse_id):
     df_ligne_paroisse = pd.DataFrame([taux_paroisse])
     for col in types_evenements + ['Taux global']: df_ligne_paroisse[col] = df_ligne_paroisse[col].apply(lambda x: f"{x:.1f}%")
         
-    # CORRECTION CRITIQUE : Plus de "démimage" nécessaire, et c'est bien 'Equipe' désormais
     df_final = pd.concat([df_affichage, df_ligne_paroisse], ignore_index=True)
-    st.dataframe(df_final, width="stretch")
+    # AJOUT : hide_index=True pour cacher le compteur 0,1,2 de Pandas
+    st.dataframe(df_final, hide_index=True, use_container_width=True)
     
     out = io.BytesIO()
     with pd.ExcelWriter(out, engine='openpyxl') as w:
