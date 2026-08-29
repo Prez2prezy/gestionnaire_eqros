@@ -1,4 +1,3 @@
-# Mise à jour du serveur
 import os
 import streamlit as st
 from database import c, commit_and_sync
