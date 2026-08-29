@@ -45,26 +45,49 @@ def show_espace_membre(matloc_membre=None):
         _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
         return
 
-    # --- L'ESPACE PERSONNALISE (Si MatLoc est fourni) ---
-    # ATTENTION : J'AI ENLEVÉ LE TRY...EXCEPT ICI. 
-    # Si quelque chose plante, Streamlit nous dira EXACTEMENT quoi, au lieu de parler des "10 éléments".
-    
-    membre = c.execute("""
-        SELECT m.id, m.nom, m.prenom, m.matloc, m.whatsapp, m.date_adhesion, m.photo_path, m.numero_meditation, e.nom_equipe, p.nom 
-        FROM membres m 
-        JOIN equipes e ON m.equipe_id = e.id 
-        JOIN paroisses p ON m.paroisse_id = p.id 
-        WHERE m.matloc=? AND m.statut='actif'
-    """, (matloc_membre,)).fetchone()
-    
-    if not membre:
-        st.error("Identifiant de membre inconnu. Vérifiez votre lien MatLoc.")
+    # --- SÉCURITÉ STREAMLIT ---
+    # Parfois, Streamlit renvoie le matloc sous forme de liste au lieu de texte. On corrige ça.
+    if isinstance(matloc_membre, list):
+        matloc_membre = matloc_membre[0] if matloc_membre else None
+        
+    if not matloc_membre:
+        st.error("Identifiant de membre invalide.")
         return
 
+    # --- L'ESPACE PERSONNALISE ---
+    try:
+        membre = c.execute("""
+            SELECT m.id, m.nom, m.prenom, m.matloc, m.whatsapp, m.date_adhesion, m.photo_path, m.numero_meditation, e.nom_equipe, p.nom 
+            FROM membres m 
+            JOIN equipes e ON m.equipe_id = e.id 
+            JOIN paroisses p ON m.paroisse_id = p.id 
+            WHERE m.matloc=? AND m.statut='actif'
+        """, (matloc_membre,)).fetchone()
+    except Exception as e:
+        st.error(f"Erreur de base de données : {e}")
+        return
+
+    # --- LE RAYON X ---
+    # On affiche ce que la base a trouvé, pour savoir pourquoi ça plantait avant
+    st.subheader("🔍 Diagnostic temporaire")
+    st.write(f"Recherche pour : **{matloc_membre}**")
+    st.write(f"Résultat brut de la base : `{membre}`")
+    if membre:
+        st.write(f"Nombre d'éléments trouvés : **{len(membre)}**")
+    st.divider()
+    # --------------------
+
+    if not membre:
+        st.error("Identifiant de membre inconnu, ou ce membre n'a pas d'équipe/paroisse assignée dans la base de données.")
+        return
+
+    # Le reste de votre code original (date_adh, annees_fidelite, les onglets...) commence ici :
     date_adh = safe_date(membre[5])
     annees_fidelite = (date.today() - date_adh).days // 365 if date_adh else 0
 
     tab_ressources, tab_agenda, tab_profil = st.tabs(["🙏 Ressources", "📅 Mon Agenda", "👤 Mon Espace"])
+    
+    # ... (laissez la suite du code intacte) ...
 
     # --------------------------------------------------------------------
     # ONGLET 1 : RESSOURCES SPIRITUELLES
