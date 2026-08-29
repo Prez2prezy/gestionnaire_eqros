@@ -13,11 +13,15 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
 
 def generer_identifiant_equipe(nom_paroisse, nom_commune, nom_equipe, paroisse_id):
     nom_propre = nom_paroisse.lower()
-    motifs_exclus = [r"notre[\s\-]*dame", r"sainte?", r"st\.?", r"notre", r"dame", r"du\b", r"d'[\w]*", r"l'[\w]*", r"de\b"]
+    # CORRECTION DU BUG : On remplace "l'[\w]*" par "l'" pour ne manger que le "l'" et pas le mot suivant (ex: Assomption)
+    motifs_exclus = [r"notre[\s\-]*dame", r"sainte?", r"st\.?", r"notre", r"dame", r"du\b", r"d'", r"l'", r"de\b"]
     for motif in motifs_exclus: nom_propre = re.sub(motif, "", nom_propre, flags=re.IGNORECASE)
     nom_propre = re.sub(r"[\s'\-]", "", nom_propre)
-    prefixe_par = sans_accents(nom_propre[:3])
+    
+    # Sécurité : Si le nom est vide après nettoyage, on prend les 3 premières lettres du mot "Paroisse"
+    prefixe_par = sans_accents(nom_propre[:3]) if nom_propre else "par"
     prefixe_com = sans_accents(nom_commune[:3])
+    
     est_jeune = "jeune" in nom_equipe.lower()
     if est_jeune:
         suffixe = "j"
@@ -36,16 +40,11 @@ def get_max_membres(equipe_id):
     """, (equipe_id,)).fetchone()
     
     if paroisse_info:
-        # On force la conversion en texte (str) au cas où la BDD renverrait un chiffre
         nom_paroisse = str(paroisse_info[0]).lower() 
         commune = str(paroisse_info[1]).lower()
-        
-        if "notre dame de l'assomption" in nom_paroisse and "koumassi" in commune:
+        if "notre dame" in nom_paroisse and "assomption" in nom_paroisse and "koumassi" in commune:
             return 20
             
-    return 12
-            
-    # Règle générale (par défaut) : Bloqué à 12
     return 12
 
 def show_paroisse():
@@ -61,9 +60,22 @@ def show_paroisse():
     if menu == "🏘️ Ma paroisse":
         st.markdown(f'<h2 style="color:#1A237E;">🏘️ {nom_p}</h2>', unsafe_allow_html=True)
         st.markdown(f'<div class="custom-info-box">Commune : {p_info[1]}<br>Ville : {p_info[2]}<br><b>Responsable :</b> {p_info[3]}<br><b>Bureau :</b> {p_info[4]}</div>', unsafe_allow_html=True)
-        with st.expander("✏️ Modifier"):
+        
+        with st.expander("✏️ Modifier les informations"):
             nr, nb = st.text_input("Nouveau responsable", value=p_info[3]), st.text_area("Nouveau bureau", value=p_info[4])
             if st.button("💾 Enregistrer"): c.execute("UPDATE paroisses SET responsable=?, bureau=? WHERE id=?", (nr, nb, pid)); commit_and_sync(); st.success("Mis à jour !"); st.rerun()
+
+        # NOUVEAU : Zone de réinitialisation de la paroisse
+        with st.expander("⚠️ ZONE DANGEREUSE : Réinitialisation de la paroisse"):
+            st.error("Cette action supprimera **définitivement** toutes les équipes, les membres et les accès de cette paroisse. Cette action est irréversible.")
+            confirm_text = st.text_input("Pour confirmer, tapez le mot : SUPPRIMER")
+            if st.button("🗑️ Réinitialiser la paroisse", type="secondary") and confirm_text == "SUPPRIMER":
+                c.execute("DELETE FROM membres WHERE paroisse_id=?", (pid,))
+                c.execute("DELETE FROM equipes WHERE paroisse_id=?", (pid,))
+                c.execute("DELETE FROM utilisateurs WHERE paroisse_id=? AND role='equipe'", (pid,))
+                commit_and_sync()
+                st.success("Paroisse entièrement réinitialisée. Vous pouvez recréer vos équipes.")
+                st.rerun()
 
     elif menu == "👥 Mes équipes":
         st.markdown(f'<h2 style="color:#1A237E;">👥 Équipes de {nom_p}</h2>', unsafe_allow_html=True)
@@ -88,7 +100,7 @@ def show_paroisse():
         
         if st.session_state.get('new_equipe_info'):
             info = st.session_state['new_equipe_info']
-            st.success(f"✅ Équipe '{info['nom']}' créée !")
+            st.success(f"✅ '{info['nom']}' créée !")
             st.markdown(f"<div style='background:#e8f5e9;padding:20px;border-radius:10px;border:1px solid #c8e6c9;'><p><strong>🔑 Identifiant :</strong> <code style='color:#d84315;font-size:1.2rem;'>{info['user']}</code></p><p><strong>🔒 Mot de passe :</strong> <code style='color:#d84315;font-size:1.2rem;'>{info['mdp']}</code></p></div>", unsafe_allow_html=True)
             if st.button("OK"): del st.session_state['new_equipe_info']; st.rerun()
 
@@ -136,6 +148,18 @@ def show_paroisse():
                     st.write(f"**Bureau :** {eq_bur}")
                     user_info = c.execute("SELECT username FROM utilisateurs WHERE equipe_id=? AND role='equipe'", (eq_id,)).fetchone()
                     if user_info: st.code(f"🔑 Connexion : {user_info[0]}")
+                
+                # NOUVEAU : Bouton de suppression d'équipe
+                st.markdown("---")
+                if nb_m == 0:
+                    if st.button(f"🗑️ Supprimer définitivement l'équipe {eq_nom}", key=f"del_eq_{eq_id}", type="secondary"):
+                        c.execute("DELETE FROM utilisateurs WHERE equipe_id=?", (eq_id,))
+                        c.execute("DELETE FROM equipes WHERE id=?", (eq_id,))
+                        commit_and_sync()
+                        st.success(f"Équipe {eq_nom} supprimée.")
+                        st.rerun()
+                else:
+                    st.info("💡 Pour supprimer cette équipe, vous devez d'abord archiver ou transférer ses membres.")
                 
                 if st.button(f"📋 Voir les membres de {eq_nom}", key=f"btn_membres_eq_{eq_id}"):
                     st.session_state['show_membres_equipe'] = eq_id if st.session_state.get('show_membres_equipe') != eq_id else None
@@ -213,8 +237,6 @@ def show_paroisse():
                                         c.execute("UPDATE membres SET statut='archive' WHERE id=?", (m[0],))
                                         c.execute('''INSERT INTO archives (membre_id, situation, date_debut, date_fin, commentaire, auteur_id, auteur_nom, auteur_role, paroisse_id, equipe_id) VALUES (?, 'Transféré', ?, ?, ?, ?, ?, ?, ?, ?)''', (m[0], ad, date(af, 10, 1), f"Transféré vers {dest_nom}", st.session_state['user_id'], st.session_state['username'], 'paroisse', pid, eid))
                                         c.execute("UPDATE membres SET equipe_id=?, statut='actif' WHERE id=?", (equipe_destination, m[0]))
-                                        
-                                        # CORRECTION CRITIQUE : Ajout du commit et du rerun pour le transfert
                                         commit_and_sync()
                                         del st.session_state[f'form_arch_p_{m[0]}']
                                         st.success(f"Membre transféré vers {dest_nom} !")
@@ -232,7 +254,6 @@ def show_paroisse():
     elif menu == "📅 Abonnements":
         st.markdown(f'<h2 style="color:#1A237E;">💰 État des abonnements - {nom_p}</h2>', unsafe_allow_html=True)
         
-        # CORRECTION LOGIQUE : Année pastorale par défaut
         annee_pastorale_en_cours = get_periode_pastorale()[0]
         annee = st.number_input("Année de début de période", min_value=2020, max_value=annee_pastorale_en_cours, value=annee_pastorale_en_cours, step=1)
         st.write(f"**Période observée :** {periode_affichage(annee)}")
@@ -248,7 +269,6 @@ def show_paroisse():
         
         c1, c2 = st.columns(2)
         c1.metric("Total membres (Paroisse)", total_p)
-        # CORRECTION BUG STREAMLIT : Retrait du delta texte
         c2.metric("Abonnements enregistrés", payes_p)
         st.caption(f"📊 **Taux de recouvrement :** {pourcent_str}")
         
