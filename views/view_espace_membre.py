@@ -50,7 +50,7 @@ def show_espace_membre(matloc_membre=None):
             if os.path.exists(logo_path):
                 st.image(logo_path, width=200)
         with col_titre:
-            st.markdown("<h2 style='color:#4527a0; margin:0;'>Équipes du Rosaire</h2><p style='color:#666; margin:0;'>Diocèse de Grand-Bassam</p>", unsafe_allow_html=True)
+            st.markdown("<p style='color:#666; margin:0;'>Diocèse de Grand-Bassam</p>", unsafe_allow_html=True)
         
         # --- CARTE POSTALE PUBLIQUE ---
         dernier_contenu = c.execute("SELECT titre, contenu_texte, image_url FROM espace_spirituel WHERE type_contenu IN ('priere', 'meditation') ORDER BY date_publication DESC LIMIT 1").fetchone()
