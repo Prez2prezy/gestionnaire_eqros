@@ -26,6 +26,7 @@ def ajouter_evenement_agenda(equipe_id=None, paroisse_id=None, diocese_id=None, 
             
             lieu_ag = st.text_input("📍 Lieu", key=f"l_ag_{prefix}")
             desc_ag = st.text_area("📝 Description", key=f"desc_ag_{prefix}")
+                      affiche_ag = st.file_uploader("🖼️ Affiche / Bande passante (optionnel)", type=["jpg", "png", "jpeg", "webp"], key=f"affiche_ag_{prefix}")
             
             # --- SÉLECTION DES ÉQUIPES INVITÉES ---
             equipes_invitees_ids = []
@@ -68,8 +69,9 @@ def ajouter_evenement_agenda(equipe_id=None, paroisse_id=None, diocese_id=None, 
             
             if st.form_submit_button("📅 Enregistrer", width="stretch"):
                 # 1. Création de l'événement principal
-                c.execute('''INSERT INTO evenements (equipe_id, paroisse_id, diocese_id, date_evenement, type_evenement, lieu, auteur_nom) VALUES (?,?,?,?,?,?,?)''',
-                          (equipe_id, paroisse_id, diocese_id, date_ag.isoformat(), type_ag, lieu_ag, auteur_nom))
+                url_affiche = sauvegarder_illustration(affiche_ag) if affiche_ag else None
+                c.execute('''INSERT INTO evenements (equipe_id, paroisse_id, diocese_id, date_evenement, type_evenement, lieu, auteur_nom, affiche_url) VALUES (?,?,?,?,?,?,?,?)''',
+                  (equipe_id, paroisse_id, diocese_id, date_ag.isoformat(), type_ag, lieu_ag, auteur_nom, url_affiche))
                 new_event_id = c.lastrowid
                 
                 # 2. Liaison dans la table de jointure
