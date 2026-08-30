@@ -76,15 +76,20 @@ def show_espace_membre(matloc_membre=None):
         else:
             st.info("Aucun contenu spirituel n'a encore été publié.")
 
-        # --- COIN AFFICHE PUBLIQUE (SÉCURISÉ CONTRE LES DATES INVALIDES) ---
-        affiches_dispo = c.execute("SELECT titre, date_evenement, lieu, affiche_url FROM evenements WHERE affiche_url IS NOT NULL ORDER BY date_evenement DESC LIMIT 5").fetchall()
+        # --- COIN AFFICHE PUBLIQUE ---
+        try:
+            affiches_dispo = c.execute("SELECT titre, date_evenement, lieu, affiche_url FROM evenements WHERE affiche_url IS NOT NULL ORDER BY date_evenement DESC LIMIT 5").fetchall()
+        except ValueError:
+            affiches_dispo = [] # La colonne n'existe pas encore sur le serveur, on passe à la suite
+        
         affiche = None
-        for a in affiches_dispo:
-            d_test = safe_date(a[1])
-            if d_test and d_test >= date.today():
-                affiche = a
-                break
-                
+        if affiches_dispo:
+            for a in affiches_dispo:
+                d_test = safe_date(a[1])
+                if d_test and d_test >= date.today():
+                    affiche = a
+                    break
+                    
         if affiche:
             d_affiche = safe_date(affiche[1])
             date_txt = d_affiche.strftime('%d/%m/%Y') if d_affiche else "Date à définir"
@@ -155,14 +160,19 @@ def show_espace_membre(matloc_membre=None):
         </div>
         """, unsafe_allow_html=True)
 
-    # --- COIN AFFICHE MEMBRE (SÉCURISÉ CONTRE LES DATES INVALIDES) ---
-    affiches_dispo = c.execute("SELECT titre, date_evenement, lieu, affiche_url FROM evenements WHERE affiche_url IS NOT NULL ORDER BY date_evenement DESC LIMIT 5").fetchall()
+    # --- COIN AFFICHE MEMBRE ---
+    try:
+        affiches_dispo = c.execute("SELECT titre, date_evenement, lieu, affiche_url FROM evenements WHERE affiche_url IS NOT NULL ORDER BY date_evenement DESC LIMIT 5").fetchall()
+    except ValueError:
+        affiches_dispo = [] # La colonne n'existe pas encore sur le serveur
+        
     affiche = None
-    for a in affiches_dispo:
-        d_test = safe_date(a[1])
-        if d_test and d_test >= date.today():
-            affiche = a
-            break
+    if affiches_dispo:
+        for a in affiches_dispo:
+            d_test = safe_date(a[1])
+            if d_test and d_test >= date.today():
+                affiche = a
+                break
 
     if affiche:
         d_affiche = safe_date(affiche[1])
