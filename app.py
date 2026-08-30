@@ -183,21 +183,6 @@ if st.sidebar.button("Déconnexion"):
 st.markdown('<a href="#" style="text-decoration: none; color: inherit;"><h1 style="color:#1A237E; cursor: pointer;">📿 GESTIONNAIRE DES ÉQUIPES DU ROSAIRE</h1></a>', unsafe_allow_html=True)
 st.markdown("---")
 
-
-
-
-# À coller temporairement dans app.py pour créer la colonne
-try:
-    c.execute("ALTER TABLE evenements ADD COLUMN affiche_url TEXT")
-    commit_and_sync()
-    print("Colonne affiche_url ajoutée avec succès !")
-except:
-    print("La colonne existe déjà.")
-
-
-
-
-
 # --- ROUTAGE MVC ---
 if st.session_state['role'] == 'diocese':
     from views.view_diocese import show_diocese
@@ -208,3 +193,15 @@ elif st.session_state['role'] == 'paroisse':
 elif st.session_state['role'] == 'equipe':
     from views.view_equipe import show_equipe
     show_equipe()
+
+
+
+
+# --- AJOUT TEMPORAIRE POUR LA BASE DE DONNÉES ---
+try:
+    c.execute("ALTER TABLE evenements ADD COLUMN affiche_url TEXT")
+    commit_and_sync()
+    st.success("✅ Colonne 'affiche_url' ajoutée avec succès ! Vous pouvez maintenant supprimer ce bloc de code de app.py")
+except Exception as e:
+    st.info(f"ℹ️ La colonne existe déjà ou erreur : {e}")
+# -------------------------------------------------
