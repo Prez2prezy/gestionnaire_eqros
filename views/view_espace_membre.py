@@ -69,13 +69,12 @@ def show_espace_membre(matloc_membre=None):
             st.markdown(f"""
             <div class="postcard">
                 {img_html}
-                <h2>{dernier_contenu[0]}</h2>
-                <div>{dernier_contenu[1]}</div>
+                {dernier_contenu[1]}
             </div>
             """, unsafe_allow_html=True)
         else:
             st.info("Aucun contenu spirituel n'a encore été publié.")
-
+            
         # --- COIN AFFICHE PUBLIQUE ---
         try:
             affiches_dispo = c.execute("SELECT titre, date_evenement, lieu, affiche_url FROM evenements WHERE affiche_url IS NOT NULL ORDER BY date_evenement DESC LIMIT 5").fetchall()
@@ -156,10 +155,10 @@ def show_espace_membre(matloc_membre=None):
             <h2>Bienvenue {membre[2]} 🕊️</h2>
             <p style="font-size: 0.85rem;"><em>{membre[8] or ''} | {membre[9] or ''}</em></p>
             <hr style="border: 0.5px solid #d1c4e9; width: 50%; margin: 10px auto;">
-            <div>{dernier_contenu[1]}</div>
+            {dernier_contenu[1]}
         </div>
         """, unsafe_allow_html=True)
-
+        
     # --- COIN AFFICHE MEMBRE ---
     try:
         affiches_dispo = c.execute("SELECT titre, date_evenement, lieu, affiche_url FROM evenements WHERE affiche_url IS NOT NULL ORDER BY date_evenement DESC LIMIT 5").fetchall()
