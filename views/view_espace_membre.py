@@ -1,10 +1,10 @@
+import os
 import streamlit as st
 import streamlit.components.v1 as components
 import json
 from datetime import date
 from database import c, commit_and_sync
 from services import safe_date
-
 
 # --- DESIGN DE L'ESPACE SPIRITUEL ---
 st.markdown("""
@@ -44,11 +44,11 @@ def show_espace_membre(matloc_membre=None):
     # ÉTAT 1 : LA VUE PUBLIQUE (Sans MatLoc)
     # ====================================================================
     if not matloc_membre:
-        # EN-TÊTE AVEC VOTRE VRAI LOGO
         col_logo, col_titre = st.columns([1, 5])
         with col_logo:
-            # >>> INSÉREZ ICI LE CHEMIN DE VOTRE LOGO (ex: "images/logo.png") <<<
-            st.image("logo.png", width=60) 
+            logo_path = os.path.join("images", "logo.png")
+            if os.path.exists(logo_path):
+                st.image(logo_path, width=60)
         with col_titre:
             st.markdown("<h2 style='color:#4527a0; margin:0;'>Équipes du Rosaire</h2><p style='color:#666; margin:0;'>Diocèse de Grand-Bassam</p>", unsafe_allow_html=True)
         
@@ -112,11 +112,12 @@ def show_espace_membre(matloc_membre=None):
         st.error("Identifiant inconnu ou membre inactif.")
         return
 
-    # EN-TÊTE MEMBRE AVEC VRAI LOGO ET PROFIL
+    # EN-TÊTE MEMBRE
     col_logo, col_titre, col_profil = st.columns([1, 5, 1])
     with col_logo:
-        # >>> INSÉREZ ICI LE CHEMIN DE VOTRE LOGO <<<
-        st.image("logo.png", width=60)
+        logo_path = os.path.join("images", "logo.png")
+        if os.path.exists(logo_path):
+            st.image(logo_path, width=60)
     with col_titre:
         st.markdown("<h2 style='color:#4527a0; margin:0;'>Équipes du Rosaire</h2><p style='color:#666; margin:0;'>Diocèse de Grand-Bassam</p>", unsafe_allow_html=True)
     with col_profil:
