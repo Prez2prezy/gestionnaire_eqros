@@ -76,7 +76,7 @@ def show_espace_membre(matloc_membre=None):
         else:
             st.info("Aucun contenu spirituel n'a encore été publié.")
 
-        # --- COIN AFFICHE PUBLIQUE ---
+        # --- COIN AFFICHE PUBLIQUE (SÉCURISÉ CONTRE LES DATES INVALIDES) ---
         affiches_dispo = c.execute("SELECT titre, date_evenement, lieu, affiche_url FROM evenements WHERE affiche_url IS NOT NULL ORDER BY date_evenement DESC LIMIT 5").fetchall()
         affiche = None
         for a in affiches_dispo:
@@ -155,7 +155,7 @@ def show_espace_membre(matloc_membre=None):
         </div>
         """, unsafe_allow_html=True)
 
-    # --- COIN AFFICHE MEMBRE ---
+    # --- COIN AFFICHE MEMBRE (SÉCURISÉ CONTRE LES DATES INVALIDES) ---
     affiches_dispo = c.execute("SELECT titre, date_evenement, lieu, affiche_url FROM evenements WHERE affiche_url IS NOT NULL ORDER BY date_evenement DESC LIMIT 5").fetchall()
     affiche = None
     for a in affiches_dispo:
@@ -274,7 +274,6 @@ def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
             for a in audios:
                 if a[1] and a[1].startswith("http"):
                     st.markdown(f"#### 🎵 {a[0]}")
-                    # Utilisation du lecteur NATIF de Streamlit (plus de bug JavaScript)
                     st.audio(a[1])
                     st.markdown("---")
                 else:
