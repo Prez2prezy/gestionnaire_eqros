@@ -48,7 +48,7 @@ def show_espace_membre(matloc_membre=None):
         with col_logo:
             logo_path = os.path.join("images", "logo.png")
             if os.path.exists(logo_path):
-                st.image(logo_path, width=160)
+                st.image(logo_path, width=600)
         with col_titre:
             st.markdown("<h2 style='color:#4527a0; margin:0;'>Équipes du Rosaire</h2><p style='color:#666; margin:0;'>Diocèse de Grand-Bassam</p>", unsafe_allow_html=True)
         
