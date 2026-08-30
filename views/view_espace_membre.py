@@ -119,7 +119,7 @@ def show_espace_membre(matloc_membre=None):
         if os.path.exists(logo_path):
             st.image(logo_path, width=600)
     with col_titre:
-        st.markdown("<h2 style='color:#4527a0; margin:0;'>Équipes du Rosaire</h2><p style='color:#666; margin:0;'>Diocèse de Grand-Bassam</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color:#666; margin:0;'>Diocèse de Grand-Bassam</p>", unsafe_allow_html=True)
     with col_profil:
         with st.popover("👤 Mon Profil"):
             st.markdown("### 📄 Mes informations")
