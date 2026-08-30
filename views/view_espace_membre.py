@@ -8,15 +8,6 @@ from services import safe_date
 # --- DESIGN DE L'ESPACE SPIRITUEL ---
 st.markdown("""
 <style>
-    .header-spirituel {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px 0px 0px 10px;
-    }
-    .header-text-main { color: #4527a0; font-weight: bold; font-size: 1.1rem; margin: 0; line-height: 1.2; }
-    .header-text-sub { color: #666; font-size: 0.85rem; margin: 0; }
-    
     .postcard {
         background: linear-gradient(135deg, #f3e5f5 0%, #e8eaf6 100%);
         padding: 20px;
@@ -52,15 +43,13 @@ def show_espace_membre(matloc_membre=None):
     # ÉTAT 1 : LA VUE PUBLIQUE (Sans MatLoc)
     # ====================================================================
     if not matloc_membre:
-        st.markdown("""
-        <div class="header-spirituel">
-            <img src="https://img.icons8.com/fluency/48/rosary.png" width="45">
-            <div>
-                <p class="header-text-main">Équipes du Rosaire</p>
-                <p class="header-text-sub">Diocèse de Grand-Bassam</p>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # EN-TÊTE AVEC VOTRE VRAI LOGO
+        col_logo, col_titre = st.columns([1, 5])
+        with col_logo:
+            # >>> INSÉREZ ICI LE CHEMIN DE VOTRE LOGO (ex: "images/logo.png") <<<
+            st.image("logo.png", width=60) 
+        with col_titre:
+            st.markdown("<h2 style='color:#4527a0; margin:0;'>Équipes du Rosaire</h2><p style='color:#666; margin:0;'>Diocèse de Grand-Bassam</p>", unsafe_allow_html=True)
         
         # --- CARTE POSTALE PUBLIQUE ---
         dernier_contenu = c.execute("SELECT titre, contenu_texte, image_url FROM espace_spirituel WHERE type_contenu IN ('priere', 'meditation') ORDER BY date_publication DESC LIMIT 1").fetchone()
@@ -74,12 +63,12 @@ def show_espace_membre(matloc_membre=None):
             """, unsafe_allow_html=True)
         else:
             st.info("Aucun contenu spirituel n'a encore été publié.")
-            
+
         # --- COIN AFFICHE PUBLIQUE ---
         try:
             affiches_dispo = c.execute("SELECT titre, date_evenement, lieu, affiche_url FROM evenements WHERE affiche_url IS NOT NULL ORDER BY date_evenement DESC LIMIT 5").fetchall()
         except ValueError:
-            affiches_dispo = [] # La colonne n'existe pas encore sur le serveur, on passe à la suite
+            affiches_dispo = [] 
         
         affiche = None
         if affiches_dispo:
@@ -122,21 +111,14 @@ def show_espace_membre(matloc_membre=None):
         st.error("Identifiant inconnu ou membre inactif.")
         return
 
-    # En-tête et Profil
-    col_header, col_profil = st.columns([6, 1])
-    with col_header:
-        st.markdown("""
-        <div class="header-spirituel">
-            <img src="https://img.icons8.com/fluency/48/rosary.png" width="45">
-            <div>
-                <p class="header-text-main">Équipes du Rosaire</p>
-                <p class="header-text-sub">Diocèse de Grand-Bassam</p>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
+    # EN-TÊTE MEMBRE AVEC VRAI LOGO ET PROFIL
+    col_logo, col_titre, col_profil = st.columns([1, 5, 1])
+    with col_logo:
+        # >>> INSÉREZ ICI LE CHEMIN DE VOTRE LOGO <<<
+        st.image("logo.png", width=60)
+    with col_titre:
+        st.markdown("<h2 style='color:#4527a0; margin:0;'>Équipes du Rosaire</h2><p style='color:#666; margin:0;'>Diocèse de Grand-Bassam</p>", unsafe_allow_html=True)
     with col_profil:
-        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
         with st.popover("👤 Mon Profil"):
             st.markdown("### 📄 Mes informations")
             st.code(f"🪪 MatLoc : {membre[3]}")
@@ -158,12 +140,12 @@ def show_espace_membre(matloc_membre=None):
             {dernier_contenu[1]}
         </div>
         """, unsafe_allow_html=True)
-        
+
     # --- COIN AFFICHE MEMBRE ---
     try:
         affiches_dispo = c.execute("SELECT titre, date_evenement, lieu, affiche_url FROM evenements WHERE affiche_url IS NOT NULL ORDER BY date_evenement DESC LIMIT 5").fetchall()
     except ValueError:
-        affiches_dispo = [] # La colonne n'existe pas encore sur le serveur
+        affiches_dispo = [] 
         
     affiche = None
     if affiches_dispo:
@@ -250,15 +232,12 @@ def show_espace_membre(matloc_membre=None):
 
 
 # ====================================================================
-# FONCTIONS PRIVÉES (Archives avec lecteur natif)
+# FONCTIONS PRIVÉES
 # ====================================================================
 def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
-    """Gère l'affichage des prières, méditations et musiques AVEC st.audio natif"""
-    
     with tab_priere:
         prières = c.execute("SELECT titre, contenu_texte, image_url FROM espace_spirituel WHERE type_contenu='priere' ORDER BY date_publication DESC").fetchall()
-        if not prières:
-            st.info("Aucune prière publiée pour le moment.")
+        if not prières: st.info("Aucune prière publiée.")
         else:
             for p in prières:
                 with st.expander(f"📖 {p[0]}"):
@@ -267,8 +246,7 @@ def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
 
     with tab_meditation:
         meditations = c.execute("SELECT titre, contenu_texte, image_url FROM espace_spirituel WHERE type_contenu='meditation' ORDER BY date_publication DESC").fetchall()
-        if not meditations:
-            st.info("Aucune méditation disponible pour le moment.")
+        if not meditations: st.info("Aucune méditation disponible.")
         else:
             for m in meditations:
                 with st.expander(f"📖 {m[0]}"):
@@ -277,8 +255,7 @@ def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
 
     with tab_musique:
         audios = c.execute("SELECT titre, fichier_url FROM espace_spirituel WHERE type_contenu='audio' ORDER BY date_publication DESC").fetchall()
-        if not audios:
-            st.info("Aucun fichier audio n'a encore été ajouté.")
+        if not audios: st.info("Aucun fichier audio.")
         else:
             for a in audios:
                 if a[1] and a[1].startswith("http"):
@@ -286,4 +263,4 @@ def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
                     st.audio(a[1])
                     st.markdown("---")
                 else:
-                    st.warning(f"Le fichier audio pour '{a[0]}' est introuvable ou mal formaté.")
+                    st.warning(f"Le fichier audio pour '{a[0]}' est introuvable.")
