@@ -5,6 +5,7 @@ from datetime import date
 from database import c, commit_and_sync
 from services import safe_date
 
+
 # --- DESIGN DE L'ESPACE SPIRITUEL ---
 st.markdown("""
 <style>
