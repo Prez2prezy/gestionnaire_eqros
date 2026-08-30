@@ -3,8 +3,7 @@ import streamlit as st
 # --- DESIGN DE L'ESPACE SPIRITUEL ---
 st.markdown("""
 <style>
-    /* L'en-tête épuré */
-    .header-spirituel {
+    .header-spiritual {
         display: flex;
         align-items: center;
         gap: 10px;
@@ -13,7 +12,6 @@ st.markdown("""
     .header-text-main { color: #4527a0; font-weight: bold; font-size: 1.1rem; margin: 0; line-height: 1.2; }
     .header-text-sub { color: #666; font-size: 0.85rem; margin: 0; }
     
-    /* La Carte Postale Spirituelle */
     .postcard {
         background: linear-gradient(135deg, #f3e5f5 0%, #e8eaf6 100%);
         padding: 20px;
@@ -26,7 +24,6 @@ st.markdown("""
     .postcard h2 { margin-top: 0; color: #4527a0; font-size: 1.2rem; }
     .postcard p { font-size: 0.95rem; margin: 5px 0; }
     
-    /* Les images identiques pour Public et Membre */
     .postcard img, .event-flyer img { 
         border-radius: 12px; 
         width: 100%; 
@@ -36,7 +33,6 @@ st.markdown("""
         box-shadow: 0 2px 6px rgba(0,0,0,0.1); 
     }
 
-    /* Le Coin Affiche / Événement */
     .event-flyer {
         background: white;
         border-radius: 15px;
@@ -48,7 +44,7 @@ st.markdown("""
     .event-flyer img {
         margin-bottom: 0;
         border-bottom: 3px solid #4527a0;
-        max-height: 250px; /* Un peu plus grand pour une affiche */
+        max-height: 250px; 
     }
     .event-flyer-content {
         padding: 15px;
@@ -75,7 +71,6 @@ def show_espace_membre(matloc_membre=None):
         </div>
         """, unsafe_allow_html=True)
         
-        # 1. La Carte Postale
         st.markdown("""
         <div class="postcard">
             <img src="https://images.unsplash.com/photo-1507692049790-de58290a4334?w=800" alt="Méditation">
@@ -85,10 +80,9 @@ def show_espace_membre(matloc_membre=None):
         </div>
         """, unsafe_allow_html=True)
 
-        # 2. Le Coin Affiche (Public)
         st.markdown("""
         <div class="event-flyer">
-            <img src="https://images.unsplash.com/photo-1510590337019-5ef8d3d32116?w=800" alt="Affiche événement">
+            <img src="https://placehold.co/800x250/4527a0/white?text=AFFICHE+ÉVÉNEMENT+PUBLIQUE" alt="Affiche événement">
             <div class="event-flyer-content">
                 <h4>📣 Grand Pèlerinage Annuel</h4>
                 <p>Samedi 15 Juin - Basilique de Grand-Bassam</p>
@@ -96,7 +90,6 @@ def show_espace_membre(matloc_membre=None):
         </div>
         """, unsafe_allow_html=True)
         
-        # 3. Les onglets d'archives
         tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
         with tab_priere: st.info("Ici, l'historique de toutes les prières (Vue Publique)")
         with tab_meditation: st.info("Ici, l'historique de toutes les méditations (Vue Publique)")
@@ -128,7 +121,6 @@ def show_espace_membre(matloc_membre=None):
             st.code("👥 Équipe : Équipe 2")
             st.code("📅 Fidélité : 5 an(s)")
 
-    # 1. La Carte Postale Personnalisée
     st.markdown("""
     <div class="postcard">
         <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800" alt="Prière">
@@ -140,10 +132,9 @@ def show_espace_membre(matloc_membre=None):
     </div>
     """, unsafe_allow_html=True)
 
-    # 2. Le Coin Affiche (Membre)
     st.markdown("""
     <div class="event-flyer">
-        <img src="https://images.unsplash.com/photo-1510590337019-5ef8d3d32116?w=800" alt="Affiche événement">
+        <img src="https://placehold.co/800x250/7e57c2/white?text=AFFICHE+ÉVÉNEMENT+MEMBRE" alt="Affiche événement">
         <div class="event-flyer-content">
             <h4>📣 Grand Pèlerinage Annuel</h4>
             <p>Samedi 15 Juin - Basilique de Grand-Bassam</p>
@@ -151,7 +142,6 @@ def show_espace_membre(matloc_membre=None):
     </div>
     """, unsafe_allow_html=True)
 
-    # 3. L'agenda dans un expander
     with st.expander("📅 Mes prochains évènements"):
         st.markdown("**🧎 Prière mensuelle**")
         st.write("📍 Église de Koumassi")
@@ -163,7 +153,6 @@ def show_espace_membre(matloc_membre=None):
 
     st.markdown("---")
     
-    # 4. Les onglets d'archives
     tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
     with tab_priere: st.info("Ici, l'historique de toutes les prières (Vue Membre)")
     with tab_meditation: st.info("Ici, l'historique de toutes les méditations (Vue Membre)")
