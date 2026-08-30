@@ -194,14 +194,3 @@ elif st.session_state['role'] == 'equipe':
     from views.view_equipe import show_equipe
     show_equipe()
 
-
-
-
-# --- AJOUT TEMPORAIRE POUR LA BASE DE DONNÉES ---
-try:
-    c.execute("ALTER TABLE evenements ADD COLUMN affiche_url TEXT")
-    commit_and_sync()
-    st.success("✅ Colonne 'affiche_url' ajoutée avec succès ! Vous pouvez maintenant supprimer ce bloc de code de app.py")
-except Exception as e:
-    st.info(f"ℹ️ La colonne existe déjà ou erreur : {e}")
-# -------------------------------------------------
