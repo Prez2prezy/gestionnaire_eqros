@@ -9,6 +9,18 @@ from services import safe_date
 # --- DESIGN DE L'ESPACE SPIRITUEL ---
 st.markdown("""
 <style>
+    /* EN-TÊTE COLLANT (STICKY) */
+    .sticky-header {
+        position: sticky;
+        top: 0;
+        background-color: white;
+        z-index: 1000;
+        padding: 10px;
+        border-bottom: 1px solid #eeeeee;
+        margin: -10px -10px 10px -10px; /* Pour contrer la marge du corps */
+        padding-top: 20px;
+    }
+
     .postcard {
         background: linear-gradient(135deg, #f3e5f5 0%, #e8eaf6 100%);
         padding: 20px;
@@ -44,16 +56,17 @@ def show_espace_membre(matloc_membre=None):
     # ÉTAT 1 : LA VUE PUBLIQUE (Sans MatLoc)
     # ====================================================================
     if not matloc_membre:
-        col_logo, col_titre = st.columns([1, 5])
-        with col_logo:
-            logo_path = os.path.join("images", "logo.png")
-            if os.path.exists(logo_path):
-                st.image(logo_path, width=200)
-        with col_titre:
-            # Texte en gris foncé pour être visible
-            st.markdown("<p style='color:#333333; font-size:1.1rem; margin-top:15px;'>Diocèse de Grand-Bassam</p>", unsafe_allow_html=True)
+        # EN-TÊTE FIGÉ
+        st.markdown("""
+        <div class="sticky-header">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div>GET LOGO HERE</div>
+                <div style="color:#333333; font-size:1.1rem;">Diocèse de Grand-Bassam</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         
-        # --- CARTE POSTALE PUBLIQUE ---
+        # --- CARTE CONTENU PUBLIQUE ---
         dernier_contenu = c.execute("SELECT titre, contenu_texte, image_url FROM espace_spirituel WHERE type_contenu IN ('priere', 'meditation') ORDER BY date_publication DESC LIMIT 1").fetchone()
         if dernier_contenu:
             img_html = f"<img src='{dernier_contenu[2]}' alt='Méditation'>" if dernier_contenu[2] else ""
@@ -113,33 +126,33 @@ def show_espace_membre(matloc_membre=None):
         st.error("Identifiant inconnu ou membre inactif.")
         return
 
-    # EN-TÊTE MEMBRE
-    col_logo, col_titre, col_profil = st.columns([1, 5, 1])
-    with col_logo:
-        logo_path = os.path.join("images", "logo.png")
-        if os.path.exists(logo_path):
-            st.image(logo_path, width=200)
-    with col_titre:
-        st.markdown("<p style='color:#333333; font-size:1.1rem; margin-top:15px;'>Diocèse de Grand-Bassam</p>", unsafe_allow_html=True)
-    with col_profil:
-        with st.popover("👤 Mon Profil"):
-            st.markdown("### 📄 Mes informations")
-            st.code(f"🪪 MatLoc : {membre[3]}")
-            st.code(f"📿 N° Méditation : {membre[7] or 'Non défini'}")
-            st.code(f"👥 Équipe : {membre[8] or 'Non assignée'}")
-            st.code(f"🏛️ Paroisse : {membre[9] or 'Non assignée'}")
-            if membre[4]: st.code(f"💬 WhatsApp : {membre[4]}")
+    # EN-TÊTE FIGÉ MEMBRE
+    st.markdown(f"""
+    <div class="sticky-header">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div>GET LOGO HERE</div>
+                <div style="color:#333333; font-size:1.1rem;">Diocèse de Grand-Bassam</div>
+            </div>
+            <div>GET PROFIL POPOVER HERE</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # --- CARTE POSTALE MEMBRE ---
-    dernier_contenu = c.execute("SELECT titre, contenu_texte, image_url FROM espace_spirituel WHERE type_contenu IN ('priere', 'meditation') ORDER BY date_publication DESC LIMIT 1").fetchone()
+    # --- CARTE BIENVENU SÉPARÉE ---
+    st.markdown(f"""
+    <div class="postcard">
+        <h2>Bienvenue {membre[2]} 🕊️</h2>
+        <p style="font-size: 0.85rem;"><em>{membre[8] or ''} | {membre[9] or ''}</em></p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # --- CARTE CONTENU SÉPARÉE ---
     if dernier_contenu:
         img_html = f"<img src='{dernier_contenu[2]}' alt='Prière'>" if dernier_contenu[2] else ""
         st.markdown(f"""
         <div class="postcard">
             {img_html}
-            <h2>Bienvenue {membre[2]} 🕊️</h2>
-            <p style="font-size: 0.85rem;"><em>{membre[8] or ''} | {membre[9] or ''}</em></p>
-            <hr style="border: 0.5px solid #d1c4e9; width: 50%; margin: 10px auto;">
             {dernier_contenu[1]}
         </div>
         """, unsafe_allow_html=True)
