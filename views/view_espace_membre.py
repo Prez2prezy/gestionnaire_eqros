@@ -146,6 +146,8 @@ def show_espace_membre(matloc_membre=None):
         <p style="font-size: 0.85rem;"><em>{membre[8] or ''} | {membre[9] or ''}</em></p>
     </div>
     """, unsafe_allow_html=True)
+    
+    dernier_contenu = c.execute("SELECT titre, contenu_texte, image_url FROM espace_spirituel WHERE type_contenu IN ('priere', 'meditation') ORDER BY date_publication DESC LIMIT 1").fetchone()
 
     # --- CARTE CONTENU SÉPARÉE ---
     if dernier_contenu:
