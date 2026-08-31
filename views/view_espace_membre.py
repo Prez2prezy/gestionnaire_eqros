@@ -9,7 +9,6 @@ from services import safe_date
 # --- DESIGN DE L'ESPACE SPIRITUEL ---
 st.markdown("""
 <style>
-    /* EN-TÊTE COLLANT (STICKY) */
     .sticky-header {
         position: sticky;
         top: 0;
@@ -17,10 +16,9 @@ st.markdown("""
         z-index: 1000;
         padding: 10px;
         border-bottom: 1px solid #eeeeee;
-        margin: -10px -10px 10px -10px; /* Pour contrer la marge du corps */
+        margin: -10px -10px 10px -10px;
         padding-top: 20px;
     }
-
     .postcard {
         background: linear-gradient(135deg, #f3e5f5 0%, #e8eaf6 100%);
         padding: 20px;
@@ -36,7 +34,6 @@ st.markdown("""
         border-radius: 12px; width: 100%; max-height: 220px; 
         object-fit: cover; margin-bottom: 15px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); 
     }
-
     .event-flyer {
         background: white; border-radius: 15px; margin: 0px 10px 15px 10px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden; border: 1px solid #eeeeee;
@@ -56,6 +53,7 @@ def show_espace_membre(matloc_membre=None):
     # ÉTAT 1 : LA VUE PUBLIQUE (Sans MatLoc)
     # ====================================================================
     if not matloc_membre:
+        
         # EN-TÊTE FIGÉ
         st.markdown("""
         <div class="sticky-header">
@@ -66,10 +64,12 @@ def show_espace_membre(matloc_membre=None):
         </div>
         """, unsafe_allow_html=True)
         
-        # --- CARTE CONTENU PUBLIQUE ---
+        # REQUÊTE CONTENU
         dernier_contenu = c.execute("SELECT titre, contenu_texte, image_url FROM espace_spirituel WHERE type_contenu IN ('priere', 'meditation') ORDER BY date_publication DESC LIMIT 1").fetchone()
+        
+        # CARTE CONTENU PUBLIQUE
         if dernier_contenu:
-            img_html = f"<img src='{dernier_contenu[2]}' alt='Méditation'>" if dernier_contenu[2] else ""
+            img_html = f"<img src='{dernier_contenu[2]}' alt='Contenu'>" if len(dernier_contenu) > 2 and dernier_contenu[2] else ""
             st.markdown(f"""
             <div class="postcard">
                 {img_html}
@@ -79,7 +79,7 @@ def show_espace_membre(matloc_membre=None):
         else:
             st.info("Aucun contenu spirituel n'a encore été publié.")
 
-        # --- COIN AFFICHE PUBLIQUE ---
+        # COIN AFFICHE PUBLIQUE
         try:
             affiches_dispo = c.execute("SELECT titre, date_evenement, lieu, affiche_url FROM evenements WHERE affiche_url IS NOT NULL ORDER BY date_evenement DESC LIMIT 5").fetchall()
         except ValueError:
@@ -106,7 +106,7 @@ def show_espace_membre(matloc_membre=None):
             </div>
             """, unsafe_allow_html=True)
         
-        # --- ARCHIVES ---
+        # ARCHIVES
         tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
         _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
         return
@@ -126,7 +126,7 @@ def show_espace_membre(matloc_membre=None):
         st.error("Identifiant inconnu ou membre inactif.")
         return
 
-    # EN-TÊTE FIGÉ MEMBRE
+    # EN-TÊTE MEMBRE FIGÉ
     st.markdown(f"""
     <div class="sticky-header">
         <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -139,19 +139,20 @@ def show_espace_membre(matloc_membre=None):
     </div>
     """, unsafe_allow_html=True)
 
-    # --- CARTE BIENVENU SÉPARÉE ---
+    # CARTE BIENVENU SÉPARÉE
     st.markdown(f"""
     <div class="postcard">
         <h2>Bienvenue {membre[2]} 🕊️</h2>
         <p style="font-size: 0.85rem;"><em>{membre[8] or ''} | {membre[9] or ''}</em></p>
     </div>
     """, unsafe_allow_html=True)
-    
-    dernier_contenu = c.execute("SELECT titre, contenu_texte, image_url FROM espace_spirituel WHERE type_contenu IN ('priere', 'meditation') ORDER BY date_publication DESC LIMIT 1").fetchone()
 
-    # --- CARTE CONTENU SÉPARÉE ---
+    # REQUÊTE CONTENU MEMBRE
+    dernier_contenu = c.execute("SELECT titre, contenu_texte, image_url FROM espace_spirituel WHERE type_contenu IN ('priere', 'meditation') ORDER BY date_publication DESC LIMIT 1").fetchone()
+    
+    # CARTE CONTENU MEMBRE
     if dernier_contenu:
-        img_html = f"<img src='{dernier_contenu[2]}' alt='Prière'>" if dernier_contenu[2] else ""
+        img_html = f"<img src='{dernier_contenu[2]}' alt='Contenu'>" if len(dernier_contenu) > 2 and dernier_contenu[2] else ""
         st.markdown(f"""
         <div class="postcard">
             {img_html}
@@ -159,7 +160,7 @@ def show_espace_membre(matloc_membre=None):
         </div>
         """, unsafe_allow_html=True)
 
-    # --- COIN AFFICHE MEMBRE ---
+    # COIN AFFICHE MEMBRE
     try:
         affiches_dispo = c.execute("SELECT titre, date_evenement, lieu, affiche_url FROM evenements WHERE affiche_url IS NOT NULL ORDER BY date_evenement DESC LIMIT 5").fetchall()
     except ValueError:
@@ -186,7 +187,7 @@ def show_espace_membre(matloc_membre=None):
         </div>
         """, unsafe_allow_html=True)
 
-    # --- AGENDA (Expander) ---
+    # AGENDA (Expander)
     with st.expander("📅 Mes prochains évènements"):
         prochain_evt = c.execute('''
             SELECT e.id, e.date_evenement, e.type_evenement, e.lieu, 
@@ -244,7 +245,7 @@ def show_espace_membre(matloc_membre=None):
 
     st.markdown("---")
     
-    # --- ARCHIVES ---
+    # ARCHIVES
     tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
     _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
 
@@ -259,7 +260,7 @@ def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
         else:
             for p in prières:
                 with st.expander(f"📖 {p[0]}"):
-                    if p[2] and p[2].startswith("http"): st.image(p[2], use_column_width="auto")
+                    if len(p) > 2 and p[2] and p[2].startswith("http"): st.image(p[2], use_column_width="auto")
                     if p[1]: st.markdown(p[1], unsafe_allow_html=True)
 
     with tab_meditation:
@@ -268,7 +269,7 @@ def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
         else:
             for m in meditations:
                 with st.expander(f"📖 {m[0]}"):
-                    if m[2] and m[2].startswith("http"): st.image(m[2], use_column_width="auto")
+                    if len(m) > 2 and m[2] and m[2].startswith("http"): st.image(m[2], use_column_width="auto")
                     if m[1]: st.markdown(m[1], unsafe_allow_html=True)
 
     with tab_musique:
