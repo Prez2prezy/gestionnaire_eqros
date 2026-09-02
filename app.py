@@ -185,12 +185,12 @@ st.markdown("---")
 
 # --- ROUTAGE MVC ---
 if st.session_state['role'] == 'diocese':
-    from views.view_diocese import show_diocese
+    from view_diocese import show_diocese
     show_diocese()
 elif st.session_state['role'] == 'paroisse':
-    from views.view_paroisse import show_paroisse
+    from view_paroisse import show_paroisse
     show_paroisse()
 elif st.session_state['role'] == 'equipe':
-    from views.view_equipe import show_equipe
+    from view_equipe import show_equipe
     show_equipe()
 
