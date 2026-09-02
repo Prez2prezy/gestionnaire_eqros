@@ -8,7 +8,6 @@ import requests
 import pandas as pd
 from datetime import date
 from PIL import Image
-# CORRECTION : Importation de 'conn' nécessaire pour les exports Excel propres
 from database import c, conn, commit_and_sync
 
 USE_CLOUDINARY = False
