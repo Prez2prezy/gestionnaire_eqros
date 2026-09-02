@@ -4,12 +4,8 @@ import pandas as pd
 import io
 from datetime import date
 from database import c, commit_and_sync
-from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, supprimer_photo,
-                      archiver_membre, safe_date, afficher_situation, sans_accents, 
-                      enregistrer_abonnement, verifier_abonnement, periode_affichage, 
-                      generer_matricule_unique, get_periode_pastorale)
-from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, afficher_historique_suivi, 
-                        afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales)
+from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, afficher_situation, sans_accents, enregistrer_abonnement, verifier_abonnement, periode_affichage, generer_matricule_unique, get_periode_pastorale)
+from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, afficher_historique_suivi, afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales)
 
 def generer_identifiant_equipe(nom_paroisse, nom_commune, nom_equipe, paroisse_id):
     nom_propre = nom_paroisse.lower()
