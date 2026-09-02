@@ -26,7 +26,7 @@ def ajouter_evenement_agenda(equipe_id=None, paroisse_id=None, diocese_id=None, 
             
             lieu_ag = st.text_input("📍 Lieu", key=f"l_ag_{prefix}")
             desc_ag = st.text_area("📝 Description", key=f"desc_ag_{prefix}")
-                      affiche_ag = st.file_uploader("🖼️ Affiche / Bande passante (optionnel)", type=["jpg", "png", "jpeg", "webp"], key=f"affiche_ag_{prefix}")
+                  affiche_ag = st.file_uploader("🖼️ Affiche / Bande passante (optionnel)", type=["jpg", "png", "jpeg", "webp"], key=f"affiche_ag_{prefix}")
             
             # --- SÉLECTION DES ÉQUIPES INVITÉES ---
             equipes_invitees_ids = []
