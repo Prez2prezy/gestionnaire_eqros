@@ -3,12 +3,8 @@ import pandas as pd
 import io
 from datetime import date
 from database import c, commit_and_sync
-from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
-                      afficher_situation, enregistrer_abonnement, verifier_abonnement, 
-                      periode_affichage, generer_matricule_unique, get_periode_pastorale) # AJOUT
-from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, 
-                        afficher_historique_suivi, afficher_whatsapp_tabs, widget_type_abonnement, 
-                        enregistrer_presence_equipe, afficher_etat_presences_globales)
+from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, afficher_situation, enregistrer_abonnement, verifier_abonnement, periode_affichage, generer_matricule_unique, get_periode_pastorale)
+from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, afficher_historique_suivi, afficher_whatsapp_tabs, widget_type_abonnement, enregistrer_presence_equipe, afficher_etat_presences_globales)
 
 def get_max_membres(equipe_id):
     paroisse_info = c.execute("""
