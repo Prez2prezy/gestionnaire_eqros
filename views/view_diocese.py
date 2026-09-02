@@ -6,12 +6,8 @@ import io
 import base64
 from datetime import date
 from database import c, commit_and_sync
-from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation, 
-                      exporter_excel_diocese, periode_affichage, get_periode_pastorale, 
-                      sauvegarder_audio, sauvegarder_illustration)
-from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, 
-                        afficher_whatsapp_tabs, afficher_historique_paroisse, 
-                        afficher_etat_presences_paroisse)
+from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation, exporter_excel_diocese, periode_affichage, get_periode_pastorale, sauvegarder_audio, sauvegarder_illustration)
+from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, afficher_whatsapp_tabs, afficher_historique_suivi, afficher_etat_presences_globales)
 
 def show_diocese():
     d_info = c.execute("SELECT nom, responsable, bureau FROM diocese WHERE id=?", (1,)).fetchone()
