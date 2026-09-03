@@ -1,381 +1,865 @@
-import os
-import re
-import html
-import base64
 import streamlit as st
-from datetime import date
+import pandas as pd
+import io
+import html
+import urllib.parse
+from datetime import date, timedelta
 from database import c, commit_and_sync
-from services import safe_date
+from services import (safe_date, envoyer_notification_telegram, lien_whatsapp,
+                      verifier_abonnement, periode_affichage, get_periode_pastorale,
+                      est_cloture, cloturer_periode, TYPES_EVENEMENTS,
+                      URL_ESPACE_SPIRITUEL, sauvegarder_illustration, supprimer_photo)
 
-# --- DESIGN DE L'ESPACE SPIRITUEL ---
-st.markdown("""
-<style>
-    .sticky-header {
-        position: sticky; top: 0; background-color: white; z-index: 1000;
-        padding: 10px 10px 12px 10px; border-bottom: 1px solid #eeeeee;
-        margin: -10px -10px 10px -10px; padding-top: 20px;
-    }
-    /* BLOC LOGO : texte EN DESSOUS du logo, même largeur que lui */
-    .logo-bloc { width: 170px; text-align: center; }
-    .logo-bloc img { width: 170px; border-radius: 10px; display: block; }
-    .logo-bloc .logo-titre {
-        width: 170px; color: #333333; font-weight: 600; font-size: 0.95rem;
-        line-height: 1.25; margin-top: 6px; word-wrap: break-word;
-    }
-    .bouton-profil {
-        background-color: #4527a0; color: white; padding: 10px 18px;
-        text-decoration: none; border-radius: 30px; font-weight: bold;
-        font-size: 0.9rem; display: inline-block; white-space: nowrap;
-    }
-    .postcard {
-        background: linear-gradient(135deg, #f3e5f5 0%, #e8eaf6 100%);
-        padding: 20px; border-radius: 15px; text-align: center; margin: 15px 10px;
-        box-shadow: 0 4px 12px rgba(69, 39, 160, 0.08); color: #4527a0;
-    }
-    .postcard h2 { margin-top: 0; color: #4527a0; font-size: 1.2rem; }
-    .postcard p { font-size: 0.95rem; margin: 5px 0; }
-    .postcard img {
-        border-radius: 12px; width: 100%; max-height: 220px;
-        object-fit: cover; margin-bottom: 15px; box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-    }
-    .postcard-titre {
-        font-size: 1.15rem; font-weight: bold; color: #4A148C;
-        margin-bottom: 12px; border-bottom: 1px solid #d1c4e9; padding-bottom: 8px;
-    }
-    .pdf-box {
-        background: #fff8e1; border: 2px solid #4527a0; border-radius: 12px;
-        padding: 16px; text-align: center; margin: 12px 10px 18px 10px;
-    }
-    .pdf-box-titre { font-weight: bold; color: #4527a0; font-size: 1.05rem; margin-bottom: 12px; }
-    .event-flyer {
-        background: white; border-radius: 15px; margin: 0px 10px 15px 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden; border: 1px solid #eeeeee;
-    }
-    .event-flyer img {
-        width: 100%; margin-bottom: 0; border-bottom: 3px solid #4527a0;
-        max-height: 250px; object-fit: cover;
-    }
-    .event-flyer-content { padding: 15px; text-align: center; }
-    .event-flyer h4 { margin: 0 0 5px 0; color: #4527a0; font-size: 1.1rem; }
-    .event-flyer p { margin: 0; color: #666; font-size: 0.9rem; }
-    .event-flyer-sans-image { background: linear-gradient(135deg, #e8eaf6 0%, #f3e5f5 100%); }
-</style>
-""", unsafe_allow_html=True)
+# NOTE : les messages flash (flash_success / flash_warning) sont affichés
+# centralement par app.py après le routage. Ici, on ne fait que les POSER.
 
 
-# ====================================================================
-# HELPERS
-# ====================================================================
-@st.cache_data
-def _logo_base64():
-    try:
-        with open(os.path.join("images", "logo.png"), "rb") as f:
-            return base64.b64encode(f.read()).decode()
-    except Exception:
-        return None
+def widget_type_abonnement(prefix, m_id, annee):
+    type_abo = st.radio("Type", ["📝 Abonnement", "🔄 Réabonnement"], key=f"type_{prefix}_{m_id}_{annee}", horizontal=True)
+    montant = st.number_input("Montant (FCFA)", min_value=0, value=5000, step=500, key=f"mont_{prefix}_{m_id}_{annee}")
+    return ("abonnement" if "Abonnement" in type_abo else "reabonnement"), montant
 
 
-PDF_URL_RE = re.compile(r'href="(https://res\.cloudinary\.com/[^"]+\.pdf)"')
-DIV_PDF_RE = re.compile(r'<div[^>]*1px dashed #4527a0.*?</div>\s*', re.DOTALL)
+def ajouter_evenement_agenda(equipe_id=None, paroisse_id=None, diocese_id=None, auteur_nom="Système"):
+    st.markdown(f'<h3 style="color:#1A237E;">📅 Vos évènements à venir</h3>', unsafe_allow_html=True)
+    prefix = f"ag_{equipe_id}_{paroisse_id}_{diocese_id}"
+
+    # FIX : nettoyage DIFFÉRÉ des champs (l'ancien del immédiat provoquait une
+    # StreamlitAPIException sur les widgets déjà instanciés dans le même run)
+    cles_nettoyage = st.session_state.pop("nettoyage_agenda", None)
+    if cles_nettoyage:
+        for cle in cles_nettoyage:
+            st.session_state.pop(cle, None)
+
+    with st.expander("➕ Ajouter / Enregistrer un évènement à l'agenda"):
+        with st.form(f"ajout_agenda_{prefix}"):
+            c1, c2 = st.columns(2)
+            with c1:
+                date_ag = st.date_input("📅 Date", value=date.today() + timedelta(days=7), key=f"d_ag_{prefix}")
+            with c2:
+                type_ag = st.selectbox("⛪ Type", TYPES_EVENEMENTS, key=f"t_ag_{prefix}")
+
+            lieu_ag = st.text_input("📍 Lieu", key=f"l_ag_{prefix}")
+            desc_ag = st.text_area("📝 Description", key=f"desc_ag_{prefix}")
+
+            # NOUVEAU (décision n°1) : interface d'upload de l'affiche
+            # (affichée dans le "Coin Affiche" de l'espace spirituel)
+            affiche = st.file_uploader("🖼️ Affiche de l'évènement (optionnel — visible dans l'Espace de Prière)",
+                                       type=["jpg", "jpeg", "png", "webp"], key=f"affiche_{prefix}")
+
+            equipes_invitees_ids = []
+            faire_suivre_check = False
+
+            if paroisse_id and not equipe_id and not diocese_id:
+                st.markdown("**👥 Sélectionnez les équipes concernées :**")
+                equipes_paroisse = c.execute("SELECT id, nom_equipe FROM equipes WHERE paroisse_id=?", (paroisse_id,)).fetchall()
+                if equipes_paroisse:
+                    options_equipes = ["🤝 Toutes les équipes"] + [e[1] for e in equipes_paroisse]
+                    eq_dict = {"🤝 Toutes les équipes": "ALL", **{e[1]: e[0] for e in equipes_paroisse}}
+
+                    cle_selection = f"sel_eq_par_{prefix}"
+                    # FIX : valeur par défaut posée UNE SEULE FOIS (l'ancien code
+                    # écrasait la session à chaque rerun : impossible de désélectionner)
+                    if type_ag == "Prière commune" and cle_selection not in st.session_state:
+                        st.session_state[cle_selection] = ["🤝 Toutes les équipes"]
+
+                    equipes_selectionnees = st.multiselect("Équipes", options_equipes, key=cle_selection)
+
+                    if "🤝 Toutes les équipes" in equipes_selectionnees:
+                        equipes_invitees_ids = [e[0] for e in equipes_paroisse]
+                    else:
+                        equipes_invitees_ids = [eq_dict[nom] for nom in equipes_selectionnees]
+                else:
+                    st.warning("Aucune équipe créée dans cette paroisse.")
+
+            elif equipe_id and not paroisse_id and not diocese_id:
+                eq_info = c.execute("SELECT nom_equipe, paroisse_id FROM equipes WHERE id=?", (equipe_id,)).fetchone()
+                if eq_info:
+                    autres_equipes = c.execute("SELECT id, nom_equipe FROM equipes WHERE paroisse_id=? AND id != ?", (eq_info[1], equipe_id)).fetchall()
+                    if autres_equipes:
+                        st.markdown("**🔗 Co-organiser avec une autre équipe ? (Optionnel)**")
+                        eq_dict_autres = {f"{e[1]}": e[0] for e in autres_equipes}
+                        eq_conjointe = st.multiselect("Autre équipe", list(eq_dict_autres.keys()), key=f"sel_eq_conj_{prefix}")
+                        equipes_invitees_ids = [eq_dict_autres[nom] for nom in eq_conjointe]
+
+                    faire_suivre_check = st.checkbox("📤 Demander à la Paroisse de faire suivre au Diocèse", value=False, key=f"faire_suivre_{prefix}")
+
+            if st.form_submit_button("📅 Enregistrer", width="stretch"):
+                # FIX : upload de l'affiche (Cloudinary). Si indisponible → None, l'évènement est créé quand même
+                url_affiche = sauvegarder_illustration(affiche) if affiche else None
+
+                c.execute('''INSERT INTO evenements (equipe_id, paroisse_id, diocese_id, date_evenement, type_evenement, lieu, auteur_nom, affiche_url)
+                             VALUES (?,?,?,?,?,?,?,?)''',
+                          (equipe_id, paroisse_id, diocese_id, date_ag.isoformat(), type_ag, lieu_ag, auteur_nom, url_affiche))
+                new_event_id = c.lastrowid
+
+                if equipe_id:
+                    c.execute("INSERT OR IGNORE INTO evenement_equipes (evenement_id, equipe_id) VALUES (?, ?)", (new_event_id, equipe_id))
+                for eid_inv in equipes_invitees_ids:
+                    c.execute("INSERT OR IGNORE INTO evenement_equipes (evenement_id, equipe_id) VALUES (?, ?)", (new_event_id, eid_inv))
+
+                faire_suivre = 1 if (equipe_id and not paroisse_id and faire_suivre_check) else 0
+                c.execute('''INSERT INTO agenda (equipe_id, paroisse_id, diocese_id, date_event, type_event, lieu, description, auteur_nom, a_faire_suivre, evenement_id)
+                             VALUES (?,?,?,?,?,?,?,?,?,?)''',
+                          (equipe_id, paroisse_id, diocese_id, date_ag.isoformat(), type_ag, lieu_ag, desc_ag, auteur_nom, faire_suivre, new_event_id))
+
+                # FIX : UN SEUL commit (l'ancien code commitait 2 fois à mi-transaction)
+                commit_and_sync()
+
+                source = "Diocèse"
+                if equipe_id:
+                    eq_res = c.execute("SELECT nom_equipe FROM equipes WHERE id=?", (equipe_id,)).fetchone()
+                    source = eq_res[0] if eq_res and eq_res[0] else "Équipe"
+                elif paroisse_id:
+                    par_res = c.execute('SELECT nom FROM paroisses WHERE id=?', (paroisse_id,)).fetchone()
+                    source = f"Paroisse {par_res[0]}" if par_res and par_res[0] else "Paroisse"
+
+                nb_invites = f" ({len(equipes_invitees_ids)} équipe(s) invitée(s))" if equipes_invitees_ids else ""
+                # FIX : échappement HTML (parse_mode="HTML" de Telegram — un "<" dans
+                # le lieu ou l'auteur cassait l'envoi de la notification)
+                envoyer_notification_telegram(
+                    f"📅 <b>Nouvel évènement !</b>\n🏢 {html.escape(source)}{nb_invites}\n⛪ {html.escape(type_ag)}\n"
+                    f"🗓 {date_ag.strftime('%d/%m/%Y')}\n📍 {html.escape(lieu_ag or '')}\n👤 {html.escape(auteur_nom)}")
+
+                # FIX : nettoyage différé + flash mémorisé (l'ancien success + rerun était invisible)
+                st.session_state["nettoyage_agenda"] = [f"l_ag_{prefix}", f"desc_ag_{prefix}", f"affiche_{prefix}"]
+                st.session_state["flash_success"] = f"Évènement enregistré ! {nb_invites} ✅"
+                st.rerun()
 
 
-def _extraire_pdf_legacy(contenu):
-    """Rétrocompatibilité : retire le HTML de PDF (ancien format, cassé) noyé
-    dans contenu_texte et récupère l'URL du document."""
-    if not contenu or ('cloudinary' not in contenu and 'data:application/pdf' not in contenu):
-        return contenu, None
-    m = PDF_URL_RE.search(contenu)
-    url = m.group(1) if m else None
-    return DIV_PDF_RE.sub('', contenu).strip(), url
+def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_id=None):
+    st.markdown(f'<h3 style="color:#1A237E;">📋 Planification des agendas</h3>', unsafe_allow_html=True)
+    query = '''SELECT id, date_event, type_event, lieu, description, auteur_nom, equipe_id, paroisse_id, diocese_id, a_faire_suivre, evenement_id FROM agenda WHERE date_event >= ? '''
+    params, conditions = [date.today().isoformat()], []
 
+    if equipe_id:
+        conditions.extend([
+            "equipe_id = ?",
+            "(paroisse_id = ? AND equipe_id IS NULL AND (a_faire_suivre IS NULL OR a_faire_suivre != 2))",
+            "(diocese_id = 1 AND paroisse_id IS NULL AND equipe_id IS NULL)"
+        ])
+        pid = c.execute("SELECT paroisse_id FROM equipes WHERE id=?", (equipe_id,)).fetchone()
+        params.extend([equipe_id, pid[0] if pid and pid[0] else -1])
+    elif paroisse_id:
+        conditions.extend(["(paroisse_id = ? AND equipe_id IS NULL)", "equipe_id IN (SELECT id FROM equipes WHERE paroisse_id = ?)", "(diocese_id = 1 AND paroisse_id IS NULL AND equipe_id IS NULL)"])
+        params.extend([paroisse_id, paroisse_id])
+    elif diocese_id:
+        conditions.extend([
+            "(diocese_id = ? AND paroisse_id IS NULL AND equipe_id IS NULL)",
+            "paroisse_id IN (SELECT id FROM paroisses WHERE diocese_id = ?)"
+        ])
+        params.extend([diocese_id, diocese_id])
 
-def _render_header(membre=None, matloc=None):
-    """Entête FIGÉE : bloc logo (texte dessous, même largeur) à gauche,
-    bouton 'Mon profil' à droite. 100% HTML → le sticky fonctionne."""
-    logo_b64 = _logo_base64()
-    logo_html = (f'<img src="data:image/png;base64,{logo_b64}" alt="Logo">'
-                 if logo_b64 else '<div style="font-size:4rem;">📿</div>')
+    if conditions: query += " AND (" + " OR ".join(conditions) + ")"
+    query += " ORDER BY date_event ASC"
 
-    if membre and matloc:
-        profil_actif = st.query_params.get("profil") == "1"
-        # Toggle via paramètre d'URL : clic = rechargement, la carte profil
-        # se déroule sous l'entête (équivalent natif d'un popover)
-        next_val = "0" if profil_actif else "1"
-        label = "✕ Fermer le profil" if profil_actif else "👤 Mon profil"
-        lien = f"?espace=1&matloc={matloc}&profil={next_val}"
-        profil_html = f'<div style="padding-top:14px;"><a href="{lien}" class="bouton-profil">{label}</a></div>'
-    else:
-        profil_html = ""
+    items = c.execute(query, params).fetchall()
+    if not items: return st.info("Aucun évènement à venir.")
 
-    st.markdown(f"""
-    <div class="sticky-header">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div class="logo-bloc">
-                {logo_html}
-                <div class="logo-titre">Diocèse de Grand-Bassam</div>
-            </div>
-            {profil_html}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    role = st.session_state.get('role')
+    mon_eq = st.session_state.get('equipe_id')
+    ma_par = st.session_state.get('paroisse_id')
 
-    # Carte profil déroulante (affichée si activée par le bouton)
-    if membre and matloc and st.query_params.get("profil") == "1":
-        with st.container(border=True):
-            c_img, c_infos = st.columns([1, 2])
-            with c_img:
-                if membre[6]:
-                    try: st.image(membre[6], width=130)
-                    except Exception: pass
-            with c_infos:
-                st.markdown(f"**{membre[1]} {membre[2]}**")
-                st.caption(f"MatLoc : `{membre[3]}`")
-                st.write(f"👥 Équipe : **{membre[8] or '—'}**")
-                st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
-                st.write(f"💬 WhatsApp : {membre[4] or '—'}")
-                st.write(f"📿 N° méditation : {membre[7] or '—'}")
-                d_adh = safe_date(membre[5])
-                st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
-        st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
+    for item in items:
+        i_date = safe_date(item[1])
+        if not i_date: continue
 
+        source_icon, source_nom = "🏛️", "Diocèse"
+        if item[6]:
+            eq_info = c.execute("SELECT nom_equipe FROM equipes WHERE id=?", (item[6],)).fetchone()
+            if eq_info: source_nom, source_icon = f"{eq_info[0]}", "👥"
+        elif item[7]:
+            par_info = c.execute("SELECT nom FROM paroisses WHERE id=?", (item[7],)).fetchone()
+            if par_info: source_nom, source_icon = f"Paroisse {par_info[0]}", "🏘️"
 
-def _render_pdf_boutons(url_pdf):
-    """Encart PDF BIEN VISIBLE : titre, bouton ouvrir + bouton télécharger.
-    HTML sur UNE seule ligne (jamais de code affiché)."""
-    url_dl = url_pdf.replace('/upload/', '/upload/fl_attachment/')
-    st.markdown(
-        '<div class="pdf-box"><div class="pdf-box-titre">📎 Document à lire</div>'
-        f'<a href="{url_pdf}" target="_blank" style="background-color:#4527a0;color:white;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:1.05rem;display:inline-block;margin:4px;">📄 Ouvrir le PDF</a>'
-        f'<a href="{url_dl}" style="background-color:#7b1fa2;color:white;padding:14px 22px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:1.05rem;display:inline-block;margin:4px;">⬇️ Télécharger</a>'
-        '</div>', unsafe_allow_html=True)
+        delta = (i_date - date.today()).days
+        delai = "🔴 Aujourd'hui !" if delta == 0 else "🟠 Demain" if delta == 1 else f"🟡 Dans {delta} jours" if delta <= 7 else f"🟢 Dans {delta} jours"
+        icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨", "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(item[2], "📅")
 
+        titre = f"{icone} {i_date.strftime('%d/%m/%Y')} - {item[2]} - {source_icon} {source_nom} ({delai})"
+        if item[9] == 1: titre = f"🚨 {titre}"
+        elif item[9] == 2: titre = f"📬 {titre}"
 
-def _render_coin_affiche():
-    """Affiche du prochain évènement à venir. AVEC image si une affiche a été
-    publiée (via Agenda → 🖼️ Affiches), sinon version texte élégante."""
-    affiche = None
-    try:
-        lignes = c.execute("""SELECT titre, date_evenement, lieu, affiche_url FROM evenements
-                              WHERE affiche_url IS NOT NULL AND date_evenement >= ?
-                              ORDER BY date_evenement ASC LIMIT 5""",
-                          (date.today().isoformat(),)).fetchall()
-    except Exception:
-        lignes = []
-    for a in lignes:
-        if safe_date(a[1]):
-            affiche = a
-            break
+        with st.expander(titre):
+            if item[9] == 1:
+                st.markdown('''<div style="background-color: #ffebee; margin: -10px -20px 20px -20px; padding: 15px 20px; border-left: 5px solid #d32f2f; border-radius: 0 8px 8px 0;"><span style="color: #b71c1c; font-weight: bold; font-size: 1.1rem;">🚩 Demande de transmission au Diocèse</span><br><span style="color: #c62828;">L\'équipe émettrice souhaite que cette information soit validée et transmise.</span></div>''', unsafe_allow_html=True)
+            elif item[9] == 2:
+                st.markdown('''<div style="background-color: #e8f5e9; margin: -10px -20px 20px -20px; padding: 15px 20px; border-left: 5px solid #2e7d32; border-radius: 0 8px 8px 0;"><span style="color: #1b5e20; font-weight: bold; font-size: 1.1rem;">📬 Information validée et transmise</span><br><span style="color: #2e7d32;">Cette annonce a été jugée pertinente et remontée par le niveau paroissial.</span></div>''', unsafe_allow_html=True)
 
-    if affiche:
-        d_affiche = safe_date(affiche[1])
-        date_txt = d_affiche.strftime('%d/%m/%Y') if d_affiche else "Date à définir"
-        st.markdown(
-            f'<div class="event-flyer"><img src="{affiche[3]}" alt="Affiche événement">'
-            f'<div class="event-flyer-content"><h4>📣 {html.escape(affiche[0])}</h4>'
-            f'<p>{date_txt} - {html.escape(affiche[2] or "Lieu à définir")}</p></div></div>',
-            unsafe_allow_html=True)
-    else:
-        try:
-            prochain = c.execute("""SELECT type_evenement, date_evenement, lieu FROM evenements
-                                    WHERE date_evenement >= ? ORDER BY date_evenement ASC LIMIT 1""",
-                                 (date.today().isoformat(),)).fetchone()
-        except Exception:
-            prochain = None
-        if prochain:
-            d = safe_date(prochain[1])
-            date_txt = d.strftime('%d/%m/%Y') if d else "Date à définir"
-            icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
-                     "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(prochain[0], "📅")
-            st.markdown(
-                f'<div class="event-flyer event-flyer-sans-image"><div class="event-flyer-content">'
-                f'<h4>{icone} {html.escape(prochain[0])}</h4>'
-                f'<p>{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p></div></div>',
-                unsafe_allow_html=True)
+            st.write(f"**🏢 Source :** {source_icon} {source_nom}")
+            st.write(f"**👤 Ajouté par :** {item[5]}")
+            if item[3]: st.write(f"**📍 Lieu :** {item[3]}")
+            if item[4]: st.write(f"**📝 Détails :** {item[4]}")
 
+            # FIX DROITS + CASCADE (décision n°2) : seul le propriétaire de l'annonce
+            # (ou le diocèse) peut supprimer ; la suppression détruit l'évènement lié,
+            # ses présences, ses liens d'équipes, son affiche Cloudinary ET les items
+            # d'agenda jumeaux pointant vers le même évènement.
+            peut_supprimer = (
+                role == 'diocese'
+                or (item[6] is not None and item[6] == mon_eq)
+                or (item[6] is None and item[7] is not None and item[7] == ma_par)
+            )
+            if peut_supprimer:
+                if st.button("🗑️ Supprimer de mon agenda", key=f"del_ag_{item[0]}"):
+                    if item[10]:
+                        evt_id = item[10]
+                        affiche_row = c.execute("SELECT affiche_url FROM evenements WHERE id=?", (evt_id,)).fetchone()
+                        if affiche_row and affiche_row[0]:
+                            supprimer_photo(affiche_row[0])  # nettoie aussi Cloudinary
+                        c.execute("DELETE FROM suivi_presences WHERE evenement_id=?", (evt_id,))
+                        c.execute("DELETE FROM evenement_equipes WHERE evenement_id=?", (evt_id,))
+                        c.execute("DELETE FROM evenements WHERE id=?", (evt_id,))
+                        c.execute("DELETE FROM agenda WHERE evenement_id=?", (evt_id,))  # jumeaux éventuels
+                    else:
+                        c.execute("DELETE FROM agenda WHERE id=?", (item[0],))
+                    commit_and_sync()
+                    st.session_state["flash_warning"] = "Annonce supprimée."
+                    st.rerun()
 
-def _render_fil_actualites():
-    """Dernière publication (prière OU méditation) : titre bien visible,
-    contenu, puis encart PDF distinct si un document est joint."""
-    dernier = c.execute("""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
-                           FROM espace_spirituel
-                           WHERE type_contenu IN ('priere', 'meditation')
-                           ORDER BY date_publication DESC, id DESC LIMIT 1""").fetchone()
+            if item[10]:
+                base_url = URL_ESPACE_SPIRITUEL  # FIX : constante sans "/" final (plus de "//")
+                magic_link = f"{base_url}/?e={item[10]}"
+                message = f"Équipier, confirme ta présence pour la {item[2]} du {i_date.strftime('%d/%m/%Y')}.\n\nCliquez ici pour répondre :\n{magic_link}"
+                wa_link = f"https://wa.me/?text={urllib.parse.quote(message, safe=':/?=')}"
+                st.markdown("---")
+                st.markdown(f'<a href="{wa_link}" target="_blank" class="whatsapp-link">📱 Envoyer le lien de réponse sur WhatsApp</a>', unsafe_allow_html=True)
 
-    if dernier:
-        etiquette = "🙏 Dernière prière" if dernier[0] == 'priere' else "📖 Dernière méditation"
-        texte = dernier[2] or ''
-        url_pdf = dernier[4]
-        if not url_pdf:
-            texte, url_pdf = _extraire_pdf_legacy(texte)
+            if role == 'paroisse':
+                if item[6] and not item[7] and item[9] == 1:
+                    eq_nom_res = c.execute("SELECT nom_equipe FROM equipes WHERE id=?", (item[6],)).fetchone()
+                    eq_nom = eq_nom_res[0] if eq_nom_res else "Équipe inconnue"
 
-        img_html = f'<img src="{dernier[3]}" alt="Contenu">' if dernier[3] else ""
-        st.markdown(
-            f'<div class="postcard"><div class="postcard-titre">{etiquette} — {html.escape(dernier[1])}</div>'
-            f'{img_html}{texte}</div>', unsafe_allow_html=True)
+                    c_val, c_ign = st.columns(2)
+                    with c_val:
+                        if st.button("⬆️ Valider et faire suivre", key=f"val_fwd_{item[0]}", type="primary"):
+                            desc_dio = f"📢 **Transmis par la Paroisse**\nOrigine : {eq_nom}\n\n{item[4] or ''}"
+                            c.execute('''INSERT INTO agenda (diocese_id, paroisse_id, date_event, type_event, lieu, description, auteur_nom, a_faire_suivre) VALUES (1, ?, ?, ?, ?, ?, ?, 2)''',
+                                      (ma_par, item[1], item[2], item[3], desc_dio, f"{st.session_state.get('username')} (Transmis)"))
+                            desc_accuse = f"✅ **Accusé de réception**\nVotre demande a été validée et transmise au Diocèse par la Paroisse."
+                            c.execute('''INSERT INTO agenda (equipe_id, date_event, type_event, lieu, description, auteur_nom, a_faire_suivre) VALUES (?, ?, ?, ?, ?, ?, 2)''',
+                                      (item[6], item[1], item[2], item[3], desc_accuse, f"{st.session_state.get('username')} (Accusé)"))
+                            c.execute("DELETE FROM agenda WHERE id=?", (item[0],))
+                            commit_and_sync()
+                            st.session_state["flash_success"] = "Validé ! L'équipe est notifiée et le Diocèse a reçu l'information."
+                            st.rerun()
 
-        if url_pdf:
-            _render_pdf_boutons(url_pdf)
-    else:
-        st.info("Aucun contenu spirituel n'a encore été publié.")
+                    with c_ign:
+                        st.write("")
+                        if st.button("❌ Ignorer la demande", key=f"ign_fwd_{item[0]}"):
+                            c.execute("DELETE FROM agenda WHERE id=?", (item[0],))
+                            commit_and_sync()
+                            st.session_state["flash_warning"] = "Demande ignorée."
+                            st.rerun()
 
-    _render_coin_affiche()
-
-
-def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
-    with tab_priere:
-        prieres = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
-                               WHERE type_contenu='priere' ORDER BY date_publication DESC, id DESC""").fetchall()
-        if not prieres:
-            st.info("Aucune prière publiée.")
-        else:
-            for p in prieres:
-                with st.expander(f"📖 {p[0]}"):
-                    texte, url_pdf = (p[1] or ''), p[3]
-                    if not url_pdf: texte, url_pdf = _extraire_pdf_legacy(texte)
-                    if p[2] and p[2].startswith("http"): st.image(p[2], use_container_width=True)
-                    if texte: st.markdown(texte, unsafe_allow_html=True)
-                    if url_pdf: _render_pdf_boutons(url_pdf)
-
-    with tab_meditation:
-        meditations = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
-                                   WHERE type_contenu='meditation' ORDER BY date_publication DESC, id DESC""").fetchall()
-        if not meditations:
-            st.info("Aucune méditation disponible.")
-        else:
-            for m in meditations:
-                with st.expander(f"📖 {m[0]}"):
-                    texte, url_pdf = (m[1] or ''), m[3]
-                    if not url_pdf: texte, url_pdf = _extraire_pdf_legacy(texte)
-                    if m[2] and m[2].startswith("http"): st.image(m[2], use_container_width=True)
-                    if texte: st.markdown(texte, unsafe_allow_html=True)
-                    if url_pdf: _render_pdf_boutons(url_pdf)
-
-    with tab_musique:
-        audios = c.execute("""SELECT titre, fichier_url FROM espace_spirituel
-                              WHERE type_contenu='audio' ORDER BY date_publication DESC, id DESC""").fetchall()
-        if not audios:
-            st.info("Aucun fichier audio.")
-        else:
-            for a in audios:
-                if a[1] and a[1].startswith("http"):
-                    st.markdown(f"#### 🎵 {a[0]}")
-                    st.audio(a[1])
+                elif item[8] and not item[6]:
                     st.markdown("---")
-                else:
-                    st.warning(f"Le fichier audio pour '{a[0]}' est introuvable.")
+                    equipes_paroisse = c.execute("SELECT id, nom_equipe FROM equipes WHERE paroisse_id=?", (ma_par,)).fetchall()
+                    if equipes_paroisse:
+                        eq_dict = {e[1]: e[0] for e in equipes_paroisse}
+                        c_sel, c_btn = st.columns([2, 1])
+                        with c_sel:
+                            choix_eq = st.selectbox("Transmettre à l'équipe :", list(eq_dict.keys()), key=f"fwd_sel_eq_{item[0]}")
+                        with c_btn:
+                            st.write("")
+                            if st.button("⬇️ Faire suivre", key=f"fwd_eq_{item[0]}"):
+                                new_desc = f"📢 **Transmis par la Paroisse**\nOrigine : Diocèse\n\n{item[4] or ''}"
+                                c.execute('''INSERT INTO agenda (equipe_id, date_event, type_event, lieu, description, auteur_nom, a_faire_suivre) VALUES (?,?,?,?,?,?,0)''',
+                                          (eq_dict[choix_eq], item[1], item[2], item[3], new_desc, f"{st.session_state.get('username')} (Transmis)"))
+                                commit_and_sync()
+                                st.session_state["flash_success"] = f"Transmis à {choix_eq} !"
+                                st.rerun()
 
 
-# ====================================================================
-# PAGE PRINCIPALE
-# ====================================================================
-def show_espace_membre(matloc_membre=None):
-    msg_ok = st.session_state.pop("flash_success", None)
-    if msg_ok:
-        st.success(msg_ok)
+def afficher_historique_suivi(equipe_id, filtre_type="Tous"):
+    # FIX : présences filtrées sur les membres de CETTE équipe uniquement
+    # (un évènement partagé ne doit pas gonfler les compteurs avec les
+    # réponses des autres équipes invitées)
+    query = '''SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
+               SUM(CASE WHEN sp.statut='physique' THEN 1 ELSE 0 END),
+               SUM(CASE WHEN sp.statut='spirituel' THEN 1 ELSE 0 END),
+               SUM(CASE WHEN sp.statut='a_contacter' THEN 1 ELSE 0 END)
+               FROM evenements e
+               JOIN evenement_equipes ee ON e.id = ee.evenement_id
+               LEFT JOIN suivi_presences sp ON e.id = sp.evenement_id
+                    AND sp.membre_id IN (SELECT id FROM membres WHERE equipe_id = ?)
+               WHERE ee.equipe_id = ? AND e.date_evenement <= ? '''
+    params = [equipe_id, equipe_id, date.today().isoformat()]
+    if filtre_type != "Tous":
+        query += " AND e.type_evenement = ?"
+        params.append(filtre_type)
+    query += " GROUP BY e.id ORDER BY e.date_evenement DESC LIMIT 20"
 
-    # ================= ÉTAT 1 : VUE PUBLIQUE =================
-    if not matloc_membre:
-        _render_header()
-        _render_fil_actualites()
-        tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
-        _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
-        return
+    for ev in c.execute(query, params).fetchall():
+        d_ev = safe_date(ev[1])
+        if not d_ev: continue
+        nb_p, nb_e, nb_a = ev[4] or 0, ev[5] or 0, ev[6] or 0
+        taux = (nb_p / (nb_p+nb_e+nb_a) * 100) if (nb_p+nb_e+nb_a) > 0 else 0
+        couleur = "green" if taux >= 75 else "orange" if taux >= 50 else "red"
+        icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨", "Pèlerinage": "🚶‍♂️", "Réunion": "🤝", "Autre": "📌"}.get(ev[2], "📅")
 
-    # ================= ÉTAT 2 : VUE MEMBRE =================
-    matloc_membre = str(matloc_membre).upper().strip()
+        with st.expander(f"{icone} {d_ev.strftime('%d/%m/%Y')} - {ev[2]} | ✅ {nb_p} ⚠️ {nb_e} ❌ {nb_a}"):
+            st.markdown(f"**Taux de présence :** :{couleur}[{taux:.0f}%]")
+            for statut, label in [('physique', '✅ Présents physiques'), ('spirituel', '🟡 Présents spirituels'), ('a_contacter', '⚪ Sans nouvelles')]:
+                rows = c.execute('''SELECT m.nom, m.prenom FROM membres m
+                                    JOIN suivi_presences sp ON m.id=sp.membre_id
+                                    WHERE sp.evenement_id=? AND sp.statut=? AND m.equipe_id=?''',
+                                 (ev[0], statut, equipe_id)).fetchall()
+                if rows:
+                    st.write(f"{label} : " + ", ".join([f"{r[0]} {r[1]}" for r in rows]))
 
-    membre = c.execute("""
-        SELECT m.id, m.nom, m.prenom, m.matloc, m.whatsapp, m.date_adhesion, m.photo_path,
-               m.numero_meditation, e.nom_equipe, p.nom
-        FROM membres m
-        LEFT JOIN equipes e ON m.equipe_id = e.id
-        LEFT JOIN paroisses p ON m.paroisse_id = p.id
-        WHERE m.matloc=? AND m.statut='actif'
-    """, (matloc_membre,)).fetchone()
 
-    if not membre:
-        st.error("Identifiant inconnu ou membre inactif.")
-        st.info("💡 Vous pouvez consulter l'espace public ci-dessous.")
-        _render_header()
-        _render_fil_actualites()
-        tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
-        _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
-        return
+def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
+    t1, t2, t3 = st.tabs(["🎂 Anniversaires", "📢 Rappels réabonnement", "📿 Espace de prière"])
 
-    # Entête figée (logo + texte dessous + bouton profil) puis carte profil déroulante
-    _render_header(membre, matloc_membre)
+    with t1:
+        # FIX CONFIDENTIALITÉ : filtrage par équipe OU paroisse (l'ancien code
+        # exposait les anniversaires de tout le diocèse à un responsable d'équipe)
+        query = '''SELECT m.nom, m.prenom, m.whatsapp, e.nom_equipe, p.nom, m.date_naissance
+                   FROM membres m JOIN equipes e ON m.equipe_id=e.id JOIN paroisses p ON m.paroisse_id=p.id
+                   WHERE m.statut='actif' AND strftime('%m-%d', m.date_naissance) = ?'''
+        params = [date.today().strftime('%m-%d')]
+        if equipe_id:
+            query += " AND m.equipe_id = ?"; params.append(equipe_id)
+        elif paroisse_id:
+            query += " AND m.paroisse_id = ?"; params.append(paroisse_id)
+        ans = c.execute(query, params).fetchall()
+        if ans:
+            for a in ans:
+                st.markdown(f"**🎂 {a[0]} {a[1]}** - 📍 {a[4]} / {a[3]}")
+                if a[2]:
+                    lien = lien_whatsapp(a[2], f"Joyeux anniversaire {a[0]} {a[1]} ! 🎉\\n\\nToute l'équipe du Rosaire vous souhaite une journée bénie.")
+                    if lien: st.markdown(f'<a href="{lien}" target="_blank" class="whatsapp-link">📱 Souhaiter</a>', unsafe_allow_html=True)
+                st.markdown("---")
+        else: st.info("🎉 Aucun anniversaire aujourd'hui")
 
-    st.markdown(f"""
-    <div class="postcard">
-        <h2>Bienvenue {membre[2]} 🕊️</h2>
-        <p style="font-size: 0.85rem;"><em>{membre[8] or ''} | {membre[9] or ''}</em></p>
-    </div>
-    """, unsafe_allow_html=True)
+    with t2:
+        # FIX BUG CALENDRIER : défaut = année PASTORALE en cours (l'ancien défaut
+        # était l'année civile → de janvier à août, des membres à jour recevaient
+        # de faux rappels de réabonnement)
+        annee_defaut = get_periode_pastorale()[0]
+        annee = st.number_input("Année de début", 2020, date.today().year + 1, min(annee_defaut, date.today().year + 1), key="rappel_whats")
+        query = '''SELECT m.nom, m.prenom, m.whatsapp, e.nom_equipe, p.nom FROM membres m
+                   JOIN equipes e ON m.equipe_id=e.id JOIN paroisses p ON m.paroisse_id=p.id
+                   WHERE m.statut='actif' AND m.id NOT IN (SELECT a.membre_id FROM abonnements a WHERE a.annee_debut=? AND a.statut='paye')'''
+        params = [annee]
+        if equipe_id:
+            query += " AND m.equipe_id = ?"; params.append(equipe_id)
+        elif paroisse_id:
+            query += " AND m.paroisse_id = ?"; params.append(paroisse_id)
+        query += " ORDER BY p.nom, e.nom_equipe, m.nom"
+        retard = c.execute(query, params).fetchall()
+        if retard:
+            for m in retard:
+                st.markdown(f"**❌ {m[0]} {m[1]}** - 📍 {m[4]} / {m[3]}")
+                if m[2]:
+                    lien = lien_whatsapp(m[2], f"Bonjour {m[0]} {m[1]},\\n\\nVotre réabonnement pour la période {periode_affichage(annee)} n'a pas été enregistré. Merci de régulariser.")
+                    if lien: st.markdown(f'<a href="{lien}" target="_blank" class="whatsapp-link">📱 Rappeler</a>', unsafe_allow_html=True)
+                st.markdown("---")
+        else: st.success(f"🎉 Tous à jour pour {periode_affichage(annee)} !")
 
-    _render_fil_actualites()
+    with t3:
+        base_url = URL_ESPACE_SPIRITUEL  # FIX : constante (plus de double slash "//")
 
-    # AGENDA
-    with st.expander("📅 Mes prochains évènements"):
-        prochain_evt = c.execute('''
-            SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
-                   (SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=e.id)
-            FROM evenements e
-            JOIN evenement_equipes ee ON e.id = ee.evenement_id
-            WHERE ee.equipe_id = (SELECT equipe_id FROM membres WHERE matloc=?)
-            AND e.date_evenement >= ?
-            ORDER BY e.date_evenement ASC LIMIT 1
-        ''', (membre[0], matloc_membre, date.today().isoformat())).fetchone()
+        st.markdown("#### 🌐 Lien Public (Pour tout le monde)")
+        st.caption("Partagez ce lien dans vos groupes familiaux ou avec des personnes intéressées par la prière.")
+        lien_public = f"{base_url}/?espace=1"
+        message_public = f"Frères et sœurs, voici l'Espace de Prière et Méditation du Diocèse de Grand-Bassam :\n{lien_public}\n\nBon temps de ressourcement ! 🙏"
+        wa_public = f"https://wa.me/?text={urllib.parse.quote(message_public, safe=':/?=')}"
+        st.markdown(f"""<a href="{wa_public}" target="_blank" class="whatsapp-link">📱 Partager l'espace public sur WhatsApp</a>""", unsafe_allow_html=True)
+        st.code(lien_public)
 
-        if prochain_evt:
-            evt_date = safe_date(prochain_evt[1])
-            if evt_date:
-                delta = (evt_date - date.today()).days
-                delai = "🔴 Aujourd'hui !" if delta == 0 else "🟠 C'est demain !" if delta == 1 else f"📅 Dans {delta} jours"
-                icone_evt = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
-                             "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(prochain_evt[2], "📅")
-
-                st.markdown(f"**{icone_evt} {prochain_evt[2]}**")
-                st.write(f"📍 {prochain_evt[3] or 'Lieu à définir'}")
-                st.caption(delai)
-
-                if not prochain_evt[4]:
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("🟢 Présent physiquement", use_container_width=True, type="primary"):
-                            st.session_state['repondre_event_id'] = prochain_evt[0]
-                            st.session_state['choix_action'] = "physique"
-                            st.rerun()
-                    with col2:
-                        if st.button("🟡 Présent spirituellement", use_container_width=True):
-                            st.session_state['repondre_event_id'] = prochain_evt[0]
-                            st.session_state['choix_action'] = "spirituel"
-                            st.rerun()
-                else:
-                    statut_txt = "✅ Physique" if prochain_evt[4] == 'physique' else "🟡 Spirituel"
-                    st.success(f"Vous êtes inscrit : {statut_txt}")
-
-                if st.session_state.get('repondre_event_id'):
-                    evt_id = st.session_state['repondre_event_id']
-                    if st.button("✅ Confirmer définitivement", type="primary"):
-                        choix = st.session_state.get('choix_action', 'physique')
-                        deja_repondu = c.execute("SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=?",
-                                                 (membre[0], evt_id)).fetchone()
-                        if deja_repondu:
-                            c.execute("UPDATE suivi_presences SET statut=? WHERE membre_id=? AND evenement_id=?",
-                                      (choix, membre[0], evt_id))
+        if equipe_id:
+            st.markdown("---")
+            st.markdown("#### 👤 Liens Personnalisés (Mon équipe)")
+            st.caption("Envoyez à chaque membre son lien d'accès privé pour voir ses événements à venir.")
+            membres = c.execute("SELECT nom, prenom, whatsapp, matloc FROM membres WHERE equipe_id=? AND statut='actif' ORDER BY nom", (equipe_id,)).fetchall()
+            if not membres:
+                st.info("Aucun membre actif dans l'équipe.")
+            else:
+                for m in membres:
+                    matloc_propre = str(m[3]).upper().strip()
+                    lien_perso = f"{base_url}/?espace=1&matloc={matloc_propre}"
+                    msg_perso = f"Bonjour {m[0]} {m[1]},\n\nVoici votre espace spirituel personnel avec les prières et le programme de votre équipe :\n{lien_perso}\n\nBon temps de prière ! 📿"
+                    col_nom, col_btn = st.columns([3, 1])
+                    with col_nom:
+                        st.write(f"**{m[0]} {m[1]}** (`{matloc_propre}`)")
+                    with col_btn:
+                        if m[2]:
+                            wa_perso = f"https://wa.me/?text={urllib.parse.quote(msg_perso, safe=':/?=')}"
+                            st.markdown(f"""<a href="{wa_perso}" target="_blank" class="whatsapp-link">📱 Envoyer</a>""", unsafe_allow_html=True)
                         else:
-                            c.execute("INSERT INTO suivi_presences (membre_id, evenement_id, statut) VALUES (?, ?, ?)",
-                                      (membre[0], evt_id, choix))
-                        commit_and_sync()
-                        st.session_state.pop('repondre_event_id', None)
-                        st.session_state.pop('choix_action', None)
-                        st.session_state["flash_success"] = "Merci pour votre engagement ! 🙏"
-                        st.rerun()
+                            st.caption("_Pas de numéro_")
+
+
+def enregistrer_presence_equipe(equipe_id):
+    annee_pasto, debut_pasto, fin_pasto = get_periode_pastorale()
+    if est_cloture('equipe', equipe_id, annee_pasto):
+        st.error(f"⛔ L'année pastorale {annee_pasto} - {annee_pasto+1} est clôturée. Impossible d'ajouter ou modifier des séances.")
+        return
+
+    membres_actifs = c.execute("SELECT id, nom, prenom FROM membres WHERE equipe_id=? AND statut='actif' ORDER BY nom", (equipe_id,)).fetchall()
+    if not membres_actifs:
+        st.warning("Aucun membre actif dans l'équipe pour le moment.")
+        return
+
+    with st.expander("📝 Enregistrer / Modifier une séance", expanded=False):
+        evenements_lies = c.execute('''SELECT e.id, e.date_evenement, e.type_evenement, e.lieu, e.auteur_nom FROM evenements e JOIN evenement_equipes ee ON e.id = ee.evenement_id WHERE ee.equipe_id = ? ORDER BY e.date_evenement DESC''', (equipe_id,)).fetchall()
+
+        options_evts = {}
+        for ev in evenements_lies:
+            d_ev = safe_date(ev[1])
+            if d_ev:
+                label = f"{d_ev.strftime('%d/%m/%Y')} - {ev[2]} (Par {ev[4] or 'Mon équipe'})"
+                options_evts[label] = ev[0]
+
+        choix_evt = st.selectbox("📋 Sélectionner un évènement existant", ["-- Créer un nouvel évènement --"] + list(options_evts.keys()), key="sel_evt_exist")
+
+        event_id = None
+        lieu_event = ""
+        date_event = date.today()
+        type_event = TYPES_EVENEMENTS[0]
+
+        if choix_evt != "-- Créer un nouvel évènement --":
+            event_id = options_evts[choix_evt]
+            ev_details = c.execute("SELECT date_evenement, type_evenement, lieu FROM evenements WHERE id=?", (event_id,)).fetchone()
+            date_event = safe_date(ev_details[0])
+            type_event = ev_details[1]
+            lieu_event = ev_details[2]
+            # FIX : garde si la date est illisible (sinon .strftime crashait)
+            date_affichee = date_event.strftime('%d/%m/%Y') if date_event else "⚠️ illisible"
+            st.info(f"📅 Date : {date_affichee} | ⛪ Type : {type_event} | 📍 Lieu : {lieu_event or 'Non défini'}")
         else:
-            st.success("✅ Aucun événement à venir. Profitez de ce temps de repos !")
+            c1, c2, c3 = st.columns(3)
+            with c1: date_event = st.date_input("📅 Date", value=date.today(), key="date_suivi_eq")
+            with c2: type_event = st.selectbox("⛪ Type", TYPES_EVENEMENTS, key="type_suivi_eq")
+            with c3: lieu_event = st.text_input("📍 Lieu", key="lieu_suivi_eq")
+
+        dernier_event_en_memoire = st.session_state.get("dernier_event_vu")
+        if event_id != dernier_event_en_memoire:
+            cles_a_supprimer = [k for k in st.session_state.keys() if k.startswith("radio_membre_")]
+            for k in cles_a_supprimer:
+                del st.session_state[k]
+            st.session_state["dernier_event_vu"] = event_id
+
+        with st.form("form_suivi_presences"):
+            date_affichee = date_event.strftime('%d/%m/%Y') if date_event else "⚠️ date non définie"
+            st.markdown(f"**Participation de l'équipe pour le {date_affichee} ({type_event}) :**")
+            st.caption("💡 Cochez 'Présent spirituel' pour ceux qui participent à l'évènement depuis chez eux.")
+
+            # FIX PERF : une seule requête au lieu d'une par membre (N+1)
+            existants = {}
+            if event_id:
+                existants = dict(c.execute("SELECT membre_id, statut FROM suivi_presences WHERE evenement_id=?", (event_id,)).fetchall())
+
+            statuts = {}
+            for m in membres_actifs:
+                db_statut = existants.get(m[0])
+                if db_statut not in ("physique", "spirituel", "a_contacter"):
+                    db_statut = "a_contacter"
+                widget_key = f"radio_membre_{m[0]}"
+                if widget_key not in st.session_state:
+                    st.session_state[widget_key] = db_statut
+
+                statuts[m[0]] = st.radio(
+                    f"{m[1]} {m[2]}",
+                    ["physique", "spirituel", "a_contacter"],
+                    format_func=lambda x: {"physique": "🟢 Présent physiquement", "spirituel": "🟡 Présent spirituellement (à distance)", "a_contacter": "⚪ Sans nouvelles"}[x],
+                    key=widget_key,
+                    horizontal=True
+                )
+
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                submitted = st.form_submit_button("💾 Enregistrer la communion", width="stretch")
+            with col_btn2:
+                clear = st.form_submit_button("🗑️ Effacer cette séance", width="stretch")
+
+            if submitted:
+                if event_id:
+                    # FIX : l'UPDATE du lieu est inconditionnel (l'ancienne condition
+                    # inversée ne le faisait JAMAIS)
+                    c.execute("UPDATE evenements SET lieu=? WHERE id=?", (lieu_event, event_id))
+                else:
+                    if not date_event:
+                        st.session_state["flash_warning"] = "Impossible de créer l'évènement : aucune date valide."
+                        st.rerun()
+                    c.execute("INSERT INTO evenements (equipe_id, type_evenement, date_evenement, lieu, auteur_nom) VALUES (?, ?, ?, ?, ?)",
+                              (equipe_id, type_event, date_event.isoformat(), lieu_event, st.session_state.get('username')))
+                    event_id = c.lastrowid
+                    c.execute("INSERT OR IGNORE INTO evenement_equipes (evenement_id, equipe_id) VALUES (?, ?)", (event_id, equipe_id))
+
+                # FIX CRITIQUE : ne supprimer que les présences des membres de CETTE
+                # équipe (un évènement partagé ne doit pas perdre les réponses
+                # saisies par les membres des autres équipes via leur lien magique)
+                c.execute('''DELETE FROM suivi_presences
+                             WHERE evenement_id=?
+                               AND membre_id IN (SELECT id FROM membres WHERE equipe_id=?)''',
+                          (event_id, equipe_id))
+                for m_id, statut in statuts.items():
+                    c.execute("INSERT INTO suivi_presences (membre_id, evenement_id, statut) VALUES (?, ?, ?)", (m_id, event_id, statut))
+                commit_and_sync()
+                st.session_state["flash_success"] = "Communion de l'équipe enregistrée avec succès ! ✅"
+                st.rerun()
+
+            if clear:
+                if not event_id:
+                    st.warning("Aucune séance enregistrée à effacer pour le moment.")
+                else:
+                    c.execute('''DELETE FROM suivi_presences
+                                 WHERE evenement_id=? AND membre_id IN (SELECT id FROM membres WHERE equipe_id=?)''',
+                              (event_id, equipe_id))
+                    # FIX : ne délier QUE cette équipe ; l'évènement n'est détruit
+                    # que si plus aucune équipe n'y est rattachée
+                    c.execute("DELETE FROM evenement_equipes WHERE evenement_id=? AND equipe_id=?", (event_id, equipe_id))
+                    restantes = c.execute("SELECT COUNT(*) FROM evenement_equipes WHERE evenement_id=?", (event_id,)).fetchone()[0]
+                    if restantes == 0:
+                        c.execute("DELETE FROM evenements WHERE id=?", (event_id,))
+                    commit_and_sync()
+                    st.session_state["flash_warning"] = "Séance effacée."
+                    st.rerun()
 
     st.markdown("---")
+    st.subheader("📊 Historique et Engagement")
+    filtre_type = st.selectbox("Filtrer par type d'évènement", ["Tous"] + TYPES_EVENEMENTS, key="filtre_hist_eq")
+    afficher_historique_suivi(equipe_id, filtre_type)
 
-    # ARCHIVES
-    tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
-    _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
+
+def afficher_etat_presences_globales(equipe_id):
+    st.markdown(f'<h3 style="color:#1A237E;">📊 État de l\'engagement spirituel (Croisement par évènement)</h3>', unsafe_allow_html=True)
+
+    annee_actuelle, _, _ = get_periode_pastorale()
+    choix_annee = st.selectbox("Année pastorale", [annee_actuelle, annee_actuelle - 1, annee_actuelle - 2],
+                               format_func=lambda x: f"Sept {x} - Août {x+1}", key="sel_annee_eq_globale")
+
+    debut_periode = date(choix_annee, 9, 1)
+    fin_periode = date(choix_annee + 1, 8, 31)
+
+    if est_cloture('equipe', equipe_id, choix_annee):
+        st.success("✅ Cette année pastorale est clôturée et archivée.")
+    elif choix_annee == annee_actuelle and date.today().month in [9, 10]:
+        if st.button("🔒 Clôturer et archiver cette année", key="cloturer_eq"):
+            cloturer_periode('equipe', equipe_id, choix_annee, st.session_state.get('username'))
+            st.session_state["flash_success"] = "Année clôturée ! Les données sont figées."
+            st.rerun()
+
+    membres = c.execute("SELECT nom, prenom FROM membres WHERE equipe_id=? AND statut='actif' ORDER BY nom", (equipe_id,)).fetchall()
+    if not membres:
+        return st.info("Aucun membre actif dans l'équipe.")
+
+    # FIX : filtre sur l'équipe du MEMBRE (les réponses des autres équipes invitées
+    # polluaient les statistiques sur les évènements partagés)
+    presences = c.execute('''
+        SELECT m.nom, m.prenom, e.type_evenement, sp.statut
+        FROM suivi_presences sp
+        JOIN evenements e ON sp.evenement_id = e.id
+        JOIN membres m ON sp.membre_id = m.id
+        WHERE m.equipe_id = ? AND e.date_evenement >= ? AND e.date_evenement <= ?
+    ''', (equipe_id, debut_periode.isoformat(), fin_periode.isoformat())).fetchall()
+
+    if not presences:
+        return st.info(f"Aucune présence enregistrée pour la période de Sept {choix_annee} à Août {choix_annee+1}.")
+
+    df = pd.DataFrame(presences, columns=["Nom", "Prenom", "Type", "Statut"])
+    df['Est_Engage'] = df['Statut'].isin(['physique', 'spirituel']).astype(int)
+
+    stats = df.groupby(['Nom', 'Prenom', 'Type'])['Est_Engage'].agg(['sum', 'count']).reset_index()
+    stats.columns = ['Nom', 'Prenom', 'Type', 'Engage', 'Total']
+    stats['Taux'] = (stats['Engage'] / stats['Total'] * 100).round(1)
+
+    pivot = stats.pivot_table(index=['Nom', 'Prenom'], columns='Type', values='Taux', aggfunc='first')
+    for t in TYPES_EVENEMENTS:
+        if t not in pivot.columns: pivot[t] = 0.0
+    pivot = pivot[TYPES_EVENEMENTS].fillna(0)
+
+    pivot['Taux global'] = df.groupby(['Nom', 'Prenom'])['Est_Engage'].mean() * 100
+    pivot = pivot.reset_index()
+
+    # FIX : inclure les membres actifs sans aucune présence (affichés à 0 %)
+    membres_affiches = set(zip(pivot['Nom'], pivot['Prenom']))
+    lignes_manquantes = [
+        {'Nom': nom, 'Prenom': prenom, **{t: 0.0 for t in TYPES_EVENEMENTS}, 'Taux global': 0.0}
+        for nom, prenom in membres if (nom, prenom) not in membres_affiches
+    ]
+    if lignes_manquantes:
+        pivot = pd.concat([pivot, pd.DataFrame(lignes_manquantes)], ignore_index=True)
+
+    pivot['Membres'] = pivot['Nom'] + ' ' + pivot['Prenom']
+    pivot = pivot.drop(columns=['Nom', 'Prenom'])
+    pivot.insert(0, 'N°', range(1, len(pivot) + 1))
+
+    colonnes_finales = ['N°', 'Membres'] + TYPES_EVENEMENTS + ['Taux global']
+    pivot = pivot[colonnes_finales].round(1)
+
+    # FIX : taux d'équipe calculés depuis les données brutes (l'ancienne
+    # "moyenne des moyennes" donnait des taux statistiquement faux)
+    taux_equipe = {'N°': '', 'Membres': "📊 Taux d'engagement équipe"}
+    for t in TYPES_EVENEMENTS:
+        sous_df = df[df['Type'] == t]
+        taux_equipe[t] = round(sous_df['Est_Engage'].mean() * 100, 1) if len(sous_df) else 0.0
+    taux_equipe['Taux global'] = round(df['Est_Engage'].mean() * 100, 1)
+
+    df_affichage = pivot.copy()
+    for col in TYPES_EVENEMENTS + ['Taux global']: df_affichage[col] = df_affichage[col].apply(lambda x: f"{x:.1f}%")
+
+    df_ligne_equipe = pd.DataFrame([taux_equipe])
+    for col in TYPES_EVENEMENTS + ['Taux global']: df_ligne_equipe[col] = df_ligne_equipe[col].apply(lambda x: f"{x:.1f}%")
+
+    df_final = pd.concat([df_affichage, df_ligne_equipe], ignore_index=True)
+    st.dataframe(df_final, hide_index=True, width="stretch")
+
+    st.markdown("---")
+    st.markdown("### 📥 Générer les rapports d'activité")
+    df_excel_complet = pd.concat([pivot, pd.DataFrame([taux_equipe])], ignore_index=True)
+
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        st.markdown("**🏢 Rapport de l'équipe**")
+        out_team = io.BytesIO()
+        with pd.ExcelWriter(out_team, engine='openpyxl') as w: df_excel_complet.to_excel(w, index=False, sheet_name="Bilan Equipe")
+        out_team.seek(0)
+        st.download_button(label="📥 Télécharger le bilan de l'équipe", data=out_team, file_name=f"bilan_equipe_Sept{choix_annee}.xlsx", key="dl_team_report", width="stretch")
+
+    with col_btn2:
+        st.markdown("**👤 Rapport individuel**")
+        noms_membres = ["-- Sélectionner --"] + [f"{m[0]} {m[1]}" for m in membres]
+        choix_membre = st.selectbox("Choisir un membre", noms_membres, key="select_indiv_report")
+        if choix_membre != noms_membres[0]:
+            df_indiv = pivot[pivot['Membres'] == choix_membre].copy()
+            out_indiv = io.BytesIO()
+            with pd.ExcelWriter(out_indiv, engine='openpyxl') as w: df_indiv.to_excel(w, index=False, sheet_name=f"Bilan {choix_membre.split()[0]}")
+            out_indiv.seek(0)
+            st.download_button(label=f"📥 Télécharger le bilan de {choix_membre.split()[0]}", data=out_indiv,
+                               file_name=f"bilan_{choix_membre.replace(' ', '_')}_Sept{choix_annee}.xlsx", key="dl_indiv_report", width="stretch")
+
+
+def afficher_etat_presences_paroisse(paroisse_id):
+    st.markdown(f'<h3 style="color:#1A237E;">📊 État de l\'engagement spirituel (Vue Paroisse)</h3>', unsafe_allow_html=True)
+
+    annee_actuelle, _, _ = get_periode_pastorale()
+    choix_annee = st.selectbox("Année pastorale", [annee_actuelle, annee_actuelle - 1, annee_actuelle - 2],
+                               format_func=lambda x: f"Sept {x} - Août {x+1}", key="sel_annee_par_globale")
+
+    debut_periode = date(choix_annee, 9, 1)
+    fin_periode = date(choix_annee + 1, 8, 31)
+
+    if est_cloture('paroisse', paroisse_id, choix_annee):
+        st.success("✅ Cette année pastorale est clôturée et archivée pour la paroisse.")
+    elif choix_annee == annee_actuelle and date.today().month in [9, 10]:
+        if st.button("🔒 Clôturer et archiver cette année (Paroisse)", key="cloturer_par"):
+            cloturer_periode('paroisse', paroisse_id, choix_annee, st.session_state.get('username'))
+            st.session_state["flash_success"] = "Année clôturée !"
+            st.rerun()
+
+    presences = c.execute('''
+        SELECT COALESCE(eq.nom_equipe, 'Événement Paroisse') as Equipe, e.type_evenement, sp.statut
+        FROM suivi_presences sp
+        JOIN membres m ON sp.membre_id = m.id
+        JOIN evenements e ON sp.evenement_id = e.id
+        LEFT JOIN evenement_equipes ee ON e.id = ee.evenement_id AND ee.equipe_id = m.equipe_id
+        LEFT JOIN equipes eq ON ee.equipe_id = eq.id
+        WHERE (e.paroisse_id = ? OR eq.paroisse_id = ?) AND e.date_evenement >= ? AND e.date_evenement <= ?
+    ''', (paroisse_id, paroisse_id, debut_periode.isoformat(), fin_periode.isoformat())).fetchall()
+
+    if not presences:
+        return st.info(f"Aucune présence enregistrée pour la période de Sept {choix_annee} à Août {choix_annee+1}.")
+
+    df = pd.DataFrame(presences, columns=["Equipe", "Type", "Statut"])
+    df['Est_Engage'] = df['Statut'].isin(['physique', 'spirituel']).astype(int)
+
+    stats = df.groupby(['Equipe', 'Type'])['Est_Engage'].agg(['sum', 'count']).reset_index()
+    stats.columns = ['Equipe', 'Type', 'Engage', 'Total']
+    stats['Taux'] = (stats['Engage'] / stats['Total'] * 100).round(1)
+
+    pivot = stats.pivot_table(index='Equipe', columns='Type', values='Taux', aggfunc='first')
+    for t in TYPES_EVENEMENTS:
+        if t not in pivot.columns: pivot[t] = 0.0
+    pivot = pivot[TYPES_EVENEMENTS].fillna(0)
+
+    pivot['Taux global'] = df.groupby('Equipe')['Est_Engage'].mean().mul(100)
+    pivot = pivot.reset_index()
+
+    # FIX : inclure les équipes sans aucune présence (affichées à 0 %)
+    equipes_paroisse = [r[0] for r in c.execute(
+        "SELECT nom_equipe FROM equipes WHERE paroisse_id=? ORDER BY nom_equipe", (paroisse_id,)).fetchall()]
+    equipes_affichees = set(pivot['Equipe'])
+    lignes_manquantes = [
+        {'Equipe': eq, **{t: 0.0 for t in TYPES_EVENEMENTS}, 'Taux global': 0.0}
+        for eq in equipes_paroisse if eq not in equipes_affichees
+    ]
+    if lignes_manquantes:
+        pivot = pd.concat([pivot, pd.DataFrame(lignes_manquantes)], ignore_index=True)
+
+    pivot.insert(0, 'N°', range(1, len(pivot) + 1))
+    colonnes_finales = ['N°', 'Equipe'] + TYPES_EVENEMENTS + ['Taux global']
+    pivot = pivot[colonnes_finales].round(1)
+
+    # FIX : taux calculés depuis les données brutes (pas de moyenne des moyennes)
+    taux_paroisse = {'N°': '', 'Equipe': "📊 Taux d'engagement Paroisse"}
+    for t in TYPES_EVENEMENTS:
+        sous_df = df[df['Type'] == t]
+        taux_paroisse[t] = round(sous_df['Est_Engage'].mean() * 100, 1) if len(sous_df) else 0.0
+    taux_paroisse['Taux global'] = round(df['Est_Engage'].mean() * 100, 1)
+
+    df_affichage = pivot.copy()
+    for col in TYPES_EVENEMENTS + ['Taux global']: df_affichage[col] = df_affichage[col].apply(lambda x: f"{x:.1f}%")
+
+    df_ligne_paroisse = pd.DataFrame([taux_paroisse])
+    for col in TYPES_EVENEMENTS + ['Taux global']: df_ligne_paroisse[col] = df_ligne_paroisse[col].apply(lambda x: f"{x:.1f}%")
+
+    df_final = pd.concat([df_affichage, df_ligne_paroisse], ignore_index=True)
+    st.dataframe(df_final, hide_index=True, width="stretch")
+
+    out = io.BytesIO()
+    with pd.ExcelWriter(out, engine='openpyxl') as w:
+        pd.concat([pivot, pd.DataFrame([taux_paroisse])], ignore_index=True).to_excel(w, index=False, sheet_name="Bilan Paroisse")
+    out.seek(0)
+    st.download_button("📥 Télécharger le bilan de la paroisse", data=out,
+                       file_name=f"bilan_paroisse_Sept{choix_annee}.xlsx", key="dl_par_report", width="stretch")
+
+
+def afficher_historique_paroisse(paroisse_id, filtre_type="Tous"):
+    query = '''SELECT e.id, e.date_evenement, e.type_evenement, e.lieu, GROUP_CONCAT(DISTINCT eq.nom_equipe) as noms_equipes,
+               COUNT(DISTINCT CASE WHEN sp.statut='physique' THEN sp.membre_id END),
+               COUNT(DISTINCT CASE WHEN sp.statut='spirituel' THEN sp.membre_id END),
+               COUNT(DISTINCT CASE WHEN sp.statut='a_contacter' THEN sp.membre_id END)
+               FROM evenements e
+               JOIN evenement_equipes ee ON e.id = ee.evenement_id
+               JOIN equipes eq ON ee.equipe_id = eq.id
+               LEFT JOIN suivi_presences sp ON e.id = sp.evenement_id
+               WHERE eq.paroisse_id = ? AND e.date_evenement <= ? '''
+    params = [paroisse_id, date.today().isoformat()]
+    if filtre_type != "Tous":
+        query += " AND e.type_evenement = ?"
+        params.append(filtre_type)
+    query += " GROUP BY e.id ORDER BY e.date_evenement DESC LIMIT 20"
+
+    for ev in c.execute(query, params).fetchall():
+        d_ev = safe_date(ev[1])
+        if not d_ev: continue
+        nb_p, nb_e, nb_a = ev[5] or 0, ev[6] or 0, ev[7] or 0
+        total = nb_p + nb_e + nb_a
+        taux = (nb_p / total * 100) if total > 0 else 0
+        couleur = "green" if taux >= 75 else "orange" if taux >= 50 else "red"
+        icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨", "Pèlerinage": "🚶‍♂️", "Réunion": "🤝", "Autre": "📌"}.get(ev[2], "📅")
+
+        # FIX : ev[4] peut être None → "(None)" affiché. Utilisation de "—"
+        with st.expander(f"{icone} {d_ev.strftime('%d/%m/%Y')} - {ev[2]} ({ev[4] or '—'}) | ✅ {nb_p} ⚠️ {nb_e} ❌ {nb_a}"):
+            st.markdown(f"**Taux de présence :** :{couleur}[{taux:.0f}%]")
+            for statut, label in [('physique', '✅ Présents physiques'), ('spirituel', '🟡 Présents spirituels'), ('a_contacter', '⚪ Sans nouvelles')]:
+                rows = c.execute('''SELECT m.nom, m.prenom, eq.nom_equipe FROM membres m
+                                    JOIN suivi_presences sp ON m.id=sp.membre_id
+                                    JOIN equipes eq ON m.equipe_id=eq.id
+                                    WHERE sp.evenement_id=? AND sp.statut=?''', (ev[0], statut)).fetchall()
+                if rows:
+                    st.write(f"{label} : " + ", ".join([f"{r[0]} {r[1]} ({r[2]})" for r in rows]))
+
+
+def afficher_page_reponse_membre(event_id):
+    st.caption("🔒 En saisissant votre identifiant, vous acceptez que vos données de présence soient enregistrées par les responsables de votre équipe.")
+    st.markdown("<h2 style='text-align:center; color:#1A237E; font-size: 1.5rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>📿 Réponse de Communion</h2>", unsafe_allow_html=True)
+
+    try:
+        event_id = int(event_id)
+    except (ValueError, TypeError):  # FIX : except ciblé (plus de except: nu)
+        st.error("Lien invalide.")
+        return
+
+    evt = c.execute("SELECT type_evenement, date_evenement, lieu FROM evenements WHERE id=?", (event_id,)).fetchone()
+    if not evt:
+        st.error("Cet événement n'existe pas.")
+        return
+
+    date_evt = safe_date(evt[1])
+    st.markdown(f"""
+    <div style="background-color:#f3e5f5; padding:20px; border-radius:10px; text-align:center; margin-bottom:30px;">
+        <h3 style="color:#4A148C; margin-bottom:10px;">{evt[0]}</h3>
+        <p style="font-size:1.1rem; color:#1A237E; margin:5px 0;">📅 {date_evt.strftime('%d/%m/%Y') if date_evt else 'Date inconnue'}</p>
+        <p style="font-size:1.1rem; color:#1A237E; margin:5px 0;">📍 {evt[2] or 'Lieu non défini'}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.session_state.get('event_id_verifie') != event_id:
+        st.session_state['membre_verifie'] = False
+        st.session_state['membre_info'] = None
+        st.session_state['membre_a_repondu'] = False
+        st.session_state['event_id_verifie'] = event_id
+
+    # --- ÉTAPE 1 : VÉRIFICATION ---
+    if not st.session_state.get('membre_verifie', False):
+        st.markdown("**Entrez votre numéro de membre (MatLoc) :**")
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            matloc_saisi = st.text_input("MatLoc", placeholder="Ex: GBA-A1B2C", label_visibility="collapsed").upper().strip()
+        with col2:
+            st.write("")
+            bouton_verifier = st.button("Vérifier", width="stretch")
+
+        if bouton_verifier and matloc_saisi:
+            membre = c.execute("""
+                SELECT m.id, m.nom, m.prenom
+                FROM membres m
+                JOIN evenement_equipes ee ON m.equipe_id = ee.equipe_id
+                WHERE m.matloc = ? AND ee.evenement_id = ? AND m.statut = 'actif'
+            """, (matloc_saisi, event_id)).fetchone()
+
+            if not membre:
+                st.error("❌ MatLoc inconnu ou vous ne faites pas partie d'une équipe invitée à cet événement.")
+            else:
+                st.session_state['membre_verifie'] = True
+                st.session_state['membre_info'] = membre
+                # FIX : mémorisation du matloc pour le lien vers l'Espace de Prière
+                # (l'ancien lien ?espace=1 sans matloc atterrissait sur la vue publique)
+                st.session_state['membre_matloc'] = matloc_saisi
+                st.rerun()
+
+    # --- ÉTAPE 2 : LE CHOIX ---
+    else:
+        membre = st.session_state.get('membre_info')
+        if not membre:  # FIX : sécurité si état incohérent
+            st.session_state['membre_verifie'] = False
+            st.rerun()
+            return
+
+        st.success(f"Bonjour **{membre[1]} {membre[2]}** ! Comment vous joignez-vous à nous ?")
+
+        deja_repondu = c.execute("SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=?",
+                                 (membre[0], event_id)).fetchone()
+        index_defaut = 1 if (deja_repondu and deja_repondu[0] == 'spirituel') else 0
+
+        choix = st.radio(
+            "Votre engagement :",
+            ["physique", "spirituel"],
+            format_func=lambda x: {"physique": "🟢 Je serai présent physiquement", "spirituel": "🟡 Je prierai de chez moi (Spirituel)"}[x],
+            index=index_defaut,
+            horizontal=False
+        )
+
+        if st.button("✅ Confirmer ma réponse", width="stretch", type="primary"):
+            if deja_repondu:
+                c.execute("UPDATE suivi_presences SET statut=? WHERE membre_id=? AND evenement_id=?", (choix, membre[0], event_id))
+            else:
+                c.execute("INSERT INTO suivi_presences (membre_id, evenement_id, statut) VALUES (?, ?, ?)", (membre[0], event_id, choix))
+            commit_and_sync()
+            st.session_state['membre_a_repondu'] = True
+
+        if st.session_state.get('membre_a_repondu'):
+            if choix == "physique":
+                st.balloons()
+                st.success("À bientôt en communion physique ! 🙏")
+            else:
+                st.snow()
+                st.success("Merci pour votre communion spirituelle, nous nous unirons à vous ! 🙏")
+
+            # --- PONT VERS L'ESPACE SPIRITUEL (avec matloc du membre) ---
+            st.markdown("---")
+            lien_espace = f"{URL_ESPACE_SPIRITUEL}/?espace=1&matloc={st.session_state.get('membre_matloc', '')}"
+            st.markdown(f"""
+            <div style="text-align: center; margin-top: 30px; padding: 20px; background: #f3e5f5; border-radius: 15px;">
+                <p style="font-size: 1.1rem; color: #4527a0; font-weight: bold;">Découvrez les ressources de la semaine</p>
+                <a href="{lien_espace}" target="_blank"
+                   style="background-color: #4527a0; color: white; padding: 12px 30px; text-decoration: none; border-radius: 30px; font-weight: bold; display: inline-block; font-size: 1.1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    🕊️ Accéder à l'Espace de Prière
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
