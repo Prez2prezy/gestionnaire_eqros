@@ -1,13 +1,11 @@
 import os
-import re
-import html
 import base64
 import streamlit as st
 from datetime import date
 from database import c, commit_and_sync
 from services import safe_date
 
-# --- DESIGN ---
+# --- DESIGN DE L'ESPACE SPIRITUEL ---
 st.markdown("""
 <style>
     .sticky-header {
@@ -37,13 +35,17 @@ st.markdown("""
     .event-flyer-content { padding: 15px; text-align: center; }
     .event-flyer h4 { margin: 0 0 5px 0; color: #4527a0; font-size: 1.1rem; }
     .event-flyer p { margin: 0; color: #666; font-size: 0.9rem; }
-    .event-flyer-sans-image { background: linear-gradient(135deg, #e8eaf6 0%, #f3e5f5 100%); }
 </style>
 """, unsafe_allow_html=True)
 
 
+# ====================================================================
+# FONCTIONS PRIVÉES (factorisation : l'ancien code dupliquait ~60 lignes
+# entre la vue publique et la vue membre)
+# ====================================================================
 @st.cache_data
 def _logo_base64():
+    """FIX : remplace le placeholder 'GET LOGO HERE' visible par les utilisateurs."""
     try:
         with open(os.path.join("images", "logo.png"), "rb") as f:
             return base64.b64encode(f.read()).decode()
@@ -54,12 +56,15 @@ def _logo_base64():
 def _render_header(membre=None):
     logo_b64 = _logo_base64()
     logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="height:42px;">' if logo_b64 else '<div style="font-size:1.6rem;">📿</div>'
+
     if membre:
+        # FIX : remplace 'GET PROFIL POPOVER HERE' par les infos du membre
         profil_html = (f'<div style="text-align:right; color:#666; font-size:0.8rem; line-height:1.3;">'
-                       f'<b>{html.escape(membre[2])} {html.escape(membre[1])}</b><br>'
+                       f'<b>{membre[2]} {membre[1]}</b><br>'
                        f'<code style="font-size:0.75rem;">{membre[3]}</code></div>')
     else:
         profil_html = ""
+
     st.markdown(f"""
     <div class="sticky-header">
         <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -73,112 +78,57 @@ def _render_header(membre=None):
     """, unsafe_allow_html=True)
 
 
-# ====================================================================
-# FIX N°1 : PDF — plus aucun HTML multi-lignes injecté dans le contenu.
-# RÈGLE : tout st.markdown HTML est passé sur UNE SEULE LIGNE (une ligne
-# vide ou une indentation de 4+ espaces = bloc de code markdown).
-# ====================================================================
-def _render_pdf_boutons(url_pdf):
-    """Boutons PDF natifs (HTML sur une seule ligne → jamais de code visible)."""
-    url_dl = url_pdf.replace('/upload/', '/upload/fl_attachment/')
-    st.markdown(
-        f'<div style="text-align:center;margin:15px 0;">'
-        f'<a href="{url_pdf}" target="_blank" style="background-color:#4527a0;color:white;padding:14px 28px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:1.05rem;display:inline-block;margin:4px;">📄 Ouvrir le PDF</a>'
-        f'<a href="{url_dl}" style="background-color:#7b1fa2;color:white;padding:14px 22px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:1.05rem;display:inline-block;margin:4px;">⬇️ Télécharger</a>'
-        f'</div>', unsafe_allow_html=True)
-
-
-PDF_URL_RE = re.compile(r'href="(https://res\.cloudinary\.com/[^"]+\.pdf)"')
-DIV_PDF_RE = re.compile(r'<div[^>]*1px dashed #4527a0.*?</div>\s*', re.DOTALL)
-
-def _extraire_pdf_legacy(contenu):
-    """Rétrocompatibilité : les anciens contenus ont le HTML du PDF (cassé)
-    noyé dans contenu_texte. On extrait l'URL et on nettoie à la volée."""
-    if not contenu or ('cloudinary' not in contenu and 'data:application/pdf' not in contenu):
-        return contenu, None
-    m = PDF_URL_RE.search(contenu)
-    url = m.group(1) if m else None
-    return DIV_PDF_RE.sub('', contenu).strip(), url
-
-
-def _render_profil(membre):
-    """FIX N°2 : restauration du popover 'Mon profil'."""
-    _, col_p = st.columns([6, 1])
-    with col_p:
-        with st.popover("👤 Mon profil"):
-            if membre[6]:
-                try: st.image(membre[6], width=110)
-                except Exception: pass
-            st.markdown(f"**{membre[1]} {membre[2]}**")
-            st.caption(f"MatLoc : `{membre[3]}`")
-            st.write(f"👥 Équipe : **{membre[8] or '—'}**")
-            st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
-            st.write(f"💬 WhatsApp : {membre[4] or '—'}")
-            st.write(f"📿 N° méditation : {membre[7] or '—'}")
-            d_adh = safe_date(membre[5])
-            st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
-
-
 def _render_coin_affiche():
-    """FIX N°3 : fallback — le prochain évènement s'affiche même sans image."""
-    affiche = None
+    """Coin Affiche : prochain évènement à venir ayant une affiche.
+    FIX CRITIQUE : la colonne affiche_url est créée par la migration de
+    database.py ; l'ancien except ValueError ne rattrapait JAMAIS une erreur
+    SQL (une erreur SQL n'est pas un ValueError) → traceback rouge pour tout
+    visiteur. except Exception = filet de sécurité défensif."""
     try:
-        lignes = c.execute("""SELECT titre, date_evenement, lieu, affiche_url FROM evenements
-                              WHERE affiche_url IS NOT NULL AND date_evenement >= ?
-                              ORDER BY date_evenement ASC LIMIT 5""",
-                           (date.today().isoformat(),)).fetchall()
+        affiches_dispo = c.execute("""SELECT titre, date_evenement, lieu, affiche_url
+                                      FROM evenements WHERE affiche_url IS NOT NULL
+                                      ORDER BY date_evenement DESC LIMIT 5""").fetchall()
     except Exception:
-        lignes = []
-    for a in lignes:
-        if safe_date(a[1]):
-            affiche = a
-            break
+        affiches_dispo = []
+
+    affiche = None
+    if affiches_dispo:
+        for a in affiches_dispo:
+            d_test = safe_date(a[1])
+            if d_test and d_test >= date.today():
+                affiche = a
+                break
 
     if affiche:
         d_affiche = safe_date(affiche[1])
         date_txt = d_affiche.strftime('%d/%m/%Y') if d_affiche else "Date à définir"
-        st.markdown(
-            f'<div class="event-flyer"><img src="{affiche[3]}" alt="Affiche événement">'
-            f'<div class="event-flyer-content"><h4>📣 {html.escape(affiche[0])}</h4>'
-            f'<p>{date_txt} - {html.escape(affiche[2] or "Lieu à définir")}</p></div></div>',
-            unsafe_allow_html=True)
-    else:
-        try:
-            prochain = c.execute("""SELECT type_evenement, date_evenement, lieu FROM evenements
-                                    WHERE date_evenement >= ? ORDER BY date_evenement ASC LIMIT 1""",
-                                 (date.today().isoformat(),)).fetchone()
-        except Exception:
-            prochain = None
-        if prochain:
-            d = safe_date(prochain[1])
-            date_txt = d.strftime('%d/%m/%Y') if d else "Date à définir"
-            icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
-                     "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(prochain[0], "📅")
-            st.markdown(
-                f'<div class="event-flyer event-flyer-sans-image"><div class="event-flyer-content">'
-                f'<h4>{icone} {html.escape(prochain[0])}</h4>'
-                f'<p>{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p></div></div>',
-                unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="event-flyer">
+            <img src="{affiche[3]}" alt="Affiche événement">
+            <div class="event-flyer-content">
+                <h4>📣 {affiche[0]}</h4>
+                <p>{date_txt} - {affiche[2] or 'Lieu à définir'}</p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
 
 def _render_fil_actualites():
-    dernier_contenu = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url
-                                   FROM espace_spirituel
+    """FIX : postcard + coin affiche étaient dupliqués entre les 2 états —
+    factorisés ici (une seule correction à faire à l'avenir)."""
+    dernier_contenu = c.execute("""SELECT titre, contenu_texte, image_url FROM espace_spirituel
                                    WHERE type_contenu IN ('priere', 'meditation')
                                    ORDER BY date_publication DESC, id DESC LIMIT 1""").fetchone()
 
     if dernier_contenu:
-        texte = dernier_contenu[1] or ''
-        url_pdf = dernier_contenu[3]
-        if not url_pdf:  # anciens contenus : PDF noyé dans le texte
-            texte, url_pdf = _extraire_pdf_legacy(texte)
-
-        if dernier_contenu[2]:
-            st.markdown(f'<div class="postcard"><img src="{dernier_contenu[2]}" alt="Contenu">{texte}</div>', unsafe_allow_html=True)
-        elif texte:
-            st.markdown(f'<div class="postcard">{texte}</div>', unsafe_allow_html=True)
-        if url_pdf:
-            _render_pdf_boutons(url_pdf)
+        img_html = f'<img src="{dernier_contenu[2]}" alt="Contenu">' if dernier_contenu[2] else ""
+        # FIX : contenu_texte peut être NULL (titre seul suffit à publier) → "None" affiché
+        st.markdown(f"""
+        <div class="postcard">
+            {img_html}
+            {dernier_contenu[1] or ''}
+        </div>
+        """, unsafe_allow_html=True)
     else:
         st.info("Aucun contenu spirituel n'a encore été publié.")
 
@@ -187,32 +137,26 @@ def _render_fil_actualites():
 
 def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
     with tab_priere:
-        prieres = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
+        prieres = c.execute("""SELECT titre, contenu_texte, image_url FROM espace_spirituel
                                WHERE type_contenu='priere' ORDER BY date_publication DESC, id DESC""").fetchall()
         if not prieres:
             st.info("Aucune prière publiée.")
         else:
             for p in prieres:
                 with st.expander(f"📖 {p[0]}"):
-                    texte, url_pdf = (p[1] or ''), p[3]
-                    if not url_pdf: texte, url_pdf = _extraire_pdf_legacy(texte)
-                    if p[2] and p[2].startswith("http"): st.image(p[2], use_container_width=True)
-                    if texte: st.markdown(texte, unsafe_allow_html=True)
-                    if url_pdf: _render_pdf_boutons(url_pdf)
+                    if p[2] and p[2].startswith("http"): st.image(p[2], use_container_width=True)  # FIX : déprécié
+                    if p[1]: st.markdown(p[1], unsafe_allow_html=True)
 
     with tab_meditation:
-        meditations = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
+        meditations = c.execute("""SELECT titre, contenu_texte, image_url FROM espace_spirituel
                                    WHERE type_contenu='meditation' ORDER BY date_publication DESC, id DESC""").fetchall()
         if not meditations:
             st.info("Aucune méditation disponible.")
         else:
             for m in meditations:
                 with st.expander(f"📖 {m[0]}"):
-                    texte, url_pdf = (m[1] or ''), m[3]
-                    if not url_pdf: texte, url_pdf = _extraire_pdf_legacy(texte)
-                    if m[2] and m[2].startswith("http"): st.image(m[2], use_container_width=True)
-                    if texte: st.markdown(texte, unsafe_allow_html=True)
-                    if url_pdf: _render_pdf_boutons(url_pdf)
+                    if m[2] and m[2].startswith("http"): st.image(m[2], use_container_width=True)  # FIX : déprécié
+                    if m[1]: st.markdown(m[1], unsafe_allow_html=True)
 
     with tab_musique:
         audios = c.execute("""SELECT titre, fichier_url FROM espace_spirituel
@@ -230,19 +174,29 @@ def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
 
 
 def show_espace_membre(matloc_membre=None):
+
+    # FIX : app.py ne route PAS les flashs sur les pages publiques (st.stop()
+    # avant le helper central) → affichage local du flash posé au run précédent
     msg_ok = st.session_state.pop("flash_success", None)
     if msg_ok:
         st.success(msg_ok)
 
-    # ================= ÉTAT 1 : VUE PUBLIQUE =================
+    # ====================================================================
+    # ÉTAT 1 : LA VUE PUBLIQUE (Sans MatLoc)
+    # ====================================================================
     if not matloc_membre:
         _render_header()
         _render_fil_actualites()
+
         tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
         _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
         return
 
-    # ================= ÉTAT 2 : VUE MEMBRE =================
+    # ====================================================================
+    # ÉTAT 2 : LA VUE MEMBRE (Avec MatLoc)
+    # ====================================================================
+    # FIX : normalisation — un lien WhatsApp copié avec espace ou un matloc
+    # retapé en minuscules donnait "Identifiant inconnu" sans recours
     matloc_membre = str(matloc_membre).upper().strip()
 
     membre = c.execute("""
@@ -255,6 +209,7 @@ def show_espace_membre(matloc_membre=None):
 
     if not membre:
         st.error("Identifiant inconnu ou membre inactif.")
+        # FIX : proposer la vue publique plutôt qu'un cul-de-sac
         st.info("💡 Vous pouvez consulter l'espace public ci-dessous.")
         _render_header()
         _render_fil_actualites()
@@ -263,8 +218,8 @@ def show_espace_membre(matloc_membre=None):
         return
 
     _render_header(membre)
-    _render_profil(membre)   # FIX N°2 : le profil est de retour
 
+    # CARTE BIENVENUE
     st.markdown(f"""
     <div class="postcard">
         <h2>Bienvenue {membre[2]} 🕊️</h2>
@@ -274,11 +229,70 @@ def show_espace_membre(matloc_membre=None):
 
     _render_fil_actualites()
 
-    # AGENDA (inchangé — avec .pop() sécurisés et flash)
+    # AGENDA (Expander)
     with st.expander("📅 Mes prochains évènements"):
-        # ... [bloc identique à la version précédente] ...
-        pass  # conservez ici votre bloc agenda existant
+        prochain_evt = c.execute('''
+            SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
+                   (SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=e.id)
+            FROM evenements e
+            JOIN evenement_equipes ee ON e.id = ee.evenement_id
+            WHERE ee.equipe_id = (SELECT equipe_id FROM membres WHERE matloc=?)
+            AND e.date_evenement >= ?
+            ORDER BY e.date_evenement ASC LIMIT 1
+        ''', (membre[0], matloc_membre, date.today().isoformat())).fetchone()
+
+        if prochain_evt:
+            evt_date = safe_date(prochain_evt[1])
+            if evt_date:
+                delta = (evt_date - date.today()).days
+                delai = "🔴 Aujourd'hui !" if delta == 0 else "🟠 C'est demain !" if delta == 1 else f"📅 Dans {delta} jours"
+                icone_evt = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨", "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(prochain_evt[2], "📅")
+
+                st.markdown(f"**{icone_evt} {prochain_evt[2]}**")
+                st.write(f"📍 {prochain_evt[3] or 'Lieu à définir'}")
+                st.caption(delai)
+
+                if not prochain_evt[4]:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("🟢 Présent physiquement", use_container_width=True, type="primary"):
+                            st.session_state['repondre_event_id'] = prochain_evt[0]
+                            st.session_state['choix_action'] = "physique"
+                            st.rerun()
+                    with col2:
+                        if st.button("🟡 Présent spirituellement", use_container_width=True):
+                            st.session_state['repondre_event_id'] = prochain_evt[0]
+                            st.session_state['choix_action'] = "spirituel"
+                            st.rerun()
+                else:
+                    statut_txt = "✅ Physique" if prochain_evt[4] == 'physique' else "🟡 Spirituel"
+                    st.success(f"Vous êtes inscrit : {statut_txt}")
+
+                if st.session_state.get('repondre_event_id'):
+                    evt_id = st.session_state['repondre_event_id']
+                    if st.button("✅ Confirmer définitivement", type="primary"):
+                        choix = st.session_state.get('choix_action', 'physique')
+                        deja_repondu = c.execute("SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=?",
+                                                 (membre[0], evt_id)).fetchone()
+                        if deja_repondu:
+                            c.execute("UPDATE suivi_presences SET statut=? WHERE membre_id=? AND evenement_id=?", (choix, membre[0], evt_id))
+                        else:
+                            c.execute("INSERT INTO suivi_presences (membre_id, evenement_id, statut) VALUES (?, ?, ?)", (membre[0], evt_id, choix))
+                        commit_and_sync()
+                        # FIX : .pop() au lieu de del (KeyError possible si l'état
+                        # a été partiellement nettoyé)
+                        st.session_state.pop('repondre_event_id', None)
+                        st.session_state.pop('choix_action', None)
+                        # FIX : flash mémorisé (l'ancien success + rerun était
+                        # invisible — et sur cette page, le flash est affiché
+                        # localement en haut de show_espace_membre)
+                        st.session_state["flash_success"] = "Merci pour votre engagement ! 🙏"
+                        st.rerun()
+        else:
+            st.success("✅ Aucun événement à venir. Profitez de ce temps de repos !")
 
     st.markdown("---")
+
+    # ARCHIVES
     tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
     _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
