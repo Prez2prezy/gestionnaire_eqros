@@ -163,6 +163,7 @@ def _public_id_unique(dossier, nom_fichier):
 
 
 def sauvegarder_pdf(fichier):
+    """PDF sur Cloudinary (raw). Retourne l'URL sécurisée ou None."""
     if fichier:
         try:
             res = cloudinary.uploader.upload(fichier, resource_type="raw",
@@ -175,6 +176,7 @@ def sauvegarder_pdf(fichier):
 
 
 def sauvegarder_audio(fichier):
+    """Audio/vidéo sur Cloudinary (Cloudinary traite l'audio comme une ressource 'video')."""
     if fichier:
         try:
             res = cloudinary.uploader.upload(fichier, resource_type="video",
@@ -187,6 +189,7 @@ def sauvegarder_audio(fichier):
 
 
 def sauvegarder_illustration(fichier):
+    """Image d'illustration, largeur limitée à 800px, ratio préservé."""
     if fichier:
         try:
             res = cloudinary.uploader.upload(fichier,
@@ -207,14 +210,14 @@ def supprimer_photo(path):
             parts = path.split('/upload/')[-1]
             if parts.startswith('v'): parts = '/'.join(parts.split('/')[1:])
             # FIX : décoder l'URL — "pentecote%202026" → "pentecote 2026"
-            # (le public_id réel contient l'espace, pas l'encodage)
+            # (le public_id réel chez Cloudinary contient l'espace, pas l'encodage ;
+            # sans unquote, le destroy échouait silencieusement → fichiers orphelins)
             public_id = os.path.splitext(urllib.parse.unquote(parts))[0]
             cloudinary.uploader.destroy(public_id)
         except Exception:
             pass
     elif not path.startswith("http") and os.path.exists(path):
         os.remove(path)
-
 # ============================================================
 # MÉTIER
 # ============================================================
