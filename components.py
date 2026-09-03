@@ -125,7 +125,8 @@ def ajouter_evenement_agenda(equipe_id=None, paroisse_id=None, diocese_id=None, 
                 st.session_state["nettoyage_agenda"] = [f"l_ag_{prefix}", f"desc_ag_{prefix}", f"affiche_{prefix}"]
                 st.session_state["flash_success"] = f"Évènement enregistré ! {nb_invites} ✅"
                 st.rerun()
-
+    # ... (fin de l'expander d'ajout existant) ...
+    gerer_affiches_evenements(equipe_id, paroisse_id, diocese_id)
 
 def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_id=None):
     st.markdown(f'<h3 style="color:#1A237E;">📋 Planification des agendas</h3>', unsafe_allow_html=True)
@@ -308,6 +309,61 @@ def afficher_historique_suivi(equipe_id, filtre_type="Tous"):
                 if rows:
                     st.write(f"{label} : " + ", ".join([f"{r[0]} {r[1]}" for r in rows]))
 
+
+def gerer_affiches_evenements(equipe_id, paroisse_id, diocese_id):
+    """Interface pour ajouter/retirer l'affiche des évènements DÉJÀ créés
+    (le Coin Affiche de l'Espace de Prière)."""
+    with st.expander("🖼️ Affiches des évènements à venir (Coin Affiche)"):
+        cle = f"aff_{equipe_id}_{paroisse_id}_{diocese_id}"
+        if equipe_id:
+            evts = c.execute('''SELECT DISTINCT e.id, e.date_evenement, e.type_evenement, e.lieu, e.affiche_url
+                                FROM evenements e JOIN evenement_equipes ee ON e.id=ee.evenement_id
+                                WHERE ee.equipe_id=? AND e.date_evenement >= ? ORDER BY e.date_evenement ASC''',
+                             (equipe_id, date.today().isoformat())).fetchall()
+        elif paroisse_id:
+            evts = c.execute('''SELECT DISTINCT e.id, e.date_evenement, e.type_evenement, e.lieu, e.affiche_url
+                                FROM evenements e LEFT JOIN evenement_equipes ee ON e.id=ee.evenement_id
+                                LEFT JOIN equipes eq ON ee.equipe_id=eq.id
+                                WHERE (e.paroisse_id=? OR eq.paroisse_id=?) AND e.date_evenement >= ? ORDER BY e.date_evenement ASC''',
+                             (paroisse_id, paroisse_id, date.today().isoformat())).fetchall()
+        else:
+            evts = c.execute('''SELECT id, date_evenement, type_evenement, lieu, affiche_url FROM evenements
+                                WHERE date_evenement >= ? ORDER BY date_evenement ASC''',
+                             (date.today().isoformat(),)).fetchall()
+
+        if not evts:
+            st.info("Aucun évènement à venir.")
+            return
+
+        options = {}
+        for e in evts:
+            d = safe_date(e[1])
+            label = f"{d.strftime('%d/%m/%Y') if d else '??/??/????'} - {e[2]} - {e[3] or 'lieu à définir'}" + (" ✅" if e[4] else "")
+            options[label] = e
+        choix = st.selectbox("Évènement", list(options.keys()), key=f"{cle}_sel")
+        evt = options[choix]
+
+        if evt[4]:
+            st.image(evt[4], width=260)
+        fichier = st.file_uploader("Ajouter ou remplacer l'affiche (visible dans l'Espace de Prière)",
+                                   type=["jpg", "jpeg", "png", "webp"], key=f"{cle}_up_{evt[0]}")
+        c1, c2, _ = st.columns([1, 1, 2])
+        with c1:
+            if st.button("📤 Publier l'affiche", key=f"{cle}_pub_{evt[0]}", type="primary", width="stretch") and fichier:
+                url = sauvegarder_illustration(fichier)
+                if url:
+                    if evt[4]: supprimer_photo(evt[4])
+                    c.execute("UPDATE evenements SET affiche_url=? WHERE id=?", (url, evt[0]))
+                    commit_and_sync()
+                    st.session_state["flash_success"] = "Affiche publiée ! ✅"
+                    st.rerun()
+        with c2:
+            if evt[4] and st.button("🗑️ Retirer l'affiche", key=f"{cle}_del_{evt[0]}", width="stretch"):
+                supprimer_photo(evt[4])
+                c.execute("UPDATE evenements SET affiche_url=NULL WHERE id=?", (evt[0],))
+                commit_and_sync()
+                st.session_state["flash_warning"] = "Affiche retirée."
+                st.rerun()
 
 def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
     t1, t2, t3 = st.tabs(["🎂 Anniversaires", "📢 Rappels réabonnement", "📿 Espace de prière"])
