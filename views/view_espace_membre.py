@@ -25,8 +25,6 @@ DIV_PDF_RE = re.compile(r'<div[^>]*1px dashed #4527a0.*?</div>\s*', re.DOTALL)
 
 
 def _extraire_pdf_legacy(contenu):
-    """Rétrocompatibilité : retire le HTML de PDF (ancien format) noyé dans
-    contenu_texte et récupère l'URL du document."""
     if not contenu or ('cloudinary' not in contenu and 'data:application/pdf' not in contenu):
         return contenu, None
     m = PDF_URL_RE.search(contenu)
@@ -35,67 +33,77 @@ def _extraire_pdf_legacy(contenu):
 
 
 def _render_theme():
-    """FIX MAJEUR : le CSS est injecté ICI (à chaque affichage) et non plus au
-    niveau du module. L'ancien CSS d'import ne s'exécutait qu'une fois par
-    process → styles perdus pour tous les runs suivants (entête non figée,
-    carte Bienvenue sans fond, etc.). Thème : fond bleu nuit."""
+    """Thème sombre. POINTS CRITIQUES :
+    - AUCUNE règle overflow sur les conteneurs Streamlit (elles désactivaient
+      le scroll natif → page figée).
+    - Header en position:FIXED + padding-top compensatoire (plus fiable que sticky).
+    - Spécificité renforcée (.stApp ...) pour battre le CSS global de app.py,
+      et règles des CARTES déclarées APRÈS les globales (sinon textes clairs
+      sur fond clair = invisibles)."""
     st.markdown("""<style>
-    /* Masque le header natif Streamlit + fond bleu nuit */
     [data-testid="stHeader"] { display: none !important; }
-    .stApp { background-color: #0a0f2c !important; }
-    .block-container { padding-top: 1rem !important; padding-bottom: 4rem !important; }
-    /* Nécessaire pour que position:sticky fonctionne dans Streamlit */
-    [data-testid="stAppViewContainer"], [data-testid="stMain"],
-    [data-testid="stMainBlockContainer"] { overflow: visible !important; }
-    /* Textes clairs */
-    .stMarkdown, .stMarkdown p, .stMarkdown li, .stMarkdown span { color: #e8eaf6 !important; }
-    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 { color: #e8eaf6 !important; }
-    [data-testid="stCaptionContainer"] { color: #9fa6d8 !important; }
-    /* Expanders sombres */
+    .stApp, [data-testid="stAppViewContainer"] { background-color: #0a0f2c !important; }
+    .block-container { padding-top: 150px !important; padding-bottom: 4rem !important; }
+
+    /* ===== TEXTES GLOBAUX (battent le #1A237E !important de app.py) ===== */
+    .stApp .stMarkdown, .stApp .stMarkdown p, .stApp .stMarkdown li, .stApp .stMarkdown span,
+    .stApp .stMarkdown h1, .stApp .stMarkdown h2, .stApp .stMarkdown h3, .stApp .stMarkdown h4,
+    .stApp .stMarkdown strong, .stApp .stMarkdown em { color: #e8eaf6 !important; }
+    .stApp .stMarkdown a { color: #b39ddb !important; }
+    [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: #9fa6d8 !important; }
+
+    /* ===== COMPOSANTS SOMBRES ===== */
     [data-testid="stExpander"] { background-color: #121a45 !important; border: 1px solid #27306b !important; border-radius: 12px !important; }
     details, [data-testid="stExpanderDetails"] { background-color: transparent !important; }
-    summary { color: #e8eaf6 !important; }
-    [data-testid="stExpander"] p { color: #e8eaf6 !important; }
-    /* Onglets */
+    summary, [data-testid="stExpander"] p { color: #e8eaf6 !important; }
     [data-baseweb="tab-list"] { border-bottom-color: #27306b !important; }
     [data-baseweb="tab"] p { color: #9fa6d8 !important; }
     [data-baseweb="tab"][aria-selected="true"] p { color: #ffffff !important; }
-    [data-baseweb="tab-highlight"] { background-color: #4527a0 !important; }
-    /* Boutons */
+    [data-baseweb="tab-highlight"] { background-color: #7b1fa2 !important; }
     .stButton > button { background-color: #1a2150 !important; color: #e8eaf6 !important; border: 1px solid #2a3160 !important; }
     .stButton > button[kind="primary"] { background-color: #4527a0 !important; border-color: #5e35b1 !important; color: #ffffff !important; }
-    /* Alertes sombres */
     [data-testid="stAlert"] { background-color: #151b3d !important; }
     [data-testid="stAlert"] p { color: #e8eaf6 !important; }
-    /* --- ENTÊTE FIGÉE --- */
-    .sticky-header { position: sticky; top: 0; z-index: 1000; background-color: #0a0f2c;
-        padding: 10px 12px 12px 12px; margin: -6px -10px 12px -10px; border-bottom: 1px solid #27306b; }
+    .stApp [data-testid="stVerticalBlockBorderWrapper"] { background-color: #121a45 !important; border: 1px solid #27306b !important; }
+
+    /* ===== HEADER FIXE ===== */
+    .sticky-header { position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+        background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px; }
+    .header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; }
     .logo-bloc { width: 170px; text-align: center; }
-    .logo-bloc img { width: 170px; border-radius: 10px; display: block; }
-    .logo-bloc .logo-titre { width: 170px; color: #e8eaf6; font-weight: 600; font-size: 0.95rem; line-height: 1.25; margin-top: 6px; }
-    .bouton-profil { background-color: #4527a0; color: #ffffff; padding: 10px 18px; text-decoration: none;
-        border-radius: 30px; font-weight: bold; font-size: 0.9rem; display: inline-block; white-space: nowrap; }
-    /* --- Cartes (contraste sur fond sombre) --- */
-    .postcard { background: linear-gradient(135deg, #f3e5f5 0%, #e8eaf6 100%); padding: 20px;
-        border-radius: 15px; text-align: center; margin: 15px 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.35); color: #4527a0; }
-    .postcard h2 { margin-top: 0; color: #4527a0; font-size: 1.2rem; }
-    .postcard p { color: #4527a0; font-size: 0.95rem; margin: 5px 0; }
-    .postcard img { border-radius: 12px; width: 100%; max-height: 220px; object-fit: cover; margin-bottom: 15px; }
-    .postcard-titre { font-size: 1.15rem; font-weight: bold; color: #4A148C; margin-bottom: 12px;
+    .logo-bloc img { height: 64px; width: auto; max-width: 170px; border-radius: 10px; display: block; margin: 0 auto; }
+    .logo-bloc .logo-titre { width: 170px; color: #e8eaf6 !important; font-weight: 600; font-size: 0.95rem; line-height: 1.25; margin-top: 6px; }
+    .stApp a.bouton-profil { background-color: #4527a0 !important; color: #ffffff !important; padding: 10px 18px;
+        text-decoration: none; border-radius: 30px; font-weight: bold; font-size: 0.9rem; display: inline-block; white-space: nowrap; }
+    .stApp a.bouton-profil:hover { background-color: #5e35b1 !important; color: #ffffff !important; }
+
+    /* ===== CARTES CLAIRES (APRÈS les globales → elles gagnent à spécificité égale) ===== */
+    .stApp .postcard { background: linear-gradient(135deg, #f3e5f5 0%, #e8eaf6 100%) !important; padding: 20px;
+        border-radius: 15px; text-align: center; margin: 15px 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.35); }
+    .stApp .postcard h2, .stApp .postcard p, .stApp .postcard em, .stApp .postcard strong { color: #4527a0 !important; }
+    .stApp .postcard a { color: #4527a0 !important; }
+    .stApp .postcard img { border-radius: 12px; width: 100%; max-height: 220px; object-fit: cover; margin-bottom: 15px; }
+    .stApp .postcard-titre { font-size: 1.15rem; font-weight: bold; color: #4A148C !important; margin-bottom: 12px;
         border-bottom: 1px solid #d1c4e9; padding-bottom: 8px; }
-    .event-flyer { background: #121a45; border-radius: 15px; margin: 0 10px 15px 10px;
+    .stApp .event-flyer { background: #121a45; border-radius: 15px; margin: 0 10px 15px 10px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.4); overflow: hidden; border: 1px solid #27306b; }
-    .event-flyer img { width: 100%; display: block; border-bottom: 3px solid #7b1fa2; max-height: 250px; object-fit: cover; }
-    .event-flyer-content { padding: 15px; text-align: center; }
-    .event-flyer h4 { margin: 0 0 5px 0; color: #e8eaf6; font-size: 1.1rem; }
-    .event-flyer p { margin: 0; color: #9fa6d8; font-size: 0.9rem; }
-    .event-flyer-sans-image { background: linear-gradient(135deg, #1a2150 0%, #121a45 100%); }
-    .pdf-cadre { margin: 12px 10px 18px 10px; border-radius: 12px; overflow: hidden; border: 1px solid #27306b; }
+    .stApp .event-flyer img { width: 100%; display: block; border-bottom: 3px solid #7b1fa2; max-height: 250px; object-fit: cover; }
+    .stApp .event-flyer-content { padding: 15px; text-align: center; }
+    .stApp .event-flyer h4 { margin: 0 0 5px 0; color: #e8eaf6 !important; font-size: 1.1rem; }
+    .stApp .event-flyer p { margin: 0; color: #9fa6d8 !important; font-size: 0.9rem; }
+    .stApp .event-flyer-sans-image { background: linear-gradient(135deg, #1a2150 0%, #121a45 100%); }
+    .stApp .pdf-cadre { margin: 12px 10px 18px 10px; border-radius: 12px; overflow: hidden; border: 1px solid #27306b; }
+
+    @media (max-width: 640px) {
+        .logo-bloc { width: 130px; }
+        .logo-bloc img { height: 52px; }
+        .logo-bloc .logo-titre { width: 130px; font-size: 0.85rem; }
+        .block-container { padding-top: 128px !important; }
+    }
     </style>""", unsafe_allow_html=True)
 
 
 def _render_header(membre=None, matloc=None):
-    """Entête FIGÉE : logo (texte dessous, même largeur) + bouton Mon profil à droite."""
     logo_b64 = _logo_base64()
     logo_html = (f'<img src="data:image/png;base64,{logo_b64}" alt="Logo">'
                  if logo_b64 else '<div style="font-size:4rem;">📿</div>')
@@ -111,7 +119,7 @@ def _render_header(membre=None, matloc=None):
 
     st.markdown(f"""
     <div class="sticky-header">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div class="header-inner">
             <div class="logo-bloc">{logo_html}<div class="logo-titre">Diocèse de Grand-Bassam</div></div>
             {profil_html}
         </div>
@@ -138,17 +146,12 @@ def _render_header(membre=None, matloc=None):
 
 
 def _render_pdf_inline(url_pdf):
-    """FIX N°2 : le PDF s'affiche DIRECTEMENT dans la page (iframe Cloudinary
-    avec le flag fl_inline qui force l'affichage navigateur). Les boutons
-    'Ouvrir' / 'Télécharger' sont supprimés."""
     url_inline = url_pdf.replace('/upload/', '/upload/fl_inline/')
     st.markdown(f'<div class="pdf-cadre"><iframe src="{url_inline}" width="100%" height="760" '
                 f'style="border:none;" title="Document"></iframe></div>', unsafe_allow_html=True)
 
 
 def _render_coin_affiche():
-    """Affiche du prochain évènement à venir (avec image), sinon fallback texte.
-    Mode diagnostic : ajouter &debug=1 à l'URL pour voir le contenu de la base."""
     lignes = []
     try:
         lignes = c.execute("""SELECT titre, date_evenement, lieu, affiche_url FROM evenements
@@ -163,7 +166,7 @@ def _render_coin_affiche():
             st.write("Aujourd'hui :", date.today().isoformat())
             try:
                 st.write("Évènements avec affiche (tous) :",
-                         c.execute("SELECT id, titre, date_evenement, affiche_url FROM evenements WHERE affiche_url IS NOT NULL").fetchall())
+                         c.execute("SELECT id, type_evenement, date_evenement, affiche_url FROM evenements WHERE affiche_url IS NOT NULL").fetchall())
             except Exception as e:
                 st.write("ERREUR SQL :", e)
 
@@ -201,7 +204,6 @@ def _render_coin_affiche():
 
 
 def _render_fil_actualites():
-    """FIX N°3 : 'Prière du jour' / 'Méditation du jour' selon l'origine."""
     dernier = c.execute("""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
                            FROM espace_spirituel
                            WHERE type_contenu IN ('priere', 'meditation')
@@ -272,8 +274,6 @@ def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
 
 
 def _enregistrer_presence(membre_id, evt_id, choix):
-    """FIX N°6 : réponse de communion EN UN CLIC (identité déjà validée par le
-    lien matloc — aucune vérification supplémentaire)."""
     deja = c.execute("SELECT id FROM suivi_presences WHERE membre_id=? AND evenement_id=?",
                      (membre_id, evt_id)).fetchone()
     if deja:
@@ -290,8 +290,7 @@ def _enregistrer_presence(membre_id, evt_id, choix):
 # PAGE PRINCIPALE
 # ====================================================================
 def show_espace_membre(matloc_membre=None):
-    # CSS injecté À CHAQUE AFFICHAGE (correctif majeur, cf. _render_theme)
-    _render_theme()
+    _render_theme()  # CSS injecté À CHAQUE AFFICHAGE
 
     msg_ok = st.session_state.pop("flash_success", None)
     if msg_ok:
@@ -311,7 +310,6 @@ def show_espace_membre(matloc_membre=None):
     # ================= ÉTAT 2 : VUE MEMBRE =================
     matloc_membre = str(matloc_membre).upper().strip()
 
-    # FIX N°6 : l'id d'équipe (index 10) est récupéré pour l'agenda complet
     membre = c.execute("""
         SELECT m.id, m.nom, m.prenom, m.matloc, m.whatsapp, m.date_adhesion, m.photo_path,
                m.numero_meditation, e.nom_equipe, p.nom, m.equipe_id
