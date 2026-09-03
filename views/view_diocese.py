@@ -345,33 +345,26 @@ def show_diocese():
                 contenu_texte = st.session_state.get(f"texte_{prefixe_cle}", "") or ""
                 pdf_uploader = st.session_state.get(f"pdf_{prefixe_cle}")
 
+                url_pdf = None
                 if pdf_uploader is not None:
                     url_pdf = sauvegarder_pdf(pdf_uploader)
-                    if url_pdf:
-                        # Bouton "Télécharger" via le flag fl_attachment de Cloudinary
-                        url_pdf_dl = url_pdf.replace('/upload/', '/upload/fl_attachment/')
-                        contenu_texte = f'''<div style="text-align: center; margin: 20px 0; padding: 20px; background: #f3e5f5; border-radius: 10px; border: 1px dashed #4527a0;">
-                            <a href="{url_pdf}" target="_blank" style="background-color: #4527a0; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 1.1rem; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin: 5px;">
-                                📄 Ouvrir le document PDF
-                            </a>
-                            <a href="{url_pdf_dl}" style="background-color: #7b1fa2; color: white; padding: 15px 22px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 1.1rem; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin: 5px;">
-                                ⬇️ Télécharger
-                            </a>
-                            <p style="margin-top: 10px; font-size: 0.9rem; color: #666;">Ouvrir dans un nouvel onglet, ou télécharger sur votre appareil</p>
-                        </div>''' + "\n\n" + contenu_texte
-                    else:
+                    if not url_pdf:
                         st.session_state["flash_warning"] = f"Le PDF n'a pas pu être hébergé (Cloudinary indisponible ?) — {label} publiée sans le document."
 
                 url_illustration = sauvegarder_illustration(st.session_state.get(f"illus_{prefixe_cle}"))
 
+                # FIX : l'URL du PDF est stockée dans la colonne fichier_url
+                # (toujours NULL pour les prières/méditations). Plus AUCUN HTML
+                # injecté dans contenu_texte → l'espace membre génère les boutons.
                 c.execute("""INSERT INTO espace_spirituel (type_contenu, titre, contenu_texte, fichier_url, image_url, date_publication, auteur_nom)
                              VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                          (type_contenu, titre, contenu_texte, None, url_illustration, date.today().isoformat(), st.session_state.get('username')))
+                          (type_contenu, titre, contenu_texte, url_pdf, url_illustration, date.today().isoformat(), st.session_state.get('username')))
                 commit_and_sync()
 
                 st.session_state["nettoyage_espace"] = [f"titre_{prefixe_cle}", f"texte_{prefixe_cle}", f"pdf_{prefixe_cle}", f"illus_{prefixe_cle}"]
                 st.session_state["flash_success"] = f"{label} publiée avec succès ! ✅"
                 st.rerun()
+              
             with s_tab_priere:
                 st.info("Rédigez une prière. Vous pouvez intégrer des images (Markdown) ou joindre un PDF.")
                 with st.form("form_priere"):
