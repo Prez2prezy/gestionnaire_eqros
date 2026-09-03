@@ -154,53 +154,40 @@ def sauvegarder_photo(fichier, matricule):
         print(f"Erreur sauvegarde photo {matricule}: {e}")
         return None
 
-def _public_id_unique(dossier, nom_fichier):
-    """public_id lisible + suffixe unique : deux uploads du même nom de fichier
-    ne s'écrasent plus jamais (les anciennes publications gardent leur fichier)."""
-    base = os.path.splitext(os.path.basename(nom_fichier))[0]
-    base = ''.join(ch if ch.isalnum() or ch in '-_' else '_' for ch in base)[:60]
-    return f"{dossier}/{base}_{secrets.token_hex(4)}"
-
-
 def sauvegarder_pdf(fichier):
-    """PDF sur Cloudinary (raw). Retourne l'URL sécurisée ou None."""
+    """NOUVEAU : PDF sur Cloudinary (raw). Remplace le stockage base64
+    (bloqué par Chrome + alourdit la base)."""
     if fichier:
         try:
             res = cloudinary.uploader.upload(fichier, resource_type="raw",
-                                             public_id=_public_id_unique("rosaire_pdfs", fichier.name),
-                                             overwrite=False)
+                                             public_id=f"rosaire_pdfs/{fichier.name}", overwrite=True)
             return res['secure_url']
         except Exception as e:
             print(f"Erreur upload PDF: {e}")
     return None
 
-
 def sauvegarder_audio(fichier):
-    """Audio/vidéo sur Cloudinary (Cloudinary traite l'audio comme une ressource 'video')."""
     if fichier:
         try:
+            nom_fichier = fichier.name.split('.')[0]
             res = cloudinary.uploader.upload(fichier, resource_type="video",
-                                             public_id=_public_id_unique("rosaire_audio", fichier.name),
-                                             overwrite=False)
+                                             public_id=f"rosaire_audio/{nom_fichier}", overwrite=True)
             return res['secure_url']
         except Exception as e:
             print(f"Erreur upload audio: {e}")
     return None
 
-
 def sauvegarder_illustration(fichier):
-    """Image d'illustration, largeur limitée à 800px, ratio préservé."""
     if fichier:
         try:
-            res = cloudinary.uploader.upload(fichier,
-                                             public_id=_public_id_unique("rosaire_illustrations", fichier.name),
-                                             overwrite=False,
+            nom_fichier = fichier.name.split('.')[0]
+            res = cloudinary.uploader.upload(fichier, public_id=f"rosaire_illustrations/{nom_fichier}",
+                                             overwrite=True,
                                              transformation=[{"width": 800, "crop": "limit"}])
             return res['secure_url']
         except Exception as e:
             print(f"Erreur upload illustration: {e}")
     return None
-
 
 def supprimer_photo(path):
     if not path: return
@@ -209,15 +196,13 @@ def supprimer_photo(path):
             import cloudinary.uploader
             parts = path.split('/upload/')[-1]
             if parts.startswith('v'): parts = '/'.join(parts.split('/')[1:])
-            # FIX : décoder l'URL — "pentecote%202026" → "pentecote 2026"
-            # (le public_id réel chez Cloudinary contient l'espace, pas l'encodage ;
-            # sans unquote, le destroy échouait silencieusement → fichiers orphelins)
-            public_id = os.path.splitext(urllib.parse.unquote(parts))[0]
-            cloudinary.uploader.destroy(public_id)
+            cloudinary.uploader.destroy(os.path.splitext(parts)[0])
         except Exception:
             pass
     elif not path.startswith("http") and os.path.exists(path):
         os.remove(path)
+
+
 # ============================================================
 # MÉTIER
 # ============================================================
