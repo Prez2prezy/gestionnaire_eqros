@@ -33,19 +33,12 @@ def _extraire_pdf_legacy(contenu):
 
 
 def _render_theme():
-    """Thème sombre. POINTS CRITIQUES :
-    - AUCUNE règle overflow sur les conteneurs Streamlit (elles désactivaient
-      le scroll natif → page figée).
-    - Header en position:FIXED + padding-top compensatoire (plus fiable que sticky).
-    - Spécificité renforcée (.stApp ...) pour battre le CSS global de app.py,
-      et règles des CARTES déclarées APRÈS les globales (sinon textes clairs
-      sur fond clair = invisibles)."""
     st.markdown("""<style>
     [data-testid="stHeader"] { display: none !important; }
     .stApp, [data-testid="stAppViewContainer"] { background-color: #0a0f2c !important; }
     .block-container { padding-top: 150px !important; padding-bottom: 4rem !important; }
 
-    /* ===== TEXTES GLOBAUX (battent le #1A237E !important de app.py) ===== */
+    /* ===== TEXTES GLOBAUX ===== */
     .stApp .stMarkdown, .stApp .stMarkdown p, .stApp .stMarkdown li, .stApp .stMarkdown span,
     .stApp .stMarkdown h1, .stApp .stMarkdown h2, .stApp .stMarkdown h3, .stApp .stMarkdown h4,
     .stApp .stMarkdown strong, .stApp .stMarkdown em { color: #e8eaf6 !important; }
@@ -77,10 +70,21 @@ def _render_theme():
         text-decoration: none; border-radius: 30px; font-weight: bold; font-size: 0.9rem; display: inline-block; white-space: nowrap; }
     .stApp a.bouton-profil:hover { background-color: #5e35b1 !important; color: #ffffff !important; }
 
-    /* ===== CARTES CLAIRES (APRÈS les globales → elles gagnent à spécificité égale) ===== */
+    /* ===== FIX N°1 : CARTE BIENVENUE =====
+       Plus AUCUN h2 (cible des règles globales de app.py). Classe dédiée
+       que rien ne vise ailleurs → couleur garantie, quel que soit l'ordre CSS. */
+    .stApp .carte-bienvenue { background: linear-gradient(135deg, #f3e5f5 0%, #e8eaf6 100%) !important;
+        padding: 20px; border-radius: 15px; text-align: center; margin: 15px 10px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.35); border: 1px solid #d1c4e9; }
+    .stApp .carte-bienvenue * { color: #4527a0 !important; font-size: 1.2rem !important;
+        font-weight: bold !important; white-space: normal !important; overflow: visible !important; }
+    .stApp .carte-bienvenue .cb-sous-titre { font-size: 0.85rem !important; font-weight: normal !important; }
+
+    /* ===== CARTES CLAIRES ===== */
     .stApp .postcard { background: linear-gradient(135deg, #f3e5f5 0%, #e8eaf6 100%) !important; padding: 20px;
         border-radius: 15px; text-align: center; margin: 15px 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.35); }
-    .stApp .postcard h2, .stApp .postcard p, .stApp .postcard em, .stApp .postcard strong { color: #4527a0 !important; }
+    .stApp .postcard p, .stApp .postcard em, .stApp .postcard strong { color: #4527a0 !important; }
+    .stApp .postcard h2, .stApp .postcard h3 { color: #4A148C !important; white-space: normal !important; overflow: visible !important; }
     .stApp .postcard a { color: #4527a0 !important; }
     .stApp .postcard img { border-radius: 12px; width: 100%; max-height: 220px; object-fit: cover; margin-bottom: 15px; }
     .stApp .postcard-titre { font-size: 1.15rem; font-weight: bold; color: #4A148C !important; margin-bottom: 12px;
@@ -290,7 +294,7 @@ def _enregistrer_presence(membre_id, evt_id, choix):
 # PAGE PRINCIPALE
 # ====================================================================
 def show_espace_membre(matloc_membre=None):
-    _render_theme()  # CSS injecté À CHAQUE AFFICHAGE
+    _render_theme()
 
     msg_ok = st.session_state.pop("flash_success", None)
     if msg_ok:
@@ -310,9 +314,10 @@ def show_espace_membre(matloc_membre=None):
     # ================= ÉTAT 2 : VUE MEMBRE =================
     matloc_membre = str(matloc_membre).upper().strip()
 
+    # m.paroisse_id ajouté (index 11) pour l'agenda élargi (FIX N°3)
     membre = c.execute("""
         SELECT m.id, m.nom, m.prenom, m.matloc, m.whatsapp, m.date_adhesion, m.photo_path,
-               m.numero_meditation, e.nom_equipe, p.nom, m.equipe_id
+               m.numero_meditation, e.nom_equipe, p.nom, m.equipe_id, m.paroisse_id
         FROM membres m
         LEFT JOIN equipes e ON m.equipe_id = e.id
         LEFT JOIN paroisses p ON m.paroisse_id = p.id
@@ -330,64 +335,75 @@ def show_espace_membre(matloc_membre=None):
 
     _render_header(membre, matloc_membre)
 
+    # FIX N°1 : plus de h2 — classe dédiée 'carte-bienvenue' (immunisée)
     st.markdown(f"""
-    <div class="postcard">
-        <h2>Bienvenue {membre[2]} 🕊️</h2>
-        <p style="font-size: 0.85rem;"><em>{membre[8] or ''} | {membre[9] or ''}</em></p>
+    <div class="carte-bienvenue">
+        <div>Bienvenue {membre[2]} 🕊️</div>
+        <div class="cb-sous-titre"><em>{membre[8] or ''} | {membre[9] or ''}</em></div>
     </div>
     """, unsafe_allow_html=True)
 
     _render_fil_actualites()
 
-    # --- AGENDA : TOUS les évènements à venir, réponse en 1 clic ---
-    if membre[10] is None:
-        st.info("Vous n'êtes rattaché(e) à aucune équipe pour le moment.")
-    else:
-        with st.expander("📅 Mes prochains évènements", expanded=True):
-            evts = c.execute('''
-                SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
-                       (SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=e.id)
-                FROM evenements e
-                JOIN evenement_equipes ee ON e.id = ee.evenement_id
-                WHERE ee.equipe_id = ? AND e.date_evenement >= ?
-                ORDER BY e.date_evenement ASC
-            ''', (membre[0], membre[10], date.today().isoformat())).fetchall()
+    # --- FIX N°3 : AGENDA ÉLARGI ---
+    # Avant : seuls les évènements liés à l'équipe via evenement_equipes.
+    # Un Pèlerinage créé par la PAROISSE ou le DIOCÈSE sans inviter explicitement
+    # l'équipe était donc invisible. Désormais : équipe OU paroisse OU diocèse.
+    with st.expander("📅 Mes prochains évènements", expanded=True):
+        evts = c.execute('''
+            SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
+                   (SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=e.id),
+                   ee.equipe_id, e.paroisse_id, e.diocese_id
+            FROM evenements e
+            LEFT JOIN evenement_equipes ee ON e.id = ee.evenement_id AND ee.equipe_id = ?
+            WHERE e.date_evenement >= ?
+              AND (ee.equipe_id IS NOT NULL OR e.paroisse_id = ? OR e.diocese_id IS NOT NULL)
+            ORDER BY e.date_evenement ASC
+        ''', (membre[0], membre[10], date.today().isoformat(), membre[11])).fetchall()
 
-            if not evts:
-                st.success("✅ Aucun événement à venir. Profitez de ce temps de repos !")
-            else:
-                for evt in evts:
-                    d = safe_date(evt[1])
-                    if not d:
-                        continue
-                    delta = (d - date.today()).days
-                    delai = "🔴 Aujourd'hui !" if delta == 0 else "🟠 Demain" if delta == 1 else f"📅 Dans {delta} jours"
-                    icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
-                             "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(evt[2], "📅")
+        if not evts:
+            st.success("✅ Aucun événement à venir. Profitez de ce temps de repos !")
+        else:
+            for evt in evts:
+                d = safe_date(evt[1])
+                if not d:
+                    continue
+                delta = (d - date.today()).days
+                delai = "🔴 Aujourd'hui !" if delta == 0 else "🟠 Demain" if delta == 1 else f"📅 Dans {delta} jours"
+                icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
+                         "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(evt[2], "📅")
 
-                    st.markdown(f"**{icone} {evt[2]}** — {d.strftime('%d/%m/%Y')} ({delai})")
-                    st.write(f"📍 {evt[3] or 'Lieu à définir'}")
+                if evt[5]:
+                    origine = "👥 Invitation de votre équipe"
+                elif evt[6] == membre[11] and evt[6] is not None:
+                    origine = "🏘️ Évènement de votre paroisse"
+                else:
+                    origine = "🏛️ Évènement du diocèse"
 
-                    statut = evt[4]
-                    if statut == 'physique':
-                        st.success("✅ Votre réponse de communion : Présent(e) physiquement")
-                    elif statut == 'spirituel':
-                        st.success("🟡 Votre réponse de communion : Présent(e) spirituellement")
-                    else:
-                        st.caption("📿 Réponse de Communion — indiquez comment vous vous joignez à nous :")
+                st.markdown(f"**{icone} {evt[2]}** — {d.strftime('%d/%m/%Y')} ({delai})")
+                st.write(f"📍 {evt[3] or 'Lieu à définir'}")
+                st.caption(f"{origine}")
 
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        if st.button("🟢 Présent physiquement", key=f"rsp_p_{evt[0]}",
-                                     use_container_width=True,
-                                     type="primary" if statut != 'physique' else "secondary"):
-                            _enregistrer_presence(membre[0], evt[0], 'physique')
-                    with c2:
-                        if st.button("🟡 Présent spirituellement", key=f"rsp_s_{evt[0]}",
-                                     use_container_width=True,
-                                     type="primary" if statut != 'spirituel' else "secondary"):
-                            _enregistrer_presence(membre[0], evt[0], 'spirituel')
-                    st.markdown("---")
+                statut = evt[4]
+                if statut == 'physique':
+                    st.success("✅ Votre réponse de communion : Présent(e) physiquement")
+                elif statut == 'spirituel':
+                    st.success("🟡 Votre réponse de communion : Présent(e) spirituellement")
+                else:
+                    st.caption("📿 Réponse de Communion — indiquez comment vous vous joignez à nous :")
+
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("🟢 Présent physiquement", key=f"rsp_p_{evt[0]}",
+                                 use_container_width=True,
+                                 type="primary" if statut != 'physique' else "secondary"):
+                        _enregistrer_presence(membre[0], evt[0], 'physique')
+                with c2:
+                    if st.button("🟡 Présent spirituellement", key=f"rsp_s_{evt[0]}",
+                                 use_container_width=True,
+                                 type="primary" if statut != 'spirituel' else "secondary"):
+                        _enregistrer_presence(membre[0], evt[0], 'spirituel')
+                st.markdown("---")
 
     st.markdown("---")
 
