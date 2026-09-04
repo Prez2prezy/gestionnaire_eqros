@@ -311,8 +311,8 @@ def afficher_historique_suivi(equipe_id, filtre_type="Tous"):
 
 
 def gerer_affiches_evenements(equipe_id, paroisse_id, diocese_id):
-    """Interface pour ajouter/retirer l'affiche des évènements DÉJÀ créés
-    (le Coin Affiche de l'Espace de Prière)."""
+    """Interface pour ajouter/retirer l'affiche des évènements DÉJÀ créés (Coin Affiche).
+    FIX : plus aucun échec silencieux — chaque erreur est affichée à l'écran."""
     with st.expander("🖼️ Affiches des évènements à venir (Coin Affiche)"):
         cle = f"aff_{equipe_id}_{paroisse_id}_{diocese_id}"
         if equipe_id:
@@ -338,25 +338,34 @@ def gerer_affiches_evenements(equipe_id, paroisse_id, diocese_id):
         options = {}
         for e in evts:
             d = safe_date(e[1])
-            label = f"{d.strftime('%d/%m/%Y') if d else '??/??/????'} - {e[2]} - {e[3] or 'lieu à définir'}" + (" ✅" if e[4] else "")
+            label = f"{d.strftime('%d/%m/%Y') if d else '??/??/????'} - {e[2]} - {e[3] or 'lieu à définir'}" + (" 🖼️" if e[4] else " (sans affiche)")
             options[label] = e
         choix = st.selectbox("Évènement", list(options.keys()), key=f"{cle}_sel")
         evt = options[choix]
 
         if evt[4]:
             st.image(evt[4], width=260)
-        fichier = st.file_uploader("Ajouter ou remplacer l'affiche (visible dans l'Espace de Prière)",
+        else:
+            st.caption("❌ Aucune affiche enregistrée pour cet évènement.")
+
+        fichier = st.file_uploader("Nouvelle affiche (visible dans l'Espace de Prière)",
                                    type=["jpg", "jpeg", "png", "webp"], key=f"{cle}_up_{evt[0]}")
         c1, c2, _ = st.columns([1, 1, 2])
         with c1:
-            if st.button("📤 Publier l'affiche", key=f"{cle}_pub_{evt[0]}", type="primary", width="stretch") and fichier:
-                url = sauvegarder_illustration(fichier)
-                if url:
-                    if evt[4]: supprimer_photo(evt[4])
-                    c.execute("UPDATE evenements SET affiche_url=? WHERE id=?", (url, evt[0]))
-                    commit_and_sync()
-                    st.session_state["flash_success"] = "Affiche publiée ! ✅"
-                    st.rerun()
+            if st.button("📤 Publier l'affiche", key=f"{cle}_pub_{evt[0]}", type="primary", width="stretch"):
+                if not fichier:
+                    st.error("⚠️ Sélectionnez d'abord un fichier image ci-dessus.")
+                else:
+                    url = sauvegarder_illustration(fichier)
+                    if url:
+                        if evt[4]: supprimer_photo(evt[4])
+                        c.execute("UPDATE evenements SET affiche_url=? WHERE id=?", (url, evt[0]))
+                        commit_and_sync()
+                        st.session_state["flash_success"] = "Affiche publiée ! ✅"
+                        st.rerun()
+                    else:
+                        # FIX : la cause la plus fréquente, affichée noir sur blanc
+                        st.error("❌ L'upload a échoué. Vérifiez que : (1) 'cloudinary' figure dans requirements.txt ; (2) les secrets CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY et CLOUDINARY_API_SECRET sont bien définis dans les paramètres de l'app.")
         with c2:
             if evt[4] and st.button("🗑️ Retirer l'affiche", key=f"{cle}_del_{evt[0]}", width="stretch"):
                 supprimer_photo(evt[4])
