@@ -273,9 +273,8 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
 
 
 def afficher_historique_suivi(equipe_id, filtre_type="Tous"):
-    # FIX : présences filtrées sur les membres de CETTE équipe uniquement
-    # (un évènement partagé ne doit pas gonfler les compteurs avec les
-    # réponses des autres équipes invitées)
+    # BASCULE : e.date_evenement < aujourd'hui (strictement passé — le jour même,
+    # l'évènement est encore côté formulaire de saisie)
     query = '''SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
                SUM(CASE WHEN sp.statut='physique' THEN 1 ELSE 0 END),
                SUM(CASE WHEN sp.statut='spirituel' THEN 1 ELSE 0 END),
@@ -284,12 +283,15 @@ def afficher_historique_suivi(equipe_id, filtre_type="Tous"):
                JOIN evenement_equipes ee ON e.id = ee.evenement_id
                LEFT JOIN suivi_presences sp ON e.id = sp.evenement_id
                     AND sp.membre_id IN (SELECT id FROM membres WHERE equipe_id = ?)
-               WHERE ee.equipe_id = ? AND e.date_evenement <= ? '''
+               WHERE ee.equipe_id = ? AND e.date_evenement < ? '''
     params = [equipe_id, equipe_id, date.today().isoformat()]
     if filtre_type != "Tous":
         query += " AND e.type_evenement = ?"
         params.append(filtre_type)
     query += " GROUP BY e.id ORDER BY e.date_evenement DESC LIMIT 20"
+
+    annee_pasto, _, _ = get_periode_pastorale()
+    annee_cloturee = est_cloture('equipe', equipe_id, annee_pasto)
 
     for ev in c.execute(query, params).fetchall():
         d_ev = safe_date(ev[1])
@@ -308,6 +310,13 @@ def afficher_historique_suivi(equipe_id, filtre_type="Tous"):
                                  (ev[0], statut, equipe_id)).fetchall()
                 if rows:
                     st.write(f"{label} : " + ", ".join([f"{r[0]} {r[1]}" for r in rows]))
+
+            # Porte de correction : rouvrir la saisie d'une séance passée
+            # (un oubli ne devient pas définitif)
+            if not annee_cloturee:
+                if st.button("✏️ Rouvrir la saisie des présences", key=f"reopen_evt_{ev[0]}"):
+                    st.session_state['rouvrir_evt_id'] = ev[0]
+                    st.rerun()
 
 
 def gerer_affiches_evenements(equipe_id, paroisse_id, diocese_id):
@@ -468,17 +477,32 @@ def enregistrer_presence_equipe(equipe_id):
         st.warning("Aucun membre actif dans l'équipe pour le moment.")
         return
 
-    with st.expander("📝 Enregistrer / Modifier une séance", expanded=False):
-        evenements_lies = c.execute('''SELECT e.id, e.date_evenement, e.type_evenement, e.lieu, e.auteur_nom FROM evenements e JOIN evenement_equipes ee ON e.id = ee.evenement_id WHERE ee.equipe_id = ? ORDER BY e.date_evenement DESC''', (equipe_id,)).fetchall()
+    # Mode correction : rouverture d'une séance passée demandée depuis l'historique
+    rouvrir_id = st.session_state.get('rouvrir_evt_id')
+
+    with st.expander("📝 Enregistrer / Modifier une séance", expanded=bool(rouvrir_id)):
+        # NOUVELLE RÈGLE DE BASCULE : seuls les évènements À VENIR sont listés
+        # (>= aujourd'hui : le jour même compte encore, c'est le moment de faire
+        # le point). Dès demain, l'évènement bascule automatiquement dans
+        # l'historique. Exception : un évènement ROUVERT manuellement depuis
+        # l'historique (mode correction).
+        evenements_lies = c.execute('''SELECT DISTINCT e.id, e.date_evenement, e.type_evenement, e.lieu, e.auteur_nom
+                                       FROM evenements e JOIN evenement_equipes ee ON e.id = ee.evenement_id
+                                       WHERE ee.equipe_id = ? AND (e.date_evenement >= ? OR e.id = ?)
+                                       ORDER BY e.date_evenement ASC''',
+                                    (equipe_id, date.today().isoformat(), rouvrir_id if rouvrir_id else -1)).fetchall()
 
         options_evts = {}
         for ev in evenements_lies:
             d_ev = safe_date(ev[1])
             if d_ev:
-                label = f"{d_ev.strftime('%d/%m/%Y')} - {ev[2]} (Par {ev[4] or 'Mon équipe'})"
+                if rouvrir_id and ev[0] == rouvrir_id:
+                    label = f"✏️ [CORRECTION] {d_ev.strftime('%d/%m/%Y')} - {ev[2]}"
+                else:
+                    label = f"{d_ev.strftime('%d/%m/%Y')} - {ev[2]} (Par {ev[4] or 'Mon équipe'})"
                 options_evts[label] = ev[0]
 
-        choix_evt = st.selectbox("📋 Sélectionner un évènement existant", ["-- Créer un nouvel évènement --"] + list(options_evts.keys()), key="sel_evt_exist")
+        choix_evt = st.selectbox("📋 Sélectionner un évènement à venir", ["-- Créer un nouvel évènement --"] + list(options_evts.keys()), key="sel_evt_exist")
 
         event_id = None
         lieu_event = ""
@@ -491,9 +515,10 @@ def enregistrer_presence_equipe(equipe_id):
             date_event = safe_date(ev_details[0])
             type_event = ev_details[1]
             lieu_event = ev_details[2]
-            # FIX : garde si la date est illisible (sinon .strftime crashait)
             date_affichee = date_event.strftime('%d/%m/%Y') if date_event else "⚠️ illisible"
             st.info(f"📅 Date : {date_affichee} | ⛪ Type : {type_event} | 📍 Lieu : {lieu_event or 'Non défini'}")
+            if rouvrir_id and event_id == rouvrir_id:
+                st.warning("✏️ Mode correction : cette séance est déjà passée. Vos modifications seront enregistrées dans l'historique.")
         else:
             c1, c2, c3 = st.columns(3)
             with c1: date_event = st.date_input("📅 Date", value=date.today(), key="date_suivi_eq")
@@ -510,9 +535,8 @@ def enregistrer_presence_equipe(equipe_id):
         with st.form("form_suivi_presences"):
             date_affichee = date_event.strftime('%d/%m/%Y') if date_event else "⚠️ date non définie"
             st.markdown(f"**Participation de l'équipe pour le {date_affichee} ({type_event}) :**")
-            st.caption("💡 Cochez 'Présent spirituel' pour ceux qui participent à l'évènement depuis chez eux.")
+            st.caption("💡 Cochez 'Présent spirituel' pour ceux qui participent à l'évènement depuis chez eux. Les réponses arrivées via les liens des membres sont déjà pré-cochées.")
 
-            # FIX PERF : une seule requête au lieu d'une par membre (N+1)
             existants = {}
             if event_id:
                 existants = dict(c.execute("SELECT membre_id, statut FROM suivi_presences WHERE evenement_id=?", (event_id,)).fetchall())
@@ -542,8 +566,6 @@ def enregistrer_presence_equipe(equipe_id):
 
             if submitted:
                 if event_id:
-                    # FIX : l'UPDATE du lieu est inconditionnel (l'ancienne condition
-                    # inversée ne le faisait JAMAIS)
                     c.execute("UPDATE evenements SET lieu=? WHERE id=?", (lieu_event, event_id))
                 else:
                     if not date_event:
@@ -554,9 +576,6 @@ def enregistrer_presence_equipe(equipe_id):
                     event_id = c.lastrowid
                     c.execute("INSERT OR IGNORE INTO evenement_equipes (evenement_id, equipe_id) VALUES (?, ?)", (event_id, equipe_id))
 
-                # FIX CRITIQUE : ne supprimer que les présences des membres de CETTE
-                # équipe (un évènement partagé ne doit pas perdre les réponses
-                # saisies par les membres des autres équipes via leur lien magique)
                 c.execute('''DELETE FROM suivi_presences
                              WHERE evenement_id=?
                                AND membre_id IN (SELECT id FROM membres WHERE equipe_id=?)''',
@@ -564,6 +583,7 @@ def enregistrer_presence_equipe(equipe_id):
                 for m_id, statut in statuts.items():
                     c.execute("INSERT INTO suivi_presences (membre_id, evenement_id, statut) VALUES (?, ?, ?)", (m_id, event_id, statut))
                 commit_and_sync()
+                st.session_state.pop('rouvrir_evt_id', None)  # correction terminée
                 st.session_state["flash_success"] = "Communion de l'équipe enregistrée avec succès ! ✅"
                 st.rerun()
 
@@ -574,13 +594,12 @@ def enregistrer_presence_equipe(equipe_id):
                     c.execute('''DELETE FROM suivi_presences
                                  WHERE evenement_id=? AND membre_id IN (SELECT id FROM membres WHERE equipe_id=?)''',
                               (event_id, equipe_id))
-                    # FIX : ne délier QUE cette équipe ; l'évènement n'est détruit
-                    # que si plus aucune équipe n'y est rattachée
                     c.execute("DELETE FROM evenement_equipes WHERE evenement_id=? AND equipe_id=?", (event_id, equipe_id))
                     restantes = c.execute("SELECT COUNT(*) FROM evenement_equipes WHERE evenement_id=?", (event_id,)).fetchone()[0]
                     if restantes == 0:
                         c.execute("DELETE FROM evenements WHERE id=?", (event_id,))
                     commit_and_sync()
+                    st.session_state.pop('rouvrir_evt_id', None)
                     st.session_state["flash_warning"] = "Séance effacée."
                     st.rerun()
 
@@ -792,7 +811,7 @@ def afficher_historique_paroisse(paroisse_id, filtre_type="Tous"):
                JOIN evenement_equipes ee ON e.id = ee.evenement_id
                JOIN equipes eq ON ee.equipe_id = eq.id
                LEFT JOIN suivi_presences sp ON e.id = sp.evenement_id
-               WHERE eq.paroisse_id = ? AND e.date_evenement <= ? '''
+               WHERE eq.paroisse_id = ? AND e.date_evenement < ? '''
     params = [paroisse_id, date.today().isoformat()]
     if filtre_type != "Tous":
         query += " AND e.type_evenement = ?"
