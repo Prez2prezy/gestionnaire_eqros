@@ -10,13 +10,10 @@ from services import (hash_password, generer_mot_de_passe, safe_date, afficher_s
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale,
                       sauvegarder_audio, sauvegarder_illustration, sauvegarder_pdf, supprimer_photo,
                       afficher_messages_flash)
-# FIX CRITIQUE (bug n°1) : les DEUX fonctions réellement appelées par le menu "Suivi"
-# sont désormais importées. L'ancien fichier importait afficher_historique_suivi et
-# afficher_etat_presences_globales (qui servent à la VUE ÉQUIPE) → NameError sur
-# les onglets "Vie de prière des paroisses" et "Engagement spirituel".
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel,
                         afficher_whatsapp_tabs, afficher_historique_paroisse,
-                        afficher_etat_presences_paroisse)
+                        afficher_etat_presences_paroisse, gerer_affiches_bande_annonces)
+
 
 def show_diocese():
     d_info = c.execute("SELECT nom, responsable, bureau FROM diocese WHERE id=?", (1,)).fetchone()
@@ -31,7 +28,7 @@ def show_diocese():
 
     if menu == "🏛️ Voir diocèse":
         st.markdown(f'<h2 style="color:#1A237E; font-size: 1.4rem;">🏛️ {html.escape(nom_dio).upper()}</h2>', unsafe_allow_html=True)
-        afficher_messages_flash()  # FIX : messages posés au run précédent enfin visibles
+        afficher_messages_flash()
         if d_info:
             st.markdown(f'<div class="custom-info-box"><b>Responsable diocésain :</b> {html.escape(d_info[1] or "")}<br><b>Bureau diocésain :</b> {html.escape(d_info[2] or "")}</div>', unsafe_allow_html=True)
             with st.expander("✏️ Modifier les informations"):
@@ -41,16 +38,14 @@ def show_diocese():
                     if st.form_submit_button("💾 Enregistrer", width="stretch"):
                         c.execute("UPDATE diocese SET responsable=?, bureau=? WHERE id=?", (nr, nb, 1))
                         commit_and_sync()
-                        st.session_state["flash_success"] = "Mis à jour ! ✅"  # FIX : flash mémorisé
+                        st.session_state["flash_success"] = "Mis à jour ! ✅"
                         st.rerun()
 
     elif menu == "🏘️ Créer paroisses":
         st.markdown('<h2 style="color:#1A237E;">🏘️ Créer une paroisse</h2>', unsafe_allow_html=True)
         afficher_messages_flash()
 
-        # FIX : les identifiants de la paroisse créée sont mémorisés en session_state
-        # et affichés ICI (avant le formulaire) → ils survivent aux reruns, l'admin
-        # a le temps de les noter. (L'ancien bloc disparaissait à la 1re interaction.)
+        # Identifiants persistants en session_state (noteables avant fermeture)
         if st.session_state.get('new_paroisse_info'):
             info = st.session_state['new_paroisse_info']
             st.success(f"✅ Paroisse '{info['nom']}' créée")
@@ -75,8 +70,7 @@ def show_diocese():
                     else:
                         c.execute("INSERT INTO paroisses (nom, commune, ville, responsable, bureau, diocese_id) VALUES (?,?,?,?,?,?)",
                                   (nom.strip(), commune.strip(), ville.strip(), responsable.strip(), bureau, 1))
-                        # FIX : re-SELECT au lieu de c.lastrowid (lastrowid peut être
-                        # invalide si le CursorWrapper s'est reconnecté pendant l'INSERT)
+                        # re-SELECT plutôt que lastrowid (invalide si reconnexion Turso)
                         pid = c.execute("SELECT id FROM paroisses WHERE nom=? AND commune=? AND ville=?",
                                         (nom.strip(), commune.strip(), ville.strip())).fetchone()[0]
                         username = f"paroisse_{pid}"
@@ -228,7 +222,6 @@ def show_diocese():
                                     else: non_inscrits.append(m)
 
                                 t1, t2, t3 = st.tabs(["📝 Abonnés", "🔄 Réabonnés", "❌ Non enregistrés"])
-                                # FIX : f"{x} FCFA" crashait sur None → "(x or 0)"
                                 with t1:
                                     if abonnes:
                                         df = pd.DataFrame(abonnes, columns=["ID", "Nom", "Prénom", "Matricule", "Type", "Date", "Montant"])[["Nom", "Prénom", "Matricule", "Date", "Montant"]]
@@ -291,8 +284,8 @@ def show_diocese():
         with tab_passe:
             paroisses = c.execute("SELECT id, nom, commune FROM paroisses").fetchall()
             if paroisses:
-                # FIX : clé composite "nom (commune)" — deux paroisses du même nom
-                # rendaient l'une d'elles inaccessible dans le selectbox
+                # Clé composite "nom (commune)" : deux paroisses du même nom
+                # ne rendent plus l'une inaccessible
                 par_dict = {f"{p[1]} ({p[2]})": p[0] for p in paroisses}
                 choix_par = st.selectbox("Sélectionnez la paroisse", list(par_dict.keys()), key="suivi_hist_dio_par")
                 pid_select = par_dict[choix_par]
@@ -300,7 +293,6 @@ def show_diocese():
                 from services import TYPES_EVENEMENTS
                 filtre_type = st.selectbox("Filtrer par type d'évènement", ["Tous"] + TYPES_EVENEMENTS, key="filtre_hist_dio")
 
-                # FIX (bug n°1) : fonction désormais correctement importée
                 afficher_historique_paroisse(paroisse_id=pid_select, filtre_type=filtre_type)
             else:
                 st.info("Aucune paroisse créée.")
@@ -312,7 +304,6 @@ def show_diocese():
                 choix_par2 = st.selectbox("Sélectionnez la paroisse pour le bilan", list(par_dict2.keys()), key="etat_hist_dio_par")
                 pid_select2 = par_dict2[choix_par2]
 
-                # FIX (bug n°1) : fonction désormais correctement importée
                 afficher_etat_presences_paroisse(paroisse_id=pid_select2)
             else:
                 st.info("Aucune paroisse créée.")
@@ -322,10 +313,7 @@ def show_diocese():
         st.caption("Ici, vous publiez les prières, méditations et musiques qui apparaîtront dans l'espace des membres.")
         afficher_messages_flash()
 
-        # FIX CRITIQUE (bug n°2) : nettoyage des champs exécuté au DÉBUT de la section,
-        # AVANT l'instantiation des widgets. L'ancien `del st.session_state[clé]`
-        # dans le handler du formulaire provoquait une StreamlitAPIException
-        # (impossible de supprimer la clé d'un widget déjà instancié dans le run).
+        # Nettoyage différé : exécuté AVANT l'instantiation des widgets
         cles_nettoyage = st.session_state.pop("nettoyage_espace", None)
         if cles_nettoyage:
             for cle in cles_nettoyage:
@@ -334,7 +322,8 @@ def show_diocese():
         tab_add, tab_manage = st.tabs(["➕ Publier du contenu", "📋 Contenu existant"])
 
         with tab_add:
-            s_tab_priere, s_tab_med, s_tab_audio = st.tabs(["🙏 Prière", "📖 Méditation", "🎵 Musique"])
+            s_tab_priere, s_tab_med, s_tab_audio, s_tab_affiches = st.tabs(
+                ["🙏 Prière", "📖 Méditation", "🎵 Musique", "🖼️ Affiches & Bandes-annonces"])
 
             def publier_texte(type_contenu, prefixe_cle, label):
                 titre = st.session_state.get(f"titre_{prefixe_cle}")
@@ -345,6 +334,8 @@ def show_diocese():
                 contenu_texte = st.session_state.get(f"texte_{prefixe_cle}", "") or ""
                 pdf_uploader = st.session_state.get(f"pdf_{prefixe_cle}")
 
+                # PDF hébergé sur Cloudinary, URL stockée dans fichier_url
+                # (plus AUCUN HTML injecté dans contenu_texte)
                 url_pdf = None
                 if pdf_uploader is not None:
                     url_pdf = sauvegarder_pdf(pdf_uploader)
@@ -353,9 +344,6 @@ def show_diocese():
 
                 url_illustration = sauvegarder_illustration(st.session_state.get(f"illus_{prefixe_cle}"))
 
-                # FIX : l'URL du PDF est stockée dans la colonne fichier_url
-                # (toujours NULL pour les prières/méditations). Plus AUCUN HTML
-                # injecté dans contenu_texte → l'espace membre génère les boutons.
                 c.execute("""INSERT INTO espace_spirituel (type_contenu, titre, contenu_texte, fichier_url, image_url, date_publication, auteur_nom)
                              VALUES (?, ?, ?, ?, ?, ?, ?)""",
                           (type_contenu, titre, contenu_texte, url_pdf, url_illustration, date.today().isoformat(), st.session_state.get('username')))
@@ -400,8 +388,6 @@ def show_diocese():
                             st.error("Le titre est obligatoire.")
                         else:
                             fichier_audio = st.session_state.get("fichier_audio")
-                            # FIX : ne plus publier une musique SANS fichier si l'upload échoue
-                            # (l'ancien code insérait fichier_url=None → "fichier introuvable" chez le membre)
                             if fichier_audio:
                                 url_audio = sauvegarder_audio(fichier_audio)
                                 if not url_audio:
@@ -420,6 +406,9 @@ def show_diocese():
                             st.session_state["flash_success"] = "Musique publiée avec succès ! ✅"
                             st.rerun()
 
+            with s_tab_affiches:
+                gerer_affiches_bande_annonces()
+
         with tab_manage:
             contenus = c.execute("SELECT id, type_contenu, titre, date_publication, image_url, fichier_url FROM espace_spirituel ORDER BY date_publication DESC, id DESC").fetchall()
             if not contenus:
@@ -431,7 +420,6 @@ def show_diocese():
                     with c1:
                         st.write(f"{icone} **{cont[2]}** - *{cont[3]}*")
                     with c2:
-                        # FIX : confirmation + nettoyage Cloudinary des fichiers liés
                         if st.button("🗑️", key=f"del_espace_{cont[0]}"):
                             for url in (cont[4], cont[5]):
                                 if url: supprimer_photo(url)
@@ -441,7 +429,6 @@ def show_diocese():
 
     elif menu == "💬 WhatsApp":
         st.markdown(f'<h2 style="color:#1A237E;">💬 Messages WhatsApp - {nom_dio}</h2>', unsafe_allow_html=True)
-        # FIX : signature étendue (paroisse_id) — le diocèse voit tout, c'est son rôle
         afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None)
 
     elif menu == "🔍 Rechercher matricule":
@@ -533,8 +520,7 @@ def show_diocese():
         with st.expander("🔴 Cliquez pour réinitialiser"):
             confirmation = st.text_input("Tapez 'SUPPRIMER' pour confirmer")
             if confirmation == "SUPPRIMER":
-                # FIX : suppression des fichiers Cloudinary AVANT la purge SQL
-                # (l'ancien code laissait des fichiers orphelins facturés dans le bucket)
+                # Fichiers Cloudinary supprimés AVANT la purge SQL
                 for (photo,) in c.execute("SELECT photo_path FROM membres WHERE photo_path IS NOT NULL").fetchall():
                     supprimer_photo(photo)
                 for (affiche,) in c.execute("SELECT affiche_url FROM evenements WHERE affiche_url IS NOT NULL").fetchall():
@@ -545,8 +531,6 @@ def show_diocese():
 
                 if os.path.exists("photos"): shutil.rmtree("photos")
 
-                # FIX : purge COMPLÈTE, y compris espace_spirituel (l'ancien code
-                # le laissait survivre à une "réinitialisation complète")
                 c.execute("DELETE FROM suivi_presences")
                 c.execute("DELETE FROM evenement_equipes")
                 c.execute("DELETE FROM evenements")
