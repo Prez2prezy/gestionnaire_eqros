@@ -198,7 +198,7 @@ def _render_fil_actualites():
                            ORDER BY date_publication DESC, id DESC LIMIT 1""").fetchone()
 
     if dernier:
-        etiquette = {"priere": "🙏 Prière du jour", "meditation": "📖 Méditation du jour"}.get(dernier[0], "📿 Du jour")
+        etiquette = {"priere": "🙏 ", "meditation": "📖 "}.get(dernier[0], "📿 Du jour")
         texte = dernier[2] or ''
         url_pdf = dernier[4]
         if not url_pdf:
