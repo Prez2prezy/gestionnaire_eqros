@@ -441,9 +441,8 @@ def show_paroisse():
 
     elif menu == "💬 WhatsApp":
         st.markdown(f'<h2 style="color:#1A237E;">💬 Messages WhatsApp - {nom_p}</h2>', unsafe_allow_html=True)
-        # FIX CONFIDENTIALITÉ : l'ancien appel (equipe_id=None) montrait à la
-        # paroisse les anniversaires et impayés de TOUTES les paroisses du
-        # diocèse, avec liens WhatsApp cliquables vers leurs membres.
+        # Confidentialité : la paroisse ne voit que SES membres (anniversaires,
+        # impayés) — l'ancien appel (equipe_id=None) exposait tout le diocèse
         afficher_whatsapp_tabs(paroisse_id=pid)
 
     elif menu == "📥 Export Excel":
