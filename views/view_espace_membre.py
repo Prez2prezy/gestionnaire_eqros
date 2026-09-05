@@ -37,15 +37,11 @@ def _render_theme():
     [data-testid="stHeader"] { display: none !important; }
     .stApp, [data-testid="stAppViewContainer"] { background-color: #0a0f2c !important; }
     .block-container { padding-top: 150px !important; padding-bottom: 4rem !important; }
-
-    /* ===== TEXTES GLOBAUX ===== */
     .stApp .stMarkdown, .stApp .stMarkdown p, .stApp .stMarkdown li, .stApp .stMarkdown span,
     .stApp .stMarkdown h1, .stApp .stMarkdown h2, .stApp .stMarkdown h3, .stApp .stMarkdown h4,
     .stApp .stMarkdown strong, .stApp .stMarkdown em { color: #e8eaf6 !important; }
     .stApp .stMarkdown a { color: #b39ddb !important; }
     [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: #9fa6d8 !important; }
-
-    /* ===== COMPOSANTS SOMBRES ===== */
     [data-testid="stExpander"] { background-color: #121a45 !important; border: 1px solid #27306b !important; border-radius: 12px !important; }
     details, [data-testid="stExpanderDetails"] { background-color: transparent !important; }
     summary, [data-testid="stExpander"] p { color: #e8eaf6 !important; }
@@ -58,50 +54,32 @@ def _render_theme():
     [data-testid="stAlert"] { background-color: #151b3d !important; }
     [data-testid="stAlert"] p { color: #e8eaf6 !important; }
     .stApp [data-testid="stVerticalBlockBorderWrapper"] { background-color: #121a45 !important; border: 1px solid #27306b !important; }
-
-    /* ===== HEADER FIXE ===== */
     .sticky-header { position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
         background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px; }
     .header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; }
     .logo-bloc { width: 170px; text-align: center; }
     .logo-bloc img { height: 64px; width: auto; max-width: 170px; border-radius: 10px; display: block; margin: 0 auto; }
-    .logo-bloc .logo-titre { width: 170px; color: #e8eaf6 !important; font-weight: 600; font-size: 0.95rem; line-height: 1.25; margin-top: 6px; }
+    .stApp .logo-titre { width: 170px; color: #e8eaf6 !important; font-weight: 600; font-size: 0.95rem; line-height: 1.25; margin-top: 6px; }
     .stApp a.bouton-profil { background-color: #4527a0 !important; color: #ffffff !important; padding: 10px 18px;
         text-decoration: none; border-radius: 30px; font-weight: bold; font-size: 0.9rem; display: inline-block; white-space: nowrap; }
     .stApp a.bouton-profil:hover { background-color: #5e35b1 !important; color: #ffffff !important; }
-
-    /* ===== FIX N°1 : CARTE BIENVENUE =====
-       Plus AUCUN h2 (cible des règles globales de app.py). Classe dédiée
-       que rien ne vise ailleurs → couleur garantie, quel que soit l'ordre CSS. */
-    .stApp .carte-bienvenue { background: linear-gradient(135deg, #f3e5f5 0%, #e8eaf6 100%) !important;
-        padding: 20px; border-radius: 15px; text-align: center; margin: 15px 10px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.35); border: 1px solid #d1c4e9; }
-    .stApp .carte-bienvenue * { color: #4527a0 !important; font-size: 1.2rem !important;
-        font-weight: bold !important; white-space: normal !important; overflow: visible !important; }
-    .stApp .carte-bienvenue .cb-sous-titre { font-size: 0.85rem !important; font-weight: normal !important; }
-
-    /* ===== CARTES CLAIRES ===== */
     .stApp .postcard { background: linear-gradient(135deg, #f3e5f5 0%, #e8eaf6 100%) !important; padding: 20px;
         border-radius: 15px; text-align: center; margin: 15px 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.35); }
     .stApp .postcard p, .stApp .postcard em, .stApp .postcard strong { color: #4527a0 !important; }
     .stApp .postcard h2, .stApp .postcard h3 { color: #4A148C !important; white-space: normal !important; overflow: visible !important; }
     .stApp .postcard a { color: #4527a0 !important; }
     .stApp .postcard img { border-radius: 12px; width: 100%; max-height: 220px; object-fit: cover; margin-bottom: 15px; }
-    .stApp .postcard-titre { font-size: 1.15rem; font-weight: bold; color: #4A148C !important; margin-bottom: 12px;
-        border-bottom: 1px solid #d1c4e9; padding-bottom: 8px; }
     .stApp .event-flyer { background: #121a45; border-radius: 15px; margin: 0 10px 15px 10px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.4); overflow: hidden; border: 1px solid #27306b; }
     .stApp .event-flyer img { width: 100%; display: block; border-bottom: 3px solid #7b1fa2; max-height: 250px; object-fit: cover; }
     .stApp .event-flyer-content { padding: 15px; text-align: center; }
     .stApp .event-flyer h4 { margin: 0 0 5px 0; color: #e8eaf6 !important; font-size: 1.1rem; }
     .stApp .event-flyer p { margin: 0; color: #9fa6d8 !important; font-size: 0.9rem; }
-    .stApp .event-flyer-sans-image { background: linear-gradient(135deg, #1a2150 0%, #121a45 100%); }
     .stApp .pdf-cadre { margin: 12px 10px 18px 10px; border-radius: 12px; overflow: hidden; border: 1px solid #27306b; }
-
     @media (max-width: 640px) {
         .logo-bloc { width: 130px; }
         .logo-bloc img { height: 52px; }
-        .logo-bloc .logo-titre { width: 130px; font-size: 0.85rem; }
+        .stApp .logo-titre { width: 130px; font-size: 0.85rem; }
         .block-container { padding-top: 128px !important; }
     }
     </style>""", unsafe_allow_html=True)
@@ -156,10 +134,11 @@ def _render_pdf_inline(url_pdf):
 
 
 def _render_coin_affiche():
+    """Priorité d'affichage : BANDE-ANNONCE (vidéo) > AFFICHE (image) > texte."""
     lignes = []
     try:
-        lignes = c.execute("""SELECT titre, date_evenement, lieu, affiche_url FROM evenements
-                              WHERE affiche_url IS NOT NULL AND date_evenement >= ?
+        lignes = c.execute("""SELECT titre, date_evenement, lieu, affiche_url, video_url FROM evenements
+                              WHERE (affiche_url IS NOT NULL OR video_url IS NOT NULL) AND date_evenement >= ?
                               ORDER BY date_evenement ASC LIMIT 5""",
                           (date.today().isoformat(),)).fetchall()
     except Exception:
@@ -169,25 +148,30 @@ def _render_coin_affiche():
         with st.expander("🔎 DEBUG Coin Affiche"):
             st.write("Aujourd'hui :", date.today().isoformat())
             try:
-                st.write("Évènements avec affiche (tous) :",
-                         c.execute("SELECT id, type_evenement, date_evenement, affiche_url FROM evenements WHERE affiche_url IS NOT NULL").fetchall())
+                st.write("Évènements avec visuel (tous) :",
+                         c.execute("SELECT id, type_evenement, date_evenement, affiche_url, video_url FROM evenements WHERE affiche_url IS NOT NULL OR video_url IS NOT NULL").fetchall())
             except Exception as e:
                 st.write("ERREUR SQL :", e)
 
-    affiche = None
+    visuel = None
     for a in lignes:
         if safe_date(a[1]):
-            affiche = a
+            visuel = a
             break
 
-    if affiche:
-        d_affiche = safe_date(affiche[1])
-        date_txt = d_affiche.strftime('%d/%m/%Y') if d_affiche else "Date à définir"
+    if visuel:
+        d_v = safe_date(visuel[1])
+        date_txt = d_v.strftime('%d/%m/%Y') if d_v else "Date à définir"
         st.markdown(
-            f'<div class="event-flyer"><img src="{affiche[3]}" alt="Affiche événement">'
-            f'<div class="event-flyer-content"><h4>📣 {html.escape(affiche[0])}</h4>'
-            f'<p>{date_txt} - {html.escape(affiche[2] or "Lieu à définir")}</p></div></div>',
+            f'<div class="event-flyer">'
+            f'<div class="event-flyer-content"><h4>📣 {html.escape(visuel[0])}</h4>'
+            f'<p>{date_txt} - {html.escape(visuel[2] or "Lieu à définir")}</p></div>',
             unsafe_allow_html=True)
+        if visuel[4]:
+            st.video(visuel[4])   # YouTube ou MP4 Cloudinary
+        elif visuel[3]:
+            st.image(visuel[3], use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
     else:
         try:
             prochain = c.execute("""SELECT type_evenement, date_evenement, lieu FROM evenements
@@ -201,7 +185,7 @@ def _render_coin_affiche():
             icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
                      "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(prochain[0], "📅")
             st.markdown(
-                f'<div class="event-flyer event-flyer-sans-image"><div class="event-flyer-content">'
+                f'<div class="event-flyer"><div class="event-flyer-content">'
                 f'<h4>{icone} {html.escape(prochain[0])}</h4>'
                 f'<p>{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p></div></div>',
                 unsafe_allow_html=True)
@@ -222,7 +206,7 @@ def _render_fil_actualites():
 
         img_html = f'<img src="{dernier[3]}" alt="Contenu">' if dernier[3] else ""
         st.markdown(
-            f'<div class="postcard"><div class="postcard-titre">{etiquette} — {html.escape(dernier[1])}</div>'
+            f'<div class="postcard"><h3 style="margin:0 0 12px 0;">{etiquette} — {html.escape(dernier[1])}</h3>'
             f'{img_html}{texte}</div>', unsafe_allow_html=True)
 
         if url_pdf:
@@ -314,7 +298,6 @@ def show_espace_membre(matloc_membre=None):
     # ================= ÉTAT 2 : VUE MEMBRE =================
     matloc_membre = str(matloc_membre).upper().strip()
 
-    # m.paroisse_id ajouté (index 11) pour l'agenda élargi (FIX N°3)
     membre = c.execute("""
         SELECT m.id, m.nom, m.prenom, m.matloc, m.whatsapp, m.date_adhesion, m.photo_path,
                m.numero_meditation, e.nom_equipe, p.nom, m.equipe_id, m.paroisse_id
@@ -335,25 +318,26 @@ def show_espace_membre(matloc_membre=None):
 
     _render_header(membre, matloc_membre)
 
-    # FIX N°1 : plus de h2 — classe dédiée 'carte-bienvenue' (immunisée)
+    # FIX N°1 : carte bienvenue 100% en styles INLINE (aucune classe CSS,
+    # aucun conflit possible avec les feuilles de style globale/custom)
     st.markdown(f"""
-    <div class="carte-bienvenue">
-        <div>Bienvenue {membre[2]} 🕊️</div>
-        <div class="cb-sous-titre"><em>{membre[8] or ''} | {membre[9] or ''}</em></div>
+    <div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">
+        <div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue {membre[2]} 🕊️</div>
+        <div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">👥 {membre[8] or '—'} &nbsp;|&nbsp; 🏘️ {membre[9] or '—'}</div>
     </div>
     """, unsafe_allow_html=True)
 
     _render_fil_actualites()
 
-    # --- FIX N°3 : AGENDA ÉLARGI ---
-    # Avant : seuls les évènements liés à l'équipe via evenement_equipes.
-    # Un Pèlerinage créé par la PAROISSE ou le DIOCÈSE sans inviter explicitement
-    # l'équipe était donc invisible. Désormais : équipe OU paroisse OU diocèse.
-    with st.expander("📅 Mes prochains évènements", expanded=True):
+    # --- FIX N°4 : chaque évènement dans SON expander, avec état de présence ---
+    if membre[10] is None and membre[11] is None:
+        st.info("Vous n'êtes rattaché(e) à aucune équipe ou paroisse pour le moment.")
+    else:
+        st.markdown("### 📅 Mes prochains évènements")
         evts = c.execute('''
             SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
                    (SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=e.id),
-                   ee.equipe_id, e.paroisse_id, e.diocese_id
+                   ee.equipe_id, e.paroisse_id
             FROM evenements e
             LEFT JOIN evenement_equipes ee ON e.id = ee.evenement_id AND ee.equipe_id = ?
             WHERE e.date_evenement >= ?
@@ -380,30 +364,32 @@ def show_espace_membre(matloc_membre=None):
                 else:
                     origine = "🏛️ Évènement du diocèse"
 
-                st.markdown(f"**{icone} {evt[2]}** — {d.strftime('%d/%m/%Y')} ({delai})")
-                st.write(f"📍 {evt[3] or 'Lieu à définir'}")
-                st.caption(f"{origine}")
-
                 statut = evt[4]
-                if statut == 'physique':
-                    st.success("✅ Votre réponse de communion : Présent(e) physiquement")
-                elif statut == 'spirituel':
-                    st.success("🟡 Votre réponse de communion : Présent(e) spirituellement")
-                else:
-                    st.caption("📿 Réponse de Communion — indiquez comment vous vous joignez à nous :")
+                marqueur = "✅ " if statut in ('physique', 'spirituel') else ""
 
-                c1, c2 = st.columns(2)
-                with c1:
-                    if st.button("🟢 Présent physiquement", key=f"rsp_p_{evt[0]}",
-                                 use_container_width=True,
-                                 type="primary" if statut != 'physique' else "secondary"):
-                        _enregistrer_presence(membre[0], evt[0], 'physique')
-                with c2:
-                    if st.button("🟡 Présent spirituellement", key=f"rsp_s_{evt[0]}",
-                                 use_container_width=True,
-                                 type="primary" if statut != 'spirituel' else "secondary"):
-                        _enregistrer_presence(membre[0], evt[0], 'spirituel')
-                st.markdown("---")
+                with st.expander(f"{marqueur}{icone} {evt[2]} — {d.strftime('%d/%m/%Y')} ({delai})",
+                                 expanded=(delta <= 1)):
+                    st.write(f"📍 {evt[3] or 'Lieu à définir'}")
+                    st.caption(origine)
+
+                    if statut == 'physique':
+                        st.success("✅ Votre réponse de communion : Présent(e) physiquement")
+                    elif statut == 'spirituel':
+                        st.success("🟡 Votre réponse de communion : Présent(e) spirituellement")
+                    else:
+                        st.caption("📿 Réponse de Communion — indiquez comment vous vous joignez à nous :")
+
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("🟢 Présent physiquement", key=f"rsp_p_{evt[0]}",
+                                     use_container_width=True,
+                                     type="primary" if statut != 'physique' else "secondary"):
+                            _enregistrer_presence(membre[0], evt[0], 'physique')
+                    with c2:
+                        if st.button("🟡 Présent spirituellement", key=f"rsp_s_{evt[0]}",
+                                     use_container_width=True,
+                                     type="primary" if statut != 'spirituel' else "secondary"):
+                            _enregistrer_presence(membre[0], evt[0], 'spirituel')
 
     st.markdown("---")
 
