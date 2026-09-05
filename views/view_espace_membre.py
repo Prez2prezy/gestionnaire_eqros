@@ -206,7 +206,7 @@ def _render_fil_actualites():
 
         img_html = f'<img src="{dernier[3]}" alt="Contenu">' if dernier[3] else ""
         st.markdown(
-            f'<div class="postcard"><h3 style="margin:0 0 12px 0;">{etiquette} — {html.escape(dernier[1])}</h3>'
+            f'<div class="postcard"><h3 style="margin:0 0 12px 0;">{etiquette} {html.escape(dernier[1])}</h3>'
             f'{img_html}{texte}</div>', unsafe_allow_html=True)
 
         if url_pdf:
