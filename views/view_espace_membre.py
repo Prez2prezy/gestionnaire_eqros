@@ -7,8 +7,6 @@ from datetime import date
 from database import c, commit_and_sync
 from services import safe_date
 
-st.write("DEBUG photos :",
-         c.execute("SELECT matloc, nom, photo_path FROM membres WHERE equipe_id=? ORDER BY id DESC LIMIT 5", (eid,)).fetchall())
 # ====================================================================
 # HELPERS
 # ====================================================================
