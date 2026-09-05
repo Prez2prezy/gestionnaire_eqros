@@ -129,7 +129,7 @@ def ajouter_evenement_agenda(equipe_id=None, paroisse_id=None, diocese_id=None, 
     gerer_affiches_evenements(equipe_id, paroisse_id, diocese_id)
 
 def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_id=None):
-    st.markdown(f'<h3 style="color:#1A237E;">📋 Planification des agendas</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="color:#1A237E;">📋 Planification des agendas</h3>', unsafe_allow_html=True)
     query = '''SELECT id, date_event, type_event, lieu, description, auteur_nom, equipe_id, paroisse_id, diocese_id, a_faire_suivre, evenement_id FROM agenda WHERE date_event >= ? '''
     params, conditions = [date.today().isoformat()], []
 
@@ -192,10 +192,7 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
             if item[3]: st.write(f"**📍 Lieu :** {item[3]}")
             if item[4]: st.write(f"**📝 Détails :** {item[4]}")
 
-            # FIX DROITS + CASCADE (décision n°2) : seul le propriétaire de l'annonce
-            # (ou le diocèse) peut supprimer ; la suppression détruit l'évènement lié,
-            # ses présences, ses liens d'équipes, son affiche Cloudinary ET les items
-            # d'agenda jumeaux pointant vers le même évènement.
+            # ===== SUPPRESSION (droits + cascade, inchangé) =====
             peut_supprimer = (
                 role == 'diocese'
                 or (item[6] is not None and item[6] == mon_eq)
@@ -207,24 +204,58 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
                         evt_id = item[10]
                         affiche_row = c.execute("SELECT affiche_url FROM evenements WHERE id=?", (evt_id,)).fetchone()
                         if affiche_row and affiche_row[0]:
-                            supprimer_photo(affiche_row[0])  # nettoie aussi Cloudinary
+                            supprimer_photo(affiche_row[0])
                         c.execute("DELETE FROM suivi_presences WHERE evenement_id=?", (evt_id,))
                         c.execute("DELETE FROM evenement_equipes WHERE evenement_id=?", (evt_id,))
                         c.execute("DELETE FROM evenements WHERE id=?", (evt_id,))
-                        c.execute("DELETE FROM agenda WHERE evenement_id=?", (evt_id,))  # jumeaux éventuels
+                        c.execute("DELETE FROM agenda WHERE evenement_id=?", (evt_id,))
                     else:
                         c.execute("DELETE FROM agenda WHERE id=?", (item[0],))
                     commit_and_sync()
                     st.session_state["flash_warning"] = "Annonce supprimée."
                     st.rerun()
 
+            # ===== WHATSAPP (NOUVEAU : groupe + envoi direct par membre) =====
             if item[10]:
-                base_url = URL_ESPACE_SPIRITUEL  # FIX : constante sans "/" final (plus de "//")
+                base_url = URL_ESPACE_SPIRITUEL
                 magic_link = f"{base_url}/?e={item[10]}"
-                message = f"Équipier, confirme ta présence pour la {item[2]} du {i_date.strftime('%d/%m/%Y')}.\n\nCliquez ici pour répondre :\n{magic_link}"
-                wa_link = f"https://wa.me/?text={urllib.parse.quote(message, safe=':/?=')}"
                 st.markdown("---")
-                st.markdown(f'<a href="{wa_link}" target="_blank" class="whatsapp-link">📱 Envoyer le lien de réponse sur WhatsApp</a>', unsafe_allow_html=True)
+
+                # Lien GROUPE : écran de choix du destinataire (voulu — pour le
+                # groupe WhatsApp de l'équipe ou toute diffusion libre)
+                message = (f"Équipier, confirme ta présence pour la {item[2]} du {i_date.strftime('%d/%m/%Y')}.\n\n"
+                           f"Cliquez ici pour répondre :\n{magic_link}")
+                wa_link = f"https://wa.me/?text={urllib.parse.quote(message, safe=':/?=')}"
+                st.markdown(f'<a href="{wa_link}" target="_blank" class="whatsapp-link">📱 Partager le lien de réponse (groupe / diffusion)</a>', unsafe_allow_html=True)
+
+                # NOUVEAU : envoi DIRECT à un membre — la conversation s'ouvre
+                # déjà chez lui, message pré-rempli avec son lien personnel
+                # (l'évènement y est affiché, la réponse se fait en 1 clic).
+                if equipe_id:
+                    with st.expander("👤 Envoyer directement à un membre (conversation ouverte)"):
+                        membres_evt = c.execute("""SELECT nom, prenom, whatsapp, matloc FROM membres
+                                                   WHERE equipe_id=? AND statut='actif' ORDER BY nom""",
+                                                (equipe_id,)).fetchall()
+                        if not membres_evt:
+                            st.caption("Aucun membre actif dans l'équipe.")
+                        else:
+                            st.caption("Chaque membre reçoit SON lien personnel : il arrive sur sa page, l'évènement y figure, un clic suffit pour répondre.")
+                            for m in membres_evt:
+                                if not m[2]:
+                                    continue
+                                matloc_propre = str(m[3]).upper().strip()
+                                lien_perso = f"{base_url}/?espace=1&matloc={matloc_propre}"
+                                msg_perso = (f"Bonjour {m[0]} {m[1]},\n\n"
+                                             f"Confirme ta présence pour la {item[2]} du {i_date.strftime('%d/%m/%Y')}"
+                                             f"{f' à {item[3]}' if item[3] else ''}.\n\n"
+                                             f"Ta page personnelle t'attend ici (un clic suffit pour répondre) :\n{lien_perso}\n\n"
+                                             f"Si le lien ne s'ouvre pas, saisis ce code sur la page de l'évènement : {matloc_propre}")
+                                wa_perso = lien_whatsapp(m[2], msg_perso)
+                                c_nom, c_btn = st.columns([3, 1])
+                                with c_nom:
+                                    st.write(f"**{m[0]} {m[1]}**")
+                                with c_btn:
+                                    st.markdown(f'<a href="{wa_perso}" target="_blank" class="whatsapp-link">📱 Envoyer</a>', unsafe_allow_html=True)
 
             if role == 'paroisse':
                 if item[6] and not item[7] and item[9] == 1:
