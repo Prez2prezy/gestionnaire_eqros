@@ -15,6 +15,15 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
                         afficher_whatsapp_tabs, widget_type_abonnement,
                         enregistrer_presence_equipe, afficher_etat_presences_globales)
 
+    # --- DEBUG CONFIG (à supprimer après diagnostic) ---
+    from services import USE_CLOUDINARY
+    try:
+        import cloudinary
+        _pkg_ok = "installé ✅"
+    except ImportError:
+        _pkg_ok = "ABSENT ❌"
+    st.info(f"🔧 DEBUG : cloudinary {_pkg_ok} | USE_CLOUDINARY = {USE_CLOUDINARY}")
+
 
 def show_equipe():
     eid = st.session_state['equipe_id']
