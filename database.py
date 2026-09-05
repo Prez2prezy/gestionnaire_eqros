@@ -8,9 +8,8 @@ logger = logging.getLogger(__name__)
 
 # --- Connexion DB ---
 def create_connection():
-    """Retourne (connexion, is_turso).
-    - Secrets Turso présents  -> connexion Turso OBLIGATOIRE (raise si échec).
-    - Secrets absents         -> SQLite local (timeout + WAL)."""
+    """Secrets Turso présents -> Turso OBLIGATOIRE (raise si échec).
+    Secrets absents -> SQLite local (timeout + WAL)."""
     url, token = None, None
     try:
         import streamlit as st
@@ -29,10 +28,8 @@ def create_connection():
                 last_error = e
                 if attempt == 0:
                     time.sleep(1)
-        # FIX : si les secrets existent, AUCUN fallback silencieux vers le local
         raise Exception(f"Connexion à Turso impossible. ({last_error})")
 
-    # FIX : timeout + WAL contre les "database is locked" en multi-utilisateurs
     local = sqlite3.connect('gestion_religieuse.db', check_same_thread=False, timeout=30)
     try:
         local.execute("PRAGMA journal_mode=WAL")
@@ -72,8 +69,7 @@ class CursorWrapper:
                 if "duplicate column" not in error_msg:
                     logger.error(f"Erreur SQL : {e}")
                 raise
-        # FIX CRITIQUE : ne JAMAIS retourner None silencieusement après épuisement
-        # des retries (l'ancien code perdait les INSERT sans prévenir)
+        # FIX : ne jamais retourner None après épuisement des retries
         raise last_error
 
     def __getattr__(self, name):
@@ -83,8 +79,7 @@ c = CursorWrapper(conn.cursor()) if USE_TURSO else conn.cursor()
 
 
 def commit_and_sync():
-    # FIX : on propage l'erreur. L'ancien code avalait les exceptions et
-    # affichait "✅ Enregistré" alors que rien n'était persisté.
+    # FIX : propage l'erreur (l'ancien code affichait "✅" alors que rien n'était persisté)
     try:
         conn.commit()
     except Exception as e:
@@ -92,7 +87,6 @@ def commit_and_sync():
         raise
 
 
-# --- Migration sécurisée ---
 def safe_migrate(query, error_ignore_phrases=["duplicate column", "duplicate column name"]):
     try:
         c.execute(query)
@@ -118,12 +112,12 @@ def init_tables_and_migrations():
     c.execute("""CREATE TABLE IF NOT EXISTS agenda (id INTEGER PRIMARY KEY, equipe_id INTEGER, paroisse_id INTEGER, diocese_id INTEGER, date_event DATE, type_event TEXT, lieu TEXT, description TEXT, auteur_nom TEXT, a_faire_suivre INTEGER DEFAULT 0, evenement_id INTEGER)""")
     c.execute("""CREATE TABLE IF NOT EXISTS periodes_cloturees (id INTEGER PRIMARY KEY AUTOINCREMENT, entite_type TEXT, entite_id INTEGER, annee_debut INTEGER, date_cloture TEXT, auteur_nom TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS espace_spirituel (id INTEGER PRIMARY KEY, type_contenu TEXT, titre TEXT, contenu_texte TEXT, fichier_url TEXT, date_publication DATE, auteur_nom TEXT)""")
-    # FIX : suppression du 2e CREATE TABLE espace_spirituel (code mort trompeur)
 
-    # --- MIGRATIONS STRUCTURELLES ---
+    # --- 2. MIGRATIONS STRUCTURELLES ---
     safe_migrate("ALTER TABLE espace_spirituel ADD COLUMN image_url TEXT")
-    # NOUVEAU : affiche des évènements (Coin Affiche de l'espace spirituel)
     safe_migrate("ALTER TABLE evenements ADD COLUMN affiche_url TEXT")
+    # NOUVEAU : bandes-annonces (URL YouTube ou vidéo Cloudinary) du Coin Affiche
+    safe_migrate("ALTER TABLE evenements ADD COLUMN video_url TEXT")
     safe_migrate("ALTER TABLE membres RENAME COLUMN matricule TO matloc", error_ignore_phrases=["no such column"])
     safe_migrate("ALTER TABLE membres RENAME COLUMN mle_sup TO matricule", error_ignore_phrases=["no such column"])
     safe_migrate("ALTER TABLE membres ADD COLUMN matricule TEXT")
@@ -133,24 +127,23 @@ def init_tables_and_migrations():
     safe_migrate("ALTER TABLE evenements ADD COLUMN auteur_nom TEXT")
     safe_migrate("ALTER TABLE agenda ADD COLUMN evenement_id INTEGER")
 
-    # --- DONNÉES PAR DÉFAUT ---
+    # --- 3. DONNÉES PAR DÉFAUT ---
     if c.execute("SELECT COUNT(*) FROM diocese").fetchone()[0] == 0:
         c.execute("INSERT INTO diocese (nom, responsable, bureau) VALUES (?, ?, ?)", ("GRAND-BASSAM", "À définir", "À définir"))
 
     if c.execute("SELECT COUNT(*) FROM utilisateurs WHERE role='diocese'").fetchone()[0] == 0:
-        # FIX : mot de passe admin depuis les secrets (sinon fallback historique)
         admin_pwd = "admin123"
         try:
             import streamlit as st
             admin_pwd = st.secrets.get("ADMIN_DEFAULT_PASSWORD", "admin123")
         except Exception:
             pass
-        # NB : hash cohérent avec services.hash_password (pas d'import direct : circularité)
+        # Hash cohérent avec services.hash_password (pas d'import direct : circularité)
         c.execute("INSERT INTO utilisateurs (username, password, role, diocese_id) VALUES (?, ?, ?, ?)",
                   ("diocese", hashlib.sha256(admin_pwd.encode()).hexdigest(), "diocese", 1))
     commit_and_sync()
 
-    # --- MIGRATION DE DONNÉES : evenements.equipe_id -> evenement_equipes ---
+    # --- 4. MIGRATION DE DONNÉES : evenements.equipe_id -> evenement_equipes ---
     try:
         anciens_evts = c.execute("SELECT id, equipe_id FROM evenements WHERE equipe_id IS NOT NULL AND paroisse_id IS NULL AND diocese_id IS NULL").fetchall()
         for evt_id, eq_id in anciens_evts:
@@ -161,7 +154,7 @@ def init_tables_and_migrations():
     except Exception as e:
         logger.warning(f"Erreur migration événements: {e}")
 
-    # NOUVEAU : index uniques (dédoublonnage AVANT création, sinon l'index échoue)
+    # --- 5. INDEX UNIQUES (dédoublonnage AVANT création) ---
     try:
         c.execute("""DELETE FROM evenement_equipes WHERE rowid NOT IN
                      (SELECT MIN(rowid) FROM evenement_equipes GROUP BY evenement_id, equipe_id)""")
@@ -175,8 +168,6 @@ def init_tables_and_migrations():
 
 
 def setup_database():
-    # FIX : migrations exécutées UNE FOIS PAR PROCESS (cache_resource)
-    # au lieu d'une fois par session utilisateur
     import streamlit as st
     @st.cache_resource
     def _migrations_done():
@@ -189,4 +180,4 @@ try:
     setup_database()
 except Exception as e:
     logger.error(f"Erreur critique lors de l'initialisation de la DB: {e}")
-    raise  # FIX : traceback clair plutôt que crashs SQL en cascade
+    raise
