@@ -21,6 +21,13 @@ def show_equipe():
     equipe_info = c.execute("SELECT nom_equipe, responsable, bureau FROM equipes WHERE id=?", (eid,)).fetchone()
     nom_equipe = equipe_info[0] if equipe_info else "Mon équipe"
 
+    # --- DEBUG TEMPORAIRE (à supprimer après diagnostic) ---
+    st.warning("DEBUG photos (5 derniers membres) : "
+               + str(c.execute("SELECT matloc, nom, photo_path FROM membres "
+                               "WHERE equipe_id=? ORDER BY id DESC LIMIT 5",
+                               (eid,)).fetchall()))
+
+  
     pid_result = c.execute("SELECT paroisse_id FROM equipes WHERE id=?", (eid,)).fetchone()
     if not pid_result:
         st.error("Équipe introuvable temporairement. Veuillez actualiser la page (F5).")
