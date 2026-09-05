@@ -446,7 +446,7 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
         if equipe_id:
             st.markdown("---")
             st.markdown("#### 👤 Liens Personnalisés (Mon équipe)")
-            st.caption("Envoyez à chaque membre son lien d'accès privé pour voir ses événements à venir.")
+            st.caption("Envoyez à chaque membre son lien d'accès privé — la conversation s'ouvre directement chez lui.")
             membres = c.execute("SELECT nom, prenom, whatsapp, matloc FROM membres WHERE equipe_id=? AND statut='actif' ORDER BY nom", (equipe_id,)).fetchall()
             if not membres:
                 st.info("Aucun membre actif dans l'équipe.")
@@ -460,7 +460,10 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
                         st.write(f"**{m[0]} {m[1]}** (`{matloc_propre}`)")
                     with col_btn:
                         if m[2]:
-                            wa_perso = f"https://wa.me/?text={urllib.parse.quote(msg_perso, safe=':/?=')}"
+                            # FIX : lien_whatsapp(num, msg) inclut le numéro →
+                            # conversation directe (comme "📱 Rappeler"),
+                            # au lieu de l'écran de choix de destinataire
+                            wa_perso = lien_whatsapp(m[2], msg_perso)
                             st.markdown(f"""<a href="{wa_perso}" target="_blank" class="whatsapp-link">📱 Envoyer</a>""", unsafe_allow_html=True)
                         else:
                             st.caption("_Pas de numéro_")
