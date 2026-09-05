@@ -15,7 +15,13 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
                         afficher_whatsapp_tabs, widget_type_abonnement,
                         enregistrer_presence_equipe, afficher_etat_presences_globales)
 
-    # --- DEBUG CONFIG (à supprimer après diagnostic) ---
+
+def show_equipe():
+    eid = st.session_state['equipe_id']
+    equipe_info = c.execute("SELECT nom_equipe, responsable, bureau FROM equipes WHERE id=?", (eid,)).fetchone()
+    nom_equipe = equipe_info[0] if equipe_info else "Mon équipe"
+
+      # --- DEBUG CONFIG (à supprimer après diagnostic) ---
     from services import USE_CLOUDINARY
     try:
         import cloudinary
@@ -24,11 +30,6 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
         _pkg_ok = "ABSENT ❌"
     st.info(f"🔧 DEBUG : cloudinary {_pkg_ok} | USE_CLOUDINARY = {USE_CLOUDINARY}")
 
-
-def show_equipe():
-    eid = st.session_state['equipe_id']
-    equipe_info = c.execute("SELECT nom_equipe, responsable, bureau FROM equipes WHERE id=?", (eid,)).fetchone()
-    nom_equipe = equipe_info[0] if equipe_info else "Mon équipe"
 
     # --- DEBUG TEMPORAIRE (à supprimer après diagnostic) ---
     st.warning("DEBUG photos (5 derniers membres) : "
