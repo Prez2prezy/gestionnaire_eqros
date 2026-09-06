@@ -119,7 +119,8 @@ def init_tables_and_migrations():
     # NOUVEAU : bandes-annonces (URL YouTube ou vidéo Cloudinary) du Coin Affiche
     safe_migrate("ALTER TABLE evenements ADD COLUMN video_url TEXT")
     safe_migrate("ALTER TABLE membres RENAME COLUMN matricule TO matloc", error_ignore_phrases=["no such column"])
-    safe_migrate("ALTER TABLE membres RENAME COLUMN mle_sup TO matricule", error_ignore_phrases=["no such column"])
+    if any(row[1] == "mle_sup" for row in c.execute("PRAGMA table_info(membres)").fetchall()):
+        safe_migrate("ALTER TABLE membres RENAME COLUMN mle_sup TO matricule")
     safe_migrate("ALTER TABLE membres ADD COLUMN matricule TEXT")
     safe_migrate("ALTER TABLE agenda ADD COLUMN a_faire_suivre INTEGER DEFAULT 0")
     safe_migrate("ALTER TABLE evenements ADD COLUMN paroisse_id INTEGER")
