@@ -134,7 +134,6 @@ def _render_pdf_inline(url_pdf):
 
 
 def _render_coin_affiche():
-    """Priorité d'affichage : BANDE-ANNONCE (vidéo) > AFFICHE (image) > texte."""
     lignes = []
     try:
         lignes = c.execute("""SELECT titre, date_evenement, lieu, affiche_url, video_url FROM evenements
@@ -162,16 +161,18 @@ def _render_coin_affiche():
     if visuel:
         d_v = safe_date(visuel[1])
         date_txt = d_v.strftime('%d/%m/%Y') if d_v else "Date à définir"
+        # Image INLINE dans le bloc HTML (structure fermée = rendu garanti)
+        img_part = (f'<img src="{visuel[3]}" alt="Affiche" style="width:100%; display:block; max-height:250px; object-fit:cover; border-bottom:3px solid #7b1fa2;">'
+                    if visuel[3] else "")
         st.markdown(
-            f'<div class="event-flyer">'
-            f'<div class="event-flyer-content"><h4>📣 {html.escape(visuel[0])}</h4>'
-            f'<p>{date_txt} - {html.escape(visuel[2] or "Lieu à définir")}</p></div>',
-            unsafe_allow_html=True)
+            f'<div style="background:#121a45; border-radius:15px; overflow:hidden; border:1px solid #27306b; margin:0 10px 15px 10px; box-shadow:0 2px 8px rgba(0,0,0,0.4);">'
+            f'{img_part}'
+            f'<div style="padding:15px; text-align:center;">'
+            f'<h4 style="margin:0 0 5px 0; color:#e8eaf6; font-size:1.1rem;">📣 {html.escape(visuel[0])}</h4>'
+            f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(visuel[2] or "Lieu à définir")}</p>'
+            f'</div></div>', unsafe_allow_html=True)
         if visuel[4]:
-            st.video(visuel[4])   # YouTube ou MP4 Cloudinary
-        elif visuel[3]:
-            st.image(visuel[3], use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+            st.video(visuel[4])
     else:
         try:
             prochain = c.execute("""SELECT type_evenement, date_evenement, lieu FROM evenements
@@ -185,10 +186,11 @@ def _render_coin_affiche():
             icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
                      "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(prochain[0], "📅")
             st.markdown(
-                f'<div class="event-flyer"><div class="event-flyer-content">'
-                f'<h4>{icone} {html.escape(prochain[0])}</h4>'
-                f'<p>{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p></div></div>',
-                unsafe_allow_html=True)
+                f'<div style="background:linear-gradient(135deg,#1a2150 0%,#121a45 100%); border-radius:15px; margin:0 10px 15px 10px; border:1px solid #27306b;">'
+                f'<div style="padding:15px; text-align:center;">'
+                f'<h4 style="margin:0 0 5px 0; color:#e8eaf6; font-size:1.1rem;">{icone} {html.escape(prochain[0])}</h4>'
+                f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p>'
+                f'</div></div>', unsafe_allow_html=True)
 
 
 def _render_fil_actualites():
@@ -198,16 +200,24 @@ def _render_fil_actualites():
                            ORDER BY date_publication DESC, id DESC LIMIT 1""").fetchone()
 
     if dernier:
-        etiquette = {"priere": "🙏 ", "meditation": "📖 "}.get(dernier[0], "📿 Du jour")
+        etiquette = {"priere": "🙏 Prière du jour", "meditation": "📖 Méditation du jour"}.get(dernier[0], "📿 Du jour")
         texte = dernier[2] or ''
         url_pdf = dernier[4]
         if not url_pdf:
             texte, url_pdf = _extraire_pdf_legacy(texte)
 
-        img_html = f'<img src="{dernier[3]}" alt="Contenu">' if dernier[3] else ""
+        # \n -> <br> : les sauts de ligne saisis dans la textarea s'affichent enfin
+        texte_html = texte.replace('\n', '<br>')
+        img_html = (f'<img src="{dernier[3]}" alt="Contenu" style="border-radius:12px; width:100%; max-height:220px; object-fit:cover; margin-bottom:15px;">'
+                    if dernier[3] else "")
+
+        # Tout en styles INLINE (immunisé contre les conflits de feuilles de style)
         st.markdown(
-            f'<div class="postcard"><h3 style="margin:0 0 12px 0;">{etiquette} {html.escape(dernier[1])}</h3>'
-            f'{img_html}{texte}</div>', unsafe_allow_html=True)
+            f'<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35);">'
+            f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{etiquette} — {html.escape(dernier[1])}</div>'
+            f'{img_html}'
+            f'<div style="color:#4527a0; font-size:0.98rem; line-height:1.6; text-align:left;">{texte_html}</div>'
+            f'</div>', unsafe_allow_html=True)
 
         if url_pdf:
             _render_pdf_inline(url_pdf)
