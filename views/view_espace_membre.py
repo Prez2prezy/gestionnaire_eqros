@@ -128,24 +128,42 @@ def _render_header(membre=None, matloc=None):
 
 
 def _render_pdf_inline(url_pdf):
-    url_inline = url_pdf.replace('/upload/', '/upload/fl_inline/')
-    st.markdown(f'<div class="pdf-cadre"><iframe src="{url_inline}" width="100%" height="760" '
-                f'style="border:none;" title="Document"></iframe></div>', unsafe_allow_html=True)
+    """Rendu PDF cross-platform : l'iframe directe est fiable sur ordinateur
+    mais souvent vide sur mobile. Le visualiseur Google Docs rend le PDF
+    sur tous les navigateurs. Lien de secours intégré."""
+    import urllib.parse as _up
+    gview = f"https://docs.google.com/viewer?url={_up.quote(url_pdf, safe='')}&embedded=true"
+    st.markdown(
+        f'<div style="margin:12px 10px 18px 10px; border-radius:12px; overflow:hidden; border:1px solid #27306b;">'
+        f'<iframe src="{gview}" width="100%" height="760" style="border:none;" title="Document"></iframe>'
+        f'<div style="text-align:center; padding:8px; background:#121a45;">'
+        f'<a href="{url_pdf}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">📄 Si le document ne s\'affiche pas, ouvrez-le ici</a>'
+        f'</div></div>', unsafe_allow_html=True)
 
 
 def _render_coin_affiche():
     lignes = []
+    erreur_sql = None
     try:
-        lignes = c.execute("""SELECT titre, date_evenement, lieu, affiche_url, video_url FROM evenements
+        # FIX CRITIQUE : la colonne "titre" n'existe PAS dans evenements
+        # (schéma : id, equipe_id, paroisse_id, diocese_id, type_evenement,
+        # date_evenement, lieu, auteur_nom, affiche_url, video_url). Cette
+        # requête échouait silencieusement depuis la migration affiche_url
+        # → fallback éternel malgré des publications réussies. On utilise
+        # type_evenement comme intitulé (cohérent avec l'agenda).
+        lignes = c.execute("""SELECT type_evenement, date_evenement, lieu, affiche_url, video_url FROM evenements
                               WHERE (affiche_url IS NOT NULL OR video_url IS NOT NULL) AND date_evenement >= ?
                               ORDER BY date_evenement ASC LIMIT 5""",
                           (date.today().isoformat(),)).fetchall()
-    except Exception:
+    except Exception as e:
+        erreur_sql = str(e)
         lignes = []
 
     if st.query_params.get("debug") == "1":
         with st.expander("🔎 DEBUG Coin Affiche"):
             st.write("Aujourd'hui :", date.today().isoformat())
+            if erreur_sql:
+                st.error(f"REQUÊTE PRINCIPALE EN ÉCHEC : {erreur_sql}")
             try:
                 st.write("Évènements avec visuel (tous) :",
                          c.execute("SELECT id, type_evenement, date_evenement, affiche_url, video_url FROM evenements WHERE affiche_url IS NOT NULL OR video_url IS NOT NULL").fetchall())
@@ -343,20 +361,22 @@ def show_espace_membre(matloc_membre=None):
     # La Réponse de Communion n'existe que pour les évènements où l'équipe du
     # membre est INVITÉE (gérés par son responsable d'équipe). Les évènements
     # paroisse/diocèse non ciblés s'affichent en information seule.
-    if membre[10] is None and membre[11] is None:
-        st.info("Vous n'êtes rattaché(e) à aucune équipe ou paroisse pour le moment.")
+    # --- RÈGLE 4 : "📅 Mes prochains évènements" = périmètre ÉQUIPE uniquement ---
+    # Les évènements n'arrivent ici que si l'équipe du membre a été INVITÉE
+    # (via evenement_equipes — création d'équipe, ou transmission Paroisse→Équipe).
+    # Un évènement diocèse/paroisse non transmis n'apparaît PAS du tout.
+    if membre[10] is None:
+        st.info("Vous n'êtes rattaché(e) à aucune équipe pour le moment.")
     else:
         st.markdown("### 📅 Mes prochains évènements")
         evts = c.execute('''
             SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
-                   (SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=e.id),
-                   ee.equipe_id, e.paroisse_id
+                   (SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=e.id)
             FROM evenements e
-            LEFT JOIN evenement_equipes ee ON e.id = ee.evenement_id AND ee.equipe_id = ?
-            WHERE e.date_evenement >= ?
-              AND (ee.equipe_id IS NOT NULL OR e.paroisse_id = ? OR e.diocese_id IS NOT NULL)
+            JOIN evenement_equipes ee ON e.id = ee.evenement_id
+            WHERE ee.equipe_id = ? AND e.date_evenement >= ?
             ORDER BY e.date_evenement ASC
-        ''', (membre[0], membre[10], date.today().isoformat(), membre[11])).fetchall()
+        ''', (membre[0], membre[10], date.today().isoformat())).fetchall()
 
         if not evts:
             st.success("✅ Aucun événement à venir. Profitez de ce temps de repos !")
@@ -370,42 +390,31 @@ def show_espace_membre(matloc_membre=None):
                 icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
                          "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(evt[2], "📅")
 
-                if evt[5]:
-                    origine = "👥 Invitation de votre équipe"
-                elif evt[6] == membre[11] and evt[6] is not None:
-                    origine = "🏘️ Évènement de votre paroisse"
-                else:
-                    origine = "🏛️ Évènement du diocèse"
-
                 statut = evt[4]
-                marqueur = "✅ " if (evt[5] and statut in ('physique', 'spirituel')) else ""
+                marqueur = "✅ " if statut in ('physique', 'spirituel') else ""
 
                 with st.expander(f"{marqueur}{icone} {evt[2]} — {d.strftime('%d/%m/%Y')} ({delai})",
                                  expanded=(delta <= 1)):
                     st.write(f"📍 {evt[3] or 'Lieu à définir'}")
-                    st.caption(origine)
 
-                    if not evt[5]:
-                        st.info("ℹ️ Évènement d'information : les modalités de présence vous seront communiquées par votre responsable d'équipe.")
+                    if statut == 'physique':
+                        st.success("✅ Votre réponse de communion : Présent(e) physiquement")
+                    elif statut == 'spirituel':
+                        st.success("🟡 Votre réponse de communion : Présent(e) spirituellement")
                     else:
-                        if statut == 'physique':
-                            st.success("✅ Votre réponse de communion : Présent(e) physiquement")
-                        elif statut == 'spirituel':
-                            st.success("🟡 Votre réponse de communion : Présent(e) spirituellement")
-                        else:
-                            st.caption("📿 Réponse de Communion — indiquez comment vous vous joignez à nous :")
+                        st.caption("📿 Réponse de Communion — indiquez comment vous vous joignez à nous :")
 
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            if st.button("🟢 Présent physiquement", key=f"rsp_p_{evt[0]}",
-                                         use_container_width=True,
-                                         type="primary" if statut != 'physique' else "secondary"):
-                                _enregistrer_presence(membre[0], evt[0], 'physique')
-                        with c2:
-                            if st.button("🟡 Présent spirituellement", key=f"rsp_s_{evt[0]}",
-                                         use_container_width=True,
-                                         type="primary" if statut != 'spirituel' else "secondary"):
-                                _enregistrer_presence(membre[0], evt[0], 'spirituel')
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("🟢 Présent physiquement", key=f"rsp_p_{evt[0]}",
+                                     use_container_width=True,
+                                     type="primary" if statut != 'physique' else "secondary"):
+                            _enregistrer_presence(membre[0], evt[0], 'physique')
+                    with c2:
+                        if st.button("🟡 Présent spirituellement", key=f"rsp_s_{evt[0]}",
+                                     use_container_width=True,
+                                     type="primary" if statut != 'spirituel' else "secondary"):
+                            _enregistrer_presence(membre[0], evt[0], 'spirituel')
 
     st.markdown("---")
 
