@@ -395,6 +395,35 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
                                 with c_btn:
                                     st.markdown(f'<a href="{wa_perso}" target="_blank" class="whatsapp-link">📱 Envoyer</a>', unsafe_allow_html=True)
 
+
+            # ===== SÉPARATION : information responsable VS invitation des membres =====
+            # RÈGLE 4 AFFINÉE : un évènement transmis (ou accusé de réception) est une
+            # information pour le RESPONSABLE. Ce n'est qu'à son initiative (bouton
+            # ci-dessous) que l'évènement devient visible des membres dans
+            # "📅 Mes prochains évènements" avec Réponse de Communion.
+            if role == 'equipe' and item[6] == mon_eq and item[10]:
+                deja_lie = c.execute("SELECT id FROM evenement_equipes WHERE evenement_id=? AND equipe_id=?",
+                                     (item[10], mon_eq)).fetchone()
+                st.markdown("---")
+                if deja_lie:
+                    st.success("✅ Vos membres sont invités à cet évènement (visible dans leur espace, Réponse de Communion active).")
+                    if st.button("↩️ Retirer l'invitation des membres", key=f"uninvite_evt_{item[0]}"):
+                        c.execute("DELETE FROM evenement_equipes WHERE evenement_id=? AND equipe_id=?",
+                                  (item[10], mon_eq))
+                        commit_and_sync()
+                        st.session_state["flash_warning"] = "Invitation retirée : l'évènement disparaît de l'espace de vos membres."
+                        st.rerun()
+                else:
+                    st.info("ℹ️ Information réservée à votre responsabilité — vos membres ne voient pas cet évènement.")
+                    if st.button("📣 Inviter mes membres à cet évènement", key=f"invite_evt_{item[0]}", type="primary"):
+                        c.execute("INSERT OR IGNORE INTO evenement_equipes (evenement_id, equipe_id) VALUES (?, ?)",
+                                  (item[10], mon_eq))
+                        commit_and_sync()
+                        st.session_state["flash_success"] = "Membres invités ! L'évènement apparaît dans leur espace avec la Réponse de Communion, et dans votre formulaire de saisie des présences."
+                        st.rerun()
+
+
+
             if role == 'paroisse':
                 if item[6] and not item[7] and item[9] == 1:
                     eq_nom_res = c.execute("SELECT nom_equipe FROM equipes WHERE id=?", (item[6],)).fetchone()
@@ -434,10 +463,15 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
                             st.write("")
                             if st.button("⬇️ Faire suivre", key=f"fwd_eq_{item[0]}"):
                                 new_desc = f"📢 **Transmis par la Paroisse**\nOrigine : Diocèse\n\n{item[4] or ''}"
-                                c.execute('''INSERT INTO agenda (equipe_id, date_event, type_event, lieu, description, auteur_nom, a_faire_suivre) VALUES (?,?,?,?,?,?,0)''',
-                                          (eq_dict[choix_eq], item[1], item[2], item[3], new_desc, f"{st.session_state.get('username')} (Transmis)"))
+                                # RÈGLE 4 AFFINÉE : la transmission est une INFORMATION
+                                # au responsable d'équipe. On copie la référence de
+                                # l'évènement (item[10]) mais on ne lie PAS l'équipe
+                                # (pas d'evenement_equipes) : c'est le responsable qui
+                                # décidera d'inviter ses membres ou non.
+                                c.execute('''INSERT INTO agenda (equipe_id, date_event, type_event, lieu, description, auteur_nom, a_faire_suivre, evenement_id) VALUES (?,?,?,?,?,?,0,?)''',
+                                          (eq_dict[choix_eq], item[1], item[2], item[3], new_desc, f"{st.session_state.get('username')} (Transmis)", item[10]))
                                 commit_and_sync()
-                                st.session_state["flash_success"] = f"Transmis à {choix_eq} !"
+                                st.session_state["flash_success"] = f"Transmis à {choix_eq} ! Le responsable décidera d'inviter ses membres."
                                 st.rerun()
 
 
