@@ -86,6 +86,12 @@ def _render_theme():
 
 
 def _render_header(membre=None, matloc=None):
+    """Entête FIGÉE. FIX 'fuite de code div' : HTML sur UNE SEULE LIGNE.
+    En vue publique, profil_html était vide → l'ancien f-string multi-lignes
+    générait une LIGNE VIDE au milieu du bloc HTML. En markdown, une ligne
+    vide TERMINE un bloc HTML : les </div> restants (indentés) devenaient un
+    bloc de CODE visible dans l'Espace communautaire. Une ligne unique rend
+    ce bug structurellement impossible."""
     logo_b64 = _logo_base64()
     logo_html = (f'<img src="data:image/png;base64,{logo_b64}" alt="Logo">'
                  if logo_b64 else '<div style="font-size:4rem;">📿</div>')
@@ -94,20 +100,20 @@ def _render_header(membre=None, matloc=None):
         profil_actif = st.query_params.get("profil") == "1"
         next_val = "0" if profil_actif else "1"
         label = "✕ Fermer le profil" if profil_actif else "👤 Mon profil"
-        profil_html = (f'<div style="padding-top:14px;">'
-                       f'<a href="?espace=1&matloc={matloc}&profil={next_val}" class="bouton-profil">{label}</a></div>')
+        droite = (f'<div style="padding-top:14px;">'
+                  f'<a href="?espace=1&matloc={matloc}&profil={next_val}" class="bouton-profil">{label}</a></div>')
     else:
-        profil_html = ""
+        droite = ""
 
-    st.markdown(f"""
-    <div class="sticky-header">
-        <div class="header-inner">
-            <div class="logo-bloc">{logo_html}<div class="logo-titre">Diocèse de Grand-Bassam</div></div>
-            {profil_html}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # UNE seule ligne → aucune ligne vide possible, le bloc HTML ne peut
+    # plus être interrompu (membre et public rendus de façon identique).
+    st.markdown(
+        f'<div class="sticky-header"><div class="header-inner">'
+        f'<div class="logo-bloc">{logo_html}<div class="logo-titre">Diocèse de Grand-Bassam</div></div>'
+        f'{droite}'
+        f'</div></div>', unsafe_allow_html=True)
 
+    # Carte profil déroulante (inchangée : widgets natifs, aucun risque)
     if membre and matloc and st.query_params.get("profil") == "1":
         with st.container(border=True):
             c_img, c_infos = st.columns([1, 2])
