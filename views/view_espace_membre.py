@@ -7,6 +7,7 @@ from datetime import date
 from database import c, commit_and_sync
 from services import safe_date
 
+
 # ====================================================================
 # HELPERS
 # ====================================================================
@@ -328,7 +329,10 @@ def show_espace_membre(matloc_membre=None):
 
     _render_fil_actualites()
 
-    # --- FIX N°4 : chaque évènement dans SON expander, avec état de présence ---
+    # --- RÈGLE 4 : "📅 Mes prochains évènements" + Réponse de Communion ---
+    # La Réponse de Communion n'existe que pour les évènements où l'équipe du
+    # membre est INVITÉE (gérés par son responsable d'équipe). Les évènements
+    # paroisse/diocèse non ciblés s'affichent en information seule.
     if membre[10] is None and membre[11] is None:
         st.info("Vous n'êtes rattaché(e) à aucune équipe ou paroisse pour le moment.")
     else:
@@ -364,31 +368,34 @@ def show_espace_membre(matloc_membre=None):
                     origine = "🏛️ Évènement du diocèse"
 
                 statut = evt[4]
-                marqueur = "✅ " if statut in ('physique', 'spirituel') else ""
+                marqueur = "✅ " if (evt[5] and statut in ('physique', 'spirituel')) else ""
 
                 with st.expander(f"{marqueur}{icone} {evt[2]} — {d.strftime('%d/%m/%Y')} ({delai})",
                                  expanded=(delta <= 1)):
                     st.write(f"📍 {evt[3] or 'Lieu à définir'}")
                     st.caption(origine)
 
-                    if statut == 'physique':
-                        st.success("✅ Votre réponse de communion : Présent(e) physiquement")
-                    elif statut == 'spirituel':
-                        st.success("🟡 Votre réponse de communion : Présent(e) spirituellement")
+                    if not evt[5]:
+                        st.info("ℹ️ Évènement d'information : les modalités de présence vous seront communiquées par votre responsable d'équipe.")
                     else:
-                        st.caption("📿 Réponse de Communion — indiquez comment vous vous joignez à nous :")
+                        if statut == 'physique':
+                            st.success("✅ Votre réponse de communion : Présent(e) physiquement")
+                        elif statut == 'spirituel':
+                            st.success("🟡 Votre réponse de communion : Présent(e) spirituellement")
+                        else:
+                            st.caption("📿 Réponse de Communion — indiquez comment vous vous joignez à nous :")
 
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        if st.button("🟢 Présent physiquement", key=f"rsp_p_{evt[0]}",
-                                     use_container_width=True,
-                                     type="primary" if statut != 'physique' else "secondary"):
-                            _enregistrer_presence(membre[0], evt[0], 'physique')
-                    with c2:
-                        if st.button("🟡 Présent spirituellement", key=f"rsp_s_{evt[0]}",
-                                     use_container_width=True,
-                                     type="primary" if statut != 'spirituel' else "secondary"):
-                            _enregistrer_presence(membre[0], evt[0], 'spirituel')
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            if st.button("🟢 Présent physiquement", key=f"rsp_p_{evt[0]}",
+                                         use_container_width=True,
+                                         type="primary" if statut != 'physique' else "secondary"):
+                                _enregistrer_presence(membre[0], evt[0], 'physique')
+                        with c2:
+                            if st.button("🟡 Présent spirituellement", key=f"rsp_s_{evt[0]}",
+                                         use_container_width=True,
+                                         type="primary" if statut != 'spirituel' else "secondary"):
+                                _enregistrer_presence(membre[0], evt[0], 'spirituel')
 
     st.markdown("---")
 
