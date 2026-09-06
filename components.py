@@ -194,7 +194,15 @@ def gerer_affiches_bande_annonces():
         badges = (" 🖼️" if e[4] else "") + (" 🎬" if e[5] else "")
         label = f"{d.strftime('%d/%m/%Y') if d else '??/??'} - {e[2]} - {e[3] or 'lieu à définir'}{badges}"
         options[label] = e
-    choix = st.selectbox("Évènement", list(options.keys()), key="dio_visuel_sel")
+
+    labels = list(options.keys())
+    # FIX CRITIQUE : les labels sont DYNAMIQUES (badges 🖼️/🎬 qui apparaissent
+    # après chaque publication). L'ancien label mémorisé par Streamlit dans le
+    # session_state n'est alors plus une option valide → StreamlitAPIException
+    # à chaque affichage de l'onglet. On purge la clé si sa valeur est périmée.
+    if st.session_state.get("dio_visuel_sel") not in labels:
+        st.session_state.pop("dio_visuel_sel", None)
+    choix = st.selectbox("Évènement", labels, key="dio_visuel_sel")
     evt = options[choix]
 
     etat_img, etat_vid = st.columns(2)
@@ -594,7 +602,13 @@ def enregistrer_presence_equipe(equipe_id):
                     label = f"{d_ev.strftime('%d/%m/%Y')} - {ev[2]} (Par {ev[4] or 'Mon équipe'})"
                 options_evts[label] = ev[0]
 
-        choix_evt = st.selectbox("📋 Sélectionner un évènement à venir", ["-- Créer un nouvel évènement --"] + list(options_evts.keys()), key="sel_evt_exist")
+        labels_evts = ["-- Créer un nouvel évènement --"] + list(options_evts.keys())
+        # FIX PRÉVENTIF : avec la bascule J+1, un évènement précédemment
+        # sélectionné peut disparaître des options (il passe dans l'historique)
+        # → purge de la sélection périmée pour éviter la StreamlitAPIException
+        if st.session_state.get("sel_evt_exist") not in labels_evts:
+            st.session_state.pop("sel_evt_exist", None)
+        choix_evt = st.selectbox("📋 Sélectionner un évènement à venir", labels_evts, key="sel_evt_exist")
 
         event_id = None
         lieu_event = ""
