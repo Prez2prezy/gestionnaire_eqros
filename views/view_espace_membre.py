@@ -57,9 +57,9 @@ def _render_theme():
     .sticky-header { position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
         background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px; }
     .header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; }
-    .logo-bloc { width: 170px; text-align: center; }
-    .logo-bloc img { height: 64px; width: auto; max-width: 170px; border-radius: 10px; display: block; margin: 0 auto; }
-    .stApp .logo-titre { width: 170px; color: #e8eaf6 !important; font-weight: 600; font-size: 0.95rem; line-height: 1.25; margin-top: 6px; }
+    .logo-bloc { width: 190px; text-align: center; }
+    .logo-bloc img { width: 100%; height: auto; border-radius: 10px; display: block; margin: 0 auto; }
+    .logo-titre-svg { display: block; width: 100%; margin-top: 6px; }
     .stApp a.bouton-profil { background-color: #4527a0 !important; color: #ffffff !important; padding: 10px 18px;
         text-decoration: none; border-radius: 30px; font-weight: bold; font-size: 0.9rem; display: inline-block; white-space: nowrap; }
     .stApp a.bouton-profil:hover { background-color: #5e35b1 !important; color: #ffffff !important; }
@@ -77,9 +77,7 @@ def _render_theme():
     .stApp .event-flyer p { margin: 0; color: #9fa6d8 !important; font-size: 0.9rem; }
     .stApp .pdf-cadre { margin: 12px 10px 18px 10px; border-radius: 12px; overflow: hidden; border: 1px solid #27306b; }
     @media (max-width: 640px) {
-        .logo-bloc { width: 130px; }
-        .logo-bloc img { height: 52px; }
-        .stApp .logo-titre { width: 130px; font-size: 0.85rem; }
+        .logo-bloc { width: 150px; }
         .block-container { padding-top: 128px !important; }
     }
     </style>""", unsafe_allow_html=True)
@@ -105,11 +103,19 @@ def _render_header(membre=None, matloc=None):
     else:
         droite = ""
 
+    # FIX esthétique : le titre est un SVG avec textLength → il occupe
+    # EXACTEMENT la largeur du bloc logo, quelle que soit la police du
+    # téléphone, et ne peut JAMAIS passer sur deux lignes.
+    titre_svg = ('<svg class="logo-titre-svg" viewBox="0 0 190 22" width="100%" height="22" '
+                 'preserveAspectRatio="none" role="img" aria-label="Diocèse de Grand-Bassam">'
+                 '<text x="95" y="17" text-anchor="middle" textLength="188" lengthAdjust="spacingAndGlyphs" '
+                 'style="fill:#e8eaf6; font-weight:600; font-size:14px;">Diocèse de Grand-Bassam</text></svg>')
+
     # UNE seule ligne → aucune ligne vide possible, le bloc HTML ne peut
     # plus être interrompu (membre et public rendus de façon identique).
     st.markdown(
         f'<div class="sticky-header"><div class="header-inner">'
-        f'<div class="logo-bloc">{logo_html}<div class="logo-titre">Diocèse de Grand-Bassam</div></div>'
+        f'<div class="logo-bloc">{logo_html}{titre_svg}</div>'
         f'{droite}'
         f'</div></div>', unsafe_allow_html=True)
 
