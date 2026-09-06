@@ -109,6 +109,73 @@ def ajouter_evenement_agenda(equipe_id=None, paroisse_id=None, diocese_id=None, 
                 st.session_state["flash_success"] = f"Évènement enregistré ! {nb_invites} ✅"
                 st.rerun()
 
+    _gerer_affiches_evenements(equipe_id, paroisse_id, diocese_id)
+
+
+def _gerer_affiches_evenements(equipe_id, paroisse_id, diocese_id):
+    """Interface équipe/paroisse pour les affiches des évènements DÉJÀ créés.
+    Aucun échec d'upload n'est silencieux."""
+    with st.expander("🖼️ Affiches des évènements à venir (Coin Affiche)"):
+        cle = f"aff_{equipe_id}_{paroisse_id}_{diocese_id}"
+        if equipe_id:
+            evts = c.execute('''SELECT DISTINCT e.id, e.date_evenement, e.type_evenement, e.lieu, e.affiche_url
+                                FROM evenements e JOIN evenement_equipes ee ON e.id=ee.evenement_id
+                                WHERE ee.equipe_id=? AND e.date_evenement >= ? ORDER BY e.date_evenement ASC''',
+                             (equipe_id, date.today().isoformat())).fetchall()
+        elif paroisse_id:
+            evts = c.execute('''SELECT DISTINCT e.id, e.date_evenement, e.type_evenement, e.lieu, e.affiche_url
+                                FROM evenements e LEFT JOIN evenement_equipes ee ON e.id=ee.evenement_id
+                                LEFT JOIN equipes eq ON ee.equipe_id=eq.id
+                                WHERE (e.paroisse_id=? OR eq.paroisse_id=?) AND e.date_evenement >= ? ORDER BY e.date_evenement ASC''',
+                             (paroisse_id, paroisse_id, date.today().isoformat())).fetchall()
+        else:
+            evts = c.execute('''SELECT id, date_evenement, type_evenement, lieu, affiche_url FROM evenements
+                                WHERE date_evenement >= ? ORDER BY date_evenement ASC''',
+                             (date.today().isoformat(),)).fetchall()
+
+        if not evts:
+            st.info("Aucun évènement à venir.")
+            return
+
+        options = {}
+        for e in evts:
+            d = safe_date(e[1])
+            label = f"{d.strftime('%d/%m/%Y') if d else '??/??/????'} - {e[2]} - {e[3] or 'lieu à définir'}" + (" 🖼️" if e[4] else " (sans affiche)")
+            options[label] = e
+        choix = st.selectbox("Évènement", list(options.keys()), key=f"{cle}_sel")
+        evt = options[choix]
+
+        if evt[4]:
+            st.image(evt[4], width=260)
+        else:
+            st.caption("❌ Aucune affiche enregistrée pour cet évènement.")
+
+        fichier = st.file_uploader("Nouvelle affiche (visible dans l'Espace de Prière)",
+                                   type=["jpg", "jpeg", "png", "webp"], key=f"{cle}_up_{evt[0]}")
+        c1, c2, _ = st.columns([1, 1, 2])
+        with c1:
+            if st.button("📤 Publier l'affiche", key=f"{cle}_pub_{evt[0]}", type="primary", width="stretch"):
+                if not fichier:
+                    st.error("⚠️ Sélectionnez d'abord un fichier image ci-dessus.")
+                else:
+                    url = sauvegarder_illustration(fichier)
+                    if url:
+                        if evt[4]: supprimer_photo(evt[4])
+                        c.execute("UPDATE evenements SET affiche_url=? WHERE id=?", (url, evt[0]))
+                        commit_and_sync()
+                        st.session_state["flash_success"] = "Affiche publiée ! ✅"
+                        st.rerun()
+                    else:
+                        st.error("❌ Upload échoué. Vérifiez que : (1) 'cloudinary' figure dans requirements.txt ; (2) les secrets CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY et CLOUDINARY_API_SECRET sont définis.")
+        with c2:
+            if evt[4] and st.button("🗑️ Retirer l'affiche", key=f"{cle}_del_{evt[0]}", width="stretch"):
+                supprimer_photo(evt[4])
+                c.execute("UPDATE evenements SET affiche_url=NULL WHERE id=?", (evt[0],))
+                commit_and_sync()
+                st.session_state["flash_warning"] = "Affiche retirée."
+                st.rerun()
+
+
 def gerer_affiches_bande_annonces():
     """Onglet DIOCÈSE : affiches (images) et bandes-annonces (YouTube / vidéo)
     des évènements à venir -> Coin Affiche de l'Espace de Prière.
@@ -202,11 +269,10 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
     params, conditions = [date.today().isoformat()], []
 
     if equipe_id:
-        # RÈGLE 2 : le Diocèse ne diffuse pas directement aux équipes — ses
-        # annonces passent par la Paroisse (bouton ⬇️ Faire suivre vers l'équipe).
         conditions.extend([
             "equipe_id = ?",
-            "(paroisse_id = ? AND equipe_id IS NULL AND (a_faire_suivre IS NULL OR a_faire_suivre != 2))"
+            "(paroisse_id = ? AND equipe_id IS NULL AND (a_faire_suivre IS NULL OR a_faire_suivre != 2))",
+            "(diocese_id = 1 AND paroisse_id IS NULL AND equipe_id IS NULL)"
         ])
         pid = c.execute("SELECT paroisse_id FROM equipes WHERE id=?", (equipe_id,)).fetchone()
         params.extend([equipe_id, pid[0] if pid and pid[0] else -1])
