@@ -81,18 +81,19 @@ def _render_theme():
         .block-container { padding-top: 128px !important; }
     }
 
-    /* ===== BANDE DÉFILANTE ===== */
-    .bande-defilante { overflow: hidden; white-space: nowrap; margin: 0 10px 14px 10px;
-        border-radius: 10px; background: linear-gradient(90deg, #1a2150, #27306b);
-        border: 1px solid #4527a0; }
-    .bande-defilante-inner { display: inline-block; padding: 10px 0; white-space: nowrap;
-        color: #ffe082 !important; font-weight: 600; font-size: 0.95rem;
+    /* ===== BANDE DÉFILANTE DANS L'ENTÊTE FIXE ===== */
+    .sticky-header { padding-bottom: 0; }   /* la bande touche le bord bas */
+    .bande-defilante { overflow: hidden; white-space: nowrap;
+        background: linear-gradient(90deg, #1a2150, #27306b);
+        border-top: 1px solid #27306b; }
+    .bande-defilante-inner { display: inline-block; padding: 8px 0; white-space: nowrap;
+        color: #ffe082 !important; font-weight: 600; font-size: 0.9rem;
         animation: defilement 30s linear infinite; }
     .bande-defilante:hover .bande-defilante-inner { animation-play-state: paused; }
     @keyframes defilement { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
     @media (prefers-reduced-motion: reduce) {
-        .bande-defilante-inner { animation: none; padding: 10px 15px; }
-    }    
+        .bande-defilante-inner { animation: none; padding: 8px 15px; }
+    }
 
     </style>""", unsafe_allow_html=True)
 
@@ -150,7 +151,14 @@ def _render_header(membre=None, matloc=None):
                 st.write(f"📿 N° méditation : {membre[7] or '—'}")
                 d_adh = safe_date(membre[5])
                 st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
-        st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
+
+        bandes_html = _bandes_defilantes_html(membre=bool(membre))
+
+        st.markdown(
+            f'<div class="sticky-header"><div class="header-inner">'
+            f'<div class="logo-bloc">{logo_html}{titre_svg}</div>'
+            f'{droite}'
+            f'</div>{bandes_html}</div>', unsafe_allow_html=True)
 
 
 def _render_pdf_inline(url_pdf):
@@ -236,31 +244,30 @@ def _render_coin_affiche():
                 f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p>'
                 f'</div></div>', unsafe_allow_html=True)
 
-def _render_bandes_defilantes(membre=False):
-    """Bandes défilantes du diocèse. Règle 5 : publiées par le diocèse seul.
-    fichier_url porte le ciblage : 'defaut' (partout) ou 'membre' (membres seuls).
-    Durée de défilement proportionnelle à la longueur du texte (lisibilité)."""
+def _bandes_defilantes_html(membre=False):
+    """Génère le HTML des bandes défilantes POUR l'entête fixe (retourne une
+    chaîne, ne rend rien). Règle 5 : publiées par le diocèse. Ciblage :
+    'defaut' (partout) ou 'membre' (membres seuls). Durée proportionnelle
+    à la longueur, pause au survol, respect de prefers-reduced-motion."""
     try:
         bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
                               WHERE type_contenu='annonce_defilante'
-                                AND (fichier_url IS NULL OR fichier_url='defaut' OR fichier_url='membre')
                               ORDER BY date_publication DESC, id DESC LIMIT 3""").fetchall()
     except Exception:
-        bandes = []
+        return ""
 
+    morceaux = []
     for texte, cible in bandes:
-        if membre and cible == 'membre':
-            pass          # visible pour les membres
-        elif cible == 'membre':
-            continue      # membres uniquement → pas sur la page publique
+        if cible == 'membre' and not membre:
+            continue
         if not texte:
             continue
-        duree = max(15, min(60, len(texte) // 2))   # ~2 caractères/seconde, bornée
+        duree = max(15, min(60, len(texte) // 2))
         texte_html = html.escape(texte)
-        st.markdown(
-            f'<div class="bande-defilante"><div class="bande-defilante-inner" '
-            f'style="animation-duration:{duree}s;">📻 {texte_html} &nbsp;&nbsp;📻 {texte_html}</div></div>',
-            unsafe_allow_html=True)
+        morceaux.append(
+            f'<div class="bande-defilante"><div class="bande-defilante-inner" style="animation-duration:{duree}s;">'
+            f'📻 {texte_html} &nbsp;&nbsp;📻 {texte_html}</div></div>')
+    return "".join(morceaux)
 
 
 def _render_fil_actualites():
@@ -371,7 +378,6 @@ def show_espace_membre(matloc_membre=None):
     if not matloc_membre:
         _render_header()
         _render_fil_actualites()
-        _render_bandes_defilantes()
         tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
         _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
         return
@@ -408,7 +414,6 @@ def show_espace_membre(matloc_membre=None):
     </div>
     """, unsafe_allow_html=True)
 
-    _render_bandes_defilantes(membre=True)
     _render_fil_actualites()
 
     # --- RÈGLE 4 : "📅 Mes prochains évènements" + Réponse de Communion ---
