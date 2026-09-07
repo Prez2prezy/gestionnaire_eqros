@@ -322,8 +322,8 @@ def show_diocese():
         tab_add, tab_manage = st.tabs(["➕ Publier du contenu", "📋 Contenu existant"])
 
         with tab_add:
-            s_tab_priere, s_tab_med, s_tab_audio, s_tab_affiches = st.tabs(
-                ["🙏 Prière", "📖 Méditation", "🎵 Musique", "🖼️ Affiches & Bandes-annonces"])
+            s_tab_priere, s_tab_med, s_tab_audio, s_tab_affiches, s_tab_defil = st.tabs(
+                ["🙏 Prière", "📖 Méditation", "🎵 Musique", "🖼️ Affiches & Bandes-annonces", "📺 Bandes défilantes"])
 
             def publier_texte(type_contenu, prefixe_cle, label):
                 titre = st.session_state.get(f"titre_{prefixe_cle}")
@@ -409,20 +409,41 @@ def show_diocese():
             with s_tab_affiches:
                 gerer_affiches_bande_annonces()
 
+            with s_tab_defil:
+                st.caption("Le texte défile en continu sous l'entête de l'Espace communautaire et de l'Espace membre. Idéal pour les avis courts (convocations, changements de lieu, intentions).")
+                with st.form("form_defilante"):
+                    texte_def = st.text_area("Texte de la bande défilante", max_chars=300,
+                                             help="300 caractères max. Les emojis sont bienvenus.")
+                    cible = st.radio("Où afficher ?", ["🌐 Partout (public + membres)", "👤 Membres uniquement"], horizontal=True)
+                    if st.form_submit_button("📺 Publier la bande défilante", width="stretch"):
+                        if not texte_def.strip():
+                            st.error("Le texte est obligatoire.")
+                        else:
+                            cible_val = "defaut" if cible.startswith("🌐") else "membre"
+                            c.execute("""INSERT INTO espace_spirituel (type_contenu, titre, contenu_texte, fichier_url, image_url, date_publication, auteur_nom)
+                                         VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                                      ("annonce_defilante", "Bande défilante", texte_def.strip(), cible_val, None,
+                                       date.today().isoformat(), st.session_state.get('username')))
+                            commit_and_sync()
+                            st.session_state["flash_success"] = "Bande défilante publiée ! ✅"
+                            st.rerun()                
+
         with tab_manage:
             contenus = c.execute("SELECT id, type_contenu, titre, date_publication, image_url, fichier_url FROM espace_spirituel ORDER BY date_publication DESC, id DESC").fetchall()
             if not contenus:
                 st.info("Aucun contenu publié pour le moment.")
             else:
                 for cont in contenus:
-                    icone = {"priere": "🙏", "meditation": "📖", "audio": "🎵"}.get(cont[1], "📌")
+                    icone = {"priere": "🙏", "meditation": "📖", "audio": "🎵", "annonce_defilante": "📺"}.get(cont[1], "📌")
                     c1, c2 = st.columns([4, 1])
                     with c1:
-                        st.write(f"{icone} **{cont[2]}** - *{cont[3]}*")
+                        st.write(f"{icone} **{cont[2] if cont[1] != 'annonce_defilante' else (cont[3] or '')[:60]}** - *{cont[3]}*")
                     with c2:
                         if st.button("🗑️", key=f"del_espace_{cont[0]}"):
+                            # Ne supprimer sur Cloudinary QUE de vraies URL http
                             for url in (cont[4], cont[5]):
-                                if url: supprimer_photo(url)
+                                if url and url.startswith("http"):
+                                    supprimer_photo(url)
                             c.execute("DELETE FROM espace_spirituel WHERE id=?", (cont[0],))
                             commit_and_sync()
                             st.rerun()
