@@ -97,6 +97,30 @@ def _render_theme():
 
     </style>""", unsafe_allow_html=True)
 
+def _bandes_defilantes_html(membre=False):
+    """Génère le HTML des bandes défilantes POUR l'entête fixe (retourne une
+    chaîne, ne rend rien). Règle 5 : publiées par le diocèse. Ciblage :
+    'defaut' (partout) ou 'membre' (membres seuls). Durée proportionnelle
+    à la longueur, pause au survol, respect de prefers-reduced-motion."""
+    try:
+        bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
+                              WHERE type_contenu='annonce_defilante'
+                              ORDER BY date_publication DESC, id DESC LIMIT 3""").fetchall()
+    except Exception:
+        return ""
+
+    morceaux = []
+    for texte, cible in bandes:
+        if cible == 'membre' and not membre:
+            continue
+        if not texte:
+            continue
+        duree = max(15, min(60, len(texte) // 2))
+        texte_html = html.escape(texte)
+        morceaux.append(
+            f'<div class="bande-defilante"><div class="bande-defilante-inner" style="animation-duration:{duree}s;">'
+            f'📻 {texte_html} &nbsp;&nbsp;📻 {texte_html}</div></div>')
+    return "".join(morceaux)
 
 def _render_header(membre=None, matloc=None):
     """Entête FIGÉE. FIX 'fuite de code div' : HTML sur UNE SEULE LIGNE.
@@ -244,30 +268,6 @@ def _render_coin_affiche():
                 f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p>'
                 f'</div></div>', unsafe_allow_html=True)
 
-def _bandes_defilantes_html(membre=False):
-    """Génère le HTML des bandes défilantes POUR l'entête fixe (retourne une
-    chaîne, ne rend rien). Règle 5 : publiées par le diocèse. Ciblage :
-    'defaut' (partout) ou 'membre' (membres seuls). Durée proportionnelle
-    à la longueur, pause au survol, respect de prefers-reduced-motion."""
-    try:
-        bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
-                              WHERE type_contenu='annonce_defilante'
-                              ORDER BY date_publication DESC, id DESC LIMIT 3""").fetchall()
-    except Exception:
-        return ""
-
-    morceaux = []
-    for texte, cible in bandes:
-        if cible == 'membre' and not membre:
-            continue
-        if not texte:
-            continue
-        duree = max(15, min(60, len(texte) // 2))
-        texte_html = html.escape(texte)
-        morceaux.append(
-            f'<div class="bande-defilante"><div class="bande-defilante-inner" style="animation-duration:{duree}s;">'
-            f'📻 {texte_html} &nbsp;&nbsp;📻 {texte_html}</div></div>')
-    return "".join(morceaux)
 
 
 def _render_fil_actualites():
