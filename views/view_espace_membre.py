@@ -36,7 +36,7 @@ def _render_theme():
     st.markdown("""<style>
     [data-testid="stHeader"] { display: none !important; }
     .stApp, [data-testid="stAppViewContainer"] { background-color: #0a0f2c !important; }
-    .block-container { padding-top: 150px !important; padding-bottom: 4rem !important; }
+    .block-container { padding-top: 200px !important; padding-bottom: 4rem !important; }
     .stApp .stMarkdown, .stApp .stMarkdown p, .stApp .stMarkdown li, .stApp .stMarkdown span,
     .stApp .stMarkdown h1, .stApp .stMarkdown h2, .stApp .stMarkdown h3, .stApp .stMarkdown h4,
     .stApp .stMarkdown strong, .stApp .stMarkdown em { color: #e8eaf6 !important; }
@@ -55,7 +55,7 @@ def _render_theme():
     [data-testid="stAlert"] p { color: #e8eaf6 !important; }
     .stApp [data-testid="stVerticalBlockBorderWrapper"] { background-color: #121a45 !important; border: 1px solid #27306b !important; }
     .sticky-header { position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
-        background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px; }
+        background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px 0 16px; }
     .header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; }
     .logo-bloc { width: 190px; text-align: center; }
     .logo-bloc img { width: 100%; height: auto; border-radius: 10px; display: block; margin: 0 auto; }
@@ -63,26 +63,6 @@ def _render_theme():
     .stApp a.bouton-profil { background-color: #4527a0 !important; color: #ffffff !important; padding: 10px 18px;
         text-decoration: none; border-radius: 30px; font-weight: bold; font-size: 0.9rem; display: inline-block; white-space: nowrap; }
     .stApp a.bouton-profil:hover { background-color: #5e35b1 !important; color: #ffffff !important; }
-    .stApp .postcard { background: linear-gradient(135deg, #f3e5f5 0%, #e8eaf6 100%) !important; padding: 20px;
-        border-radius: 15px; text-align: center; margin: 15px 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.35); }
-    .stApp .postcard p, .stApp .postcard em, .stApp .postcard strong { color: #4527a0 !important; }
-    .stApp .postcard h2, .stApp .postcard h3 { color: #4A148C !important; white-space: normal !important; overflow: visible !important; }
-    .stApp .postcard a { color: #4527a0 !important; }
-    .stApp .postcard img { border-radius: 12px; width: 100%; max-height: 220px; object-fit: cover; margin-bottom: 15px; }
-    .stApp .event-flyer { background: #121a45; border-radius: 15px; margin: 0 10px 15px 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.4); overflow: hidden; border: 1px solid #27306b; }
-    .stApp .event-flyer img { width: 100%; display: block; border-bottom: 3px solid #7b1fa2; max-height: 250px; object-fit: cover; }
-    .stApp .event-flyer-content { padding: 15px; text-align: center; }
-    .stApp .event-flyer h4 { margin: 0 0 5px 0; color: #e8eaf6 !important; font-size: 1.1rem; }
-    .stApp .event-flyer p { margin: 0; color: #9fa6d8 !important; font-size: 0.9rem; }
-    .stApp .pdf-cadre { margin: 12px 10px 18px 10px; border-radius: 12px; overflow: hidden; border: 1px solid #27306b; }
-    @media (max-width: 640px) {
-        .logo-bloc { width: 150px; }
-        .block-container { padding-top: 128px !important; }
-    }
-
-    /* ===== BANDE DÉFILANTE DANS L'ENTÊTE FIXE ===== */
-    .sticky-header { padding-bottom: 0; }   /* la bande touche le bord bas */
     .bande-defilante { overflow: hidden; white-space: nowrap;
         background: linear-gradient(90deg, #1a2150, #27306b);
         border-top: 1px solid #27306b; }
@@ -94,21 +74,29 @@ def _render_theme():
     @media (prefers-reduced-motion: reduce) {
         .bande-defilante-inner { animation: none; padding: 8px 15px; }
     }
-
+    .stApp .event-flyer { background: #121a45; border-radius: 15px; margin: 0 10px 15px 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.4); overflow: hidden; border: 1px solid #27306b; }
+    .stApp .postcard { background: linear-gradient(135deg, #f3e5f5 0%, #e8eaf6 100%) !important; padding: 20px;
+        border-radius: 15px; text-align: center; margin: 15px 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.35); }
+    @media (max-width: 640px) {
+        .logo-bloc { width: 150px; }
+        .block-container { padding-top: 165px !important; }
+    }
+    @media (max-width: 360px) {
+        .logo-bloc { width: 138px; }
+        .block-container { padding-top: 155px !important; }
+    }
     </style>""", unsafe_allow_html=True)
 
+
 def _bandes_defilantes_html(membre=False):
-    """Génère le HTML des bandes défilantes POUR l'entête fixe (retourne une
-    chaîne, ne rend rien). Règle 5 : publiées par le diocèse. Ciblage :
-    'defaut' (partout) ou 'membre' (membres seuls). Durée proportionnelle
-    à la longueur, pause au survol, respect de prefers-reduced-motion."""
+    """HTML des bandes défilantes pour l'entête fixe (retourne une chaîne)."""
     try:
         bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
                               WHERE type_contenu='annonce_defilante'
                               ORDER BY date_publication DESC, id DESC LIMIT 3""").fetchall()
     except Exception:
         return ""
-
     morceaux = []
     for texte, cible in bandes:
         if cible == 'membre' and not membre:
@@ -122,16 +110,18 @@ def _bandes_defilantes_html(membre=False):
             f'📻 {texte_html} &nbsp;&nbsp;📻 {texte_html}</div></div>')
     return "".join(morceaux)
 
+
 def _render_header(membre=None, matloc=None):
-    """Entête FIGÉE. FIX 'fuite de code div' : HTML sur UNE SEULE LIGNE.
-    En vue publique, profil_html était vide → l'ancien f-string multi-lignes
-    générait une LIGNE VIDE au milieu du bloc HTML. En markdown, une ligne
-    vide TERMINE un bloc HTML : les </div> restants (indentés) devenaient un
-    bloc de CODE visible dans l'Espace communautaire. Une ligne unique rend
-    ce bug structurellement impossible."""
+    """Entête FIGÉE : logo (largeur = texte) + bouton Mon profil + bandes défilantes.
+    Tout le HTML sur UNE SEULE LIGNE (une ligne vide coupe un bloc markdown)."""
     logo_b64 = _logo_base64()
     logo_html = (f'<img src="data:image/png;base64,{logo_b64}" alt="Logo">'
                  if logo_b64 else '<div style="font-size:4rem;">📿</div>')
+
+    titre_svg = ('<svg class="logo-titre-svg" viewBox="0 0 190 22" width="100%" height="22" '
+                 'preserveAspectRatio="none" role="img" aria-label="Diocèse de Grand-Bassam">'
+                 '<text x="95" y="17" text-anchor="middle" textLength="188" lengthAdjust="spacingAndGlyphs" '
+                 'style="fill:#e8eaf6; font-weight:600; font-size:14px;">Diocèse de Grand-Bassam</text></svg>')
 
     if membre and matloc:
         profil_actif = st.query_params.get("profil") == "1"
@@ -142,23 +132,14 @@ def _render_header(membre=None, matloc=None):
     else:
         droite = ""
 
-    # FIX esthétique : le titre est un SVG avec textLength → il occupe
-    # EXACTEMENT la largeur du bloc logo, quelle que soit la police du
-    # téléphone, et ne peut JAMAIS passer sur deux lignes.
-    titre_svg = ('<svg class="logo-titre-svg" viewBox="0 0 190 22" width="100%" height="22" '
-                 'preserveAspectRatio="none" role="img" aria-label="Diocèse de Grand-Bassam">'
-                 '<text x="95" y="17" text-anchor="middle" textLength="188" lengthAdjust="spacingAndGlyphs" '
-                 'style="fill:#e8eaf6; font-weight:600; font-size:14px;">Diocèse de Grand-Bassam</text></svg>')
+    bandes_html = _bandes_defilantes_html(membre=bool(membre))
 
-    # UNE seule ligne → aucune ligne vide possible, le bloc HTML ne peut
-    # plus être interrompu (membre et public rendus de façon identique).
     st.markdown(
         f'<div class="sticky-header"><div class="header-inner">'
         f'<div class="logo-bloc">{logo_html}{titre_svg}</div>'
         f'{droite}'
-        f'</div></div>', unsafe_allow_html=True)
+        f'</div>{bandes_html}</div>', unsafe_allow_html=True)
 
-    # Carte profil déroulante (inchangée : widgets natifs, aucun risque)
     if membre and matloc and st.query_params.get("profil") == "1":
         with st.container(border=True):
             c_img, c_infos = st.columns([1, 2])
@@ -175,27 +156,17 @@ def _render_header(membre=None, matloc=None):
                 st.write(f"📿 N° méditation : {membre[7] or '—'}")
                 d_adh = safe_date(membre[5])
                 st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
-
-        bandes_html = _bandes_defilantes_html(membre=bool(membre))
-
-        st.markdown(
-            f'<div class="sticky-header"><div class="header-inner">'
-            f'<div class="logo-bloc">{logo_html}{titre_svg}</div>'
-            f'{droite}'
-            f'</div>{bandes_html}</div>', unsafe_allow_html=True)
+        st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
 
 
 def _render_pdf_inline(url_pdf):
-    """Rendu PDF cross-platform : l'iframe directe est fiable sur ordinateur
-    mais souvent vide sur mobile. Le visualiseur Google Docs rend le PDF
-    sur tous les navigateurs. Lien de secours intégré."""
     import urllib.parse as _up
     gview = f"https://docs.google.com/viewer?url={_up.quote(url_pdf, safe='')}&embedded=true"
     st.markdown(
         f'<div style="margin:12px 10px 18px 10px; border-radius:12px; overflow:hidden; border:1px solid #27306b;">'
         f'<iframe src="{gview}" width="100%" height="760" style="border:none;" title="Document"></iframe>'
         f'<div style="text-align:center; padding:8px; background:#121a45;">'
-        f'<a href="{url_pdf}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">📄 Si le document ne s\'affiche pas, ouvrez-le ici</a>'
+        f'<a href="{url_pdf}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">📄 Si le document ne s\\'affiche pas, ouvrez-le ici</a>'
         f'</div></div>', unsafe_allow_html=True)
 
 
@@ -203,12 +174,6 @@ def _render_coin_affiche():
     lignes = []
     erreur_sql = None
     try:
-        # FIX CRITIQUE : la colonne "titre" n'existe PAS dans evenements
-        # (schéma : id, equipe_id, paroisse_id, diocese_id, type_evenement,
-        # date_evenement, lieu, auteur_nom, affiche_url, video_url). Cette
-        # requête échouait silencieusement depuis la migration affiche_url
-        # → fallback éternel malgré des publications réussies. On utilise
-        # type_evenement comme intitulé (cohérent avec l'agenda).
         lignes = c.execute("""SELECT type_evenement, date_evenement, lieu, affiche_url, video_url FROM evenements
                               WHERE (affiche_url IS NOT NULL OR video_url IS NOT NULL) AND date_evenement >= ?
                               ORDER BY date_evenement ASC LIMIT 5""",
@@ -237,7 +202,6 @@ def _render_coin_affiche():
     if visuel:
         d_v = safe_date(visuel[1])
         date_txt = d_v.strftime('%d/%m/%Y') if d_v else "Date à définir"
-        # Image INLINE dans le bloc HTML (structure fermée = rendu garanti)
         img_part = (f'<img src="{visuel[3]}" alt="Affiche" style="width:100%; display:block; max-height:250px; object-fit:cover; border-bottom:3px solid #7b1fa2;">'
                     if visuel[3] else "")
         st.markdown(
@@ -269,7 +233,6 @@ def _render_coin_affiche():
                 f'</div></div>', unsafe_allow_html=True)
 
 
-
 def _render_fil_actualites():
     dernier = c.execute("""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
                            FROM espace_spirituel
@@ -277,21 +240,18 @@ def _render_fil_actualites():
                            ORDER BY date_publication DESC, id DESC LIMIT 1""").fetchone()
 
     if dernier:
-        etiquette = {"priere": "🙏 ", "meditation": "📖 "}.get(dernier[0], "📿 Du jour")
+        etiquette = {"priere": "🙏 Prière du jour", "meditation": "📖 Méditation du jour"}.get(dernier[0], "📿 Du jour")
         texte = dernier[2] or ''
         url_pdf = dernier[4]
         if not url_pdf:
             texte, url_pdf = _extraire_pdf_legacy(texte)
 
-        # \n -> <br> : les sauts de ligne saisis dans la textarea s'affichent enfin
         texte_html = texte.replace('\n', '<br>')
         img_html = (f'<img src="{dernier[3]}" alt="Contenu" style="border-radius:12px; width:100%; max-height:220px; object-fit:cover; margin-bottom:15px;">'
                     if dernier[3] else "")
-
-        # Tout en styles INLINE (immunisé contre les conflits de feuilles de style)
         st.markdown(
             f'<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35);">'
-            f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{etiquette}{html.escape(dernier[1])}</div>'
+            f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{etiquette} — {html.escape(dernier[1])}</div>'
             f'{img_html}'
             f'<div style="color:#4527a0; font-size:0.98rem; line-height:1.6; text-align:left;">{texte_html}</div>'
             f'</div>', unsafe_allow_html=True)
@@ -367,16 +327,6 @@ def _enregistrer_presence(membre_id, evt_id, choix):
 def show_espace_membre(matloc_membre=None):
     _render_theme()
 
-    if st.query_params.get("debug") == "1":
-        with st.expander("🔎 DEBUG Bandes défilantes"):
-            try:
-                st.write("Bandes en base :",
-                         c.execute("SELECT id, contenu_texte, fichier_url FROM espace_spirituel WHERE type_contenu='annonce_defilante'").fetchall())
-            except Exception as e:
-                st.write("ERREUR SQL :", e)
-            html_genere = _bandes_defilantes_html(membre=bool(matloc_membre))
-            st.write("HTML généré :", (html_genere[:400] + "…") if len(html_genere) > 400 else (html_genere or "⚠️ VIDE"))    
-
     msg_ok = st.session_state.pop("flash_success", None)
     if msg_ok:
         st.success(msg_ok)
@@ -384,7 +334,7 @@ def show_espace_membre(matloc_membre=None):
     if msg_warn:
         st.warning(msg_warn)
 
-    # ================= ÉTAT 1 : VUE PUBLIQUE =================
+    # ================= ÉTAT 1 : VUE PUBLIQUE (Espace communautaire) =================
     if not matloc_membre:
         _render_header()
         _render_fil_actualites()
@@ -415,8 +365,6 @@ def show_espace_membre(matloc_membre=None):
 
     _render_header(membre, matloc_membre)
 
-    # FIX N°1 : carte bienvenue 100% en styles INLINE (aucune classe CSS,
-    # aucun conflit possible avec les feuilles de style globale/custom)
     st.markdown(f"""
     <div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">
         <div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue {membre[2]} 🕊️</div>
@@ -426,14 +374,7 @@ def show_espace_membre(matloc_membre=None):
 
     _render_fil_actualites()
 
-    # --- RÈGLE 4 : "📅 Mes prochains évènements" + Réponse de Communion ---
-    # La Réponse de Communion n'existe que pour les évènements où l'équipe du
-    # membre est INVITÉE (gérés par son responsable d'équipe). Les évènements
-    # paroisse/diocèse non ciblés s'affichent en information seule.
     # --- RÈGLE 4 : "📅 Mes prochains évènements" = périmètre ÉQUIPE uniquement ---
-    # Les évènements n'arrivent ici que si l'équipe du membre a été INVITÉE
-    # (via evenement_equipes — création d'équipe, ou transmission Paroisse→Équipe).
-    # Un évènement diocèse/paroisse non transmis n'apparaît PAS du tout.
     if membre[10] is None:
         st.info("Vous n'êtes rattaché(e) à aucune équipe pour le moment.")
     else:
@@ -489,4 +430,14 @@ def show_espace_membre(matloc_membre=None):
 
     # ARCHIVES
     tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
-    _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
+    _render_spiritual_tabs(tab_priere, tab_musique=tab_musique, tab_priere=tab_priere, tab_meditation=tab_meditation) if False else _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
+
+    if st.query_params.get("debug") == "1":
+        with st.expander("🔎 DEBUG Bandes défilantes"):
+            try:
+                st.write("Bandes en base :",
+                         c.execute("SELECT id, contenu_texte, fichier_url FROM espace_spirituel WHERE type_contenu='annonce_defilante'").fetchall())
+            except Exception as e:
+                st.write("ERREUR SQL :", e)
+            html_genere = _bandes_defilantes_html(membre=bool(matloc_membre))
+            st.write("HTML généré :", (html_genere[:400] + "…") if len(html_genere) > 400 else (html_genere or "⚠️ VIDE"))
