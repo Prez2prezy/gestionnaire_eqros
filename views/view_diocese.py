@@ -410,7 +410,9 @@ def show_diocese():
                 gerer_affiches_bande_annonces()
 
             with s_tab_defil:
-                st.caption("Le texte défile en continu sous l'entête de l'Espace communautaire et de l'Espace membre. Idéal pour les avis courts (convocations, changements de lieu, intentions).")
+                st.caption("Le texte défile en continu dans l'entête de l'Espace communautaire et de l'Espace membre. Idéal pour les avis courts. Maximum 3 bandes actives — la plus récente est affichée en premier.")
+
+                # --- PUBLICATION ---
                 with st.form("form_defilante"):
                     texte_def = st.text_area("Texte de la bande défilante", max_chars=300,
                                              help="300 caractères max. Les emojis sont bienvenus.")
@@ -426,10 +428,37 @@ def show_diocese():
                                        date.today().isoformat(), st.session_state.get('username')))
                             commit_and_sync()
                             st.session_state["flash_success"] = "Bande défilante publiée ! ✅"
-                            st.rerun()                
+                            st.rerun()
+
+                # --- GESTION DES BANDES ACTIVES ---
+                st.markdown("---")
+                st.markdown("**📋 Bandes actuellement actives**")
+                bandes_actives = c.execute("""SELECT id, contenu_texte, fichier_url, date_publication FROM espace_spirituel
+                                              WHERE type_contenu='annonce_defilante'
+                                              ORDER BY date_publication DESC, id DESC""").fetchall()
+                if not bandes_actives:
+                    st.info("Aucune bande défilante active.")
+                else:
+                    nb = len(bandes_actives)
+                    if nb >= 3:
+                        st.warning(f"⚠️ {nb} bandes actives : seules les 3 plus récentes s'affichent dans l'entête. Supprimez les anciennes.")
+                    for b in bandes_actives:
+                        etiquette = "🌐 Partout" if b[2] != 'membre' else "👤 Membres seuls"
+                        c_txt, c_infos, c_btn = st.columns([4, 2, 1])
+                        with c_txt:
+                            st.write(f"📺 {b[1]}")
+                        with c_infos:
+                            st.caption(f"{etiquette} • {b[3]}")
+                        with c_btn:
+                            if st.button("🗑️", key=f"del_defil_{b[0]}"):
+                                c.execute("DELETE FROM espace_spirituel WHERE id=?", (b[0],))
+                                commit_and_sync()
+                                st.rerun()
 
         with tab_manage:
-            contenus = c.execute("SELECT id, type_contenu, titre, date_publication, image_url, fichier_url FROM espace_spirituel ORDER BY date_publication DESC, id DESC").fetchall()
+            contenus = c.execute("""SELECT id, type_contenu, titre, date_publication, image_url, fichier_url
+                                    FROM espace_spirituel WHERE type_contenu != 'annonce_defilante'
+                                    ORDER BY date_publication DESC, id DESC""").fetchall()
             if not contenus:
                 st.info("Aucun contenu publié pour le moment.")
             else:
