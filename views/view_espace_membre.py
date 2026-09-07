@@ -430,7 +430,7 @@ def show_espace_membre(matloc_membre=None):
 
     # ARCHIVES
     tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
-    _render_spiritual_tabs(tab_priere, tab_musique=tab_musique, tab_priere=tab_priere, tab_meditation=tab_meditation) if False else _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
+    _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
 
     if st.query_params.get("debug") == "1":
         with st.expander("🔎 DEBUG Bandes défilantes"):
