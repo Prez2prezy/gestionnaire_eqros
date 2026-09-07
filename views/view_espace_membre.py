@@ -367,6 +367,16 @@ def _enregistrer_presence(membre_id, evt_id, choix):
 def show_espace_membre(matloc_membre=None):
     _render_theme()
 
+    if st.query_params.get("debug") == "1":
+        with st.expander("🔎 DEBUG Bandes défilantes"):
+            try:
+                st.write("Bandes en base :",
+                         c.execute("SELECT id, contenu_texte, fichier_url FROM espace_spirituel WHERE type_contenu='annonce_defilante'").fetchall())
+            except Exception as e:
+                st.write("ERREUR SQL :", e)
+            html_genere = _bandes_defilantes_html(membre=bool(matloc_membre))
+            st.write("HTML généré :", (html_genere[:400] + "…") if len(html_genere) > 400 else (html_genere or "⚠️ VIDE"))    
+
     msg_ok = st.session_state.pop("flash_success", None)
     if msg_ok:
         st.success(msg_ok)
