@@ -166,7 +166,7 @@ def _render_pdf_inline(url_pdf):
         f'<div style="margin:12px 10px 18px 10px; border-radius:12px; overflow:hidden; border:1px solid #27306b;">'
         f'<iframe src="{gview}" width="100%" height="760" style="border:none;" title="Document"></iframe>'
         f'<div style="text-align:center; padding:8px; background:#121a45;">'
-        f'<a href="{url_pdf}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">📄 Si le document ne s\\'affiche pas, ouvrez-le ici</a>'
+        f'<a href="{url_pdf}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">📄 Si le document ne saffiche pas, ouvrez-le ici</a>'
         f'</div></div>', unsafe_allow_html=True)
 
 
