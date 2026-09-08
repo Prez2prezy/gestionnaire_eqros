@@ -398,6 +398,7 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
                                              f"Confirme ta présence pour la {item[2]} du {i_date.strftime('%d/%m/%Y')}"
                                              f"{f' à {item[3]}' if item[3] else ''}.\n\n"
                                              f"Ta page personnelle t'attend ici (un clic suffit pour répondre) :\n{lien_perso}\n\n"
+                                             f"💡 Astuce : ajoute ce lien à ton écran d'accueil (menu ⋮ → « Ajouter à l'écran d'accueil ») pour y accéder directement !\n\n"
                                              f"Si le lien ne s'ouvre pas, saisis ce code sur la page de l'évènement : {matloc_propre}")
                                 wa_perso = lien_whatsapp(m[2], msg_perso)
                                 c_nom, c_btn = st.columns([3, 1])
@@ -601,7 +602,7 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
                 for m in membres:
                     matloc_propre = str(m[3]).upper().strip()
                     lien_perso = f"{base_url}/?espace=1&matloc={matloc_propre}"
-                    msg_perso = f"Bonjour {m[0]} {m[1]},\n\nVoici votre espace spirituel personnel avec les prières et le programme de votre équipe :\n{lien_perso}\n\nBon temps de prière ! 📿"
+                    msg_perso = f"Bonjour {m[0]} {m[1]},\n\nVoici votre espace spirituel personnel avec les prières et le programme de votre équipe :\n{lien_perso}\n\n💡 Astuce : ouvrez ce lien, puis menu ⋮ (ou Partager sur iPhone) → « Ajouter à l'écran d'accueil » : vous créerez un raccourci direct, sans plus passer par WhatsApp !\n\nBon temps de prière ! 📿"
                     col_nom, col_btn = st.columns([3, 1])
                     with col_nom:
                         st.write(f"**{m[0]} {m[1]}** (`{matloc_propre}`)")
