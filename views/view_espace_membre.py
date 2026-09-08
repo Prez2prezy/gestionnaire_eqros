@@ -206,7 +206,7 @@ def _render_coin_affiche():
     if visuel:
         d_v = safe_date(visuel[1])
         date_txt = d_v.strftime('%d/%m/%Y') if d_v else "Date à définir"
-        img_part = (f'<img src="{visuel[3]}" alt="Affiche" style="width:100%; display:block; max-height:250px; object-fit:cover; border-bottom:3px solid #7b1fa2;">'
+        img_part = (f'<img src="{visuel[3]}" alt="Affiche" style="width:100%; height:auto; display:block; border-bottom:3px solid #7b1fa2;">'
                     if visuel[3] else "")
         st.markdown(
             f'<div style="background:#121a45; border-radius:15px; overflow:hidden; border:1px solid #27306b; margin:0 10px 15px 10px; box-shadow:0 2px 8px rgba(0,0,0,0.4);">'
