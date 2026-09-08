@@ -322,8 +322,14 @@ def show_diocese():
         tab_add, tab_manage = st.tabs(["➕ Publier du contenu", "📋 Contenu existant"])
 
         with tab_add:
-            s_tab_priere, s_tab_med, s_tab_audio, s_tab_affiches, s_tab_defil = st.tabs(
-                ["🙏 Prière", "📖 Méditation", "🎵 Musique", "🖼️ Affiches & Bandes-annonces", "📺 Bandes défilantes"])
+            # FIX : st.tabs ne mémorise pas l'onglet actif (retour à "🙏 Prière"
+            # après chaque publication). Un radio horizontal avec key mémorise
+            # la sélection à travers les reruns : l'utilisateur reste où il était.
+            choix_onglet = st.radio(
+                "Type de contenu à publier",
+                ["🙏 Prière", "📖 Méditation", "🎵 Musique",
+                 "🖼️ Affiches & Bandes-annonces", "📺 Bandes défilantes"],
+                horizontal=True, key="onglet_publier")
 
             def publier_texte(type_contenu, prefixe_cle, label):
                 titre = st.session_state.get(f"titre_{prefixe_cle}")
@@ -334,8 +340,6 @@ def show_diocese():
                 contenu_texte = st.session_state.get(f"texte_{prefixe_cle}", "") or ""
                 pdf_uploader = st.session_state.get(f"pdf_{prefixe_cle}")
 
-                # PDF hébergé sur Cloudinary, URL stockée dans fichier_url
-                # (plus AUCUN HTML injecté dans contenu_texte)
                 url_pdf = None
                 if pdf_uploader is not None:
                     url_pdf = sauvegarder_pdf(pdf_uploader)
@@ -353,29 +357,29 @@ def show_diocese():
                 st.session_state["flash_success"] = f"{label} publiée avec succès ! ✅"
                 st.rerun()
 
-            with s_tab_priere:
+            if choix_onglet == "🙏 Prière":
                 st.info("Rédigez une prière. Vous pouvez intégrer des images (Markdown) ou joindre un PDF.")
                 with st.form("form_priere"):
                     st.text_input("Titre de la prière", key="titre_priere")
-                    st.text_area("Texte de la prière", height=100, key="texte_priere")
+                    st.text_area("Texte de la prière", height=150, key="texte_priere")
                     st.markdown("📎 **Joindre un document PDF :**")
                     st.file_uploader("Choisir un PDF", type=["pdf"], key="pdf_priere")
                     st.file_uploader("🖼️ Image d'illustration (optionnel)", type=["jpg", "png", "jpeg", "webp"], key="illus_priere")
                     if st.form_submit_button("✅ Publier la prière", width="stretch"):
                         publier_texte('priere', 'priere', "La prière")
 
-            with s_tab_med:
+            elif choix_onglet == "📖 Méditation":
                 st.info("Rédigez une méditation. Vous pouvez intégrer des images (Markdown) ou joindre un PDF.")
                 with st.form("form_med"):
                     st.text_input("Titre de la méditation", key="titre_med")
-                    st.text_area("Texte de la méditation", height=100, key="texte_med")
+                    st.text_area("Texte de la méditation", height=150, key="texte_med")
                     st.markdown("📎 **Joindre un document PDF :**")
                     st.file_uploader("Choisir un PDF", type=["pdf"], key="pdf_med")
                     st.file_uploader("🖼️ Image d'illustration (optionnel)", type=["jpg", "png", "jpeg", "webp"], key="illus_med")
                     if st.form_submit_button("✅ Publier la méditation", width="stretch"):
                         publier_texte('meditation', 'med', "La méditation")
 
-            with s_tab_audio:
+            elif choix_onglet == "🎵 Musique":
                 st.info("Uploadez un fichier audio (MP3, WAV) ou vidéo (MP4).")
                 with st.form("form_audio"):
                     st.text_input("Titre du chant ou de la musique", key="titre_audio")
@@ -406,13 +410,12 @@ def show_diocese():
                             st.session_state["flash_success"] = "Musique publiée avec succès ! ✅"
                             st.rerun()
 
-            with s_tab_affiches:
+            elif choix_onglet == "🖼️ Affiches & Bandes-annonces":
                 gerer_affiches_bande_annonces()
 
-            with s_tab_defil:
+            else:  # 📺 Bandes défilantes
                 st.caption("Le texte défile en continu dans l'entête de l'Espace communautaire et de l'Espace membre. Idéal pour les avis courts. Maximum 3 bandes actives — la plus récente est affichée en premier.")
 
-                # --- PUBLICATION ---
                 with st.form("form_defilante"):
                     texte_def = st.text_area("Texte de la bande défilante", max_chars=300,
                                              help="300 caractères max. Les emojis sont bienvenus.")
@@ -430,7 +433,6 @@ def show_diocese():
                             st.session_state["flash_success"] = "Bande défilante publiée ! ✅"
                             st.rerun()
 
-                # --- GESTION DES BANDES ACTIVES ---
                 st.markdown("---")
                 st.markdown("**📋 Bandes actuellement actives**")
                 bandes_actives = c.execute("""SELECT id, contenu_texte, fichier_url, date_publication FROM espace_spirituel
@@ -439,9 +441,8 @@ def show_diocese():
                 if not bandes_actives:
                     st.info("Aucune bande défilante active.")
                 else:
-                    nb = len(bandes_actives)
-                    if nb >= 3:
-                        st.warning(f"⚠️ {nb} bandes actives : seules les 3 plus récentes s'affichent dans l'entête. Supprimez les anciennes.")
+                    if len(bandes_actives) >= 3:
+                        st.warning(f"⚠️ {len(bandes_actives)} bandes actives : seules les 3 plus récentes s'affichent dans l'entête. Supprimez les anciennes.")
                     for b in bandes_actives:
                         etiquette = "🌐 Partout" if b[2] != 'membre' else "👤 Membres seuls"
                         c_txt, c_infos, c_btn = st.columns([4, 2, 1])
