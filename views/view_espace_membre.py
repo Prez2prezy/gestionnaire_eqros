@@ -130,7 +130,11 @@ def _render_header(membre=None, matloc=None):
         droite = (f'<div style="padding-top:14px;">'
                   f'<a href="?espace=1&matloc={matloc}&profil={next_val}" class="bouton-profil">{label}</a></div>')
     else:
-        droite = ""
+        droite = ('<div style="padding-top:14px;">'
+                  '<span style="background-color:#ffffff; color:#1A237E !important;'
+                  ' padding:10px 18px; border-radius:30px; font-weight:bold;'
+                  ' font-size:0.9rem; display:inline-block; white-space:nowrap;">'
+                  'Espace communautaire</span></div>')
 
     bandes_html = _bandes_defilantes_html(membre=bool(membre))
 
