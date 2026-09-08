@@ -5,6 +5,8 @@ import html
 import urllib.parse
 from datetime import date, timedelta
 from database import c, commit_and_sync
+import qrcode
+from io import BytesIO
 from services import (safe_date, envoyer_notification_telegram, lien_whatsapp,
                       verifier_abonnement, periode_affichage, get_periode_pastorale,
                       est_cloture, cloturer_periode, TYPES_EVENEMENTS,
@@ -17,6 +19,15 @@ def widget_type_abonnement(prefix, m_id, annee):
     montant = st.number_input("Montant (FCFA)", min_value=0, value=5000, step=500, key=f"mont_{prefix}_{m_id}_{annee}")
     return ("abonnement" if "Abonnement" in type_abo else "reabonnement"), montant
 
+def _qrcode_st(url, taille_px=260):
+    """Génère et affiche un QR code scannable (image locale, aucun service tiers)."""
+    qr = qrcode.QRCode(box_size=8, border=2)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    st.image(buffer.getvalue(), width=taille_px)
 
 def ajouter_evenement_agenda(equipe_id=None, paroisse_id=None, diocese_id=None, auteur_nom="Système"):
     st.markdown('<h3 style="color:#1A237E;">📅 Vos évènements à venir</h3>', unsafe_allow_html=True)
@@ -576,6 +587,8 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
         wa_public = f"https://wa.me/?text={urllib.parse.quote(message_public, safe=':/?=')}"
         st.markdown(f"""<a href="{wa_public}" target="_blank" class="whatsapp-link">📱 Partager l'espace public sur WhatsApp</a>""", unsafe_allow_html=True)
         st.code(lien_public)
+        st.markdown("**📱 QR code de l'Espace communautaire** *(à projeter ou imprimer)*")
+        _qrcode_st(lien_public, 220)
 
         if equipe_id:
             st.markdown("---")
