@@ -131,10 +131,10 @@ def _render_header(membre=None, matloc=None):
                   f'<a href="?espace=1&matloc={matloc}&profil={next_val}" class="bouton-profil">{label}</a></div>')
     else:
         droite = ('<div style="padding-top:14px;">'
-                  '<span style="background-color:#ffffff; color:#1A237E !important;'
+                  '<div style="background-color:#4527a0; color:#ffffff;'
                   ' padding:10px 18px; border-radius:30px; font-weight:bold;'
                   ' font-size:0.9rem; display:inline-block; white-space:nowrap;">'
-                  'Espace communautaire</span></div>')
+                  'Espace communautaire</div></div>')
 
     bandes_html = _bandes_defilantes_html(membre=bool(membre))
 
