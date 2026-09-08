@@ -357,7 +357,7 @@ def show_diocese():
                 st.info("Rédigez une prière. Vous pouvez intégrer des images (Markdown) ou joindre un PDF.")
                 with st.form("form_priere"):
                     st.text_input("Titre de la prière", key="titre_priere")
-                    st.text_area("Texte de la prière", height=300, key="texte_priere")
+                    st.text_area("Texte de la prière", height=100, key="texte_priere")
                     st.markdown("📎 **Joindre un document PDF :**")
                     st.file_uploader("Choisir un PDF", type=["pdf"], key="pdf_priere")
                     st.file_uploader("🖼️ Image d'illustration (optionnel)", type=["jpg", "png", "jpeg", "webp"], key="illus_priere")
@@ -368,7 +368,7 @@ def show_diocese():
                 st.info("Rédigez une méditation. Vous pouvez intégrer des images (Markdown) ou joindre un PDF.")
                 with st.form("form_med"):
                     st.text_input("Titre de la méditation", key="titre_med")
-                    st.text_area("Texte de la méditation", height=300, key="texte_med")
+                    st.text_area("Texte de la méditation", height=100, key="texte_med")
                     st.markdown("📎 **Joindre un document PDF :**")
                     st.file_uploader("Choisir un PDF", type=["pdf"], key="pdf_med")
                     st.file_uploader("🖼️ Image d'illustration (optionnel)", type=["jpg", "png", "jpeg", "webp"], key="illus_med")
