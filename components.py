@@ -777,7 +777,7 @@ def afficher_etat_presences_globales(equipe_id):
 
     if est_cloture('equipe', equipe_id, choix_annee):
         st.success("✅ Cette année pastorale est clôturée et archivée.")
-    elif choix_annee == annee_actuelle and date.today().month in [8, 9]:
+    elif choix_annee == annee_actuelle and date.today().month in [6, 7, 8]:
         if st.button("🔒 Clôturer et archiver cette année", key="cloturer_eq"):
             cloturer_periode('equipe', equipe_id, choix_annee, st.session_state.get('username'))
             st.session_state["flash_success"] = "Année clôturée ! Les données sont figées."
@@ -884,7 +884,7 @@ def afficher_etat_presences_paroisse(paroisse_id):
 
     if est_cloture('paroisse', paroisse_id, choix_annee):
         st.success("✅ Cette année pastorale est clôturée et archivée pour la paroisse.")
-    elif choix_annee == annee_actuelle and date.today().month in [8, 9]:
+    elif choix_annee == annee_actuelle and date.today().month in [6, 7, 8]:
         if st.button("🔒 Clôturer et archiver cette année (Paroisse)", key="cloturer_par"):
             cloturer_periode('paroisse', paroisse_id, choix_annee, st.session_state.get('username'))
             st.session_state["flash_success"] = "Année clôturée !"
