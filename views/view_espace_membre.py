@@ -46,7 +46,7 @@ def _render_theme():
     details, [data-testid="stExpanderDetails"] { background-color: transparent !important; }
     summary, [data-testid="stExpander"] p { color: #e8eaf6 !important; }
     [data-baseweb="tab-list"] { border-bottom-color: #27306b !important; }
-    [data-baseweb="tab"] p { color: #9fa6d8 !important; }
+    [data-baseweb="tab"] p { color: #e8eaf6 !important; font-weight: 600 !important; }
     [data-baseweb="tab"][aria-selected="true"] p { color: #ffffff !important; }
     [data-baseweb="tab-highlight"] { background-color: #7b1fa2 !important; }
     .stButton > button { background-color: #1a2150 !important; color: #e8eaf6 !important; border: 1px solid #2a3160 !important; }
@@ -268,8 +268,19 @@ def _render_fil_actualites():
     _render_coin_affiche()
 
 
-def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
-    with tab_priere:
+def _render_spiritual_tabs(titre_section="📖 Archives spirituelles"):
+    """FIX : remplace les onglets par des sections REPLIÉES. Un onglet Streamlit
+    impose toujours une sélection par défaut (le 1er contenu s'expose d'office).
+    Des expanders : rien n'est présélectionné, chaque section ne s'ouvre que
+    sur clic — et le nombre de contenus informe sans déplier."""
+    try:
+        nb_prieres = c.execute("SELECT COUNT(*) FROM espace_spirituel WHERE type_contenu='priere'").fetchone()[0]
+        nb_meds = c.execute("SELECT COUNT(*) FROM espace_spirituel WHERE type_contenu='meditation'").fetchone()[0]
+        nb_audios = c.execute("SELECT COUNT(*) FROM espace_spirituel WHERE type_contenu='audio'").fetchone()[0]
+    except Exception:
+        nb_prieres, nb_meds, nb_audios = 0, 0, 0
+
+    with st.expander(f"🙏 Prières ({nb_prieres})"):
         prieres = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
                                WHERE type_contenu='priere' ORDER BY date_publication DESC, id DESC""").fetchall()
         if not prieres:
@@ -283,7 +294,7 @@ def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
                     if texte: st.markdown(texte, unsafe_allow_html=True)
                     if url_pdf: _render_pdf_inline(url_pdf)
 
-    with tab_meditation:
+    with st.expander(f"📖 Méditations ({nb_meds})"):
         meditations = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
                                    WHERE type_contenu='meditation' ORDER BY date_publication DESC, id DESC""").fetchall()
         if not meditations:
@@ -297,7 +308,7 @@ def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
                     if texte: st.markdown(texte, unsafe_allow_html=True)
                     if url_pdf: _render_pdf_inline(url_pdf)
 
-    with tab_musique:
+    with st.expander(f"🎵 Musiques ({nb_audios})"):
         audios = c.execute("""SELECT titre, fichier_url FROM espace_spirituel
                               WHERE type_contenu='audio' ORDER BY date_publication DESC, id DESC""").fetchall()
         if not audios:
@@ -310,7 +321,6 @@ def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
                     st.markdown("---")
                 else:
                     st.warning(f"Le fichier audio pour '{a[0]}' est introuvable.")
-
 
 def _enregistrer_presence(membre_id, evt_id, choix):
     deja = c.execute("SELECT id FROM suivi_presences WHERE membre_id=? AND evenement_id=?",
@@ -342,8 +352,7 @@ def show_espace_membre(matloc_membre=None):
     if not matloc_membre:
         _render_header()
         _render_fil_actualites()
-        tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
-        _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
+        _render_spiritual_tabs()
         return
 
     # ================= ÉTAT 2 : VUE MEMBRE =================
@@ -363,8 +372,7 @@ def show_espace_membre(matloc_membre=None):
         st.info("💡 Vous pouvez consulter l'espace public ci-dessous.")
         _render_header()
         _render_fil_actualites()
-        tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
-        _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
+        _render_spiritual_tabs()
         return
 
     _render_header(membre, matloc_membre)
@@ -433,9 +441,7 @@ def show_espace_membre(matloc_membre=None):
     st.markdown("---")
 
     # ARCHIVES
-    tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
-    _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
-
+    _render_spiritual_tabs()
     if st.query_params.get("debug") == "1":
         with st.expander("🔎 DEBUG Bandes défilantes"):
             try:
