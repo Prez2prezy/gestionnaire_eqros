@@ -268,19 +268,18 @@ def _render_fil_actualites():
     _render_coin_affiche()
 
 
-def _render_spiritual_tabs(titre_section="📖 Archives spirituelles"):
-    """FIX : remplace les onglets par des sections REPLIÉES. Un onglet Streamlit
-    impose toujours une sélection par défaut (le 1er contenu s'expose d'office).
-    Des expanders : rien n'est présélectionné, chaque section ne s'ouvre que
-    sur clic — et le nombre de contenus informe sans déplier."""
-    try:
-        nb_prieres = c.execute("SELECT COUNT(*) FROM espace_spirituel WHERE type_contenu='priere'").fetchone()[0]
-        nb_meds = c.execute("SELECT COUNT(*) FROM espace_spirituel WHERE type_contenu='meditation'").fetchone()[0]
-        nb_audios = c.execute("SELECT COUNT(*) FROM espace_spirituel WHERE type_contenu='audio'").fetchone()[0]
-    except Exception:
-        nb_prieres, nb_meds, nb_audios = 0, 0, 0
+def _render_spiritual_tabs():
+    """Onglets côte à côte SANS exposition par défaut : un onglet d'accueil neutre
+    est placé en tête, de sorte que '🙏 Prières' ne soit plus présélectionné.
+    Les contenus ne s'exposent que sur clic de l'utilisateur."""
+    t_accueil, t_prieres, t_medits, t_audios = st.tabs(
+        ["📇 Sommaire", "🙏 Prières", "📖 Méditations", "🎵 Musiques"])
 
-    with st.expander(f"🙏 Prières ({nb_prieres})"):
+    with t_accueil:
+        st.markdown("👋 Bienvenue dans nos archives spirituelles.")
+        st.caption("Choisissez une section ci-dessus : 🙏 Prières, 📖 Méditations ou 🎵 Musiques.")
+
+    with t_prieres:
         prieres = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
                                WHERE type_contenu='priere' ORDER BY date_publication DESC, id DESC""").fetchall()
         if not prieres:
@@ -294,7 +293,7 @@ def _render_spiritual_tabs(titre_section="📖 Archives spirituelles"):
                     if texte: st.markdown(texte, unsafe_allow_html=True)
                     if url_pdf: _render_pdf_inline(url_pdf)
 
-    with st.expander(f"📖 Méditations ({nb_meds})"):
+    with t_medits:
         meditations = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
                                    WHERE type_contenu='meditation' ORDER BY date_publication DESC, id DESC""").fetchall()
         if not meditations:
@@ -308,7 +307,7 @@ def _render_spiritual_tabs(titre_section="📖 Archives spirituelles"):
                     if texte: st.markdown(texte, unsafe_allow_html=True)
                     if url_pdf: _render_pdf_inline(url_pdf)
 
-    with st.expander(f"🎵 Musiques ({nb_audios})"):
+    with t_audios:
         audios = c.execute("""SELECT titre, fichier_url FROM espace_spirituel
                               WHERE type_contenu='audio' ORDER BY date_publication DESC, id DESC""").fetchall()
         if not audios:
@@ -352,7 +351,8 @@ def show_espace_membre(matloc_membre=None):
     if not matloc_membre:
         _render_header()
         _render_fil_actualites()
-        _render_spiritual_tabs()
+        tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
+        _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
         return
 
     # ================= ÉTAT 2 : VUE MEMBRE =================
@@ -372,7 +372,8 @@ def show_espace_membre(matloc_membre=None):
         st.info("💡 Vous pouvez consulter l'espace public ci-dessous.")
         _render_header()
         _render_fil_actualites()
-        _render_spiritual_tabs()
+        tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
+        _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
         return
 
     _render_header(membre, matloc_membre)
@@ -441,7 +442,9 @@ def show_espace_membre(matloc_membre=None):
     st.markdown("---")
 
     # ARCHIVES
-    _render_spiritual_tabs()
+    tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
+    _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
+
     if st.query_params.get("debug") == "1":
         with st.expander("🔎 DEBUG Bandes défilantes"):
             try:
