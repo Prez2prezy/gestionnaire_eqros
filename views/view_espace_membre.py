@@ -351,8 +351,7 @@ def show_espace_membre(matloc_membre=None):
     if not matloc_membre:
         _render_header()
         _render_fil_actualites()
-        tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
-        _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
+        _render_spiritual_tabs()
         return
 
     # ================= ÉTAT 2 : VUE MEMBRE =================
@@ -372,8 +371,7 @@ def show_espace_membre(matloc_membre=None):
         st.info("💡 Vous pouvez consulter l'espace public ci-dessous.")
         _render_header()
         _render_fil_actualites()
-        tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
-        _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
+        _render_spiritual_tabs()
         return
 
     _render_header(membre, matloc_membre)
@@ -442,8 +440,7 @@ def show_espace_membre(matloc_membre=None):
     st.markdown("---")
 
     # ARCHIVES
-    tab_priere, tab_meditation, tab_musique = st.tabs(["🙏 Prières", "📖 Méditations", "🎵 Musiques"])
-    _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique)
+    _render_spiritual_tabs()
 
     if st.query_params.get("debug") == "1":
         with st.expander("🔎 DEBUG Bandes défilantes"):
