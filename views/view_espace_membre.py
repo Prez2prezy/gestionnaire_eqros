@@ -124,18 +124,9 @@ def _render_header(membre=None, matloc=None):
                  '<text x="95" y="17" text-anchor="middle" textLength="188" lengthAdjust="spacingAndGlyphs" '
                  'style="fill:#e8eaf6; font-weight:600; font-size:14px;">Diocèse de Grand-Bassam</text></svg>')
 
-    if membre and matloc:
-        profil_actif = st.query_params.get("profil") == "1"
-        next_val = "0" if profil_actif else "1"
-        label = "✕ Fermer le profil" if profil_actif else "👤 Mon profil"
-        droite = (f'<div style="padding-top:14px;">'
-                  f'<a href="?espace=1&matloc={matloc}&profil={next_val}" class="bouton-profil">{label}</a></div>')
-    else:
-        droite = ('<div style="padding-top:14px;">'
-                  '<div style="background-color:#4527a0; color:#ffffff;'
-                  ' padding:10px 18px; border-radius:30px; font-weight:bold;'
-                  ' font-size:0.9rem; display:inline-block; white-space:nowrap;">'
-                  'Espace communautaire</div></div>')
+    # Profil déplacé en popover natif (sous l'entête) : plus AUCUN rechargement
+    # de page — le lien ?profil= générait des pages fantômes dans l'historique.
+    droite = ""
 
     bandes_html = _bandes_defilantes_html(membre=bool(membre))
 
@@ -144,24 +135,6 @@ def _render_header(membre=None, matloc=None):
         f'<div class="logo-bloc">{logo_html}{titre_svg}</div>'
         f'{droite}'
         f'</div>{bandes_html}</div>', unsafe_allow_html=True)
-
-    if membre and matloc and st.query_params.get("profil") == "1":
-        with st.container(border=True):
-            c_img, c_infos = st.columns([1, 2])
-            with c_img:
-                if membre[6]:
-                    try: st.image(membre[6], width=130)
-                    except Exception: pass
-            with c_infos:
-                st.markdown(f"**{membre[1]} {membre[2]}**")
-                st.caption(f"MatLoc : `{membre[3]}`")
-                st.write(f"👥 Équipe : **{membre[8] or '—'}**")
-                st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
-                st.write(f"💬 WhatsApp : {membre[4] or '—'}")
-                st.write(f"📿 N° méditation : {membre[7] or '—'}")
-                d_adh = safe_date(membre[5])
-                st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
-        st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
 
 # ====================================================================
 # MA DIZAINE AU QUOTIDIEN — portage web de l'application Android
@@ -270,36 +243,33 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
     m = page.get("m")
     couleur = COULEURS_TYPES.get((m["type"] or "").lower(), "#9E9E9E") if m else "#1A237E"
 
-    # --- Rendu de la page courante ---
+    # --- Rendu de la page courante : UN SEUL bloc HTML par page
+    # (la leçon des lignes vides et des div orphelines, appliquée au livre) ---
     if page["t"] in ("intro1", "intro2", "intro3"):
         texte = {"intro1": DIZ_INTRO1, "intro2": DIZ_INTRO2, "intro3": DIZ_INTRO3}[page["t"]]
-        st.markdown(
+        html_page = (
             f'<div style="background:#FFF9C4; border-radius:12px; padding:18px; margin:6px;">'
             f'<div style="color:#1A237E; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">INTRODUCTION</div>'
-            f'{_diz_txt(texte, "#1a1a1a")}</div>', unsafe_allow_html=True)
+            f'{_diz_txt(texte, "#1a1a1a")}</div>')
 
     elif page["t"] == "outro":
-        st.markdown(
+        html_page = (
             f'<div style="background:#FFF9C4; border-radius:12px; padding:18px; margin:6px;">'
             f'<div style="color:#1A237E; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">FIN DU ROSAIRE</div>'
-            f'{_diz_txt(DIZ_OUTRO, "#1a1a1a")}</div>', unsafe_allow_html=True)
+            f'{_diz_txt(DIZ_OUTRO, "#1a1a1a")}</div>')
 
     else:
-        # En-tête coloré par type (comme le livre Android)
-        st.markdown(
+        tete = (
             f'<div style="background:{couleur}; border-radius:12px 12px 0 0; padding:12px 16px; margin:6px 6px 0 6px;">'
             f'<div style="color:#ffffff; font-weight:bold; font-size:1.05rem;">{m["id"]} — {html.escape(m["titre"])}</div>'
-            f'<div style="color:#ffffff; font-size:0.85rem;">📖 {html.escape(m["reference"])}</div></div>',
-            unsafe_allow_html=True)
-        st.markdown(
-            f'<div style="background:#FFF9C4; border-radius:0 0 12px 12px; padding:18px; margin:0 6px 6px 6px;">',
-            unsafe_allow_html=True)
+            f'<div style="color:#ffffff; font-size:0.85rem;">📖 {html.escape(m["reference"])}</div></div>'
+            f'<div style="background:#FFF9C4; border-radius:0 0 12px 12px; padding:18px; margin:0 6px 6px 6px;">')
 
         if page["t"] == "contenu":
-            st.markdown(_diz_txt("PASSAGE", couleur, "1rem", gras=True) +
-                        _diz_txt(m["passage"], "#1a1a1a") +
-                        _diz_txt("MÉDITATION", couleur, "1rem", gras=True) +
-                        _diz_txt(m["meditation"], "#1a1a1a"), unsafe_allow_html=True)
+            corps = (_diz_txt("PASSAGE", couleur, "1rem", gras=True)
+                        + _diz_txt(m["passage"], "#1a1a1a")
+                        + _diz_txt("MÉDITATION", couleur, "1rem", gras=True)
+                        + _diz_txt(m["meditation"], "#1a1a1a"))
 
         elif page["t"] == "intentions":
             intentions_html = "".join(
@@ -308,15 +278,14 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
             fruits_html = "".join(
                 _diz_txt("✨ " + ligne.strip(), "#1a1a1a")
                 for ligne in m["fruits"].split("\n") if ligne.strip())
-            st.markdown(_diz_txt("INTENTIONS", couleur, "1rem", gras=True) +
-                        intentions_html +
-                        _diz_txt("FRUITS DU MYSTÈRE", couleur, "1rem", gras=True) +
-                        fruits_html, unsafe_allow_html=True)
+            corps = (_diz_txt("INTENTIONS", couleur, "1rem", gras=True)
+                        + intentions_html
+                        + _diz_txt("FRUITS DU MYSTÈRE", couleur, "1rem", gras=True)
+                        + fruits_html)
 
         elif page["t"] == "notrepere":
-            st.markdown(_diz_txt("NOTRE PÈRE", couleur, "1rem", gras=True) +
-                        _diz_txt("Notre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\nque ta volonté soit faite\nsur la terre comme au ciel.\n\nDonne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, mais délivre-nous du Mal. Amen!", "#1a1a1a"),
-                        unsafe_allow_html=True)
+            corps = (_diz_txt("NOTRE PÈRE", couleur, "1rem", gras=True)
+                        + _diz_txt("Notre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\nque ta volonté soit faite\nsur la terre comme au ciel.\n\nDonne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, mais délivre-nous du Mal. Amen!", "#1a1a1a"))
 
         elif page["t"] == "grain":
             g = page["g"]
@@ -326,32 +295,33 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                 f' justify-content:center; font-size:0.7rem; font-weight:bold;'
                 f' background:{"#1A237E" if i <= g else "#cccccc"}; color:{"#ffffff" if i == g else "#888888"};">{i}</div>'
                 for i in range(1, 11))
-            st.markdown(f'<div style="display:flex; gap:5px; margin:6px 0;">{carrés}</div>',
-                        unsafe_allow_html=True)
-            st.markdown(
-                f'<div style="background:#ffffff; border-radius:10px; padding:16px; margin:6px 0;">'
-                f'{_diz_txt("Je vous salue Marie, pleine de grâce,\nle Seigneur est avec vous.\nVous êtes bénie entre toutes les femmes,", "#1a1a1a")}'
-                f'{_diz_txt("et Jésus, " + clausule, couleur, "1.1rem", gras=True)}'
-                f'{_diz_txt("le fruit de vos entrailles, est béni.", "#1a1a1a")}'
-                f'{_diz_txt("Sainte Marie, Mère de Dieu,\npriez pour nous pauvres pécheurs,\nmaintenant et à l’heure de notre mort.\nAmen!", "#1a1a1a")}'
-                f'</div>', unsafe_allow_html=True)
+            corps = (
+                f'<div style="display:flex; gap:5px; margin:6px 0;">{carrés}</div>'
+                + _diz_txt("Je vous salue Marie, pleine de grâce,\nle Seigneur est avec vous.\nVous êtes bénie entre toutes les femmes,", "#1a1a1a")
+                + _diz_txt("et Jésus, " + clausule, couleur, "1.1rem", gras=True)
+                + _diz_txt("le fruit de vos entrailles, est béni.", "#1a1a1a")
+                + _diz_txt("Sainte Marie, Mère de Dieu,\npriez pour nous pauvres pécheurs,\nmaintenant et à l’heure de notre mort.\nAmen!", "#1a1a1a"))
 
-        elif page["t"] == "gloria":
-            st.markdown(_diz_txt("GLORIA PATRI", couleur, "1rem", gras=True) +
-                        _diz_txt("Gloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, et in saecula saeculorum. Amen!\n\nÔ mon Jésus, pardonne-nous nos péchés; préserve-nous du feu de l’Enfer, attire au Ciel toutes les âmes, principalement celles qui ont le plus besoin de ta miséricorde. Amen!\n\nNotre Dame du très Saint Rosaire!\nPriez pour nous!", "#1a1a1a"),
-                        unsafe_allow_html=True)
+        else:  # gloria
+            corps = (_diz_txt("GLORIA PATRI", couleur, "1rem", gras=True)
+                        + _diz_txt("Gloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, et in saecula saeculorum. Amen!\n\nÔ mon Jésus, pardonne-nous nos péchés; préserve-nous du feu de l’Enfer, attire au Ciel toutes les âmes, principalement celles qui ont le plus besoin de ta miséricorde. Amen!\n\nNotre Dame du très Saint Rosaire!\nPriez pour nous!", "#1a1a1a"))
 
-        st.markdown("</div>", unsafe_allow_html=True)
+        html_page = tete + corps + '</div>'
 
-    # --- Navigation ---
-    c_prec, c_pos, c_suiv = st.columns([1, 2, 1])
-    with c_prec:
-        if idx > 0 and st.button("◀ Précédent", key=f"diz_prev_{idx}", use_container_width=True):
-            st.session_state["diz_page"] = idx - 1
-            st.rerun()
-    with c_pos:
-        st.caption(f"Page {idx + 1} / {len(pages)}")
-    with c_suiv:
+        st.markdown(html_page, unsafe_allow_html=True)
+
+    # --- Navigation : ON NE RECULE PAS quand on égrène une dizaine ☺️ ---
+    # Le bouton « ◀ Précédent » a été retiré à la demande de l'utilisateur.
+    # --- PAGINATION (code conservé en commentaire, désactivé) ---
+    # c_prec, c_pos, c_suiv = st.columns([1, 2, 1])
+    # with c_prec:
+    #     if idx > 0 and st.button("◀ Précédent", key=f"diz_prev_{idx}", use_container_width=True):
+    #         st.session_state["diz_page"] = idx - 1
+    #         st.rerun()
+    # with c_pos:
+    #     st.caption(f"Page {idx + 1} / {len(pages)}")
+    c_av, c_term = st.columns(2)
+    with c_av:
         if idx < len(pages) - 1:
             if st.button("Suivant ▶", key=f"diz_next_{idx}", use_container_width=True, type="primary"):
                 st.session_state["diz_page"] = idx + 1
@@ -575,6 +545,22 @@ def show_espace_membre(matloc_membre=None):
         return
 
     _render_header(membre, matloc_membre)
+
+    # 👤 Mon profil — popover natif (zéro rechargement), aligné à droite
+    _, col_profil = st.columns([5, 1])
+    with col_profil:
+        with st.popover("👤 Mon profil"):
+            if membre[6]:
+                try: st.image(membre[6], width=130)
+                except Exception: pass
+            st.markdown(f"**{membre[1]} {membre[2]}**")
+            st.caption(f"MatLoc : `{membre[3]}`")
+            st.write(f"👥 Équipe : **{membre[8] or '—'}**")
+            st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
+            st.write(f"💬 WhatsApp : {membre[4] or '—'}")
+            st.write(f"📿 N° méditation : {membre[7] or '—'}")
+            d_adh = safe_date(membre[5])
+            st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
 
     st.markdown(f"""
     <div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">
