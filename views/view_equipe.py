@@ -82,9 +82,7 @@ def show_equipe():
                     c1, c2 = st.columns(2)
                     with c1: nom, prenom = st.text_input("Nom"), st.text_input("Prénom")
                     naissance = st.date_input("Date de naissance", min_value=date(1950, 1, 1), max_value=date.today())
-                    with c2:
-                        whatsapp = st.text_input("WhatsApp")
-                        numero_meditation = st.number_input("N° méditation (1-31)", min_value=0, max_value=31, value=0, step=1, help="Numéro dans la chaîne de prière. 0 = non encore attribué")
+                    with c2: whatsapp, numero_meditation = st.text_input("WhatsApp"), st.text_input("N° méditation", max_chars=2)
                     photo = st.file_uploader("Photo", type=['jpg', 'png', 'jpeg'])
                     col_date, col_mle = st.columns(2)
                     with col_date: date_adhesion = st.date_input("Date d'adhésion", min_value=date(1950, 1, 1), max_value=date.today(), value=date.today())
@@ -107,7 +105,7 @@ def show_equipe():
                             else:
                                 matloc = generer_matricule_unique()
                                 c.execute("""INSERT INTO membres (matloc, nom, prenom, date_naissance, whatsapp, date_adhesion, paroisse_id, equipe_id, statut, numero_meditation, matricule) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                                          (matloc, nom.strip(), prenom.strip(), naissance.isoformat(), whatsapp, date_adhesion.isoformat(), pid, eid, 'actif', (str(numero_meditation) if numero_meditation > 0 else ""), matricule_nat))
+                                          (matloc, nom.strip(), prenom.strip(), naissance.isoformat(), whatsapp, date_adhesion.isoformat(), pid, eid, 'actif', numero_meditation, matricule_nat))
                                 # FIX : UPDATE par matloc (et non lastrowid, invalide si
                                 # reconnexion Turso pendant l'INSERT)
                                 if photo:
@@ -155,9 +153,7 @@ def show_equipe():
                             new_nom, new_prenom = st.text_input("Nom", value=m_data[0]), st.text_input("Prénom", value=m_data[1])
                             dn_initiale = safe_date(m_data[2]) if m_data[2] else date.today()
                             da_initiale = safe_date(m_data[6]) if m_data[6] else date.today()
-                            new_whatsapp = st.text_input("WhatsApp", value=m_data[3] or "")
-                            _num_init = int(m_data[5]) if (m_data[5] or "").strip().isdigit() and 1 <= int(m_data[5]) <= 31 else 0
-                            new_num_med = st.number_input("N° méditation (1-31)", min_value=0, max_value=31, value=_num_init, step=1, help="0 = non attribué")
+                            new_whatsapp, new_num_med = st.text_input("WhatsApp", value=m_data[3] or ""), st.text_input("N° méditation", value=m_data[5] or "", max_chars=2)
                             col_date, col_mle = st.columns(2)
                             with col_date:
                                 new_date_naissance = st.date_input("Date de naissance", value=dn_initiale)
@@ -171,7 +167,7 @@ def show_equipe():
                             with col2:
                                 if st.form_submit_button("💾 Enregistrer", width="stretch"):
                                     c.execute("UPDATE membres SET nom=?, prenom=?, date_naissance=?, whatsapp=?, numero_meditation=?, date_adhesion=?, matricule=? WHERE id=?",
-                                              (new_nom, new_prenom, new_date_naissance.isoformat(), new_whatsapp, (str(new_num_med) if new_num_med > 0 else ""), new_date_adhesion.isoformat(), new_matricule, id_m))
+                                              (new_nom, new_prenom, new_date_naissance.isoformat(), new_whatsapp, new_num_med, new_date_adhesion.isoformat(), new_matricule, id_m))
                                     # FIX : ne supprimer l'ancienne photo QUE si la nouvelle
                                     # a été hébergée avec succès (l'ancien code écrasait
                                     # photo_path avec None si l'upload échouait)
