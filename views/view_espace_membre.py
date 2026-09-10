@@ -124,9 +124,14 @@ def _render_header(membre=None, matloc=None):
                  '<text x="95" y="17" text-anchor="middle" textLength="188" lengthAdjust="spacingAndGlyphs" '
                  'style="fill:#e8eaf6; font-weight:600; font-size:14px;">Diocèse de Grand-Bassam</text></svg>')
 
-    # Profil déplacé en popover natif (sous l'entête) : plus AUCUN rechargement
-    # de page — le lien ?profil= générait des pages fantômes dans l'historique.
-    droite = ""
+    # Badge identitaire côté droit : "Espace Membre" pour les membres connectés
+    # (même pastille que "Espace communautaire" sur la vue publique).
+    # Le profil, lui, est en popover natif juste sous l'entête (zéro rechargement).
+    droite = ('<div style="padding-top:14px;">'
+              '<div style="background-color:#4527a0; color:#ffffff;'
+              ' padding:10px 18px; border-radius:30px; font-weight:bold;'
+              ' font-size:0.9rem; display:inline-block; white-space:nowrap;">'
+              'Espace Membre</div></div>')
 
     bandes_html = _bandes_defilantes_html(membre=bool(membre))
 
