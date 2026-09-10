@@ -124,14 +124,16 @@ def _render_header(membre=None, matloc=None):
                  '<text x="95" y="17" text-anchor="middle" textLength="188" lengthAdjust="spacingAndGlyphs" '
                  'style="fill:#e8eaf6; font-weight:600; font-size:14px;">Diocèse de Grand-Bassam</text></svg>')
 
-    # Badge identitaire côté droit : "Espace Membre" pour les membres connectés
-    # (même pastille que "Espace communautaire" sur la vue publique).
-    # Le profil, lui, est en popover natif juste sous l'entête (zéro rechargement).
+    # Badge identitaire : "Espace Membre" (vue membre) / "Espace communautaire" (publique)
+    if membre and matloc:
+        badge_txt = "Espace Membre"
+    else:
+        badge_txt = "Espace communautaire"
     droite = ('<div style="padding-top:14px;">'
-              '<div style="background-color:#4527a0; color:#ffffff;'
-              ' padding:10px 18px; border-radius:30px; font-weight:bold;'
-              ' font-size:0.9rem; display:inline-block; white-space:nowrap;">'
-              'Espace Membre</div></div>')
+              f'<div style="background-color:#4527a0; color:#ffffff;'
+              f' padding:10px 18px; border-radius:30px; font-weight:bold;'
+              f' font-size:0.9rem; display:inline-block; white-space:nowrap;">'
+              f'{badge_txt}</div></div>')
 
     bandes_html = _bandes_defilantes_html(membre=bool(membre))
 
@@ -176,17 +178,38 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                     "Demandez-le à votre responsable d’équipe pour recevoir votre dizaine du jour.")
             return
     else:
-        # Sécurité : si une ancienne session avait stocké le champ sous forme de
-        # texte, on purge la clé (changement de type du widget texte → numérique)
-        if isinstance(st.session_state.get("diz_saisie"), str):
+        # Migration défensive : purge si l'ancienne session stockait un nombre
+        if not isinstance(st.session_state.get("diz_saisie", ""), str):
             st.session_state.pop("diz_saisie", None)
-        jrnais = st.number_input("📿 Entrez votre jour de naissance (1 - 31)",
-                                 min_value=0, max_value=31, value=0, step=1,
-                                 key="diz_saisie",
-                                 help="Seuls les chiffres sont acceptés. "
-                                      "Votre numéro de méditation sera calculé automatiquement.")
-        if jrnais == 0:
-            return  # rien sélectionné encore → rien d'affiché
+
+        # Conseil « Intention du prochain » AVANT la saisie (à la place de l'astuce)
+        conseil_txt = "Veuillez préparer une intention pour la situation d'une personne particulière (Intention du prochain dans la chaîne de prière)."
+        st.markdown('<div style="background:#E8EAF6; border-left:4px solid #4527a0;'
+                    ' border-radius:6px; padding:10px 14px; margin:0 10px 8px 10px;'
+                    ' color:#1A237E; font-size:0.9rem;">🕯️ '
+                    + html.escape(conseil_txt) + '</div>', unsafe_allow_html=True)
+
+        # Zone de saisie : astuce INTERNE (placeholder) + bouton de validation
+        c_saisie, c_btn = st.columns([3, 1])
+        with c_saisie:
+            saisie = st.text_input("Jour de naissance",
+                                   placeholder="💡 Entrez votre jour de naissance (1 à 31)",
+                                   label_visibility="collapsed",
+                                   key="diz_saisie").strip()
+        with c_btn:
+            st.write("")
+            if st.button("Valider", key="diz_valider", use_container_width=True, type="primary"):
+                if saisie.isdigit() and 1 <= int(saisie) <= 31:
+                    st.session_state["diz_jrnais"] = int(saisie)
+                    st.session_state.pop("diz_erreur", None)
+                else:
+                    st.session_state["diz_erreur"] = "Entrez un jour entre 1 et 31 (chiffres uniquement)."
+        if st.session_state.get("diz_erreur"):
+            st.warning(st.session_state.pop("diz_erreur"))
+
+        if "diz_jrnais" not in st.session_state:
+            return
+        jrnais = st.session_state["diz_jrnais"]
         # Conversion jour de naissance → numéro de méditation dans la chaîne
         num = jrnais - 20 if jrnais > 20 else jrnais
 
@@ -277,14 +300,24 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                         + _diz_txt(m["meditation"], "#1a1a1a"))
 
         elif page["t"] == "intentions":
-            intentions_html = "".join(
-                _diz_txt("🕯️ " + ligne.strip(), "#1a1a1a")
-                for ligne in m["intentions"].split("\n") if ligne.strip())
+            intentions_html = ""
+            for ligne in m["intentions"].split("\n"):
+                ligne = ligne.strip()
+                if not ligne:
+                    continue
+                if ligne.lower().startswith("intention du prochain"):
+                    continue  # la dernière devient un conseil distinct (ci-dessous)
+                intentions_html += _diz_txt("🕯️ Vierge Marie, mère de Dieu, intercède : " + ligne, "#1a1a1a")
+            conseil_txt = "Veuillez préparer une intention pour la situation d'une personne particulière (Intention du prochain dans la chaîne de prière)."
+            conseil_html = ('<div style="background:#E8EAF6; border-left:4px solid ' + couleur
+                            + '; border-radius:6px; padding:10px 12px; margin:10px 0;">'
+                            + _diz_txt("🕯️ " + conseil_txt, "#1A237E") + '</div>')
             fruits_html = "".join(
                 _diz_txt("✨ " + ligne.strip(), "#1a1a1a")
                 for ligne in m["fruits"].split("\n") if ligne.strip())
             corps = (_diz_txt("INTENTIONS", couleur, "1rem", gras=True)
                         + intentions_html
+                        + conseil_html
                         + _diz_txt("FRUITS DU MYSTÈRE", couleur, "1rem", gras=True)
                         + fruits_html)
 
@@ -524,7 +557,13 @@ def show_espace_membre(matloc_membre=None):
     # ================= ÉTAT 1 : VUE PUBLIQUE (Espace communautaire) =================
     if not matloc_membre:
         _render_header()
+        st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
+                    '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
+                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam</div></div>', unsafe_allow_html=True)
         _render_dizaine_du_jour(est_membre=False)
+        # Livre ouvert : recouvre tout l'écran sous l'entête → rien d'autre n'est rendu
+        if st.session_state.get("diz_ouvert"):
+            return
         _render_fil_actualites()
         _render_spiritual_tabs()
         return
@@ -575,6 +614,10 @@ def show_espace_membre(matloc_membre=None):
     """, unsafe_allow_html=True)
 
     _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
+
+    # Livre ouvert : il recouvre tout l'écran sous l'entête → on ne rend rien d'autre
+    if st.session_state.get("diz_ouvert"):
+        return
 
     _render_fil_actualites()
 
