@@ -6,6 +6,7 @@ import streamlit as st
 from datetime import date
 from database import c, commit_and_sync
 from services import safe_date
+from mysteres import get_mysteres_du_jour, COULEURS_TYPES
 
 
 # ====================================================================
@@ -162,6 +163,204 @@ def _render_header(membre=None, matloc=None):
                 st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
         st.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
 
+# ====================================================================
+# MA DIZAINE AU QUOTIDIEN — portage web de l'application Android
+# © MOTIAN TOFFÉ Ahua Innocent — intégrée avec son autorisation
+# ====================================================================
+DIZ_INTRO1 = "Au Nom du Père, et du Fils et du Saint-Esprit! Amen!\n\nPRIÈRE D’ENTRÉE\n\nSeigneur Jésus, nous nous disposons à prier\nce Rosaire en communion avec la Vierge Marie.\nViens, Esprit Saint, remplis les cœurs de tes fidèles et allume en eux le feu de ton amour.\nDonne-nous la grâce de méditer profondément les mystères de ta vie, pour que, en les imitant, nous obtenions les promesses qu’ils renferment.\nPar le Christ, notre Seigneur. Amen.\n\nJE CROIS EN DIEU\n\nJe crois en Dieu, le Père Tout-Puissant, Créateur du ciel et de la terre.\nEt en Jésus-Christ, son Fils unique, Notre Seigneur, qui a été conçu du Saint-Esprit, est né de la Vierge Marie, a souffert sous Ponce Pilate, a été crucifié, est mort et a été enseveli, est descendu aux enfers, le troisième jour est ressuscité des morts, est monté aux cieux, est assis à la droite de Dieu le Père Tout-Puissant, d’où il viendra juger les vivants et les morts.\nJe crois en l’Esprit-Saint, à la Sainte Église catholique, à la communion des Saints, à la rémission des péchés, à la résurrection de la chair, à la vie éternelle.\nAmen."
+DIZ_INTRO2 = "NOTRE PÈRE\n\nNotre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\nque ta volonté soit faite\nsur la terre comme au ciel.\n\nDonne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, mais délivre-nous du Mal. Amen!\n\n3 JE VOUS SALUE MARIE\n\nJe vous salue Marie, pleine de grâce,\nle Seigneur est avec vous. Vous êtes bénie entre toutes les femmes, et Jésus, le fruit de vos entrailles, est béni.\n\nSainte Marie, Mère de Dieu, priez pour nous pauvres pécheurs, maintenant et à l’heure de notre mort. Amen!\n\nGLORIA PATRI\n\nGloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, et in saecula saeculorum. Amen!"
+DIZ_INTRO3 = "PRIÈRE À LA VIERGE DU PÈRE EYQUEM\n\nVers Toi je lève les yeux,\nSainte Mère de Dieu;\n\ncar je voudrais faire de ma maison,\nune maison où Jésus vienne, selon sa promesse,\nquand plusieurs se réunissent en son nom.\nTu as accueilli le message de l’ange comme\nun message venant de Dieu, et Tu as reçu,\nen raison de ta foi,\nl’incomparable grâce d’accueillir\nen Toi Dieu Lui-même.\nTu as ouvert aux bergers puis aux mages\nla porte de ta maison, sans que\nnul ne se sente gêné\npar sa pauvreté ou sa richesse.\n\nSois Celle qui chez moi reçoit.\n\nAfin que ceux qui ont besoin\nd’être réconfortés le soient;\nceux qui ont le désir de\nrendre grâce puissent le faire ;\nceux qui cherchent la paix la trouvent.\nEt que chacun reparte vers sa propre maison\navec la joie d’avoir rencontré Jésus lui-même,\nLui, le Chemin, la Vérité, la Vie.\nAmen!\n\nFrère Joseph EYQUEM, o.p.,\nFondateur des Équipes du Rosaire"
+DIZ_OUTRO = "SALVE REGINA\n\nSalve Regina, Mater misericordiae;\nvita, dulcedo, et spes nostra salve.\nAd te clamamus, exsules filii Hevae.\nAd te suspiramus, gementes et flentes\nin hac lacrimarum valle.\nEia ergo, advocata nostra,\nillos tuos misericordes oculos ad nos converte;\nEt Iesum, benedictum fructum ventris tui,\nnobis, post hoc exsilium ostende.\nO Clemens, O pia, O dulcis, Virgo Maria.\n\nOra pro nobis, Sancta Dei Genitrix.\nUt digni efficiamur promissionibus Christi.\n\nPRIÈRE FINALE\n\nÔ Dieu, dont le Fils unique nous a acquis\npar sa vie, sa mort et sa résurrection\nles récompenses du salut éternel,\nnous vous supplions : faites que,\nméditant les mystères du très\nSaint Rosaire de\nla Bienheureuse Vierge Marie,\nnous imitions ce qu’ils contiennent\net obtenons ce qu’ils promettent.\nPar le Christ, notre Seigneur. Amen!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nAu Nom du Père, et du Fils et du Saint-Esprit! Amen!"
+
+
+def _diz_txt(texte, couleur="#333333", taille="0.95rem", gras=False, centre=False):
+    """Bloc de texte style inline (leçon : jamais de ligne vide dans un bloc HTML)."""
+    txt_html = html.escape(texte).replace("\n", "<br>")
+    poids = "bold" if gras else "normal"
+    align = "center" if centre else "left"
+    return (f'<div style="color:{couleur}; font-size:{taille}; font-weight:{poids};'
+            f' text-align:{align}; line-height:1.7; margin:8px 0;">{txt_html}</div>')
+
+
+def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
+    """La dizaine du jour : membre = automatique via son numero_meditation (1-20) ;
+    sympathisant (Espace communautaire) = saisie du numéro, comme dans l’APK."""
+    st.markdown("---")
+
+    num = None
+    if est_membre:
+        try:
+            num = int(numero_meditation) if numero_meditation else None
+        except (ValueError, TypeError):
+            num = None
+        if not num or not (1 <= num <= 20):
+            st.info("📿 Votre numéro de méditation (1-20) n’est pas encore renseigné. "
+                    "Demandez-le à votre responsable d’équipe pour recevoir votre dizaine du jour.")
+            return
+    else:
+        # Sécurité : si une ancienne session avait stocké le champ sous forme de
+        # texte, on purge la clé (changement de type du widget texte → numérique)
+        if isinstance(st.session_state.get("diz_saisie"), str):
+            st.session_state.pop("diz_saisie", None)
+        jrnais = st.number_input("📿 Entrez votre jour de naissance (1 - 31)",
+                                 min_value=0, max_value=31, value=0, step=1,
+                                 key="diz_saisie",
+                                 help="Seuls les chiffres sont acceptés. "
+                                      "Votre numéro de méditation sera calculé automatiquement.")
+        if jrnais == 0:
+            return  # rien sélectionné encore → rien d'affiché
+        # Conversion jour de naissance → numéro de méditation dans la chaîne
+        num = jrnais - 20 if jrnais > 20 else jrnais
+
+    mysteres_jour = get_mysteres_du_jour(num)
+    if not mysteres_jour:
+        return
+
+    # Réinitialisation du livre si le numéro a changé
+    if st.session_state.get("diz_num") != num:
+        st.session_state["diz_num"] = num
+        st.session_state["diz_ouvert"] = False
+        st.session_state["diz_page"] = 0
+
+    # ---------- COUVERTURE ----------
+    if not st.session_state.get("diz_ouvert"):
+        pastilles = "".join(
+            f'<div style="width:52px; height:52px; border-radius:50%; background:#FFD700;'
+            f' color:#1A237E; font-weight:bold; font-size:1.2rem; display:flex;'
+            f' align-items:center; justify-content:center;">{m["id"]:02d}</div>'
+            for m in mysteres_jour)
+        titres = " • ".join(m["titre"].title() for m in mysteres_jour)
+        st.markdown(
+            f'<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+            f' padding:24px; border-radius:15px; text-align:center; margin:10px;'
+            f' border:2px solid #FFD700;">'
+            f'<div style="color:#FFD700; font-size:1.3rem; font-weight:bold;">📿 Ta dizaine du jour</div>'
+            f'<div style="display:flex; justify-content:center; gap:10px; margin:18px 0;">{pastilles}</div>'
+            f'<div style="color:#ffffff; font-size:1rem;">{html.escape(titres)}</div>'
+            f'<div style="color:#9fa6d8; font-size:0.85rem; margin-top:8px;">'
+            f'Chaîne n° {num} — {date.today().strftime("%d/%m/%Y")}</div>'
+            f'</div>', unsafe_allow_html=True)
+        if st.button("📿 Égrener la dizaine", key="diz_commencer", use_container_width=True, type="primary"):
+            st.session_state["diz_ouvert"] = True
+            st.session_state["diz_page"] = 0
+            st.rerun()
+        return
+
+    # ---------- LE LIVRE ----------
+    pages = []
+    for m in mysteres_jour:
+        if m["id"] == 1:
+            pages.append({"t": "intro1"})
+            pages.append({"t": "intro2"})
+            pages.append({"t": "intro3"})
+        pages.append({"t": "contenu", "m": m})
+        pages.append({"t": "intentions", "m": m})
+        pages.append({"t": "notrepere", "m": m})
+        for g in range(1, 11):
+            pages.append({"t": "grain", "m": m, "g": g})
+        pages.append({"t": "gloria", "m": m})
+        if m["id"] == 20:
+            pages.append({"t": "outro"})
+
+    if "diz_page" not in st.session_state or st.session_state["diz_page"] >= len(pages):
+        st.session_state["diz_page"] = 0
+    idx = st.session_state["diz_page"]
+    page = pages[idx]
+
+    m = page.get("m")
+    couleur = COULEURS_TYPES.get((m["type"] or "").lower(), "#9E9E9E") if m else "#1A237E"
+
+    # --- Rendu de la page courante ---
+    if page["t"] in ("intro1", "intro2", "intro3"):
+        texte = {"intro1": DIZ_INTRO1, "intro2": DIZ_INTRO2, "intro3": DIZ_INTRO3}[page["t"]]
+        st.markdown(
+            f'<div style="background:#FFF9C4; border-radius:12px; padding:18px; margin:6px;">'
+            f'<div style="color:#1A237E; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">INTRODUCTION</div>'
+            f'{_diz_txt(texte, "#1a1a1a")}</div>', unsafe_allow_html=True)
+
+    elif page["t"] == "outro":
+        st.markdown(
+            f'<div style="background:#FFF9C4; border-radius:12px; padding:18px; margin:6px;">'
+            f'<div style="color:#1A237E; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">FIN DU ROSAIRE</div>'
+            f'{_diz_txt(DIZ_OUTRO, "#1a1a1a")}</div>', unsafe_allow_html=True)
+
+    else:
+        # En-tête coloré par type (comme le livre Android)
+        st.markdown(
+            f'<div style="background:{couleur}; border-radius:12px 12px 0 0; padding:12px 16px; margin:6px 6px 0 6px;">'
+            f'<div style="color:#ffffff; font-weight:bold; font-size:1.05rem;">{m["id"]} — {html.escape(m["titre"])}</div>'
+            f'<div style="color:#ffffff; font-size:0.85rem;">📖 {html.escape(m["reference"])}</div></div>',
+            unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="background:#FFF9C4; border-radius:0 0 12px 12px; padding:18px; margin:0 6px 6px 6px;">',
+            unsafe_allow_html=True)
+
+        if page["t"] == "contenu":
+            st.markdown(_diz_txt("PASSAGE", couleur, "1rem", gras=True) +
+                        _diz_txt(m["passage"], "#1a1a1a") +
+                        _diz_txt("MÉDITATION", couleur, "1rem", gras=True) +
+                        _diz_txt(m["meditation"], "#1a1a1a"), unsafe_allow_html=True)
+
+        elif page["t"] == "intentions":
+            intentions_html = "".join(
+                _diz_txt("🕯️ " + ligne.strip(), "#1a1a1a")
+                for ligne in m["intentions"].split("\n") if ligne.strip())
+            fruits_html = "".join(
+                _diz_txt("✨ " + ligne.strip(), "#1a1a1a")
+                for ligne in m["fruits"].split("\n") if ligne.strip())
+            st.markdown(_diz_txt("INTENTIONS", couleur, "1rem", gras=True) +
+                        intentions_html +
+                        _diz_txt("FRUITS DU MYSTÈRE", couleur, "1rem", gras=True) +
+                        fruits_html, unsafe_allow_html=True)
+
+        elif page["t"] == "notrepere":
+            st.markdown(_diz_txt("NOTRE PÈRE", couleur, "1rem", gras=True) +
+                        _diz_txt("Notre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\nque ta volonté soit faite\nsur la terre comme au ciel.\n\nDonne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, mais délivre-nous du Mal. Amen!", "#1a1a1a"),
+                        unsafe_allow_html=True)
+
+        elif page["t"] == "grain":
+            g = page["g"]
+            clausule = m["clausules"][g - 1] if g <= len(m["clausules"]) else ""
+            carrés = "".join(
+                f'<div style="width:22px; height:22px; border-radius:4px; display:flex; align-items:center;'
+                f' justify-content:center; font-size:0.7rem; font-weight:bold;'
+                f' background:{"#1A237E" if i <= g else "#cccccc"}; color:{"#ffffff" if i == g else "#888888"};">{i}</div>'
+                for i in range(1, 11))
+            st.markdown(f'<div style="display:flex; gap:5px; margin:6px 0;">{carrés}</div>',
+                        unsafe_allow_html=True)
+            st.markdown(
+                f'<div style="background:#ffffff; border-radius:10px; padding:16px; margin:6px 0;">'
+                f'{_diz_txt("Je vous salue Marie, pleine de grâce,\nle Seigneur est avec vous.\nVous êtes bénie entre toutes les femmes,", "#1a1a1a")}'
+                f'{_diz_txt("et Jésus, " + clausule, couleur, "1.1rem", gras=True)}'
+                f'{_diz_txt("le fruit de vos entrailles, est béni.", "#1a1a1a")}'
+                f'{_diz_txt("Sainte Marie, Mère de Dieu,\npriez pour nous pauvres pécheurs,\nmaintenant et à l’heure de notre mort.\nAmen!", "#1a1a1a")}'
+                f'</div>', unsafe_allow_html=True)
+
+        elif page["t"] == "gloria":
+            st.markdown(_diz_txt("GLORIA PATRI", couleur, "1rem", gras=True) +
+                        _diz_txt("Gloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, et in saecula saeculorum. Amen!\n\nÔ mon Jésus, pardonne-nous nos péchés; préserve-nous du feu de l’Enfer, attire au Ciel toutes les âmes, principalement celles qui ont le plus besoin de ta miséricorde. Amen!\n\nNotre Dame du très Saint Rosaire!\nPriez pour nous!", "#1a1a1a"),
+                        unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- Navigation ---
+    c_prec, c_pos, c_suiv = st.columns([1, 2, 1])
+    with c_prec:
+        if idx > 0 and st.button("◀ Précédent", key=f"diz_prev_{idx}", use_container_width=True):
+            st.session_state["diz_page"] = idx - 1
+            st.rerun()
+    with c_pos:
+        st.caption(f"Page {idx + 1} / {len(pages)}")
+    with c_suiv:
+        if idx < len(pages) - 1:
+            if st.button("Suivant ▶", key=f"diz_next_{idx}", use_container_width=True, type="primary"):
+                st.session_state["diz_page"] = idx + 1
+                st.rerun()
+        else:
+            if st.button("✕ Terminer", key=f"diz_end_{idx}", use_container_width=True):
+                st.session_state["diz_ouvert"] = False
+                st.session_state["diz_page"] = 0
+                st.rerun()
 
 def _render_pdf_inline(url_pdf):
     import urllib.parse as _up
@@ -350,6 +549,7 @@ def show_espace_membre(matloc_membre=None):
     # ================= ÉTAT 1 : VUE PUBLIQUE (Espace communautaire) =================
     if not matloc_membre:
         _render_header()
+        _render_dizaine_du_jour(est_membre=False)
         _render_fil_actualites()
         _render_spiritual_tabs()
         return
@@ -382,6 +582,8 @@ def show_espace_membre(matloc_membre=None):
         <div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">👥 {membre[8] or '—'} &nbsp;|&nbsp; 🏘️ {membre[9] or '—'}</div>
     </div>
     """, unsafe_allow_html=True)
+
+    _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
 
     _render_fil_actualites()
 
