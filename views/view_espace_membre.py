@@ -26,11 +26,11 @@ DIV_PDF_RE = re.compile(r'<div[^>]*1px dashed #4527a0.*?</div>\s*', re.DOTALL)
 
 
 def _extraire_pdf_legacy(contenu):
-    if not contenu or ('cloudinary' not in contenu and 'data:application/pdf' not in contenu):
+    if not contenu or ("cloudinary" not in contenu and "data:application/pdf" not in contenu):
         return contenu, None
     m = PDF_URL_RE.search(contenu)
     url = m.group(1) if m else None
-    return DIV_PDF_RE.sub('', contenu).strip(), url
+    return DIV_PDF_RE.sub("", contenu).strip(), url
 
 
 def _render_theme():
@@ -63,7 +63,6 @@ def _render_theme():
     .logo-titre-svg { display: block; width: 100%; margin-top: 6px; }
     .stApp a.bouton-profil { background-color: #4527a0 !important; color: #ffffff !important; padding: 10px 18px;
         text-decoration: none; border-radius: 30px; font-weight: bold; font-size: 0.9rem; display: inline-block; white-space: nowrap; }
-    .stApp a.bouton-profil:hover { background-color: #5e35b1 !important; color: #ffffff !important; }
     .bande-defilante { overflow: hidden; white-space: nowrap;
         background: linear-gradient(90deg, #1a2150, #27306b);
         border-top: 1px solid #27306b; }
@@ -75,10 +74,6 @@ def _render_theme():
     @media (prefers-reduced-motion: reduce) {
         .bande-defilante-inner { animation: none; padding: 8px 15px; }
     }
-    .stApp .event-flyer { background: #121a45; border-radius: 15px; margin: 0 10px 15px 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.4); overflow: hidden; border: 1px solid #27306b; }
-    .stApp .postcard { background: linear-gradient(135deg, #f3e5f5 0%, #e8eaf6 100%) !important; padding: 20px;
-        border-radius: 15px; text-align: center; margin: 15px 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.35); }
     @media (max-width: 640px) {
         .logo-bloc { width: 150px; }
         .block-container { padding-top: 165px !important; }
@@ -100,7 +95,7 @@ def _bandes_defilantes_html(membre=False):
         return ""
     morceaux = []
     for texte, cible in bandes:
-        if cible == 'membre' and not membre:
+        if cible == "membre" and not membre:
             continue
         if not texte:
             continue
@@ -108,13 +103,14 @@ def _bandes_defilantes_html(membre=False):
         texte_html = html.escape(texte)
         morceaux.append(
             f'<div class="bande-defilante"><div class="bande-defilante-inner" style="animation-duration:{duree}s;">'
-            f'📻 {texte_html} &nbsp;&nbsp;📻 {texte_html}</div></div>')
+            f"📻 {texte_html} &nbsp;&nbsp;📻 {texte_html}</div></div>")
     return "".join(morceaux)
 
 
 def _render_header(membre=None, matloc=None, masquer_bandes=False):
-    """Entête FIGÉE : logo (largeur = texte) + bouton Mon profil + bandes défilantes.
-    Tout le HTML sur UNE SEULE LIGNE (une ligne vide coupe un bloc markdown)."""
+    """Entête FIGÉE. Badge identitaire : Espace Membre (vue membre) /
+    Espace communautaire (publique). Bandes défilantes masquables (livre ouvert).
+    Tout le HTML sur UNE SEULE LIGNE (règle anti-code-visible)."""
     logo_b64 = _logo_base64()
     logo_html = (f'<img src="data:image/png;base64,{logo_b64}" alt="Logo">'
                  if logo_b64 else '<div style="font-size:4rem;">📿</div>')
@@ -124,16 +120,12 @@ def _render_header(membre=None, matloc=None, masquer_bandes=False):
                  '<text x="95" y="17" text-anchor="middle" textLength="188" lengthAdjust="spacingAndGlyphs" '
                  'style="fill:#e8eaf6; font-weight:600; font-size:14px;">Diocèse de Grand-Bassam</text></svg>')
 
-    # Badge identitaire : "Espace Membre" (vue membre) / "Espace communautaire" (publique)
-    if membre and matloc:
-        badge_txt = "Espace Membre"
-    else:
-        badge_txt = "Espace communautaire"
+    badge_txt = "Espace Membre" if (membre and matloc) else "Espace communautaire"
     droite = ('<div style="padding-top:14px;">'
-              f'<div style="background-color:#4527a0; color:#ffffff;'
-              f' padding:10px 18px; border-radius:30px; font-weight:bold;'
-              f' font-size:0.9rem; display:inline-block; white-space:nowrap;">'
-              f'{badge_txt}</div></div>')
+              '<div style="background-color:#4527a0; color:#ffffff;'
+              ' padding:10px 18px; border-radius:30px; font-weight:bold;'
+              ' font-size:0.9rem; display:inline-block; white-space:nowrap;">'
+              + badge_txt + '</div></div>')
 
     bandes_html = "" if masquer_bandes else _bandes_defilantes_html(membre=bool(membre))
 
@@ -142,6 +134,7 @@ def _render_header(membre=None, matloc=None, masquer_bandes=False):
         f'<div class="logo-bloc">{logo_html}{titre_svg}</div>'
         f'{droite}'
         f'</div>{bandes_html}</div>', unsafe_allow_html=True)
+
 
 # ====================================================================
 # MA DIZAINE AU QUOTIDIEN — portage web de l'application Android
@@ -154,7 +147,6 @@ DIZ_OUTRO = "SALVE REGINA\n\nSalve Regina, Mater misericordiae;\nvita, dulcedo, 
 
 
 def _diz_txt(texte, couleur="#333333", taille="0.95rem", gras=False, centre=False):
-    """Bloc de texte style inline (leçon : jamais de ligne vide dans un bloc HTML)."""
     txt_html = html.escape(texte).replace("\n", "<br>")
     poids = "bold" if gras else "normal"
     align = "center" if centre else "left"
@@ -163,8 +155,11 @@ def _diz_txt(texte, couleur="#333333", taille="0.95rem", gras=False, centre=Fals
 
 
 def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
-    """La dizaine du jour : membre = automatique via son numero_meditation (1-20) ;
-    sympathisant (Espace communautaire) = saisie du numéro, comme dans l’APK."""
+    """La dizaine du jour. Membre = automatique via son numero_meditation.
+    Sympathisant = jour de naissance (1-31) converti en numéro de chaîne.
+    L'encart conseil « Intention du prochain » n'existe QU'AU-DESSUS de la
+    zone de saisie (jamais dans le livre). Dans le livre, TOUTES les
+    intentions sont préfixées, la dernière comprise."""
     st.markdown("---")
 
     num = None
@@ -187,19 +182,16 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                 return
             num = jrnais - 20 if jrnais > 20 else jrnais
         else:
-            # Migration défensive : purge si l'ancienne session stockait un nombre
             if not isinstance(st.session_state.get("diz_saisie", ""), str):
                 st.session_state.pop("diz_saisie", None)
 
-            # Conseil « Intention du prochain » AVANT la saisie
             conseil_txt = "Veuillez préparer une intention pour la situation d'une personne particulière (Intention du prochain dans la chaîne de prière)."
             st.markdown('<div style="background:#E8EAF6; border-left:4px solid #4527a0;'
                         ' border-radius:6px; padding:10px 14px; margin:0 10px 8px 10px;'
                         ' color:#1A237E; font-size:0.9rem;">🕯️ '
                         + html.escape(conseil_txt) + '</div>', unsafe_allow_html=True)
 
-            # Zone de saisie resserrée + bouton juxtaposé
-            c_saisie, c_btn = st.columns([2, 1])
+            c_saisie, c_btn = st.columns([4, 1], gap="small")
             with c_saisie:
                 saisie = st.text_input("Jour de naissance",
                                        placeholder="💡 Votre jour de naissance (1 à 31)",
@@ -218,14 +210,12 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
             if "diz_jrnais" not in st.session_state:
                 return
             jrnais = st.session_state["diz_jrnais"]
-            # Conversion jour de naissance → numéro de méditation dans la chaîne
             num = jrnais - 20 if jrnais > 20 else jrnais
 
     mysteres_jour = get_mysteres_du_jour(num)
     if not mysteres_jour:
         return
 
-    # Réinitialisation du livre si le numéro a changé
     if st.session_state.get("diz_num") != num:
         st.session_state["diz_num"] = num
         st.session_state["diz_ouvert"] = False
@@ -279,8 +269,6 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
     m = page.get("m")
     couleur = COULEURS_TYPES.get((m["type"] or "").lower(), "#9E9E9E") if m else "#1A237E"
 
-    # --- Rendu de la page courante : UN SEUL bloc HTML par page
-    # (la leçon des lignes vides et des div orphelines, appliquée au livre) ---
     if page["t"] in ("intro1", "intro2", "intro3"):
         texte = {"intro1": DIZ_INTRO1, "intro2": DIZ_INTRO2, "intro3": DIZ_INTRO3}[page["t"]]
         html_page = (
@@ -303,37 +291,30 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
 
         if page["t"] == "contenu":
             corps = (_diz_txt("PASSAGE", couleur, "1rem", gras=True)
-                        + _diz_txt(m["passage"], "#1a1a1a")
-                        + _diz_txt("MÉDITATION", couleur, "1rem", gras=True)
-                        + _diz_txt(m["meditation"], "#1a1a1a"))
+                     + _diz_txt(m["passage"], "#1a1a1a")
+                     + _diz_txt("MÉDITATION", couleur, "1rem", gras=True)
+                     + _diz_txt(m["meditation"], "#1a1a1a"))
 
         elif page["t"] == "intentions":
+            # TOUTES les intentions préfixées, la dernière (« Intention du
+            # prochain ») comprise — fidèle au livre, sans encart ici.
             intentions_html = ""
             for ligne in m["intentions"].split("\n"):
                 l = ligne.strip().lstrip("*").strip()
                 if not l:
                     continue
-                # Filtre ROBUSTE : toute variante contenant « intention du
-                # prochain » est exclue (astérisques, majuscules, position)
-                if "intention du prochain" in l.lower():
-                    continue
                 intentions_html += _diz_txt("🕯️ Vierge Marie, mère de Dieu, intercède : " + l, "#1a1a1a")
-            conseil_txt = "Veuillez préparer une intention pour la situation d'une personne particulière (Intention du prochain dans la chaîne de prière)."
-            conseil_html = ('<div style="background:#ffffff; border:2px solid ' + couleur
-                            + '; border-radius:10px; padding:12px; margin:12px 0;">'
-                            + _diz_txt("🕯️ " + conseil_txt, "#1A237E") + '</div>')
             fruits_html = "".join(
                 _diz_txt("✨ " + ligne.strip(), "#1a1a1a")
                 for ligne in m["fruits"].split("\n") if ligne.strip())
             corps = (_diz_txt("INTENTIONS", couleur, "1rem", gras=True)
-                        + intentions_html
-                        + conseil_html
-                        + _diz_txt("FRUITS DU MYSTÈRE", couleur, "1rem", gras=True)
-                        + fruits_html)
+                     + intentions_html
+                     + _diz_txt("FRUITS DU MYSTÈRE", couleur, "1rem", gras=True)
+                     + fruits_html)
 
         elif page["t"] == "notrepere":
             corps = (_diz_txt("NOTRE PÈRE", couleur, "1rem", gras=True)
-                        + _diz_txt("Notre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\nque ta volonté soit faite\nsur la terre comme au ciel.\n\nDonne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, mais délivre-nous du Mal. Amen!", "#1a1a1a"))
+                     + _diz_txt("Notre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\nque ta volonté soit faite\nsur la terre comme au ciel.\n\nDonne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, mais délivre-nous du Mal. Amen!", "#1a1a1a"))
 
         elif page["t"] == "grain":
             g = page["g"]
@@ -352,14 +333,13 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
 
         else:  # gloria
             corps = (_diz_txt("GLORIA PATRI", couleur, "1rem", gras=True)
-                        + _diz_txt("Gloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, et in saecula saeculorum. Amen!\n\nÔ mon Jésus, pardonne-nous nos péchés; préserve-nous du feu de l’Enfer, attire au Ciel toutes les âmes, principalement celles qui ont le plus besoin de ta miséricorde. Amen!\n\nNotre Dame du très Saint Rosaire!\nPriez pour nous!", "#1a1a1a"))
+                     + _diz_txt("Gloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, et in saecula saeculorum. Amen!\n\nÔ mon Jésus, pardonne-nous nos péchés; préserve-nous du feu de l’Enfer, attire au Ciel toutes les âmes, principalement celles qui ont le plus besoin de ta miséricorde. Amen!\n\nNotre Dame du très Saint Rosaire!\nPriez pour nous!", "#1a1a1a"))
 
         html_page = tete + corps + '</div>'
 
-        st.markdown(html_page, unsafe_allow_html=True)
+    st.markdown(html_page, unsafe_allow_html=True)
 
     # --- Navigation : ON NE RECULE PAS quand on égrène une dizaine ☺️ ---
-    # Le bouton « ◀ Précédent » a été retiré à la demande de l'utilisateur.
     # --- PAGINATION (code conservé en commentaire, désactivé) ---
     # c_prec, c_pos, c_suiv = st.columns([1, 2, 1])
     # with c_prec:
@@ -380,14 +360,15 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                 st.session_state["diz_page"] = 0
                 st.rerun()
 
+
 def _render_pdf_inline(url_pdf):
-    import urllib.parse as _up
-    gview = f"https://docs.google.com/viewer?url={_up.quote(url_pdf, safe='')}&embedded=true"
+    """PDF en iframe directe Cloudinary + lien de secours plein écran."""
+    lien_txt = "📄 Si le document ne s'affiche pas, ouvrez-le ici"
     st.markdown(
         f'<div style="margin:12px 10px 18px 10px; border-radius:12px; overflow:hidden; border:1px solid #27306b;">'
-        f'<iframe src="{gview}" width="100%" height="760" style="border:none;" title="Document"></iframe>'
+        f'<iframe src="{url_pdf}" width="100%" height="700" style="border:none;" title="Document"></iframe>'
         f'<div style="text-align:center; padding:8px; background:#121a45;">'
-        f'<a href="{url_pdf}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">📄 Si le document ne saffiche pas, ouvrez-le ici</a>'
+        f'<a href="{url_pdf}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">{lien_txt}</a>'
         f'</div></div>', unsafe_allow_html=True)
 
 
@@ -422,7 +403,7 @@ def _render_coin_affiche():
 
     if visuel:
         d_v = safe_date(visuel[1])
-        date_txt = d_v.strftime('%d/%m/%Y') if d_v else "Date à définir"
+        date_txt = d_v.strftime("%d/%m/%Y") if d_v else "Date à définir"
         img_part = (f'<img src="{visuel[3]}" alt="Affiche" style="width:100%; height:auto; display:block; border-bottom:3px solid #7b1fa2;">'
                     if visuel[3] else "")
         st.markdown(
@@ -443,7 +424,7 @@ def _render_coin_affiche():
             prochain = None
         if prochain:
             d = safe_date(prochain[1])
-            date_txt = d.strftime('%d/%m/%Y') if d else "Date à définir"
+            date_txt = d.strftime("%d/%m/%Y") if d else "Date à définir"
             icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
                      "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(prochain[0], "📅")
             st.markdown(
@@ -461,18 +442,18 @@ def _render_fil_actualites():
                            ORDER BY date_publication DESC, id DESC LIMIT 1""").fetchone()
 
     if dernier:
-        etiquette = {"priere": "🙏 ", "meditation": "📖 "}.get(dernier[0], "📿 Du jour")
-        texte = dernier[2] or ''
+        etiquette = {"priere": "🙏 Prière du jour", "meditation": "📖 Méditation du jour"}.get(dernier[0], "📿 Du jour")
+        texte = dernier[2] or ""
         url_pdf = dernier[4]
         if not url_pdf:
             texte, url_pdf = _extraire_pdf_legacy(texte)
 
-        texte_html = texte.replace('\n', '<br>')
+        texte_html = texte.replace("\n", "<br>")
         img_html = (f'<img src="{dernier[3]}" alt="Contenu" style="border-radius:12px; width:100%; max-height:220px; object-fit:cover; margin-bottom:15px;">'
                     if dernier[3] else "")
         st.markdown(
             f'<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35);">'
-            f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{etiquette} {html.escape(dernier[1])}</div>'
+            f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{etiquette} — {html.escape(dernier[1])}</div>'
             f'{img_html}'
             f'<div style="color:#4527a0; font-size:0.98rem; line-height:1.6; text-align:left;">{texte_html}</div>'
             f'</div>', unsafe_allow_html=True)
@@ -486,9 +467,8 @@ def _render_fil_actualites():
 
 
 def _render_spiritual_tabs():
-    """Onglets côte à côte SANS exposition par défaut : un onglet d'accueil neutre
-    est placé en tête, de sorte que '🙏 Prières' ne soit plus présélectionné.
-    Les contenus ne s'exposent que sur clic de l'utilisateur."""
+    """Onglets côte à côte SANS exposition par défaut : un onglet d'accueil
+    neutre en tête, les contenus ne s'exposent que sur clic."""
     t_accueil, t_prieres, t_medits, t_audios = st.tabs(
         ["📇 Sommaire", "🙏 Prières", "📖 Méditations", "🎵 Musiques"])
 
@@ -504,7 +484,7 @@ def _render_spiritual_tabs():
         else:
             for p in prieres:
                 with st.expander(f"📖 {p[0]}"):
-                    texte, url_pdf = (p[1] or ''), p[3]
+                    texte, url_pdf = (p[1] or ""), p[3]
                     if not url_pdf: texte, url_pdf = _extraire_pdf_legacy(texte)
                     if p[2] and p[2].startswith("http"): st.image(p[2], use_container_width=True)
                     if texte: st.markdown(texte, unsafe_allow_html=True)
@@ -518,7 +498,7 @@ def _render_spiritual_tabs():
         else:
             for m in meditations:
                 with st.expander(f"📖 {m[0]}"):
-                    texte, url_pdf = (m[1] or ''), m[3]
+                    texte, url_pdf = (m[1] or ""), m[3]
                     if not url_pdf: texte, url_pdf = _extraire_pdf_legacy(texte)
                     if m[2] and m[2].startswith("http"): st.image(m[2], use_container_width=True)
                     if texte: st.markdown(texte, unsafe_allow_html=True)
@@ -537,6 +517,7 @@ def _render_spiritual_tabs():
                     st.markdown("---")
                 else:
                     st.warning(f"Le fichier audio pour '{a[0]}' est introuvable.")
+
 
 def _enregistrer_presence(membre_id, evt_id, choix):
     deja = c.execute("SELECT id FROM suivi_presences WHERE membre_id=? AND evenement_id=?",
@@ -568,14 +549,17 @@ def show_espace_membre(matloc_membre=None):
     if not matloc_membre:
         livre_ouvert = st.session_state.get("diz_ouvert", False)
         _render_header(masquer_bandes=livre_ouvert)
+
         if not livre_ouvert:
             st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
-                    '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
-                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam</div></div>', unsafe_allow_html=True)
+                        '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
+                        '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam</div></div>', unsafe_allow_html=True)
+
         _render_dizaine_du_jour(est_membre=False)
-        # Livre ouvert : recouvre tout l'écran sous l'entête → rien d'autre n'est rendu
+
         if st.session_state.get("diz_ouvert"):
-            return
+            return  # Livre ouvert : il recouvre tout sous l'entête
+
         _render_fil_actualites()
         _render_spiritual_tabs()
         return
@@ -603,35 +587,36 @@ def show_espace_membre(matloc_membre=None):
     livre_ouvert = st.session_state.get("diz_ouvert", False)
     _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert)
 
-    # 👤 Mon profil — popover natif (zéro rechargement), aligné à droite
-    _, col_profil = st.columns([5, 1])
-    with col_profil:
-        with st.popover("👤 Mon profil"):
-            if membre[6]:
-                try: st.image(membre[6], width=130)
-                except Exception: pass
-            st.markdown(f"**{membre[1]} {membre[2]}**")
-            st.caption(f"MatLoc : `{membre[3]}`")
-            st.write(f"👥 Équipe : **{membre[8] or '—'}**")
-            st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
-            st.write(f"💬 WhatsApp : {membre[4] or '—'}")
-            st.write(f"📿 N° méditation : {membre[7] or '—'}")
-            d_adh = safe_date(membre[5])
-            st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
+    # 👤 Mon profil — popover natif (zéro rechargement), masqué quand le livre est ouvert
+    if not livre_ouvert:
+        _, col_profil = st.columns([5, 1])
+        with col_profil:
+            with st.popover("👤 Mon profil"):
+                if membre[6]:
+                    try: st.image(membre[6], width=130)
+                    except Exception: pass
+                st.markdown(f"**{membre[1]} {membre[2]}**")
+                st.caption(f"MatLoc : `{membre[3]}`")
+                st.write(f"👥 Équipe : **{membre[8] or '—'}**")
+                st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
+                st.write(f"💬 WhatsApp : {membre[4] or '—'}")
+                st.write(f"📿 N° méditation : {membre[7] or '—'}")
+                d_adh = safe_date(membre[5])
+                st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
 
+    # Carte Bienvenue (masquée quand le livre est ouvert)
     if not livre_ouvert:
         st.markdown(f"""
         <div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">
             <div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue {membre[2]} 🕊️</div>
-        <div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">👥 {membre[8] or '—'} &nbsp;|&nbsp; 🏘️ {membre[9] or '—'}</div>
+            <div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">👥 {membre[8] or '—'} &nbsp;|&nbsp; 🏘️ {membre[9] or '—'}</div>
         </div>
         """, unsafe_allow_html=True)
 
     _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
 
-    # Livre ouvert : il recouvre tout l'écran sous l'entête → on ne rend rien d'autre
     if st.session_state.get("diz_ouvert"):
-        return
+        return  # Livre ouvert : il recouvre tout sous l'entête
 
     _render_fil_actualites()
 
@@ -691,13 +676,3 @@ def show_espace_membre(matloc_membre=None):
 
     # ARCHIVES
     _render_spiritual_tabs()
-
-    if st.query_params.get("debug") == "1":
-        with st.expander("🔎 DEBUG Bandes défilantes"):
-            try:
-                st.write("Bandes en base :",
-                         c.execute("SELECT id, contenu_texte, fichier_url FROM espace_spirituel WHERE type_contenu='annonce_defilante'").fetchall())
-            except Exception as e:
-                st.write("ERREUR SQL :", e)
-            html_genere = _bandes_defilantes_html(membre=bool(matloc_membre))
-            st.write("HTML généré :", (html_genere[:400] + "…") if len(html_genere) > 400 else (html_genere or "⚠️ VIDE"))
