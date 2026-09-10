@@ -273,7 +273,9 @@ def show_paroisse():
                     c1, c2 = st.columns(2)
                     with c1: n, p = st.text_input("Nom"), st.text_input("Prénom")
                     dn = st.date_input("Naissance", min_value=date(1950, 1, 1), max_value=date.today())
-                    with c2: w, nm = st.text_input("WhatsApp"), st.text_input("N° méd.", max_chars=2)
+                    with c2:
+                        w = st.text_input("WhatsApp")
+                        nm = st.number_input("N° méd. (1-31)", min_value=0, max_value=31, value=0, step=1, help="Numéro dans la chaîne de prière. 0 = non encore attribué")
                     ph = st.file_uploader("Photo", ['jpg', 'png'])
                     da = st.date_input("Date d'adhésion", min_value=date(1950, 1, 1), max_value=date.today(), value=date.today())
 
@@ -288,7 +290,7 @@ def show_paroisse():
                         else:
                             mat = generer_matricule_unique()
                             c.execute("""INSERT INTO membres (matloc, nom, prenom, date_naissance, whatsapp, date_adhesion, paroisse_id, equipe_id, statut, numero_meditation, matricule) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                                      (mat, n.strip(), p.strip(), dn.isoformat(), w, da.isoformat(), pid, eid, 'actif', nm, mat))
+                                  (mat, n.strip(), p.strip(), dn.isoformat(), w, da.isoformat(), pid, eid, 'actif', (str(nm) if nm > 0 else ""), mat))
                             if ph:
                                 url_photo = sauvegarder_photo(ph, mat)
                                 if url_photo:
