@@ -614,6 +614,9 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
                             st.markdown(f"""<a href="{wa_perso}" target="_blank" class="whatsapp-link">📱 Envoyer</a>""", unsafe_allow_html=True)
                         else:
                             st.caption("_Pas de numéro_")
+                        with st.expander("🔳 QR code personnel"):
+                            _qrcode_st(lien_perso, 170)
+                            st.caption(f"À imprimer avec le MatLoc `{matloc_propre}`")
 
 
 def enregistrer_presence_equipe(equipe_id):
