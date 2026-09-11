@@ -273,15 +273,55 @@ def exporter_excel_diocese():
             ("Paroisses", "SELECT id, nom, commune, ville, responsable, bureau FROM paroisses"),
             ("Equipes", "SELECT e.id, e.nom_equipe, e.responsable, e.bureau, p.nom as paroisse FROM equipes e JOIN paroisses p ON e.paroisse_id = p.id"),
             ("Membres actifs", "SELECT m.matloc as MatLoc, m.matricule as Matricule, m.nom, m.prenom, m.date_naissance, m.whatsapp, m.date_adhesion, p.nom as paroisse, e.nom_equipe as equipe FROM membres m JOIN paroisses p ON m.paroisse_id = p.id JOIN equipes e ON m.equipe_id = e.id WHERE m.statut = 'actif' ORDER BY p.nom, e.nom_equipe"),
-            # matloc (m.matricule est vide pour les membres d'avant migration)
             ("Abonnements", "SELECT a.id, m.matloc as MatLoc, m.nom, m.prenom, a.annee_debut, a.date_paiement, a.montant, a.type_abonnement FROM abonnements a JOIN membres m ON a.membre_id = m.id ORDER BY a.annee_debut DESC"),
             ("Archives", "SELECT m.matloc as MatLoc, m.nom, m.prenom, a.situation, a.date_debut, a.date_fin, a.commentaire, p.nom as paroisse, e.nom_equipe as equipe FROM archives a JOIN membres m ON a.membre_id = m.id LEFT JOIN equipes e ON a.equipe_id = e.id LEFT JOIN paroisses p ON e.paroisse_id = p.id ORDER BY a.date_fin DESC")
         ]
         for sheet_name, query in queries:
             try:
-                df = pd.read_sql_query(query, database.conn)
-                if not df.empty: df.to_excel(writer, sheet_name=sheet_name, index=False)
+                # FIX ROBUSTE : exécution via le curseur (c) au lieu de
+                # pd.read_sql_query(database.conn). Le curseur gère déjà
+                # reconnexion/retries, et fonctionne avec sqlite3 ET libsql —
+                # pandas s'attendait à une connexion sqlite3/SQLAlchemy
+                # standard et échouait de façon obscure sur Turso.
+                rows = c.execute(query).fetchall()
+                cols = [d[0] for d in c.description] if c.description else []
+                df = pd.DataFrame(rows, columns=cols)
+                if not df.empty:
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
             except Exception as e:
                 print(f"Export '{sheet_name}' échoué: {e}")
     output.seek(0)
     return output
+
+# ============================================================
+# STATISTIQUES DE FRÉQUENTATION
+# ============================================================
+def compter_visite(page):
+    """Enregistre une visite (une ligne par session ouverte).
+    La table est créée au besoin ; aucun échec ne doit casser la page."""
+    try:
+        c.execute("""CREATE TABLE IF NOT EXISTS stats_visites (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        page TEXT, date_visite DATE)""")
+        c.execute("INSERT INTO stats_visites (page, date_visite) VALUES (?, ?)",
+                  (page, date.today().isoformat()))
+        commit_and_sync()
+    except Exception as e:
+        print(f"Compteur de visites ({page}) : {e}")
+
+
+def stats_visites_pivot(nb_jours=30):
+    """Pivot date × page des visites des nb_jours derniers jours."""
+    from datetime import timedelta
+    debut = (date.today() - timedelta(days=nb_jours - 1)).isoformat()
+    try:
+        rows = c.execute("""SELECT date_visite, page, COUNT(*) FROM stats_visites
+                            WHERE date_visite >= ?
+                            GROUP BY date_visite, page
+                            ORDER BY date_visite""", (debut,)).fetchall()
+    except Exception:
+        return pd.DataFrame()
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows, columns=["date", "page", "visites"])
+    return df.pivot_table(index="date", columns="page", values="visites", aggfunc="sum").fillna(0)
