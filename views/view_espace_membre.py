@@ -33,11 +33,22 @@ def _extraire_pdf_legacy(contenu):
     return DIV_PDF_RE.sub("", contenu).strip(), url
 
 
-def _render_theme():
-    st.markdown("""<style>
+def _render_theme(bandes=0):
+    # Compensation dynamique : chaque bande défilante ajoute ~35px à la hauteur
+    # de l'entête fixe → le padding du contenu suit pour que rien ne soit avalé.
+    # NB : construit par CONCATÉNATION (pas de f-string) pour garder les
+    # accolades CSS simples et éviter tout incident de collage.
+    extra = bandes * 35
+    regle_contenu = (
+        ".block-container { padding-top: " + str(200 + extra)
+        + "px !important; padding-bottom: 4rem !important; max-width: 1050px !important; }"
+    )
+    st.markdown(
+        '<style>'
+        + regle_contenu +
+        """
     [data-testid="stHeader"] { display: none !important; }
     .stApp, [data-testid="stAppViewContainer"] { background-color: #0a0f2c !important; }
-    .block-container { padding-top: 200px !important; padding-bottom: 4rem !important; max-width: 1050px !important; }
     .stApp .stMarkdown, .stApp .stMarkdown p, .stApp .stMarkdown li, .stApp .stMarkdown span,
     .stApp .stMarkdown h1, .stApp .stMarkdown h2, .stApp .stMarkdown h3, .stApp .stMarkdown h4,
     .stApp .stMarkdown strong, .stApp .stMarkdown em { color: #e8eaf6 !important; }
@@ -75,12 +86,12 @@ def _render_theme():
     }
     @media (max-width: 640px) {
         .logo-bloc { width: 150px; }
-        .block-container { padding-top: 165px !important; }
+        .block-container { padding-top: """ + str(165 + extra) + """px !important; }
         [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
     }
     @media (max-width: 360px) {
         .logo-bloc { width: 138px; }
-        .block-container { padding-top: 155px !important; }
+        .block-container { padding-top: """ + str(155 + extra) + """px !important; }
     }
     </style>""", unsafe_allow_html=True)
 
