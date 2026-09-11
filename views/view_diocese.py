@@ -529,10 +529,28 @@ def show_diocese():
 
     elif menu == "📊 Statistiques":
         st.markdown('<h2 style="color:#1A237E;">📊 Statistiques générales</h2>', unsafe_allow_html=True)
-        c1, c2, c3 = st.columns(3)
-        c1.metric("🏘️ Paroisses", c.execute("SELECT COUNT(*) FROM paroisses").fetchone()[0])
-        c2.metric("👥 Équipes", c.execute("SELECT COUNT(*) FROM equipes").fetchone()[0])
-        c3.metric("👤 Membres actifs", c.execute("SELECT COUNT(*) FROM membres WHERE statut='actif'").fetchone()[0])
+        from services import stats_visites_pivot
+        tab_gen, tab_freq = st.tabs(["📌 Général", "📈 Fréquentation"])
+        with tab_gen:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("🏘️ Paroisses", c.execute("SELECT COUNT(*) FROM paroisses").fetchone()[0])
+            c2.metric("👥 Équipes", c.execute("SELECT COUNT(*) FROM equipes").fetchone()[0])
+            c3.metric("👤 Membres actifs", c.execute("SELECT COUNT(*) FROM membres WHERE statut='actif'").fetchone()[0])
+        with tab_freq:
+            st.caption("Visites des 30 derniers jours (une visite = une ouverture de session).")
+            pivot = stats_visites_pivot(30)
+            if pivot.empty:
+                st.info("Aucune visite enregistrée sur la période.")
+            else:
+                pivot = pivot.rename(columns={"communautaire": "🏘️ Communautaire", "membre": "👤 Membre"})
+                st.bar_chart(pivot)
+            totaux = c.execute("SELECT page, COUNT(*) FROM stats_visites GROUP BY page").fetchall()
+            d1, d2 = st.columns(2)
+            for nom_page, nb in totaux:
+                if nom_page == "communautaire":
+                    d1.metric("🌐 Total Espace communautaire", nb)
+                elif nom_page == "membre":
+                    d2.metric("👤 Total Espace Membre", nb)
 
     elif menu == "📥 Export Excel":
         st.markdown('<h2 style="color:#1A237E;">📥 Export des données</h2>', unsafe_allow_html=True)
