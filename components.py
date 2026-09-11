@@ -588,6 +588,8 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
         wa_public = f"https://wa.me/?text={urllib.parse.quote(message_public, safe=':/?=')}"
         st.markdown(f"""<a href="{wa_public}" target="_blank" class="whatsapp-link">📱 Partager l'espace public sur WhatsApp</a>""", unsafe_allow_html=True)
         st.code(lien_public)
+        st.markdown("**🔳 QR code de la page d'accueil** *(pour les responsables : connexion au gestionnaire)*")
+        _qrcode_st(URL_ESPACE_SPIRITUEL + "/", 180)
         st.markdown("**📱 QR code de l'Espace communautaire** *(à projeter ou imprimer)*")
         _qrcode_st(lien_public, 220)
 
