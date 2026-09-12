@@ -12,7 +12,8 @@ from services import (hash_password, generer_mot_de_passe, safe_date, afficher_s
                       afficher_messages_flash)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel,
                         afficher_whatsapp_tabs, afficher_historique_paroisse,
-                        afficher_etat_presences_paroisse, gerer_affiches_bande_annonces)
+                        afficher_etat_presences_paroisse, gerer_affiches_bande_annonces,
+                        gerer_theme_pastoral)
 
 
 def show_diocese():
