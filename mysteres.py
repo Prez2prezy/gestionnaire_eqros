@@ -9,6 +9,8 @@ il médite le(s) mystère(s) déterminé(s) par sa position dans la chaîne.
 Les 20 membres couvrent ensemble le chapelet complet chaque jour.
 """
 
+from database import c
+
 # Couleurs par type de mystère (palette du livre, harmonisée gestionnaire)
 COULEURS_TYPES = {
     "joyeux": "#E91E63",
@@ -352,3 +354,32 @@ def get_mysteres_du_jour(num):
     """API principale : retourne la liste des dict mystères du jour pour ce numéro."""
     ids = calculer_mysteres_du_jour(num)
     return [get_mystere(i) for i in ids if get_mystere(i) is not None]
+
+
+def get_theme_actif():
+    """Retourne (texte_theme, mystere_principal, annee_debut) du thème actif, ou None."""
+    try:
+        r = c.execute("""SELECT texte_theme, mystere_principal, annee_debut FROM themes_pastoraux
+                         WHERE actif=1 ORDER BY annee_debut DESC LIMIT 1""").fetchone()
+        return r
+    except Exception:
+        return None
+
+
+def get_sous_theme_du_mois(annee_debut, mois):
+    """Retourne (titre, contenu, feuillet_pdf) du sous-thème du mois, ou None."""
+    try:
+        return c.execute("""SELECT titre, contenu, feuillet_pdf FROM sous_themes
+                            WHERE annee_debut=? AND mois=?""", (annee_debut, mois)).fetchone()
+    except Exception:
+        return None
+
+
+def get_lien_mystere(annee_debut, mystere_id):
+    """Retourne le texte du lien thématique d'un mystère pour l'année, ou None."""
+    try:
+        r = c.execute("""SELECT texte_lien FROM theme_mystere
+                         WHERE annee_debut=? AND mystere_id=?""", (annee_debut, mystere_id)).fetchone()
+        return r[0] if r else None
+    except Exception:
+        return None
