@@ -113,6 +113,28 @@ def init_tables_and_migrations():
     c.execute("""CREATE TABLE IF NOT EXISTS periodes_cloturees (id INTEGER PRIMARY KEY AUTOINCREMENT, entite_type TEXT, entite_id INTEGER, annee_debut INTEGER, date_cloture TEXT, auteur_nom TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS espace_spirituel (id INTEGER PRIMARY KEY, type_contenu TEXT, titre TEXT, contenu_texte TEXT, fichier_url TEXT, date_publication DATE, auteur_nom TEXT)""")
 
+    c.execute("""CREATE TABLE IF NOT EXISTS themes_pastoraux (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    annee_debut INTEGER,
+                    texte_theme TEXT,
+                    mystere_principal INTEGER,
+                    actif INTEGER DEFAULT 1)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS sous_themes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    annee_debut INTEGER,
+                    mois INTEGER,
+                    titre TEXT,
+                    contenu TEXT,
+                    feuillet_pdf TEXT,
+                    UNIQUE(annee_debut, mois))""")
+    c.execute("""CREATE TABLE IF NOT EXISTS theme_mystere (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    annee_debut INTEGER,
+                    mystere_id INTEGER,
+                    texte_lien TEXT,
+                    UNIQUE(annee_debut, mystere_id))""")
+
+
     # --- 2. MIGRATIONS STRUCTURELLES ---
     safe_migrate("ALTER TABLE espace_spirituel ADD COLUMN image_url TEXT")
     safe_migrate("ALTER TABLE evenements ADD COLUMN affiche_url TEXT")
