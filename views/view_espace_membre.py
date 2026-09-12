@@ -34,11 +34,9 @@ def _extraire_pdf_legacy(contenu):
 
 
 def _render_theme(bandes=0):
-    # Compensation dynamique : chaque bande défilante ajoute ~35px à la hauteur
-    # de l'entête fixe → le padding du contenu suit pour que rien ne soit avalé.
-    # NB : construit par CONCATÉNATION (pas de f-string) pour garder les
-    # accolades CSS simples et éviter tout incident de collage.
-    extra = bandes * 35
+    # Compensation : chaque bande défilante ajoute ~40px (estimation majorée
+    # après constat terrain : les textes réels dépassaient l'estimation 35px).
+    extra = bandes * 40
     regle_contenu = (
         ".block-container { padding-top: " + str(200 + extra)
         + "px !important; padding-bottom: 4rem !important; max-width: 1050px !important; }"
@@ -88,6 +86,9 @@ def _render_theme(bandes=0):
         .logo-bloc { width: 150px; }
         .block-container { padding-top: """ + str(165 + extra) + """px !important; }
         [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { min-width: 0 !important; }
+        .diz-saisie input { max-width: 160px !important; }
+        .diz-valider button { max-width: 90px !important; padding-left: 8px !important; padding-right: 8px !important; }
     }
     @media (max-width: 360px) {
         .logo-bloc { width: 138px; }
@@ -152,7 +153,7 @@ def _render_header(membre=None, matloc=None, masquer_bandes=False):
 # ====================================================================
 DIZ_INTRO1 = "Au Nom du Père, et du Fils et du Saint-Esprit! Amen!\n\nPRIÈRE D’ENTRÉE\n\nSeigneur Jésus, nous nous disposons à prier\nce Rosaire en communion avec la Vierge Marie.\nViens, Esprit Saint, remplis les cœurs de tes fidèles et allume en eux le feu de ton amour.\nDonne-nous la grâce de méditer profondément les mystères de ta vie, pour que, en les imitant, nous obtenions les promesses qu’ils renferment.\nPar le Christ, notre Seigneur. Amen.\n\nJE CROIS EN DIEU\n\nJe crois en Dieu, le Père Tout-Puissant, Créateur du ciel et de la terre.\nEt en Jésus-Christ, son Fils unique, Notre Seigneur, qui a été conçu du Saint-Esprit, est né de la Vierge Marie, a souffert sous Ponce Pilate, a été crucifié, est mort et a été enseveli, est descendu aux enfers, le troisième jour est ressuscité des morts, est monté aux cieux, est assis à la droite de Dieu le Père Tout-Puissant, d’où il viendra juger les vivants et les morts.\nJe crois en l’Esprit-Saint, à la Sainte Église catholique, à la communion des Saints, à la rémission des péchés, à la résurrection de la chair, à la vie éternelle.\nAmen."
 DIZ_INTRO2 = "NOTRE PÈRE\n\nNotre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\nque ta volonté soit faite\nsur la terre comme au ciel.\n\nDonne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, mais délivre-nous du Mal. Amen!\n\n3 JE VOUS SALUE MARIE\n\nJe vous salue Marie, pleine de grâce,\nle Seigneur est avec vous. Vous êtes bénie entre toutes les femmes, et Jésus, le fruit de vos entrailles, est béni.\n\nSainte Marie, Mère de Dieu, priez pour nous pauvres pécheurs, maintenant et à l’heure de notre mort. Amen!\n\nGLORIA PATRI\n\nGloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, et in saecula saeculorum. Amen!"
-DIZ_INTRO3 = "PRIÈRE À LA VIERGE DU PÈRE EYQUEM\n\nVers Toi je lève les yeux,\nSainte Mère de Dieu;\n\ncar je voudrais faire de ma maison,\nune maison où Jésus vienne, selon sa promesse,\nquand plusieurs se réunissent en son nom.\nTu as accueilli le message de l’ange comme\nun message venant de Dieu, et Tu as reçu,\nen raison de ta foi,\nl’incomparable grâce d’accueillir\nen Toi Dieu Lui-même.\nTu as ouvert aux bergers puis aux mages\nla porte de ta maison, sans que\nnul ne se sente gêné\npar sa pauvreté ou sa richesse.\n\nSois Celle qui chez moi reçoit.\n\nAfin que ceux qui ont besoin\nd’être réconfortés le soient;\nceux qui ont le désir de\nrendre grâce puissent le faire ;\nceux qui cherchent la paix la trouvent.\nEt que chacun reparte vers sa propre maison\navec la joie d’avoir rencontré Jésus lui-même,\nLui, le Chemin, la Vérité, la Vie.\nAmen!\n\nFrère Joseph EYQUEM, o.p.,\nFondateur des Équipes du Rosaire"
+DIZ_INTRO3 = "PRIÈRE À LA VIERGE DU PÈRE EYQUEM\n\n[R]Vers Toi je lève les yeux,\nSainte Mère de Dieu;[/R]\n\ncar je voudrais faire de ma maison,\nune maison où Jésus vienne, selon sa promesse,\nquand plusieurs se réunissent en son nom.\nTu as accueilli le message de l’ange comme\nun message venant de Dieu, et Tu as reçu,\nen raison de ta foi,\nl’incomparable grâce d’accueillir\nen Toi Dieu Lui-même.\nTu as ouvert aux bergers puis aux mages\nla porte de ta maison, sans que\nnul ne se sente gêné\npar sa pauvreté ou sa richesse.\n\n[R]Sois Celle qui chez moi reçoit.[/R]\n\nAfin que ceux qui ont besoin\nd’être réconfortés le soient;\nceux qui ont le désir de\nrendre grâce puissent le faire ;\nceux qui cherchent la paix la trouvent.\nEt que chacun reparte vers sa propre maison\navec la joie d’avoir rencontré Jésus lui-même,\nLui, le Chemin, la Vérité, la Vie.\nAmen!\n\n[I]Frère Joseph EYQUEM, o.p.,\nFondateur des Équipes du Rosaire[/I]"
 DIZ_OUTRO = "SALVE REGINA\n\nSalve Regina, Mater misericordiae;\nvita, dulcedo, et spes nostra salve.\nAd te clamamus, exsules filii Hevae.\nAd te suspiramus, gementes et flentes\nin hac lacrimarum valle.\nEia ergo, advocata nostra,\nillos tuos misericordes oculos ad nos converte;\nEt Iesum, benedictum fructum ventris tui,\nnobis, post hoc exsilium ostende.\nO Clemens, O pia, O dulcis, Virgo Maria.\n\nOra pro nobis, Sancta Dei Genitrix.\nUt digni efficiamur promissionibus Christi.\n\nPRIÈRE FINALE\n\nÔ Dieu, dont le Fils unique nous a acquis\npar sa vie, sa mort et sa résurrection\nles récompenses du salut éternel,\nnous vous supplions : faites que,\nméditant les mystères du très\nSaint Rosaire de\nla Bienheureuse Vierge Marie,\nnous imitions ce qu’ils contiennent\net obtenons ce qu’ils promettent.\nPar le Christ, notre Seigneur. Amen!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nAu Nom du Père, et du Fils et du Saint-Esprit! Amen!"
 
 
@@ -195,20 +196,25 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
             if not isinstance(st.session_state.get("diz_saisie", ""), str):
                 st.session_state.pop("diz_saisie", None)
 
-            conseil_txt = "Veuillez préparer une intention pour la situation d'une personne particulière (Intention du prochain dans la chaîne de prière)."
-            st.markdown('<div style="background:#E8EAF6; border-left:4px solid #4527a0;'
-                        ' border-radius:6px; padding:10px 14px; margin:0 10px 8px 10px;'
-                        ' color:#1A237E; font-size:0.9rem;">🕯️ '
-                        + html.escape(conseil_txt) + '</div>', unsafe_allow_html=True)
+            st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+                        ' padding:16px; border-radius:15px; text-align:center; margin:0 10px 8px 10px;'
+                        ' border:2px solid #FFD700;">'
+                        '<div style="color:#FFD700; font-size:1.1rem; font-weight:bold;">🕯️ Un jour, une dizaine</div>'
+                        '<div style="color:#ffffff; font-size:0.85rem; margin-top:4px;">'
+                        'Entrez votre jour de naissance et rejoignez la chaîne de prière</div></div>',
+                        unsafe_allow_html=True)
 
             c_saisie, c_btn = st.columns([4, 1], gap="small")
             with c_saisie:
+                st.markdown('<div class="diz-saisie">', unsafe_allow_html=True)
                 saisie = st.text_input("Jour de naissance",
                                        placeholder="💡 Votre jour de naissance (1 à 31)",
                                        label_visibility="collapsed",
                                        key="diz_saisie").strip()
+                st.markdown('</div>', unsafe_allow_html=True)
             with c_btn:
-                if st.button("Valider", key="diz_valider", use_container_width=True, type="primary"):
+                if st.button("✅", key="diz_valider", use_container_width=True, type="primary",
+                             help="Valider votre jour de naissance"):
                     if saisie.isdigit() and 1 <= int(saisie) <= 31:
                         st.session_state["diz_jrnais"] = int(saisie)
                         st.session_state.pop("diz_erreur", None)
@@ -281,10 +287,23 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
 
     if page["t"] in ("intro1", "intro2", "intro3"):
         texte = {"intro1": DIZ_INTRO1, "intro2": DIZ_INTRO2, "intro3": DIZ_INTRO3}[page["t"]]
-        html_page = (
-            f'<div style="background:#FFF9C4; border-radius:12px; padding:18px; margin:6px;">'
-            f'<div style="color:#1A237E; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">INTRODUCTION</div>'
-            f'{_diz_txt(texte, "#1a1a1a")}</div>')
+        if "[R]" in texte:
+            # Intro Eyquem : [R]→rouge, [I]→italique (fidèle au livre Android)
+            t_esc = html.escape(texte)
+            t_esc = t_esc.replace("[R]", '</div><div style="color:#D32F2F; font-size:0.95rem; font-weight:bold; text-align:center; line-height:1.7; margin:8px 0;">')
+            t_esc = t_esc.replace("[/R]", '</div><div style="color:#1a1a1a; font-size:0.95rem; line-height:1.7; margin:8px 0;">')
+            t_esc = t_esc.replace("[I]", '</div><div style="color:#1a1a1a; font-size:0.95rem; font-style:italic; text-align:center; line-height:1.7; margin:8px 0;">')
+            t_esc = t_esc.replace("[/I]", "</div>")
+            corps_eyquem = '<div style="color:#1a1a1a; font-size:0.95rem; line-height:1.7; margin:8px 0;">' + t_esc
+            html_page = (
+                f'<div style="background:#FFF9C4; border-radius:12px; padding:18px; margin:6px;">'
+                f'<div style="color:#1A237E; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">INTRODUCTION</div>'
+                f'{corps_eyquem}</div>')
+        else:
+            html_page = (
+                f'<div style="background:#FFF9C4; border-radius:12px; padding:18px; margin:6px;">'
+                f'<div style="color:#1A237E; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">INTRODUCTION</div>'
+                f'{_diz_txt(texte, "#1a1a1a")}</div>')
 
     elif page["t"] == "outro":
         html_page = (
