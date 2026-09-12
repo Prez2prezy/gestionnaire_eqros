@@ -11,7 +11,8 @@ from services import (safe_date, envoyer_notification_telegram, lien_whatsapp,
                       verifier_abonnement, periode_affichage, get_periode_pastorale,
                       est_cloture, cloturer_periode, TYPES_EVENEMENTS,
                       URL_ESPACE_SPIRITUEL, sauvegarder_illustration, supprimer_photo,
-                      sauvegarder_video)
+                      sauvegarder_video, sauvegarder_pdf)
+from mysteres import get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
 
 
 def widget_type_abonnement(prefix, m_id, annee):
@@ -1104,3 +1105,151 @@ def afficher_page_reponse_membre(event_id):
                 </a>
             </div>
             """, unsafe_allow_html=True)
+
+
+def gerer_theme_pastoral():
+    """🕯️ Interface diocèse : thème annuel, 12 sous-thèmes mensuels (feuillets),
+    et le lien du thème avec CHACUN des 20 mystères."""
+    st.caption("Structure : un thème annuel porté par un mystère (ex. 2026-2027 : "
+               "« IL POSAIT DES QUESTIONS. FORCE DE LA FOI ! » — Mystère N°5, le "
+               "Recouvrement au Temple), décliné en 12 sous-thèmes mensuels, et relié "
+               "à chacun des 20 mystères. Affiché dans les deux espaces et dans le "
+               "livre de la dizaine.")
+
+    # ---------- 1. THÈME ANNUEL ----------
+    st.markdown("### 1️⃣ Le thème de l'année")
+    themes = c.execute("SELECT id, annee_debut, texte_theme, mystere_principal, actif FROM themes_pastoraux ORDER BY annee_debut DESC").fetchall()
+    if themes:
+        for t in themes:
+            etat = "🟢 ACTIF" if t[4] else "⚪"
+            c_txt, c_act = st.columns([5, 1])
+            with c_txt:
+                st.write(f"**{t[1]}-{t[1]+1}** {etat} — Mystère N°{t[3] or '?'}")
+                st.caption(t[2])
+            with c_act:
+                if not t[4] and st.button("Activer", key=f"act_theme_{t[0]}"):
+                    c.execute("UPDATE themes_pastoraux SET actif=0")
+                    c.execute("UPDATE themes_pastoraux SET actif=1 WHERE id=?", (t[0],))
+                    commit_and_sync()
+                    st.rerun()
+
+    with st.form("form_theme_annuel"):
+        st.markdown("**Créer / mettre à jour le thème d'une année pastorale**")
+        annee_t = st.number_input("Année de début", min_value=2020, max_value=2060,
+                                  value=get_periode_pastorale()[0], step=1, key="tp_annee")
+        texte_t = st.text_area("Texte du thème", key="tp_texte",
+                               placeholder="Ex. : IL POSAIT DES QUESTIONS. FORCE DE LA FOI !")
+        myst_t = st.number_input("Mystère porteur (1-20)", min_value=1, max_value=20,
+                                 value=5, step=1, key="tp_myst")
+        if st.form_submit_button("🕯️ Enregistrer le thème", width="stretch"):
+            if not texte_t.strip():
+                st.error("Le texte du thème est obligatoire.")
+            else:
+                existant = c.execute("SELECT id FROM themes_pastoraux WHERE annee_debut=?", (annee_t,)).fetchone()
+                if existant:
+                    c.execute("""UPDATE themes_pastoraux SET texte_theme=?, mystere_principal=? WHERE id=?""",
+                              (texte_t.strip(), myst_t, existant[0]))
+                else:
+                    c.execute("UPDATE themes_pastoraux SET actif=0")
+                    c.execute("""INSERT INTO themes_pastoraux (annee_debut, texte_theme, mystere_principal, actif)
+                                 VALUES (?, ?, ?, 1)""", (annee_t, texte_t.strip(), myst_t))
+                commit_and_sync()
+                st.session_state["flash_success"] = "Thème pastoral enregistré ! ✅"
+                st.rerun()
+
+    st.markdown("---")
+
+    # ---------- 2. SOUS-THÈMES MENSUELS ----------
+    st.markdown("### 2️⃣ Les 12 sous-thèmes mensuels (feuillets)")
+    mois_actuel, _, _ = get_periode_pastorale()
+    annees_existantes = [t[1] for t in themes] or [mois_actuel]
+    annee_st = st.selectbox("Année pastorale", annees_existantes, key="tp_annee_st")
+
+    MOIS_NOMS = ["Septembre", "Octobre", "Novembre", "Décembre", "Janvier", "Février",
+                 "Mars", "Avril", "Mai", "Juin", "Juillet", "Août"]
+
+    with st.form("form_sous_theme"):
+        mois_st = st.selectbox("Mois pastoral", MOIS_NOMS, key="tp_mois")
+        titre_st = st.text_input("Titre du sous-thème", key="tp_st_titre")
+        contenu_st = st.text_area("Contenu / développement", height=120, key="tp_st_contenu")
+        pdf_st = st.file_uploader("Feuillet du mois (PDF, optionnel)", type=["pdf"], key="tp_st_pdf")
+        if st.form_submit_button("📅 Enregistrer le sous-thème", width="stretch"):
+            if not titre_st.strip():
+                st.error("Le titre du sous-thème est obligatoire.")
+            else:
+                url_pdf = sauvegarder_pdf(pdf_st) if pdf_st else None
+                mois_num = MOIS_NOMS.index(mois_st) + 1
+                existant = c.execute("SELECT id, feuillet_pdf FROM sous_themes WHERE annee_debut=? AND mois=?",
+                                     (annee_st, mois_num)).fetchone()
+                if existant:
+                    feuillet = url_pdf if url_pdf else existant[1]
+                    c.execute("""UPDATE sous_themes SET titre=?, contenu=?, feuillet_pdf=? WHERE id=?""",
+                              (titre_st.strip(), contenu_st.strip(), feuillet, existant[0]))
+                else:
+                    c.execute("""INSERT INTO sous_themes (annee_debut, mois, titre, contenu, feuillet_pdf)
+                                 VALUES (?, ?, ?, ?, ?)""",
+                              (annee_st, mois_num, titre_st.strip(), contenu_st.strip(), url_pdf))
+                commit_and_sync()
+                st.session_state["flash_success"] = f"Sous-thème de {mois_st} enregistré ! ✅"
+                st.rerun()
+
+    existants_st = c.execute("""SELECT mois, titre, feuillet_pdf FROM sous_themes
+                                WHERE annee_debut=? ORDER BY mois""", (annee_st,)).fetchall()
+    if existants_st:
+        st.caption("Sous-thèmes enregistrés :")
+        for s in existants_st:
+            c_m, c_t, c_p, c_d = st.columns([1, 5, 1, 1])
+            with c_m: st.write(f"**{MOIS_NOMS[s[0]-1]}**")
+            with c_t: st.write(s[1] + (" 📄" if s[2] else ""))
+            with c_p:
+                if s[2]:
+                    st.markdown(f'<a href="{s[2]}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">📄 Voir</a>', unsafe_allow_html=True)
+            with c_d:
+                if st.button("🗑️", key=f"del_st_{annee_st}_{s[0]}"):
+                    c.execute("DELETE FROM sous_themes WHERE annee_debut=? AND mois=?", (annee_st, s[0]))
+                    commit_and_sync()
+                    st.rerun()
+
+    st.markdown("---")
+
+    # ---------- 3. LE LIEN AVEC LES 20 MYSTÈRES ----------
+    st.markdown("### 3️⃣ Le lien du thème avec les 20 mystères")
+    st.caption("Pour chaque mystère, la phrase qui relie son contenu au thème de l'année. "
+               "Cet encart apparaîtra dans le livre de la dizaine, sur la page du mystère.")
+    annee_lien = st.selectbox("Année pastorale", annees_existantes, key="tp_annee_lien")
+
+    with st.form("form_lien_mystere"):
+        myst_lien = st.number_input("Mystère (1-20)", min_value=1, max_value=20, value=1, step=1, key="tp_myst_lien")
+        existant_lien = c.execute("SELECT texte_lien FROM theme_mystere WHERE annee_debut=? AND mystere_id=?",
+                                  (annee_lien, myst_lien)).fetchone()
+        valeur_initiale = existant_lien[0] if existant_lien else ""
+        texte_lien = st.text_area("Texte du lien thématique",
+                                  value=valeur_initiale, height=100, key="tp_lien_txt",
+                                  placeholder="Ex. (mystère 5) : Comme Jésus retrouvé au Temple, "
+                                              "interrogeons notre foi : que demandons-nous à Dieu cette année ?")
+        if st.form_submit_button("🔗 Enregistrer le lien", width="stretch"):
+            if texte_lien.strip():
+                c.execute("""INSERT INTO theme_mystere (annee_debut, mystere_id, texte_lien)
+                             VALUES (?, ?, ?)
+                             ON CONFLICT(annee_debut, mystere_id)
+                             DO UPDATE SET texte_lien=excluded.texte_lien""",
+                          (annee_lien, myst_lien, texte_lien.strip()))
+                commit_and_sync()
+                st.session_state["flash_success"] = f"Lien du mystère N°{myst_lien} enregistré ! ✅"
+                st.rerun()
+            else:
+                st.error("Le texte du lien est obligatoire (ou videz le champ et utilisez Supprimer).")
+
+    liens_existants = c.execute("""SELECT mystere_id, texte_lien FROM theme_mystere
+                                   WHERE annee_debut=? ORDER BY mystere_id""", (annee_lien,)).fetchall()
+    if liens_existants:
+        st.caption(f"{len(liens_existants)} lien(s) enregistré(s) pour {annee_lien}-{annee_lien+1} :")
+        for lm in liens_existants:
+            c_m, c_t, c_d = st.columns([1, 6, 1])
+            with c_m: st.write(f"**N°{lm[0]}**")
+            with c_t: st.caption(lm[1][:100] + ("…" if len(lm[1]) > 100 else ""))
+            with c_d:
+                if st.button("🗑️", key=f"del_lien_{annee_lien}_{lm[0]}"):
+                    c.execute("DELETE FROM theme_mystere WHERE annee_debut=? AND mystere_id=?", (annee_lien, lm[0]))
+                    commit_and_sync()
+                    st.rerun()            
