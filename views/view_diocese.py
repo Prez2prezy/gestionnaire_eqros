@@ -327,8 +327,8 @@ def show_diocese():
             # la sélection à travers les reruns : l'utilisateur reste où il était.
             choix_onglet = st.radio(
                 "Type de contenu à publier",
-                ["🙏 Prière", "📖 Méditation", "🎵 Musique",
-                 "🖼️ Affiches & Bandes-annonces", "📺 Bandes défilantes"],
+                ["🙏 Prière", "📖 Méditation", "🎵 Musique", "🖼️ Affiches & Bandes-annonces",
+                 "📺 Bandes défilantes", "🕯️ Thème pastoral"],
                 horizontal=True, key="onglet_publier")
 
             def publier_texte(type_contenu, prefixe_cle, label):
@@ -413,7 +413,7 @@ def show_diocese():
             elif choix_onglet == "🖼️ Affiches & Bandes-annonces":
                 gerer_affiches_bande_annonces()
 
-            else:  # 📺 Bandes défilantes
+            elif choix_onglet == "📺 Bandes défilantes":
                 st.caption("Le texte défile en continu dans l'entête de l'Espace communautaire et de l'Espace membre. Idéal pour les avis courts. Maximum 3 bandes actives — la plus récente est affichée en premier.")
 
                 with st.form("form_defilante"):
@@ -455,6 +455,11 @@ def show_diocese():
                                 c.execute("DELETE FROM espace_spirituel WHERE id=?", (b[0],))
                                 commit_and_sync()
                                 st.rerun()
+
+
+            else:  # 🕯️ Thème pastoral
+                gerer_theme_pastoral()            
+
 
         with tab_manage:
             contenus = c.execute("""SELECT id, type_contenu, titre, date_publication, image_url, fichier_url
