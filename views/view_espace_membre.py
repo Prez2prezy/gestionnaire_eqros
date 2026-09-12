@@ -197,13 +197,19 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                 st.session_state.pop("diz_saisie", None)
 
             st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-                        ' padding:16px; border-radius:15px; text-align:center; margin:0 10px 8px 10px;'
-                        ' border:2px solid #FFD700;">'
+                        ' padding:16px 16px 4px 16px; border-radius:15px 15px 0 0; text-align:center;'
+                        ' border:2px solid #FFD700; border-bottom:none;">'
                         '<div style="color:#FFD700; font-size:1.1rem; font-weight:bold;">🕯️ Un jour, une dizaine</div>'
                         '<div style="color:#ffffff; font-size:0.85rem; margin-top:4px;">'
-                        'Entrez votre jour de naissance et rejoignez la chaîne de prière</div></div>',
+                        'Entrez ici votre jour de naissance et rejoignez la chaîne de prière</div></div>',
                         unsafe_allow_html=True)
+            # La saisie + ✅ vivent SOUS la carte d'invitation (même bloc visuel)
+            # → voir le bloc de saisie plus bas, précédé de l'ouverture de tranche
+            
 
+            st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+                        ' padding:4px 16px 16px 16px; border-radius:0 0 15px 15px; text-align:center;'
+                        ' border:2px solid #FFD700; border-top:none;">', unsafe_allow_html=True)
             c_saisie, c_btn = st.columns([4, 1], gap="small")
             with c_saisie:
                 st.markdown('<div class="diz-saisie">', unsafe_allow_html=True)
@@ -219,9 +225,10 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                         st.session_state["diz_jrnais"] = int(saisie)
                         st.session_state.pop("diz_erreur", None)
                     else:
-                        st.session_state["diz_erreur"] = "Entrez un jour entre 1 et 31 (chiffres uniquement)."
+                        st.session_state["diz_erreur"] = "Chiffres uniquement, entre 1 et 31."
+                        st.session_state["nettoyage_diz"] = True
             if st.session_state.get("diz_erreur"):
-                st.warning(st.session_state.pop("diz_erreur"))
+                st.markdown('</div>', unsafe_allow_html=True)
 
             if "diz_jrnais" not in st.session_state:
                 return
@@ -253,7 +260,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
             f'<div style="display:flex; justify-content:center; gap:10px; margin:18px 0;">{pastilles}</div>'
             f'<div style="color:#ffffff; font-size:1rem;">{html.escape(titres)}</div>'
             f'<div style="color:#9fa6d8; font-size:0.85rem; margin-top:8px;">'
-            f'Chaîne n° {num} — {date.today().strftime("%d/%m/%Y")}</div>'
+            f'N°méd. {num} — {date.today().strftime("%d/%m/%Y")}</div>'
             f'</div>', unsafe_allow_html=True)
         if st.button("📿 Égrener la dizaine", key="diz_commencer", use_container_width=True, type="primary"):
             st.session_state["diz_ouvert"] = True
@@ -590,6 +597,9 @@ def show_espace_membre(matloc_membre=None):
                         '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
                         '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam</div></div>', unsafe_allow_html=True)
 
+    if st.session_state.pop("nettoyage_diz", False):
+        st.session_state.pop("diz_saisie", None)
+
         _render_dizaine_du_jour(est_membre=False)
 
         if st.session_state.get("diz_ouvert"):
@@ -626,29 +636,27 @@ def show_espace_membre(matloc_membre=None):
     livre_ouvert = st.session_state.get("diz_ouvert", False)
     _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert)
 
-    # 👤 Mon profil — popover natif (zéro rechargement), masqué quand le livre est ouvert
+    # Carte Bienvenue (masquée quand le livre est ouvert) — le popover "Mon
+    # profil" vit DANS la carte, à la place de la ligne équipe | paroisse.
     if not livre_ouvert:
-        with st.popover("👤 Mon profil"):
-            if membre[6]:
-                try: st.image(membre[6], width=130)
-                except Exception: pass
-            st.markdown(f"**{membre[1]} {membre[2]}**")
-            st.caption(f"MatLoc : `{membre[3]}`")
-            st.write(f"👥 Équipe : **{membre[8] or '—'}**")
-            st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
-            st.write(f"💬 WhatsApp : {membre[4] or '—'}")
-            st.write(f"📿 N° méditation : {membre[7] or '—'}")
-            d_adh = safe_date(membre[5])
-            st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
-
-    # Carte Bienvenue (masquée quand le livre est ouvert)
-    if not livre_ouvert:
-        st.markdown(f"""
-        <div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">
-            <div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue {membre[2]} 🕊️</div>
-            <div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">👥 {membre[8] or '—'} &nbsp;|&nbsp; 🏘️ {membre[9] or '—'}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.container():
+            st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px 20px 6px 20px; border-radius:15px 15px 0 0; text-align:center; border:1px solid #d1c4e9; border-bottom:none;">'
+                        '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue {0} 🕊️</div></div>'.format(membre[2]), unsafe_allow_html=True)
+            c_vid, c_prof = st.columns([1, 1], gap="small")
+            with c_prof:
+                with st.popover("👤 Mon profil"):
+                    if membre[6]:
+                        try: st.image(membre[6], width=130)
+                        except Exception: pass
+                    st.markdown(f"**{membre[1]} {membre[2]}**")
+                    st.caption(f"MatLoc : `{membre[3]}`")
+                    st.write(f"👥 Équipe : **{membre[8] or '—'}**")
+                    st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
+                    st.write(f"💬 WhatsApp : {membre[4] or '—'}")
+                    st.write(f"📿 N° méditation : {membre[7] or '—'}")
+                    d_adh = safe_date(membre[5])
+                    st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
+            st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:6px 20px 20px 20px; border-radius:0 0 15px 15px; border:1px solid #d1c4e9; border-top:none; min-height:4px;"></div>', unsafe_allow_html=True)
 
     _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
 
