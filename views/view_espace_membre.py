@@ -36,7 +36,10 @@ def _extraire_pdf_legacy(contenu):
 def _render_theme(bandes=0):
     """CSS de l'espace. Padding compensatoire DYNAMIQUE (40px/bande — estimation
     majorée après constat terrain). Construit par CONCATÉNATION (jamais de
-    f-string avec du CSS : les accolades doublées ont causé des incidents)."""
+    f-string avec du CSS : les accolades doublées ont causé des incidents).
+    NB : la règle stVerticalBlockBorderWrapper recolore TOUT container
+    border=True de cet espace. La carte Bienvenue est le SEUL container border
+    rendu ici — si un autre est ajouté un jour, il prendra le look lilas."""
     extra = bandes * 40
     regle_contenu = (
         ".block-container { padding-top: " + str(200 + extra)
@@ -64,8 +67,11 @@ def _render_theme(bandes=0):
     .stButton > button[kind="primary"] { background-color: #4527a0 !important; border-color: #5e35b1 !important; color: #ffffff !important; }
     [data-testid="stAlert"] { background-color: #151b3d !important; }
     [data-testid="stAlert"] p { color: #e8eaf6 !important; }
-    .stApp [data-testid="stVerticalBlockBorderWrapper"] { background-color: #121a45 !important; border: 1px solid #27306b !important; }
+    .stApp [data-testid="stVerticalBlockBorderWrapper"] { background: linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%) !important; border: 1px solid #d1c4e9 !important; border-radius: 15px !important; }
+    .stApp [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] { gap: 0.6rem !important; }
     [data-testid="stPopover"] { max-width: 220px !important; margin-left: auto !important; margin-right: auto !important; }
+    [data-testid="stPopover"] > button { background-color: #4527a0 !important; color: #ffffff !important; border: 1px solid #5e35b1 !important; border-radius: 20px !important; font-weight: 600 !important; }
+    [data-testid="stWidgetLabel"] p { color: #ffe082 !important; font-weight: 600 !important; }
     .sticky-header { position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
         background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px 0 16px; }
     .header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; }
@@ -88,8 +94,7 @@ def _render_theme(bandes=0):
         .block-container { padding-top: """ + str(165 + extra) + """px !important; }
         [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
         [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { min-width: 0 !important; }
-        .diz-saisie input { max-width: 160px !important; }
-        .diz-valider button { max-width: 90px !important; padding-left: 8px !important; padding-right: 8px !important; }
+        .stApp input[type="number"] { max-width: 160px !important; }
     }
     @media (max-width: 360px) {
         .logo-bloc { width: 138px; }
@@ -173,9 +178,9 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
     Dans le livre : TOUTES les intentions préfixées (la dernière comprise)."""
     st.markdown("---")
 
-    # Nettoyage différé (saisie contenant des caractères interdits)
-    if st.session_state.pop("nettoyage_diz", False):
-        st.session_state.pop("diz_saisie", None)
+    # Migration pavé numérique : purge de l'ancienne clé texte (aucun widget
+    # 'diz_saisie' n'est plus rendu dans cette vue → pop sans risque)
+    st.session_state.pop("diz_saisie", None)
 
     num = None
     if est_membre:
@@ -195,10 +200,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                 return
             num = jrnais - 20 if jrnais > 20 else jrnais
         else:
-            if not isinstance(st.session_state.get("diz_saisie", ""), str):
-                st.session_state.pop("diz_saisie", None)
-
-            # Carte d'invitation en 3 tranches : HTML haut → saisie+✅ → HTML bas
+            # Carte d'invitation : tranche HTML haute → saisie + ✅ → tranche basse
             st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                         ' padding:16px 16px 2px 16px; border-radius:15px 15px 0 0; text-align:center;'
                         ' border:2px solid #FFD700; border-bottom:none;">'
@@ -207,23 +209,23 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                         'Entrez ici votre jour de naissance et rejoignez la chaîne de prière</div></div>',
                         unsafe_allow_html=True)
 
-            c_saisie, c_btn = st.columns([4, 1], gap="small")
+            # vertical_alignment="bottom" : le ✅ s'aligne sur le bas du champ
+            # (natif Streamlit ≥ 1.40 — déjà garanti par st.image du fichier)
+            c_saisie, c_btn = st.columns([4, 1], gap="small", vertical_alignment="bottom")
             with c_saisie:
-                st.markdown('<div class="diz-saisie">', unsafe_allow_html=True)
-                saisie = st.text_input("Jour de naissance",
-                                       placeholder="💡 Votre jour de naissance (1 à 31)",
-                                       label_visibility="collapsed",
-                                       key="diz_saisie").strip()
-                st.markdown("</div>", unsafe_allow_html=True)
+                saisie = st.number_input(
+                    "Jour de naissance (1 à 31)",
+                    min_value=0, max_value=31, value=0, step=1,
+                    key="diz_jour",
+                    help="Pavé numérique : tapez votre jour de naissance (1 à 31), puis appuyez sur ✅. Laissez 0 tant que vous ne l'avez pas choisi.")
             with c_btn:
                 if st.button("✅", key="diz_valider", use_container_width=True, type="primary",
                              help="Valider votre jour de naissance"):
-                    if saisie.isdigit() and 1 <= int(saisie) <= 31:
+                    if 1 <= int(saisie) <= 31:
                         st.session_state["diz_jrnais"] = int(saisie)
                         st.session_state.pop("diz_erreur", None)
                     else:
-                        st.session_state["diz_erreur"] = "Chiffres uniquement, entre 1 et 31."
-                        st.session_state["nettoyage_diz"] = True
+                        st.session_state["diz_erreur"] = "Choisissez votre jour de naissance (chiffre entre 1 et 31)."
             if st.session_state.get("diz_erreur"):
                 st.warning(st.session_state.pop("diz_erreur"))
 
@@ -470,7 +472,6 @@ def _render_coin_affiche():
                 f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p>'
                 f'</div></div>', unsafe_allow_html=True)
 
-
 def _render_fil_actualites():
     dernier = c.execute("""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
                            FROM espace_spirituel
@@ -631,16 +632,14 @@ def show_espace_membre(matloc_membre=None):
     livre_ouvert = st.session_state.get("diz_ouvert", False)
     _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert)
 
-    # Carte Bienvenue avec popover "👤 Mon profil" INTÉGRÉ (tranches HTML +
-    # popover natif : visuellement une seule carte, aucun rechargement).
-    # Le popover est CENTRÉ (rule margin auto via stPopover) et masqué si livre.
+    # Carte Bienvenue : container natif border=True recoloré en carte lilas
+    # (règle CSS stVerticalBlockBorderWrapper). Plus AUCUNE tranche HTML →
+    # plus de bande noire possible. Le popover est enfant direct du container :
+    # le CSS stPopover (max-width + marges auto) le CENTRE sur la largeur carte.
     if not livre_ouvert:
-        st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px 20px 4px 20px; border-radius:15px 15px 0 0; text-align:center; border:1px solid #d1c4e9; border-bottom:none;">'
-                    '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div></div>', unsafe_allow_html=True)
-        c_g, c_p = st.columns([1, 1], gap="small")
-        with c_g:
-            st.markdown('&nbsp;', unsafe_allow_html=True)
-        with c_p:
+        with st.container(border=True):
+            st.markdown('<div style="color:#4A148C !important; font-size:1.3rem; font-weight:bold; text-align:center; line-height:1.4;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
+                        '<div style="color:#4527a0 !important; font-size:0.9rem; text-align:center; margin-top:4px;">Votre espace personnel — priez, participez, restez connecté(e)</div>', unsafe_allow_html=True)
             with st.popover("👤 Mon profil"):
                 if membre[6]:
                     try: st.image(membre[6], width=130)
@@ -653,7 +652,6 @@ def show_espace_membre(matloc_membre=None):
                 st.write(f"📿 N° méditation : {membre[7] or '—'}")
                 d_adh = safe_date(membre[5])
                 st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
-        st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:2px 20px 18px 20px; border-radius:0 0 15px 15px; border:1px solid #d1c4e9; border-top:none; margin-top:-6px;">&nbsp;</div>', unsafe_allow_html=True)
 
     _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
 
