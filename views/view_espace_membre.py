@@ -46,6 +46,13 @@ def _extraire_pdf_legacy(contenu):
     return DIV_PDF_RE.sub("", contenu).strip(), url
 
 
+def _img_html(url, marge_bas="12px"):
+    """Rendu HOMOGÈNE des photos (accueil ET archives — leçon v6.1 : deux
+    moteurs différents créaient des différences PC/mobile et accueil/archives)."""
+    return ('<img src="' + url + '" alt="Illustration" style="border-radius:12px;'
+            ' width:100%; height:auto; display:block; margin-bottom:' + marge_bas + ';">')
+
+
 def _scroll_top(cle):
     """Remet la vue en haut (sous l'entête) à chaque page du livre."""
     try:
@@ -56,8 +63,7 @@ def _scroll_top(cle):
 
 def _scroll_vers_contenu():
     """Après un clic dans le menu, fait défiler jusqu'au bloc « contenu de la
-    rubrique » (situé sous la dizaine, toujours visible). Ne s'exécute que
-    les runs où la sélection a changé (voir show_espace_membre)."""
+    rubrique » (situé sous la dizaine, toujours visible)."""
     try:
         _comp_html(
             "<script>window.parent.document.getElementById('ancre-rubrique').scrollIntoView({behavior:'smooth'});</script>",
@@ -66,18 +72,42 @@ def _scroll_vers_contenu():
         pass
 
 
+def _compter_bandes(membre=False):
+    """v6.1 — Compte les bandes défilantes RÉELLEMENT affichées (même logique
+    de filtrage que _bandes_defilantes_html). Répond à la question terrain :
+    le menu était caché par la 3e bande car le padding ne comptait pas les
+    bandes publiées. Désormais la compensation est dynamique."""
+    try:
+        bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
+                              WHERE type_contenu='annonce_defilante'
+                              ORDER BY date_publication DESC, id DESC LIMIT 3""").fetchall()
+    except Exception:
+        return 0
+    n = 0
+    for texte, cible in bandes:
+        if cible == "membre" and not membre:
+            continue
+        if not texte:
+            continue
+        n += 1
+    return n
+
+
 def _render_theme(bandes=0, compact=False):
-    """CSS de l'espace. Padding compensatoire DYNAMIQUE (40px/bande).
-    compact=True (livre ouvert) : padding réduit.
-    Construit par CONCATÉNATION (jamais de f-string avec du CSS : accolades).
-    v6 : + style « chips » des menus (radio 1 et 2), wrap mobile, popover à
-    gauche. Note : :has(input:checked) nécessite Chrome 105+ ; sans lui, la
-    puce choisie ne se colore pas (dégradé acceptable, la sélection marche)."""
-    extra = bandes * 40
+    """CSS de l'espace.
+    ✔ v6.1 : padding compensatoire DYNAMIQUE = base + (bandes réelles × 42px).
+      Rappel du mécanisme (question de l'utilisateur) : l'entête HTML est en
+      position:fixed → elle FLOTTE au-dessus de la page. Streamlit empile son
+      contenu depuis le haut. Le padding-top pousse le contenu SOUS l'entête.
+      L'ancienne estimation fixe (200px) ne comptait pas les bandes → le menu
+      passait sous la 3e bande. Corrigé.
+    compact=True (livre ouvert) : bandes masquées → padding fixe réduit.
+    CSS construit par CONCATÉNATION (jamais de f-string : accolades)."""
+    extra = bandes * 42
     if compact:
         pad_1, pad_2, pad_3 = 100, 88, 80
     else:
-        pad_1, pad_2, pad_3 = 200 + extra, 165 + extra, 155 + extra
+        pad_1, pad_2, pad_3 = 130 + extra, 100 + extra, 92 + extra
     regle_contenu = (
         ".block-container { padding-top: " + str(pad_1)
         + "px !important; padding-bottom: 4rem !important; max-width: 1050px !important; }"
@@ -109,6 +139,7 @@ def _render_theme(bandes=0, compact=False):
     [data-testid="stPopover"] button:hover { background-color: #5e35b1 !important; }
     [data-testid="stNumberInput"] { max-width: 220px !important; margin-left: auto !important; margin-right: auto !important; }
     [data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] { display: none !important; }
+    [data-testid="stHorizontalBlock"]:has([data-testid="stNumberInput"]) { margin-left: 10px !important; margin-right: 10px !important; }
     [data-testid="stRadio"] [role="radiogroup"] { flex-wrap: wrap !important; gap: 8px !important; }
     [data-testid="stRadio"] [data-baseweb="radio"] { background-color: #1a2150 !important; border: 1px solid #2a3160 !important; border-radius: 20px !important; padding: 6px 14px !important; margin-right: 0 !important; }
     [data-testid="stRadio"] [data-baseweb="radio"] svg { display: none !important; }
@@ -215,11 +246,15 @@ def _diz_txt(texte, couleur="#333333", taille="0.95rem", gras=False, centre=Fals
 MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
            "août", "septembre", "octobre", "novembre", "décembre"]
 
+# Versions CLAIRES des couleurs de chapelets : les couleurs fortes (fond sombre
+# du site) étaient illisibles en titre — leçon v6.1 (constat terrain).
+COULEURS_CLAIRES = {"joyeux": "#FF80AB", "lumineux": "#9FA8DA",
+                    "douloureux": "#F48FB1", "glorieux": "#A5D6A7"}
+
 
 def _rendre_intro_eyquem(titre_carte="INTRODUCTION"):
     """Carte de la prière à la Vierge du Père Eyquem ([R]→rouge centré gras,
-    [I]→italique centré). Utilisée par le LIVRE (page intro3) et par la page
-    « Rosaire selon l'esprit du Père Eyquem » (facteur, un seul rendu)."""
+    [I]→italique centré). Utilisée par le LIVRE (intro3) et la page Rosaire."""
     texte = DIZ_INTRO3
     t_esc = html.escape(texte)
     t_esc = t_esc.replace("[R]", '</div><div style="color:#D32F2F; font-size:0.95rem; font-weight:bold; text-align:center; line-height:1.7; margin:8px 0;">')
@@ -298,9 +333,19 @@ def _render_page_en_preparation(emoji, titre, description):
         + html.escape(description) + "</div></div>", unsafe_allow_html=True)
 
 
+GROUPES_CHAPELETS = [
+    ("Joyeux", 1, 5, "Annoncé, né, présenté, retrouvé — la vie cachée et la lumière de l’enfance"),
+    ("Lumineux", 6, 10, "Le Baptême, Cana, l’annonce du Royaume, la Transfiguration, l’Eucharistie"),
+    ("Douloureux", 11, 15, "L’agonie, la flagellation, le couronnement d’épines, le portement de croix, la mort sur la croix"),
+    ("Glorieux", 16, 20, "La Résurrection, l’Ascension, la Pentecôte, l’Assomption, le Couronnement de Marie"),
+]
+
+
 def _render_page_rosaire_eyquem():
-    """📿 Rosaire → L'esprit du Père Eyquem : sa prière + les 20 mystères
-    en 4 chapelets (contenu réel issu de mysteres.py)."""
+    """📿 Rosaire → L'esprit du Père Eyquem : sa prière + les 20 mystères en
+    4 chapelets. v6.1 : coquilles corrigées (pluriel sans s : « Joyeux » ;
+    « Annoncé »), titres de chapelets en couleurs CLAIRES (lisibles sur fond
+    nuit), et chaque mystère CLIQUABLE (expander : passage + méditation)."""
     st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                 ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
                 ' border:2px solid #FFD700;">'
@@ -308,24 +353,28 @@ def _render_page_rosaire_eyquem():
                 '<div style="color:#e8eaf6; font-size:0.9rem; margin-top:6px;">Quatre chapelets, vingt mystères — la prière du fondateur des Équipes du Rosaire</div></div>',
                 unsafe_allow_html=True)
     st.markdown(_rendre_intro_eyquem("PRIÈRE À LA VIERGE — Frère Joseph EYQUEM, o.p."), unsafe_allow_html=True)
-    groupes = [("Joyeux", 1, 5, " Annuncié, né, présenté, retrouvé — la vie cachée et la lumière de l’enfance"),
-               ("Lumineux", 6, 10, " Le Baptême, Cana, l’annonce du Royaume, la Transfiguration, l’Eucharistie"),
-               ("Douloureux", 11, 15, " L’agonie, la flagellation, le couronnement, le portement, la mort"),
-               ("Glorieux", 16, 20, " La Résurrection, l’Ascension, la Pentecôte, l’Assomption, le Couronnement")]
-    for nom_type, debut, fin, resume in groupes:
-        couleur = COULEURS_TYPES.get(nom_type.lower(), "#9E9E9E")
-        lignes = ""
-        for m in MYSTERES:
-            if debut <= m["id"] <= fin:
-                lignes += ('<div style="display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.08);">'
-                           '<div style="width:34px; height:34px; border-radius:50%; background:' + couleur + '; color:#ffffff; font-weight:bold; display:flex; align-items:center; justify-content:center; flex-shrink:0;">' + str(m["id"]).zfill(2) + "</div>"
-                           '<div style="text-align:left;"><div style="color:#e8eaf6; font-weight:bold; font-size:0.95rem;">' + html.escape(m["titre"].title()) + "</div>"
-                           '<div style="color:#9fa6d8; font-size:0.8rem;">📖 ' + html.escape(m["reference"]) + "</div></div></div>")
+
+    for nom_type, debut, fin, resume in GROUPES_CHAPELETS:
+        couleur_forte = COULEURS_TYPES.get(nom_type.lower(), "#9E9E9E")
+        couleur_claire = COULEURS_CLAIRES.get(nom_type.lower(), "#e8eaf6")
         st.markdown(
-            '<div style="background:#121a45; border-radius:15px; margin:10px; padding:16px 20px; border:1px solid #27306b;">'
-            '<div style="color:' + couleur + '; font-weight:bold; font-size:1.05rem;">✝️ Mystères ' + nom_type + "s</div>"
-            '<div style="color:#9fa6d8; font-size:0.82rem; margin-bottom:8px;">' + html.escape(resume) + "</div>"
-            + lignes + "</div>", unsafe_allow_html=True)
+            '<div style="background:#121a45; border-radius:15px; margin:10px 10px 4px 10px; padding:14px 20px; border:1px solid #27306b; border-left:6px solid ' + couleur_forte + ';">'
+            '<div style="color:' + couleur_claire + '; font-weight:bold; font-size:1.05rem;">✝️ Mystères ' + nom_type + "</div>"
+            '<div style="color:#9fa6d8; font-size:0.82rem; margin-top:2px;">' + html.escape(resume) + "</div>"
+            '<div style="color:#9fa6d8; font-size:0.78rem; font-style:italic; margin-top:4px;">👆 Touchez un mystère pour lire passage et méditation</div>'
+            "</div>", unsafe_allow_html=True)
+        for m in MYSTERES:
+            if not (debut <= m["id"] <= fin):
+                continue
+            with st.expander(f'{m["id"]:02d} — {m["titre"].title()}  ·  {m["reference"]}'):
+                passage_html = html.escape(m["passage"]).replace("\n", "<br>")
+                medit_html = html.escape(m["meditation"]).replace("\n", "<br>")
+                st.markdown(
+                    '<div style="color:' + couleur_claire + '; font-weight:bold; font-size:0.9rem;">📖 PASSAGE</div>'
+                    '<div style="color:#e8eaf6; font-size:0.92rem; line-height:1.7; margin:6px 0 14px 0;">' + passage_html + "</div>"
+                    '<div style="color:' + couleur_claire + '; font-weight:bold; font-size:0.9rem;">🕯️ MÉDITATION</div>'
+                    '<div style="color:#e8eaf6; font-size:0.92rem; line-height:1.7; margin-top:6px;">' + medit_html + "</div>",
+                    unsafe_allow_html=True)
     st.info("📿 Chaque jour, la dizaine à méditer vous attend en haut de cette page — "
             "chaque membre fait avancer la chaîne selon son numéro.")
 
@@ -347,7 +396,7 @@ def _render_page_rosaire_theme():
     manquants = 0
     for m in MYSTERES:
         lien = get_lien_mystere(annee_debut, m["id"])
-        couleur = COULEURS_TYPES.get((m["type"] or "").lower(), "#9E9E9E")
+        couleur = COULEURS_CLAIRES.get((m["type"] or "").lower(), "#e8eaf6")
         if lien:
             corps_lien = ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:10px 14px; margin-top:8px;">'
                           '<div style="color:#1A237E; font-weight:bold; font-size:0.85rem;">🔗 Lien thématique</div>'
@@ -368,7 +417,8 @@ def _render_page_rosaire_theme():
 
 
 def _render_page_archives_textes(type_contenu, message_vide):
-    """Archives Prières / Méditations (ex-onglets, en page pleine)."""
+    """Archives Prières / Méditations. v6.1 : photo rendue avec le MÊME moteur
+    HTML que le fil d'accueil (homogénéité PC/mobile/accueil/archives)."""
     lignes = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
                           WHERE type_contenu=? ORDER BY date_publication DESC, id DESC""",
                        (type_contenu,)).fetchall()
@@ -381,7 +431,7 @@ def _render_page_archives_textes(type_contenu, message_vide):
             if not url_pdf:
                 texte, url_pdf = _extraire_pdf_legacy(texte)
             if p[2] and p[2].startswith("http"):
-                st.image(p[2], use_container_width=True)
+                st.markdown(_img_html(p[2]), unsafe_allow_html=True)
             if texte:
                 st.markdown(texte, unsafe_allow_html=True)
             if url_pdf:
@@ -405,7 +455,7 @@ def _render_page_archives_audios():
 
 
 def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
-    """La dizaine du jour (v4/v5 validée : pavé numérique, carte une pièce,
+    """La dizaine du jour (v4/v5/v6 validée : pavé numérique, carte une pièce,
     livre plein écran, badge lien thématique sur la page Contenu)."""
     st.markdown("---")
 
@@ -700,8 +750,7 @@ def _render_fil_actualites():
             texte, url_pdf = _extraire_pdf_legacy(texte)
 
         texte_html = texte.replace("\n", "<br>")
-        img_html = (f'<img src="{dernier[3]}" alt="Contenu" style="border-radius:12px; width:100%; height:auto; display:block; margin-bottom:15px;">'
-                    if dernier[3] else "")
+        img_html = _img_html(dernier[3], "15px") if dernier[3] else ""
         st.markdown(
             f'<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35);">'
             f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{etiquette} — {html.escape(dernier[1])}</div>'
@@ -735,7 +784,10 @@ def _enregistrer_presence(membre_id, evt_id, choix):
 # ====================================================================
 def show_espace_membre(matloc_membre=None):
     livre_ouvert = st.session_state.get("diz_ouvert", False)
-    _render_theme(compact=livre_ouvert)
+
+    # v6.1 : nombre RÉEL de bandes → padding dynamique (menu jamais caché)
+    nb_bandes = 0 if livre_ouvert else _compter_bandes(membre=bool(matloc_membre))
+    _render_theme(bandes=nb_bandes, compact=livre_ouvert)
 
     # Compteur : 1 visite = 1 session (option A validée)
     if "visite_communaute" not in st.session_state:
