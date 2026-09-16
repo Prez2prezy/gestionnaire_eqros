@@ -1,5 +1,3 @@
-view_espace_membre.py
-
 import os
 import re
 import html
