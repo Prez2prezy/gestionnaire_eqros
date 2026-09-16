@@ -1,7 +1,8 @@
 # ====================================================================
-# view_espace_membre.py — VERSION 7 (passe d'amélioration complète)
-# Vérification de version : Ctrl+F → "VERSION 7", "_mesure_entete",
-# "COULEURS_CLAIRES", "GROUPES_CHAPELETS", "Annoncé" (et NON "Annuncié").
+# view_espace_membre.py — VERSION 7.1
+# v7.1 : menu en BOUTONS natifs (rubrique active violette, fiable tous
+# navigateurs) + écart entête/menu réduit (+2px sous les bandes).
+# Vérification de version : Ctrl+F → "VERSION 7.1", "_menu_navigation".
 # ====================================================================
 import os
 import re
@@ -25,6 +26,50 @@ SOUS_RUBRIQUES = {
     "📿 Rosaire": ["L'esprit du Père Eyquem", "Le thème de l'année"],
     "📖 Archives": ["🙏 Prières", "📖 Méditations", "🎵 Musiques"],
 }
+
+
+def _menu_navigation(rubriques, prefixe):
+    """v7.1 — Menu en BOUTONS natifs (remplace les radios « coches »).
+    Bouton actif = primary (violet), inactifs = secondary (bleu nuit) :
+    coloration fiable SANS sélecteur CSS moderne. Gère lui-même les
+    sous-rubriques. Retourne (rubrique, sous_rubrique)."""
+    # État courant (pur état applicatif : aucune clé de widget en conflit)
+    if st.session_state.get("nav_rub") not in rubriques:
+        st.session_state["nav_rub"] = rubriques[0]
+
+    # ---- Rangée des RUBRIQUES ----
+    cols = st.columns(len(rubriques), gap="small")
+    clic = None
+    for i, (col, r) in enumerate(zip(cols, rubriques)):
+        with col:
+            actif = (st.session_state["nav_rub"] == r)
+            if st.button(r, key=f"navr_{prefixe}_{i}", use_container_width=True,
+                         type="primary" if actif else "secondary"):
+                clic = r
+    if clic and clic != st.session_state["nav_rub"]:
+        st.session_state["nav_rub"] = clic
+        st.session_state.pop("nav_sub", None)  # reset sous-rubrique
+        st.rerun()
+
+    # ---- Rangée des SOUS-RUBRIQUES (si la rubrique en possède) ----
+    sub = None
+    sous = SOUS_RUBRIQUES.get(st.session_state["nav_rub"])
+    if sous:
+        if st.session_state.get("nav_sub") not in sous:
+            st.session_state["nav_sub"] = sous[0]
+        cols2 = st.columns(len(sous), gap="small")
+        clic2 = None
+        for i, (col, s) in enumerate(zip(cols2, sous)):
+            with col:
+                actif2 = (st.session_state["nav_sub"] == s)
+                if st.button(s, key=f"navs_{prefixe}_{i}", use_container_width=True,
+                             type="primary" if actif2 else "secondary"):
+                    clic2 = s
+        if clic2 and clic2 != st.session_state["nav_sub"]:
+            st.session_state["nav_sub"] = clic2
+            st.rerun()
+        sub = st.session_state["nav_sub"]
+    return st.session_state["nav_rub"], sub
 
 
 # ====================================================================
@@ -70,8 +115,7 @@ def _scroll_vers_contenu():
 
 
 def _compter_bandes(membre=False):
-    """Compte les bandes défilantes RÉELLEMENT affichées (clé de re-mesure :
-    quand le nombre change, l'entête change de hauteur → on re-mesure)."""
+    """Compte les bandes défilantes RÉELLEMENT affichées (clé de re-mesure)."""
     try:
         bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
                               WHERE type_contenu='annonce_defilante'
@@ -89,14 +133,13 @@ def _compter_bandes(membre=False):
 
 
 def _mesure_entete(cle):
-    """AMÉLIORATION v7 n°1 — Fini les paddings devinés : un script MESURE la
-    hauteur réelle de l'entête (logo + badge + bandes) et pousse le contenu
-    exactement dessous (style inline !important, qui bat toute feuille CSS).
-    La clé change quand le nombre de bandes change → re-mesure automatique."""
+    """MESURE la hauteur réelle de l'entête et pousse le contenu juste dessous.
+    v7.1 : +2px (au lieu de +8) → écart réduit entre bandes et menu, comme
+    demandé. La clé change quand le nombre de bandes change → re-mesure."""
     script = (
         "<script>(function(){var a=function(){try{var d=window.parent.document;"
         "var h=d.querySelector('.sticky-header');var b=d.querySelector('.block-container');"
-        "if(h&&b){b.style.setProperty('padding-top',(h.offsetHeight+8)+'px','important');}}"
+        "if(h&&b){b.style.setProperty('padding-top',(h.offsetHeight+2)+'px','important');}}"
         "catch(e){}};a();window.parent.addEventListener('resize',a);})();</script>")
     try:
         _comp_html(script, height=0, key=f"mesure_{cle}")
@@ -105,8 +148,8 @@ def _mesure_entete(cle):
 
 
 def _render_theme(compact=False):
-    """CSS de l'espace. v7 : padding-top = MESURÉ par _mesure_entete() ; le
-    CSS garde une valeur de SECOURS le temps du premier dessin.
+    """CSS de l'espace. v7.1 : bloc des radios « coches » retiré (menu en
+    boutons natifs). Valeurs de secours padding le temps du premier dessin.
     CSS construit par CONCATÉNATION (jamais de f-string : accolades)."""
     if compact:
         secours_1, secours_2, secours_3 = 260, 240, 230
@@ -143,11 +186,6 @@ def _render_theme(compact=False):
     [data-testid="stPopover"] button:hover { background-color: #5e35b1 !important; }
     [data-testid="stNumberInput"] { max-width: 220px !important; margin-left: auto !important; margin-right: auto !important; }
     [data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] { display: none !important; }
-    [data-testid="stRadio"] [role="radiogroup"] { flex-wrap: wrap !important; gap: 8px !important; }
-    [data-testid="stRadio"] [data-baseweb="radio"] { background-color: #1a2150 !important; border: 1px solid #2a3160 !important; border-radius: 20px !important; padding: 6px 14px !important; margin-right: 0 !important; }
-    [data-testid="stRadio"] [data-baseweb="radio"] svg { display: none !important; }
-    [data-testid="stRadio"] [data-baseweb="radio"] div { color: #e8eaf6 !important; font-weight: 600 !important; }
-    [data-testid="stRadio"] [data-baseweb="radio"]:has(input:checked) { background-color: #4527a0 !important; border-color: #5e35b1 !important; }
     .sticky-header { position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
         background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px 0 16px; }
     .header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; }
@@ -249,17 +287,15 @@ def _diz_txt(texte, couleur="#333333", taille="0.95rem", gras=False, centre=Fals
 MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
            "août", "septembre", "octobre", "novembre", "décembre"]
 
-# AMÉLIORATION v7 n°4 : versions CLAIRES des couleurs de chapelets — les
-# couleurs fortes (rose vif, bordeaux) sont illisibles en TITRE sur fond nuit.
-# Les couleurs fortes restent utilisées pour les bordures/en-têtes de pages.
+# Couleurs CLAIRES pour titres sur fond nuit ; les fortes restent pour les
+# bordures / en-têtes du livre.
 COULEURS_CLAIRES = {"joyeux": "#FF80AB", "lumineux": "#9FA8DA",
                     "douloureux": "#F48FB1", "glorieux": "#A5D6A7"}
 
 
 def _rendre_intro_eyquem(titre_carte="INTRODUCTION"):
-    """Carte de la prière du Père Eyquem. AMÉLIORATION v7 n°2 : couleurs
-    critiques en !important INLINE (le CSS global du site écrase sinon le
-    noir → illisible sur fond jaune). [R]→rouge centré gras, [I]→italique."""
+    """Carte de la prière du Père Eyquem. Couleurs critiques en !important
+    INLINE (le CSS global écrase sinon le noir → illisible sur jaune)."""
     texte = DIZ_INTRO3
     t_esc = html.escape(texte)
     t_esc = t_esc.replace("[R]", '</div><div style="color:#D32F2F !important; font-size:0.98rem; font-weight:bold; text-align:center; line-height:1.7; margin:8px 0;">')
@@ -338,8 +374,6 @@ def _render_page_en_preparation(emoji, titre, description):
         + html.escape(description) + "</div></div>", unsafe_allow_html=True)
 
 
-# AMÉLIORATION v7 n°3 : résumés corrigés (« Annoncé » et non « Annuncié ») ;
-# « Joyeux » est invariable en français → jamais de s ajouté en code.
 GROUPES_CHAPELETS = [
     ("Joyeux", 1, 5, "Annoncé, né, présenté, retrouvé — la vie cachée et la lumière de l’enfance"),
     ("Lumineux", 6, 10, "Le Baptême, Cana, l’annonce du Royaume, la Transfiguration, l’Eucharistie"),
@@ -349,9 +383,8 @@ GROUPES_CHAPELETS = [
 
 
 def _render_page_rosaire_eyquem():
-    """📿 Rosaire → L'esprit du Père Eyquem. AMÉLIORATION v7 n°5 : chaque
-    mystère est CLIQUABLE (expander → PASSAGE + MÉDITATION en blanc lisible).
-    Titres de chapelets en couleurs claires (n°4), tout en !important (n°2)."""
+    """📿 Rosaire → L'esprit du Père Eyquem : prière + 4 chapelets ; chaque
+    mystère CLIQUABLE (expander → PASSAGE + MÉDITATION en blanc)."""
     st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                 ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
                 ' border:2px solid #FFD700;">'
@@ -386,8 +419,7 @@ def _render_page_rosaire_eyquem():
 
 
 def _render_page_rosaire_theme():
-    """📿 Rosaire → Le thème de l'année : les 20 mystères avec leur lien
-    thématique saisi par le diocèse (consultation ET relecture)."""
+    """📿 Rosaire → Le thème de l'année : les 20 mystères avec leur lien."""
     theme = get_theme_actif()
     if not theme:
         st.info("🕯️ Aucun thème pastoral n'est actuellement actif.")
@@ -423,9 +455,8 @@ def _render_page_rosaire_theme():
 
 
 def _render_page_archives_textes(type_contenu, message_vide):
-    """Archives Prières / Méditations. AMÉLIORATION v7 n°6 : photo en WIDGET
-    NATIF st.image — un SEUL moteur photo dans toute l'app (le moteur HTML
-    rendait les photos minuscules et différentes entre accueil et archives)."""
+    """Archives Prières / Méditations. Photo en WIDGET NATIF st.image
+    (un seul moteur photo dans toute l'app)."""
     lignes = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
                           WHERE type_contenu=? ORDER BY date_publication DESC, id DESC""",
                        (type_contenu,)).fetchall()
@@ -466,9 +497,7 @@ def _render_page_archives_audios():
 
 def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
     """La dizaine du jour (pavé numérique, carte une pièce, livre plein écran,
-    badge lien thématique). AMÉLIORATION v7 n°7 : saisie en COLONNES FANTÔMES
-    (retrait symétrique du champ et du ✅ dans la carte — méthode compatible
-    tous navigateurs, contrairement aux sélecteurs CSS récents)."""
+    badge lien thématique). Saisie en colonnes fantômes (retrait du ✅)."""
     st.markdown("---")
 
     st.session_state.pop("nettoyage_diz", None)
@@ -500,7 +529,6 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                         'Entrez ici votre jour de naissance (1 - 31) et rejoignez la chaîne de prière</div></div>',
                         unsafe_allow_html=True)
 
-            # Colonnes fantômes : vide | champ | ✅ | vide (retrait symétrique)
             _, c_saisie, c_btn, _ = st.columns([0.07, 4.5, 1.2, 0.07],
                                                gap="small", vertical_alignment="bottom")
             with c_saisie:
@@ -751,8 +779,7 @@ def _render_coin_affiche():
 
 
 def _render_fil_actualites():
-    """AMÉLIORATION v7 n°6 : photo en WIDGET NATIF st.image (pleine largeur)
-    PUIS la carte titre+texte. Même moteur photo que les Archives."""
+    """Photo en WIDGET NATIF st.image (pleine largeur) PUIS carte titre+texte."""
     dernier = c.execute("""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
                            FROM espace_spirituel
                            WHERE type_contenu IN ('priere', 'meditation')
@@ -806,7 +833,7 @@ def show_espace_membre(matloc_membre=None):
     livre_ouvert = st.session_state.get("diz_ouvert", False)
 
     _render_theme(compact=livre_ouvert)
-    # AMÉLIORATION v7 n°1 : MESURE réelle de l'entête (fini le menu caché)
+    # MESURE réelle de l'entête (fini le menu caché) — écart réduit v7.1
     nb_bandes = 0 if livre_ouvert else _compter_bandes(membre=bool(matloc_membre))
     _mesure_entete(nb_bandes)
 
@@ -830,19 +857,8 @@ def show_espace_membre(matloc_membre=None):
             _render_dizaine_du_jour(est_membre=False)
             return
 
-        # ---- MENU (rubriques) ----
-        rubriques = RUBRIQUES_PUBLIC
-        if st.session_state.get("nav_rub") not in rubriques:
-            st.session_state.pop("nav_rub", None)
-        rub = st.radio("Navigation", options=rubriques, key="nav_rub",
-                       horizontal=True, label_visibility="collapsed")
-        sous = SOUS_RUBRIQUES.get(rub)
-        sub = None
-        if sous:
-            if st.session_state.get("nav_sub") not in sous:
-                st.session_state.pop("nav_sub", None)
-            sub = st.radio("Sous-section", options=sous, key="nav_sub",
-                           horizontal=True, label_visibility="collapsed")
+        # ---- MENU en BOUTONS (v7.1) ----
+        rub, sub = _menu_navigation(RUBRIQUES_PUBLIC, "pub")
 
         nav_now = rub + "|" + (sub or "")
         doit_scroller = (st.session_state.get("nav_last", "") != nav_now
@@ -918,19 +934,8 @@ def show_espace_membre(matloc_membre=None):
         _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
         return
 
-    # ---- MENU (rubriques — membre : + Mes évènements) ----
-    rubriques = RUBRIQUES_MEMBRE
-    if st.session_state.get("nav_rub") not in rubriques:
-        st.session_state.pop("nav_rub", None)
-    rub = st.radio("Navigation", options=rubriques, key="nav_rub",
-                   horizontal=True, label_visibility="collapsed")
-    sous = SOUS_RUBRIQUES.get(rub)
-    sub = None
-    if sous:
-        if st.session_state.get("nav_sub") not in sous:
-            st.session_state.pop("nav_sub", None)
-        sub = st.radio("Sous-section", options=sous, key="nav_sub",
-                       horizontal=True, label_visibility="collapsed")
+    # ---- MENU en BOUTONS (v7.1 — membre : + Mes évènements) ----
+    rub, sub = _menu_navigation(RUBRIQUES_MEMBRE, "mem")
 
     nav_now = rub + "|" + (sub or "")
     doit_scroller = (st.session_state.get("nav_last", "") != nav_now
