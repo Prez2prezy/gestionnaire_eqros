@@ -30,93 +30,34 @@ SOUS_RUBRIQUES = {
 }
 
 
-def _normaliser_nav(rubriques):
-    """Garantit que nav_rub/nav_sub sont valides pour CET espace."""
-    if st.session_state.get("nav_rub") not in rubriques:
-        st.session_state["nav_rub"] = rubriques[0]
-        st.session_state.pop("nav_sub", None)
-    sous = SOUS_RUBRIQUES.get(st.session_state["nav_rub"])
-    if sous:
-        if st.session_state.get("nav_sub") not in sous:
-            st.session_state["nav_sub"] = sous[0]
-    elif st.session_state.get("nav_sub"):
-        st.session_state.pop("nav_sub", None)
-
-
-def _brancher_menu(cpt):
-    """v7.4b — Pont entête→natifs À L'ÉPREUVE DU TIMING : Streamlit monte
-    ses éléments de façon asynchrone — l'ancien script courait avant que
-    les natifs soient posés, ne cachait rien, ne branchait rien (l'ancien
-    menu restait visible et seul fonctionnel). Désormais : RETENTATIVES
-    toutes les 120 ms (max ~7 s) jusqu'à ce que CHAQUE bouton de l'entête
-    ait trouvé son natif — caché ET branché en même temps. Les natifs
-    marqués data-branche ne reçoivent jamais deux listeners. Clé changeante
-    (cpt) → après chaque re-rendu, les natifs recréés sont re-cachés.
-    Filet de sécurité : si le pont échouait, les natifs restent visibles
-    et fonctionnels (jamais sans menu)."""
-    script = (
-        "<script>(function(){var d=window.parent.document;var essais=0;"
-        "var t=setInterval(function(){essais++;"
-        "var hs=d.querySelectorAll('.sticky-header .menu-btn');"
-        "var nat=d.querySelectorAll('button');var trouves=0;"
-        "for(var j=0;j<hs.length;j++){"
-        "for(var i=0;i<nat.length;i++){"
-        "if(nat[i].textContent.trim()===hs[j].textContent.trim()){"
-        "var el=nat[i];"
-        "while(el&&el!==d.body&&el.getAttribute&&el.getAttribute('data-testid')!=='stElementContainer'){el=el.parentElement;}"
-        "if(el&&el!==d.body){el.style.display='none';}"
-        "if(!nat[i].getAttribute('data-branche')){"
-        "nat[i].setAttribute('data-branche','1');"
-        "(function(btn){hs[j].addEventListener('click',function(){btn.click();});})(nat[i]);"
-        "}"
-        "trouves++;break;}}"
-        "}"
-        "if(hs.length>0&&trouves===hs.length){clearInterval(t);}"
-        "else if(essais>60){clearInterval(t);}"
-        "},120);})();</script>")
+def _lire_nav(rubriques):
+    """v7.5 — rubrique/sous-rubrique lues dans l'URL (?r=..&s=..).
+    Navigation par LIENS HTML purs : aucun pont JS, aucun timing, les clics
+    fonctionnent toujours. Fini les boutons natifs cachés (double menu)."""
+    rub = rubriques[0]
     try:
-        _comp_html(script, height=0, key=f"branche_{cpt}")
-    except Exception:
+        i = int(str(st.query_params.get("r", "")))
+        if 0 <= i < len(rubriques):
+            rub = rubriques[i]
+    except (ValueError, TypeError):
         pass
-
-def _menu_natif(rubriques, prefixe):
-    """v7.4 — Les VRAIS boutons du menu (natifs : clic fiable, session,
-    sous-rubriques, mémorisation) rendus ici puis CACHÉS par _brancher_menu.
-    Les boutons visibles sont ceux de l'entête (HTML)."""
-    st.session_state["nav_cpt"] = st.session_state.get("nav_cpt", 0) + 1
-
-    clic = None
-    cols = st.columns(len(rubriques), gap="small")
-    for i, (col, r) in enumerate(zip(cols, rubriques)):
-        with col:
-            if st.button(r, key=f"navr_{prefixe}_{i}", use_container_width=True,
-                         type="secondary"):
-                clic = r
-    if clic and clic != st.session_state["nav_rub"]:
-        st.session_state["nav_rub"] = clic
-        st.session_state.pop("nav_sub", None)
-        st.rerun()
-
-    sous = SOUS_RUBRIQUES.get(st.session_state["nav_rub"])
+    sous = SOUS_RUBRIQUES.get(rub)
+    sub = None
     if sous:
-        clic2 = None
-        cols2 = st.columns(len(sous), gap="small")
-        for i, (col, s) in enumerate(zip(cols2, sous)):
-            with col:
-                if st.button(s, key=f"navs_{prefixe}_{i}", use_container_width=True,
-                             type="secondary"):
-                    clic2 = s
-        if clic2 and clic2 != st.session_state["nav_sub"]:
-            st.session_state["nav_sub"] = clic2
-            st.rerun()
-
-    _brancher_menu(st.session_state["nav_cpt"])
-    return st.session_state["nav_rub"], st.session_state.get("nav_sub")
+        sub = sous[0]
+        try:
+            j = int(str(st.query_params.get("s", "")))
+            if 0 <= j < len(sous):
+                sub = sous[j]
+        except (ValueError, TypeError):
+            pass
+    return rub, sub
 
 
 # ====================================================================
 # HELPERS
 # ====================================================================
+
 @st.cache_data
 def _logo_base64():
     try:
@@ -145,17 +86,6 @@ def _scroll_top(cle):
     except Exception:
         pass
 
-
-def _scroll_vers_contenu():
-    """Après un clic dans le menu, fait défiler jusqu'au bloc « contenu »."""
-    try:
-        _comp_html(
-            "<script>window.parent.document.getElementById('ancre-rubrique').scrollIntoView({behavior:'smooth'});</script>",
-            height=0)
-    except Exception:
-        pass
-
-
 def _compter_bandes(membre=False):
     """Compte les bandes défilantes RÉELLEMENT affichées (clé de re-mesure)."""
     try:
@@ -175,10 +105,9 @@ def _compter_bandes(membre=False):
 
 
 def _mesure_entete(cle):
-    """v7.4c — mesure AUTOCORRIGÉE : le script revérifie toutes les 400 ms et
-    n'écrit que si la hauteur a vraiment changé. L'entête (logo + menu + bandes)
-    se dessine en PLUSIEURS fois : une mesure unique part trop tôt et le
-    contenu reste collé ou recouvert."""
+    """v7.5 — mesure AUTOCORRIGÉE : revérifie toutes les 400 ms, n'écrit que
+    si la hauteur a changé. L'entête (logo + menu + bandes) se dessine en
+    PLUSIEURS fois : une mesure unique part trop tôt."""
     script = (
         "<script>(function(){var d0=-1;var a=function(){try{"
         "var d=window.parent.document;var h=d.querySelector('.sticky-header');"
@@ -190,7 +119,6 @@ def _mesure_entete(cle):
         _comp_html(script, height=0, key=f"mesure_{cle}")
     except Exception:
         pass
-
 
 def _render_theme(compact=False):
     """CSS de l'espace. Padding-top MESURÉ par _mesure_entete() ; valeurs de
@@ -231,11 +159,29 @@ def _render_theme(compact=False):
     [data-testid="stPopover"] button:hover { background-color: #5e35b1 !important; }
     [data-testid="stNumberInput"] { max-width: 220px !important; margin-left: auto !important; margin-right: auto !important; }
     [data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] { display: none !important; }
-    .menu-row { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin:8px 10px 0 10px; }
-    .menu-row-sub { margin-top:6px; }
-    .menu-btn { background-color:#1a2150; color:#e8eaf6; border:1px solid #2a3160; border-radius:20px; padding:6px 12px; font-weight:600; font-size:0.85rem; cursor:pointer; white-space:nowrap; user-select:none; }
-    .menu-btn.actif { background-color:#4527a0; border-color:#5e35b1; color:#ffffff; }
-    .menu-btn:active { background-color:#5e35b1; }
+    .menu-ligne { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin:8px auto 0 auto; max-width:1200px; }
+    .menu-item { position:relative; }
+    .menu-lien { display:block; background-color:#1a2150; color:#e8eaf6; border:1px solid #2a3160; border-radius:20px; padding:6px 14px; font-weight:600; font-size:0.85rem; text-decoration:none; white-space:nowrap; cursor:pointer; }
+    .menu-item.actif .menu-lien { background-color:#4527a0; border-color:#5e35b1; color:#ffffff; }
+    .menu-item:hover .menu-lien { background-color:#5e35b1; color:#ffffff; }
+    .sous-ruban { display:none; position:absolute; top:100%; left:50%; transform:translateX(-50%); z-index:10001; background:#121a45; border:1px solid #27306b; border-radius:10px; padding:6px; min-width:210px; box-shadow:0 6px 18px rgba(0,0,0,0.5); }
+    .menu-item:hover .sous-ruban { display:flex; flex-direction:column; gap:4px; }
+    .menu-sub { display:block; background:#1a2150; color:#e8eaf6; border:1px solid #2a3160; border-radius:14px; padding:6px 12px; font-size:0.82rem; font-weight:600; text-decoration:none; white-space:nowrap; }
+    .menu-sub.actif { background:#4527a0; border-color:#5e35b1; color:#ffffff; }
+    .menu-sub:hover { background:#5e35b1; color:#ffffff; }
+    .menu-mobile { display:none; }
+    @media (max-width:640px) {
+        .menu-ligne { display:none; }
+        .menu-mobile { display:block; position:relative; margin:6px auto 0 auto; width:fit-content; }
+        .menu-mobile summary { list-style:none; background:#4527a0; color:#ffffff; border:1px solid #5e35b1; border-radius:20px; padding:6px 22px; font-size:1.1rem; font-weight:bold; cursor:pointer; }
+        .menu-mobile summary::-webkit-details-marker { display:none; }
+        .menu-mobile[open] summary { background:#5e35b1; }
+        .mob-panneau { position:absolute; top:calc(100% + 6px); left:50%; transform:translateX(-50%); width:250px; max-height:60vh; overflow-y:auto; background:#121a45; border:1px solid #27306b; border-radius:12px; padding:8px; z-index:10001; box-shadow:0 6px 18px rgba(0,0,0,0.5); display:flex; flex-direction:column; gap:4px; }
+        .mob-lien { display:block; background:#1a2150; color:#e8eaf6; border:1px solid #2a3160; border-radius:14px; padding:8px 12px; font-weight:600; font-size:0.9rem; text-decoration:none; }
+        .mob-lien.actif { background:#4527a0; border-color:#5e35b1; color:#ffffff; }
+        .mob-sous { display:block; color:#c7cdf5; padding:4px 10px 4px 22px; font-size:0.85rem; text-decoration:none; }
+        .mob-sous.actif { color:#ffe082; font-weight:700; }
+    }
     .sticky-header { position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
         background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px 0 16px; }
     .header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; }
@@ -288,10 +234,12 @@ def _bandes_defilantes_html(membre=False):
     return "".join(morceaux)
 
 
-def _render_header(membre=None, matloc=None, masquer_bandes=False, rubriques=None):
-    """Entête FIGÉE — v7.4 : le menu (rubriques + sous-rubriques) est dessiné
-    DANS le bloc fixe, entre la rangée logo/badge et les bandes (Option A).
-    Les états actifs (violets) viennent de la session. UNE seule chaîne HTML."""
+def _render_header(membre=None, matloc=None, masquer_bandes=False,
+                   rubriques=None, rub_act=None, sub_act=None):
+    """Entête FIGÉE — v7.5 : menu en LIENS HTML purs (zéro JS).
+    PC : ligne de rubriques + ruban de sous-rubriques au survol (:hover CSS).
+    Mobile : bouton ☰ en <details> HTML natif, déroulé par-dessus le contenu.
+    Le livre ouvert masque tout le menu (plein écran de prière)."""
     logo_b64 = _logo_base64()
     logo_html = (f'<img src="data:image/png;base64,{logo_b64}" alt="Logo">'
                  if logo_b64 else '<div style="font-size:4rem;">📿</div>')
@@ -310,27 +258,45 @@ def _render_header(membre=None, matloc=None, masquer_bandes=False, rubriques=Non
 
     menu_html = ""
     if rubriques:
-        rub_actif = st.session_state.get("nav_rub")
-        items = "".join(
-            '<div class="menu-btn' + (' actif' if r == rub_actif else '') + '">' + r + "</div>"
-            for r in rubriques)
-        menu_html = '<div class="menu-row">' + items + "</div>"
-        sous = SOUS_RUBRIQUES.get(rub_actif)
-        if sous:
-            sub_actif = st.session_state.get("nav_sub")
-            sitems = "".join(
-                '<div class="menu-btn' + (' actif' if s == sub_actif else '') + '">' + s + "</div>"
-                for s in sous)
-            menu_html += '<div class="menu-row menu-row-sub">' + sitems + "</div>"
+        base = "?espace=1"
+        if matloc:
+            base += "&matloc=" + str(matloc)
+        items = []
+        for i, r in enumerate(rubriques):
+            href_r = base + "&nav=1&r=" + str(i)
+            sous = SOUS_RUBRIQUES.get(r)
+            ruban = ""
+            if sous:
+                sitems = ""
+                for k, s in enumerate(sous):
+                    href_s = href_r + "&s=" + str(k)
+                    cls = "menu-sub" + (" actif" if (r == rub_act and s == sub_act) else "")
+                    sitems += '<a class="' + cls + '" href="' + href_s + '">' + s + "</a>"
+                ruban = '<div class="sous-ruban">' + sitems + "</div>"
+            cls_lien = "menu-lien"
+            cls_item = "menu-item" + (" actif" if r == rub_act else "")
+            items.append('<div class="' + cls_item + '"><a class="' + cls_lien + '" href="' + href_r + '">' + r + "</a>" + ruban + "</div>")
+        menu_html = '<div class="menu-ligne">' + "".join(items) + "</div>"
+        mitems = []
+        for i, r in enumerate(rubriques):
+            href_r = base + "&nav=1&r=" + str(i)
+            mitems.append('<a class="mob-lien' + (" actif" if r == rub_act else "") + '" href="' + href_r + '">' + r + "</a>")
+            sous = SOUS_RUBRIQUES.get(r)
+            if sous:
+                for k, s in enumerate(sous):
+                    href_s = href_r + "&s=" + str(k)
+                    cls = "mob-sous" + (" actif" if (r == rub_act and s == sub_act) else "")
+                    mitems.append('<a class="' + cls + '" href="' + href_s + '">· ' + s + "</a>")
+        menu_html += ('<details class="menu-mobile"><summary>☰</summary>'
+                      '<div class="mob-panneau">' + "".join(mitems) + "</div></details>")
 
     bandes_html = "" if masquer_bandes else _bandes_defilantes_html(membre=bool(membre))
 
     st.markdown(
-        f'<div class="sticky-header"><div class="header-inner">'
-        f'<div class="logo-bloc">{logo_html}{titre_svg}</div>'
-        f'{droite}'
-        f'</div>{menu_html}{bandes_html}</div>', unsafe_allow_html=True)
-
+        '<div class="sticky-header"><div class="header-inner">'
+        '<div class="logo-bloc">' + logo_html + titre_svg + "</div>"
+        + droite + "</div>"
+        + menu_html + bandes_html + "</div>", unsafe_allow_html=True)
 
 # ====================================================================
 # MA DIZAINE AU QUOTIDIEN — portage web de l'application Android
@@ -916,29 +882,24 @@ def show_espace_membre(matloc_membre=None):
 
     # ================= ÉTAT 1 : VUE PUBLIQUE (Espace communautaire) =================
     if not matloc_membre:
-        _normaliser_nav(RUBRIQUES_PUBLIC)
-        _render_header(masquer_bandes=livre_ouvert, rubriques=(None if livre_ouvert else RUBRIQUES_PUBLIC))
+        # v7.5 : 1 visite = 1 ARRIVÉE (les navigations internes ont &nav=1)
+        if "nav" not in st.query_params and "visite_communaute" not in st.session_state:
+            st.session_state["visite_communaute"] = True
+            compter_visite("communautaire")
 
-        # Le LIVRE OUVERT reste une page autonome, quelle que soit la rubrique
+        rub, sub = _lire_nav(RUBRIQUES_PUBLIC)
+        _render_header(masquer_bandes=livre_ouvert,
+                       rubriques=(None if livre_ouvert else RUBRIQUES_PUBLIC),
+                       rub_act=rub, sub_act=sub)
+
         if livre_ouvert:
             _render_dizaine_du_jour(est_membre=False)
             return
 
-        # ---- Natifs cachés : pressés par les boutons de l'entête ----
-        rub, sub = _menu_natif(RUBRIQUES_PUBLIC, "pub")
-
-        nav_now = rub + "|" + (sub or "")
-        doit_scroller = (st.session_state.get("nav_last", "") != nav_now
-                         and st.session_state.get("nav_last", "") != "")
-        st.session_state["nav_last"] = nav_now
-
-        # ---- Carte de bienvenue communautaire ----
         st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                     '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
-                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · v7.4c</div></div>', unsafe_allow_html=True)
+                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · v7.5</div></div>', unsafe_allow_html=True)
 
-        # ---- Contenu de la rubrique choisie ----
-        st.markdown('<div id="ancre-rubrique" style="height:0;"></div>', unsafe_allow_html=True)
         if rub == "📿 Rosaire":
             if sub == "Le thème de l'année":
                 _render_page_rosaire_theme()
@@ -961,14 +922,10 @@ def show_espace_membre(matloc_membre=None):
             else:
                 _render_page_theme_ensemble()
         else:
-            # 🏠 Actualités (Accueil) : dizaine + fil + Coin Affiche
             _render_dizaine_du_jour(est_membre=False)
             if st.session_state.get("diz_ouvert"):
                 return
             _render_fil_actualites()
-
-        if doit_scroller:
-            _scroll_vers_contenu()
         return
 
     # ================= ÉTAT 2 : VUE MEMBRE =================
@@ -990,27 +947,19 @@ def show_espace_membre(matloc_membre=None):
         _render_fil_actualites()
         return
 
-    if "visite_membre" not in st.session_state:
+    if "nav" not in st.query_params and "visite_membre" not in st.session_state:
         st.session_state["visite_membre"] = True
         compter_visite("membre")
 
-    _normaliser_nav(RUBRIQUES_MEMBRE)
-    _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert, rubriques=(None if livre_ouvert else RUBRIQUES_MEMBRE))
+    rub, sub = _lire_nav(RUBRIQUES_MEMBRE)
+    _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert,
+                   rubriques=(None if livre_ouvert else RUBRIQUES_MEMBRE),
+                   rub_act=rub, sub_act=sub)
 
-    # Le LIVRE OUVERT reste une page autonome
     if livre_ouvert:
         _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
         return
 
-    # ---- Natifs cachés : pressés par les boutons de l'entête ----
-    rub, sub = _menu_natif(RUBRIQUES_MEMBRE, "mem")
-
-    nav_now = rub + "|" + (sub or "")
-    doit_scroller = (st.session_state.get("nav_last", "") != nav_now
-                     and st.session_state.get("nav_last", "") != "")
-    st.session_state["nav_last"] = nav_now
-
-    # ---- Profil (popover à gauche) + Carte Bienvenue centrée ----
     with st.popover("👤 Mon profil"):
         if membre[6]:
             try: st.image(membre[6], width=130)
@@ -1026,12 +975,9 @@ def show_espace_membre(matloc_membre=None):
 
     st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                 '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
-                '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · v7.4c</div></div>', unsafe_allow_html=True)
+                '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · v7.5</div></div>', unsafe_allow_html=True)
 
-    # ---- Contenu de la rubrique choisie ----
-    st.markdown('<div id="ancre-rubrique" style="height:0;"></div>', unsafe_allow_html=True)
     if rub == "📅 Mes évènements":
-        # --- RÈGLE 4 : périmètre ÉQUIPE uniquement ---
         if membre[10] is None:
             st.info("Vous n'êtes rattaché(e) à aucune équipe pour le moment.")
         else:
@@ -1108,11 +1054,7 @@ def show_espace_membre(matloc_membre=None):
             _render_page_theme_ensemble()
 
     else:
-        # 🏠 Actualités (Accueil) : dizaine + fil + Coin Affiche
         _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
         if st.session_state.get("diz_ouvert"):
             return
         _render_fil_actualites()
-
-    if doit_scroller:
-        _scroll_vers_contenu()
