@@ -4,9 +4,10 @@ import html
 import base64
 import streamlit as st
 from datetime import date
+from streamlit.components.v1 import html as _comp_html
 from database import c, commit_and_sync
 from services import safe_date, compter_visite
-from mysteres import get_mysteres_du_jour, COULEURS_TYPES
+from mysteres import get_mysteres_du_jour, COULEURS_TYPES, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere, get_mystere
 
 
 # ====================================================================
@@ -33,13 +34,33 @@ def _extraire_pdf_legacy(contenu):
     return DIV_PDF_RE.sub("", contenu).strip(), url
 
 
-def _render_theme(bandes=0):
-    """CSS de l'espace. Padding compensatoire DYNAMIQUE (40px/bande — estimation
-    majorée après constat terrain). Construit par CONCATÉNATION (jamais de
-    f-string avec du CSS : les accolades doublées ont causé des incidents)."""
+def _scroll_top(cle):
+    """Remet la vue en haut (sous l'entête) à chaque page du livre.
+    Streamlit garde la position de scroll entre les pages : ce mini-script
+    la remet à zéro. La clé change à chaque page → le composant est remonté
+    → le script rejoue. Clé identique → aucun effet (pas de saut intempestif)."""
+    try:
+        _comp_html("<script>window.parent.scrollTo(0, 0);</script>", height=0, key=f"scroll_{cle}")
+    except Exception:
+        pass
+
+
+def _render_theme(bandes=0, compact=False):
+    """CSS de l'espace. Padding compensatoire DYNAMIQUE (40px/bande).
+    compact=True (livre ouvert) : padding réduit → la page du livre commence
+    directement sous l'entête, sans scroll.
+    Construit par CONCATÉNATION (jamais de f-string avec du CSS : accolades).
+    Leçon v4 (terrain) : JAMAIS de st.container(border=True) pour les cartes
+    (recolorage non appliqué) → cartes en HTML pur, une seule pièce.
+    Leçon v4 (terrain) : bloc popover pleine largeur → width:fit-content pour
+    que margin:auto centre réellement le bouton."""
     extra = bandes * 40
+    if compact:
+        pad_1, pad_2, pad_3 = 100, 88, 80
+    else:
+        pad_1, pad_2, pad_3 = 200 + extra, 165 + extra, 155 + extra
     regle_contenu = (
-        ".block-container { padding-top: " + str(200 + extra)
+        ".block-container { padding-top: " + str(pad_1)
         + "px !important; padding-bottom: 4rem !important; max-width: 1050px !important; }"
     )
     st.markdown(
@@ -64,8 +85,11 @@ def _render_theme(bandes=0):
     .stButton > button[kind="primary"] { background-color: #4527a0 !important; border-color: #5e35b1 !important; color: #ffffff !important; }
     [data-testid="stAlert"] { background-color: #151b3d !important; }
     [data-testid="stAlert"] p { color: #e8eaf6 !important; }
-    .stApp [data-testid="stVerticalBlockBorderWrapper"] { background-color: #121a45 !important; border: 1px solid #27306b !important; }
-    [data-testid="stPopover"] { max-width: 220px !important; margin-left: auto !important; margin-right: auto !important; }
+    [data-testid="stPopover"] { width: fit-content !important; max-width: 260px !important; margin-left: auto !important; margin-right: auto !important; }
+    [data-testid="stPopover"] button { background-color: #4527a0 !important; color: #ffffff !important; border: 1px solid #5e35b1 !important; border-radius: 20px !important; font-weight: 600 !important; }
+    [data-testid="stPopover"] button:hover { background-color: #5e35b1 !important; }
+    [data-testid="stNumberInput"] { max-width: 220px !important; margin-left: auto !important; margin-right: auto !important; }
+    [data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] { display: none !important; }
     .sticky-header { position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
         background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px 0 16px; }
     .header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; }
@@ -85,15 +109,13 @@ def _render_theme(bandes=0):
     }
     @media (max-width: 640px) {
         .logo-bloc { width: 150px; }
-        .block-container { padding-top: """ + str(165 + extra) + """px !important; }
+        .block-container { padding-top: """ + str(pad_2) + """px !important; }
         [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
         [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { min-width: 0 !important; }
-        .diz-saisie input { max-width: 160px !important; }
-        .diz-valider button { max-width: 90px !important; padding-left: 8px !important; padding-right: 8px !important; }
     }
     @media (max-width: 360px) {
         .logo-bloc { width: 138px; }
-        .block-container { padding-top: """ + str(155 + extra) + """px !important; }
+        .block-container { padding-top: """ + str(pad_3) + """px !important; }
     }
     </style>""", unsafe_allow_html=True)
 
@@ -166,16 +188,72 @@ def _diz_txt(texte, couleur="#333333", taille="0.95rem", gras=False, centre=Fals
             f' text-align:{align}; line-height:1.7; margin:8px 0;">{txt_html}</div>')
 
 
+MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+           "août", "septembre", "octobre", "novembre", "décembre"]
+
+
+def _render_encart_theme():
+    """MISSION 2 — Sous-étape 2 : encart dépliable « Thème pastoral » (Option A
+    choisie par l'utilisateur). Présent dans les 2 espaces, TOUJOURS sous la
+    carte d'accueil, JAMAIS rendu quand le livre est ouvert.
+    SILENCIEUX si aucun thème actif (aucune ligne résiduelle).
+    Contenu : thème actif + mystère principal + sous-thème du mois + feuillet.
+    Le st.markdown est UNE SEULE chaîne concaténée (règle anti-code-visible)."""
+    theme = get_theme_actif()
+    if not theme:
+        return
+    texte_theme, mystere_principal, annee_debut = theme
+    libelle = ("🕯️ Thème pastoral " + str(annee_debut) + " - " + str(annee_debut + 1)
+               + " — cliquez pour découvrir")
+
+    # Mystère principal (facultatif dans l'interface diocèse)
+    ligne_mystere = ""
+    try:
+        mm = get_mystere(int(mystere_principal)) if mystere_principal else None
+    except (ValueError, TypeError):
+        mm = None
+    if mm:
+        ligne_mystere = ('<div style="color:#b39ddb; font-size:0.85rem; margin-top:8px;">'
+                         "📿 Mystère principal : N°" + str(mm["id"]) + " — "
+                         + html.escape(mm["titre"].title()) + "</div>")
+
+    # Sous-thème du mois courant (facultatif) + feuillet PDF éventuel
+    bloc_sous = ""
+    feuillet = None
+    mois_courant = date.today().month
+    sous = get_sous_theme_du_mois(annee_debut, mois_courant)
+    if sous:
+        titre_st, contenu_st, feuillet = sous
+        contenu_html = html.escape(contenu_st or "").replace("\n", "<br>")
+        bloc_sous = ('<div style="border-top:1px solid #27306b; margin-top:14px; padding-top:12px; text-align:left;">'
+                     '<div style="color:#ffe082; font-weight:bold; font-size:0.95rem;">📅 Sous-thème de '
+                     + MOIS_FR[mois_courant - 1] + " : " + html.escape(titre_st or "") + "</div>"
+                     + ('<div style="color:#e8eaf6; font-size:0.9rem; line-height:1.7; margin-top:6px;">'
+                        + contenu_html + "</div>" if contenu_html else "")
+                     + "</div>")
+
+    with st.expander(libelle):
+        st.markdown(
+            '<div style="text-align:center;">'
+            '<div style="color:#FFD700; font-size:1.15rem; font-weight:bold; line-height:1.5;">« '
+            + html.escape(texte_theme or "") + ' »</div>'
+            + ligne_mystere +
+            "</div>"
+            + bloc_sous, unsafe_allow_html=True)
+        if feuillet:
+            _render_pdf_inline(feuillet)
+
+
 def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
     """La dizaine du jour. Membre = automatique via son numero_meditation.
     Sympathisant = jour de naissance (1-31) converti en numéro de chaîne.
-    Encart conseil « Intention du prochain » UNIQUEMENT au-dessus de la saisie.
-    Dans le livre : TOUTES les intentions préfixées (la dernière comprise)."""
+    Carte d'invitation en HTML PUR UNE PIÈCE (leçon v4 : plus de tranches →
+    plus de bande noire). Champ numérique SANS steppers, vide au départ."""
     st.markdown("---")
 
-    # Nettoyage différé (saisie contenant des caractères interdits)
-    if st.session_state.pop("nettoyage_diz", False):
-        st.session_state.pop("diz_saisie", None)
+    # Purge des anciennes clés (migration v3→v4, aucun widget ne les utilise)
+    st.session_state.pop("nettoyage_diz", None)
+    st.session_state.pop("diz_saisie", None)
 
     num = None
     if est_membre:
@@ -195,42 +273,30 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                 return
             num = jrnais - 20 if jrnais > 20 else jrnais
         else:
-            if not isinstance(st.session_state.get("diz_saisie", ""), str):
-                st.session_state.pop("diz_saisie", None)
-
-            # Carte d'invitation en 3 tranches : HTML haut → saisie+✅ → HTML bas
+            # Carte complète fermée : titre + phrase d'invite
             st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-                        ' padding:16px 16px 2px 16px; border-radius:15px 15px 0 0; text-align:center;'
-                        ' border:2px solid #FFD700; border-bottom:none;">'
+                        ' padding:16px; border-radius:15px; text-align:center; margin:0 10px 6px 10px;'
+                        ' border:2px solid #FFD700;">'
                         '<div style="color:#FFD700; font-size:1.1rem; font-weight:bold;">🕯️ Un jour, une dizaine</div>'
                         '<div style="color:#ffffff; font-size:0.85rem; margin-top:4px;">'
-                        'Entrez ici votre jour de naissance et rejoignez la chaîne de prière</div></div>',
+                        'Entrez ici votre jour de naissance (1 - 31) et rejoignez la chaîne de prière</div></div>',
                         unsafe_allow_html=True)
 
-            c_saisie, c_btn = st.columns([4, 1], gap="small")
+            c_saisie, c_btn = st.columns([4, 1], gap="small", vertical_alignment="bottom")
             with c_saisie:
-                st.markdown('<div class="diz-saisie">', unsafe_allow_html=True)
-                saisie = st.text_input("Jour de naissance",
-                                       placeholder="💡 Votre jour de naissance (1 à 31)",
-                                       label_visibility="collapsed",
-                                       key="diz_saisie").strip()
-                st.markdown("</div>", unsafe_allow_html=True)
+                saisie = st.number_input("Jour de naissance",
+                                         min_value=1, max_value=31, value=None, step=1,
+                                         label_visibility="collapsed", key="diz_jour")
             with c_btn:
                 if st.button("✅", key="diz_valider", use_container_width=True, type="primary",
                              help="Valider votre jour de naissance"):
-                    if saisie.isdigit() and 1 <= int(saisie) <= 31:
+                    if saisie is not None and 1 <= int(saisie) <= 31:
                         st.session_state["diz_jrnais"] = int(saisie)
                         st.session_state.pop("diz_erreur", None)
                     else:
-                        st.session_state["diz_erreur"] = "Chiffres uniquement, entre 1 et 31."
-                        st.session_state["nettoyage_diz"] = True
+                        st.session_state["diz_erreur"] = "Entrez d'abord votre jour de naissance (chiffre entre 1 et 31)."
             if st.session_state.get("diz_erreur"):
                 st.warning(st.session_state.pop("diz_erreur"))
-
-            st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-                        ' padding:2px 16px 14px 16px; border-radius:0 0 15px 15px;'
-                        ' border:2px solid #FFD700; border-top:none; margin-top:-14px;">'
-                        '&nbsp;</div>', unsafe_allow_html=True)
 
             if "diz_jrnais" not in st.session_state:
                 return
@@ -264,6 +330,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
             f'<div style="color:#9fa6d8; font-size:0.85rem; margin-top:8px;">'
             f'N° méd. {num} — {date.today().strftime("%d/%m/%Y")}</div>'
             f'</div>', unsafe_allow_html=True)
+        _scroll_top("cov")
         if st.button("📿 Égrener la dizaine", key="diz_commencer", use_container_width=True, type="primary"):
             st.session_state["diz_ouvert"] = True
             st.session_state["diz_page"] = 0
@@ -332,6 +399,17 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                      + _diz_txt(m["passage"], "#1a1a1a")
                      + _diz_txt("MÉDITATION", couleur, "1rem", gras=True)
                      + _diz_txt(m["meditation"], "#1a1a1a"))
+            # MISSION 2 — Sous-étape 3 : badge « Lien thématique » si CE mystère
+            # est lié au thème pastoral actif (pour 2026-2027 : le N°5).
+            t_actif = get_theme_actif()
+            if t_actif:
+                lien_txt = get_lien_mystere(t_actif[2], m["id"])
+                if lien_txt:
+                    corps += ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:12px 14px; margin:14px 0 2px 0;">'
+                              '<div style="color:#1A237E; font-weight:bold; font-size:0.9rem;">🔗 Lien thématique — '
+                              + html.escape(t_actif[0] or "") + "</div>"
+                              '<div style="color:#1a1a1a; font-size:0.92rem; line-height:1.7; margin-top:6px;">'
+                              + html.escape(lien_txt).replace("\n", "<br>") + "</div></div>")
 
         elif page["t"] == "intentions":
             intentions_html = ""
@@ -374,6 +452,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
         html_page = tete + corps + '</div>'
 
     st.markdown(html_page, unsafe_allow_html=True)
+    _scroll_top(f"p{idx}")
 
     # --- Navigation : ON NE RECULE PAS quand on égrène une dizaine ☺️ ---
     # --- PAGINATION (code conservé en commentaire, désactivé) ---
@@ -469,7 +548,6 @@ def _render_coin_affiche():
                 f'<h4 style="margin:0 0 5px 0; color:#e8eaf6; font-size:1.1rem;">{icone} {html.escape(prochain[0])}</h4>'
                 f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p>'
                 f'</div></div>', unsafe_allow_html=True)
-
 
 def _render_fil_actualites():
     dernier = c.execute("""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
@@ -571,7 +649,8 @@ def _enregistrer_presence(membre_id, evt_id, choix):
 # PAGE PRINCIPALE
 # ====================================================================
 def show_espace_membre(matloc_membre=None):
-    _render_theme()
+    livre_ouvert = st.session_state.get("diz_ouvert", False)
+    _render_theme(compact=livre_ouvert)
 
     # Compteur : 1 visite = 1 session (option A validée)
     if "visite_communaute" not in st.session_state:
@@ -587,13 +666,14 @@ def show_espace_membre(matloc_membre=None):
 
     # ================= ÉTAT 1 : VUE PUBLIQUE (Espace communautaire) =================
     if not matloc_membre:
-        livre_ouvert = st.session_state.get("diz_ouvert", False)
         _render_header(masquer_bandes=livre_ouvert)
 
         if not livre_ouvert:
             st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                         '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
                         '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam</div></div>', unsafe_allow_html=True)
+            # MISSION 2 — Sous-étape 2 : encart thème pastoral sous la carte
+            _render_encart_theme()
 
         _render_dizaine_du_jour(est_membre=False)
 
@@ -628,32 +708,28 @@ def show_espace_membre(matloc_membre=None):
         st.session_state["visite_membre"] = True
         compter_visite("membre")
 
-    livre_ouvert = st.session_state.get("diz_ouvert", False)
     _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert)
 
-    # Carte Bienvenue avec popover "👤 Mon profil" INTÉGRÉ (tranches HTML +
-    # popover natif : visuellement une seule carte, aucun rechargement).
-    # Le popover est CENTRÉ (rule margin auto via stPopover) et masqué si livre.
+    # Carte Bienvenue en HTML PUR UNE PIÈCE (pattern validé terrain v4).
+    # Popover SOUS la carte, centré et violet via CSS (width:fit-content).
     if not livre_ouvert:
-        st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px 20px 4px 20px; border-radius:15px 15px 0 0; text-align:center; border:1px solid #d1c4e9; border-bottom:none;">'
-                    '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div></div>', unsafe_allow_html=True)
-        c_g, c_p = st.columns([1, 1], gap="small")
-        with c_g:
-            st.markdown('&nbsp;', unsafe_allow_html=True)
-        with c_p:
-            with st.popover("👤 Mon profil"):
-                if membre[6]:
-                    try: st.image(membre[6], width=130)
-                    except Exception: pass
-                st.markdown(f"**{membre[1]} {membre[2]}**")
-                st.caption(f"MatLoc : `{membre[3]}`")
-                st.write(f"👥 Équipe : **{membre[8] or '—'}**")
-                st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
-                st.write(f"💬 WhatsApp : {membre[4] or '—'}")
-                st.write(f"📿 N° méditation : {membre[7] or '—'}")
-                d_adh = safe_date(membre[5])
-                st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
-        st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:2px 20px 18px 20px; border-radius:0 0 15px 15px; border:1px solid #d1c4e9; border-top:none; margin-top:-6px;">&nbsp;</div>', unsafe_allow_html=True)
+        st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px 6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
+                    '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
+                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e)</div></div>', unsafe_allow_html=True)
+        with st.popover("👤 Mon profil"):
+            if membre[6]:
+                try: st.image(membre[6], width=130)
+                except Exception: pass
+            st.markdown(f"**{membre[1]} {membre[2]}**")
+            st.caption(f"MatLoc : `{membre[3]}`")
+            st.write(f"👥 Équipe : **{membre[8] or '—'}**")
+            st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
+            st.write(f"💬 WhatsApp : {membre[4] or '—'}")
+            st.write(f"📿 N° méditation : {membre[7] or '—'}")
+            d_adh = safe_date(membre[5])
+            st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
+        # MISSION 2 — Sous-étape 2 : encart thème pastoral sous le profil
+        _render_encart_theme()
 
     _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
 
@@ -718,6 +794,3 @@ def show_espace_membre(matloc_membre=None):
 
     # ARCHIVES
     _render_spiritual_tabs()
-
-
-
