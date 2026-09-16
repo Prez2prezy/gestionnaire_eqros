@@ -1,10 +1,9 @@
 # ====================================================================
-# view_espace_membre.py — VERSION 7.2
-# v7.2 : la dizaine du jour s'affiche UNIQUEMENT sur l'Accueil (🏠
-# Actualités) — plus de bloc dizaine dans Thème/Rosaire/Archives/
-# Mes évènements. Le livre ouvert reste une page autonome plein écran.
-# v7.1 : menu en BOUTONS natifs + écart entête/menu réduit (+2px).
-# Vérification de version : Ctrl+F → "VERSION 7.2", "_menu_navigation".
+# view_espace_membre.py — VERSION 7.3
+# v7.3 : menu FIGÉ (sticky) sous l'entête pendant le scroll + écart
+# réduit à zéro + Archives en dernière position côté communautaire.
+# v7.2 : dizaine uniquement sur l'Accueil. v7.1 : menu en boutons natifs.
+# Vérification de version : Ctrl+F → "VERSION 7.3", "_figer_menu".
 # ====================================================================
 import os
 import re
@@ -22,7 +21,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # NAVIGATION — rubriques et sous-rubriques
 # ====================================================================
 RUBRIQUES_MEMBRE = ["🏠 Actualités", "🕯️ Thème", "📿 Rosaire", "📅 Mes évènements", "📖 Archives"]
-RUBRIQUES_PUBLIC = ["🏠 Actualités", "📿 Rosaire", "📖 Archives", "🕯️ Thème"]
+RUBRIQUES_PUBLIC = ["🏠 Actualités", "📿 Rosaire", "🕯️ Thème", "📖 Archives"]
 SOUS_RUBRIQUES = {
     "🕯️ Thème": ["🔭 Vue d'ensemble", "🎓 Enseignements", "💬 Discussions"],
     "📿 Rosaire": ["L'esprit du Père Eyquem", "Le thème de l'année"],
@@ -30,10 +29,45 @@ SOUS_RUBRIQUES = {
 }
 
 
-def _menu_navigation(rubriques, prefixe):
+def _figer_menu(nb_bandes, rub, sub):
+    """v7.3 — FIGE le menu (rubriques + sous-rubriques) sous l'entête pendant
+    le scroll (position sticky). Le repère invisible #repere-menu (rendu par
+    _menu_navigation juste avant les rangées de boutons) est retrouvé dans le
+    DOM ; les 1-2 rangées qui le suivent deviennent sticky avec top = hauteur
+    RÉELLE de l'entête (mesurée), fond opaque pour que le contenu glisse
+    dessous. La clé inclut rub/sub : si une rangée apparaît ou disparaît
+    (rubrique avec/sans sous-rubriques), le script rejoue.
+    Dégradation douce : si la structure interne de Streamlit change un jour,
+    le menu redevient simplement défilant (jamais cassé)."""
+    script = (
+        "<script>(function(){var f=function(){try{"
+        "var d=window.parent.document;var h=d.querySelector('.sticky-header');"
+        "var rep=d.getElementById('repere-menu');if(!h||!rep)return;"
+        "var H=h.offsetHeight;"
+        "var ec=rep.closest('[data-testid=stElementContainer]')||rep.parentElement;"
+        "var r1=ec.nextElementSibling;if(!r1)return;"
+        "var r2=r1.nextElementSibling;"
+        "var ok2=(r2&&r2.querySelector&&r2.querySelector('button'));"
+        "var st=function(el,top){el.style.position='sticky';el.style.top=top+'px';"
+        "el.style.zIndex='9998';el.style.backgroundColor='#0a0f2c';"
+        "el.style.paddingTop='2px';el.style.paddingBottom='4px';};"
+        "st(r1,H);if(ok2)st(r2,H+r1.offsetHeight);"
+        "}catch(e){}};f();window.parent.addEventListener('resize',f);})();</script>")
+    try:
+        _comp_html(script, height=0, key=f"figer_{nb_bandes}_{rub}_{sub}")
+    except Exception:
+        pass
+
+
+def _menu_navigation(rubriques, prefixe, nb_bandes):
     """Menu en BOUTONS natifs (rubrique active violette, fiable tous
-    navigateurs). Gère lui-même les sous-rubriques. Retourne (rubrique,
-    sous_rubrique)."""
+    navigateurs). Pose un repère invisible avant les rangées (pour le
+    figeage v7.3), gère les sous-rubriques, puis fige le menu sous l'entête.
+    Retourne (rubrique, sous_rubrique)."""
+    # Repère invisible (servira au script de figeage)
+    st.markdown('<div id="repere-menu" style="display:none;"></div>',
+                unsafe_allow_html=True)
+
     if st.session_state.get("nav_rub") not in rubriques:
         st.session_state["nav_rub"] = rubriques[0]
 
@@ -69,6 +103,9 @@ def _menu_navigation(rubriques, prefixe):
             st.session_state["nav_sub"] = clic2
             st.rerun()
         sub = st.session_state["nav_sub"]
+
+    # Fige le menu sous l'entête pendant le scroll (v7.3)
+    _figer_menu(nb_bandes, st.session_state["nav_rub"], sub)
     return st.session_state["nav_rub"], sub
 
 
@@ -133,12 +170,12 @@ def _compter_bandes(membre=False):
 
 
 def _mesure_entete(cle):
-    """MESURE la hauteur réelle de l'entête et pousse le contenu juste dessous
-    (+2px : écart réduit v7.1). Re-mesure quand le nombre de bandes change."""
+    """MESURE la hauteur réelle de l'entête et pousse le contenu pile dessous
+    (v7.3 : écart réduit à ZÉRO). Re-mesure quand le nombre de bandes change."""
     script = (
         "<script>(function(){var a=function(){try{var d=window.parent.document;"
         "var h=d.querySelector('.sticky-header');var b=d.querySelector('.block-container');"
-        "if(h&&b){b.style.setProperty('padding-top',(h.offsetHeight+2)+'px','important');}}"
+        "if(h&&b){b.style.setProperty('padding-top',h.offsetHeight+'px','important');}}"
         "catch(e){}};a();window.parent.addEventListener('resize',a);})();</script>")
     try:
         _comp_html(script, height=0, key=f"mesure_{cle}")
@@ -494,8 +531,8 @@ def _render_page_archives_audios():
 
 
 def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
-    """La dizaine du jour — v7.2 : affichée UNIQUEMENT sur l'Accueil
-    (🏠 Actualités). Le livre ouvert reste une page autonome plein écran."""
+    """La dizaine du jour — affichée UNIQUEMENT sur l'Accueil (v7.2).
+    Le livre ouvert reste une page autonome plein écran."""
     st.markdown("---")
 
     st.session_state.pop("nettoyage_diz", None)
@@ -831,7 +868,7 @@ def show_espace_membre(matloc_membre=None):
     livre_ouvert = st.session_state.get("diz_ouvert", False)
 
     _render_theme(compact=livre_ouvert)
-    # MESURE réelle de l'entête (fini le menu caché) — écart réduit v7.1
+    # MESURE réelle de l'entête — écart réduit à zéro (v7.3)
     nb_bandes = 0 if livre_ouvert else _compter_bandes(membre=bool(matloc_membre))
     _mesure_entete(nb_bandes)
 
@@ -851,14 +888,13 @@ def show_espace_membre(matloc_membre=None):
     if not matloc_membre:
         _render_header(masquer_bandes=livre_ouvert)
 
-        # v7.2 : le LIVRE OUVERT reste une page autonome, quelle que soit
-        # la rubrique mémorisée (il recouvre tout sous l'entête)
+        # Le LIVRE OUVERT reste une page autonome, quelle que soit la rubrique
         if livre_ouvert:
             _render_dizaine_du_jour(est_membre=False)
             return
 
-        # ---- MENU en BOUTONS (v7.1) ----
-        rub, sub = _menu_navigation(RUBRIQUES_PUBLIC, "pub")
+        # ---- MENU en BOUTONS, FIGÉ sous l'entête (v7.3) ----
+        rub, sub = _menu_navigation(RUBRIQUES_PUBLIC, "pub", nb_bandes)
 
         nav_now = rub + "|" + (sub or "")
         doit_scroller = (st.session_state.get("nav_last", "") != nav_now
@@ -871,7 +907,6 @@ def show_espace_membre(matloc_membre=None):
                     '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam</div></div>', unsafe_allow_html=True)
 
         # ---- Contenu de la rubrique choisie ----
-        # v7.2 : la DIZAINE ne s'affiche plus QUE sur l'Accueil (🏠 Actualités)
         st.markdown('<div id="ancre-rubrique" style="height:0;"></div>', unsafe_allow_html=True)
         if rub == "📿 Rosaire":
             if sub == "Le thème de l'année":
@@ -930,13 +965,13 @@ def show_espace_membre(matloc_membre=None):
 
     _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert)
 
-    # v7.2 : le LIVRE OUVERT reste une page autonome
+    # Le LIVRE OUVERT reste une page autonome
     if livre_ouvert:
         _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
         return
 
-    # ---- MENU en BOUTONS (v7.1 — membre : + Mes évènements) ----
-    rub, sub = _menu_navigation(RUBRIQUES_MEMBRE, "mem")
+    # ---- MENU en BOUTONS, FIGÉ sous l'entête (v7.3 — membre : + Mes évènements) ----
+    rub, sub = _menu_navigation(RUBRIQUES_MEMBRE, "mem", nb_bandes)
 
     nav_now = rub + "|" + (sub or "")
     doit_scroller = (st.session_state.get("nav_last", "") != nav_now
@@ -962,7 +997,6 @@ def show_espace_membre(matloc_membre=None):
                 '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e)</div></div>', unsafe_allow_html=True)
 
     # ---- Contenu de la rubrique choisie ----
-    # v7.2 : la DIZAINE ne s'affiche plus QUE sur l'Accueil (🏠 Actualités)
     st.markdown('<div id="ancre-rubrique" style="height:0;"></div>', unsafe_allow_html=True)
     if rub == "📅 Mes évènements":
         # --- RÈGLE 4 : périmètre ÉQUIPE uniquement ---
