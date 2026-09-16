@@ -44,27 +44,40 @@ def _normaliser_nav(rubriques):
 
 
 def _brancher_menu(cpt):
-    """Branche les boutons HTML DE L'ENTÊTE sur les natifs cachés : au
-    toucher, on « presse » le natif de même libellé (hors entête), et on
-    CACHE les natifs (leur conteneur stElementContainer → display:none).
-    La clé change à CHAQUE run → le script rejoue après chaque re-rendu,
-    les natifs restent invisibles en permanence."""
+    """v7.4b — Pont entête→natifs À L'ÉPREUVE DU TIMING : Streamlit monte
+    ses éléments de façon asynchrone — l'ancien script courait avant que
+    les natifs soient posés, ne cachait rien, ne branchait rien (l'ancien
+    menu restait visible et seul fonctionnel). Désormais : RETENTATIVES
+    toutes les 120 ms (max ~7 s) jusqu'à ce que CHAQUE bouton de l'entête
+    ait trouvé son natif — caché ET branché en même temps. Les natifs
+    marqués data-branche ne reçoivent jamais deux listeners. Clé changeante
+    (cpt) → après chaque re-rendu, les natifs recréés sont re-cachés.
+    Filet de sécurité : si le pont échouait, les natifs restent visibles
+    et fonctionnels (jamais sans menu)."""
     script = (
-        "<script>(function(){var d=window.parent.document;"
+        "<script>(function(){var d=window.parent.document;var essais=0;"
+        "var t=setInterval(function(){essais++;"
         "var hs=d.querySelectorAll('.sticky-header .menu-btn');"
-        "var nat=d.querySelectorAll('button');var i,j;"
-        "for(i=0;i<nat.length;i++){var t=nat[i].textContent.trim();"
-        "if(!t)continue;"
-        "for(j=0;j<hs.length;j++){if(hs[j].textContent.trim()===t){"
-        "var el=nat[i];while(el&&el!==d.body&&el.getAttribute('data-testid')!=='stElementContainer'){el=el.parentElement;}"
+        "var nat=d.querySelectorAll('button');var trouves=0;"
+        "for(var j=0;j<hs.length;j++){"
+        "for(var i=0;i<nat.length;i++){"
+        "if(nat[i].textContent.trim()===hs[j].textContent.trim()){"
+        "var el=nat[i];"
+        "while(el&&el!==d.body&&el.getAttribute&&el.getAttribute('data-testid')!=='stElementContainer'){el=el.parentElement;}"
         "if(el&&el!==d.body){el.style.display='none';}"
+        "if(!nat[i].getAttribute('data-branche')){"
+        "nat[i].setAttribute('data-branche','1');"
         "(function(btn){hs[j].addEventListener('click',function(){btn.click();});})(nat[i]);"
-        "break;}}}})();</script>")
+        "}"
+        "trouves++;break;}}"
+        "}"
+        "if(hs.length>0&&trouves===hs.length){clearInterval(t);}"
+        "else if(essais>60){clearInterval(t);}"
+        "},120);})();</script>")
     try:
         _comp_html(script, height=0, key=f"branche_{cpt}")
     except Exception:
         pass
-
 
 def _menu_natif(rubriques, prefixe):
     """v7.4 — Les VRAIS boutons du menu (natifs : clic fiable, session,
