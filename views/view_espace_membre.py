@@ -11,6 +11,16 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 
 
 # ====================================================================
+# v6.3 — Correctifs terrain (4e agent) :
+#   ① _rendre_intro_eyquem : sauts de ligne -> <br> => rouge [R] restauré,
+#      noir lisible sur jaune (le saut de ligne faisait éclater la carte)
+#   ② cartes dorées Thème/Rosaire : texte saisi -> <br> => cadre doré complet
+#   ③ _mesure_entete : revérification toutes les 400 ms => menu jamais caché
+#   ④ dizaine affichée UNIQUEMENT sur 🏠 Actualités (consigne métier)
+#   Marqueur visible : « v6.3 » dans les cartes de bienvenue
+# ====================================================================
+
+# ====================================================================
 # NAVIGATION — rubriques et sous-rubriques (maquette validée v6)
 # ====================================================================
 RUBRIQUES_MEMBRE = ["🏠 Actualités", "🕯️ Thème", "📿 Rosaire", "📅 Mes évènements", "📖 Archives"]
@@ -84,17 +94,17 @@ def _compter_bandes(membre=False):
 
 
 def _mesure_entete(cle):
-    """v6.2 — LA solution du menu caché : on ne devine plus la hauteur de
-    l'entête (logo + badge + bandes), on la MESURE. Un mini-script lit la
-    hauteur réelle du bloc .sticky-header et pousse le contenu exactement
-    dessous (padding-top en style inline !important, qui bat toute feuille).
-    La clé change quand le nombre de bandes change (livre ouvert/fermé,
-    publication/dépublication) → re-mesure automatique."""
+    """v6.3 — mesure AUTOCORRIGÉE : le script revérifie toutes les 400 ms et
+    n'écrit que si la hauteur a changé. Fini la course de vitesse entre le
+    script et le dessin de l'entête (cause du menu caché en v6.2 : le script
+    partait avant que l'entête existait et ne réessayait jamais)."""
     script = (
-        "<script>(function(){var a=function(){try{var d=window.parent.document;"
-        "var h=d.querySelector('.sticky-header');var b=d.querySelector('.block-container');"
-        "if(h&&b){b.style.setProperty('padding-top',(h.offsetHeight+8)+'px','important');}}"
-        "catch(e){}};a();window.parent.addEventListener('resize',a);})();</script>")
+        "<script>(function(){var d0=-1;var a=function(){try{"
+        "var d=window.parent.document;var h=d.querySelector('.sticky-header');"
+        "var b=d.querySelector('.block-container');"
+        "if(h&&b){var n=h.offsetHeight+8;if(n!==d0){d0=n;"
+        "b.style.setProperty('padding-top',n+'px','important');}}}catch(e){}};"
+        "a();setInterval(a,400);window.parent.addEventListener('resize',a);})();</script>")
     try:
         _comp_html(script, height=0, key=f"mesure_{cle}")
     except Exception:
@@ -102,10 +112,8 @@ def _mesure_entete(cle):
 
 
 def _render_theme(compact=False):
-    """CSS de l'espace. v6.2 : le padding-top n'est plus calculé en Python
-    (estimations fausses : le logo réel est plus haut que prévu) — il est
-    MESURÉ par _mesure_entete(). Le CSS garde une valeur de SECOURS (si le
-    script tournait pas) le temps du premier dessin.
+    """CSS de l'espace. v6.2 : le padding-top est MESURÉ par _mesure_entete().
+    Le CSS garde une valeur de SECOURS le temps du premier dessin.
     CSS construit par CONCATÉNATION (jamais de f-string : accolades)."""
     if compact:
         secours_1, secours_2, secours_3 = 260, 240, 230
@@ -233,7 +241,7 @@ def _render_header(membre=None, matloc=None, masquer_bandes=False):
 # ====================================================================
 DIZ_INTRO1 = "Au Nom du Père, et du Fils et du Saint-Esprit! Amen!\n\nPRIÈRE D’ENTRÉE\n\nSeigneur Jésus, nous nous disposons à prier\nce Rosaire en communion avec la Vierge Marie.\nViens, Esprit Saint, remplis les cœurs de tes fidèles et allume en eux le feu de ton amour.\nDonne-nous la grâce de méditer profondément les mystères de ta vie, pour que, en les imitant, nous obtenions les promesses qu’ils renferment.\nPar le Christ, notre Seigneur. Amen.\n\nJE CROIS EN DIEU\n\nJe crois en Dieu, le Père Tout-Puissant, Créateur du ciel et de la terre.\nEt en Jésus-Christ, son Fils unique, Notre Seigneur, qui a été conçu du Saint-Esprit, est né de la Vierge Marie, a souffert sous Ponce Pilate, a été crucifié, est mort et a été enseveli, est descendu aux enfers, le troisième jour est ressuscité des morts, est monté aux cieux, est assis à la droite de Dieu le Père Tout-Puissant, d’où il viendra juger les vivants et les morts.\nJe crois en l’Esprit-Saint, à la Sainte Église catholique, à la communion des Saints, à la rémission des péchés, à la résurrection de la chair, à la vie éternelle.\nAmen."
 DIZ_INTRO2 = "NOTRE PÈRE\n\nNotre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\nque ta volonté soit faite\nsur la terre comme au ciel.\n\nDonne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, mais délivre-nous du Mal. Amen!\n\n3 JE VOUS SALUE MARIE\n\nJe vous salue Marie, pleine de grâce,\nle Seigneur est avec vous. Vous êtes bénie entre toutes les femmes, et Jésus, le fruit de vos entrailles, est béni.\n\nSainte Marie, Mère de Dieu, priez pour nous pauvres pécheurs, maintenant et à l’heure de notre mort. Amen!\n\nGLORIA PATRI\n\nGloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, et in saecula saeculorum. Amen!"
-DIZ_INTRO3 = "PRIÈRE À LA VIERGE DU PÈRE EYQUEM\n\n[R]Vers Toi je lève les yeux,\nSainte Mère de Dieu;[/R]\n\ncar je voudrais faire de ma maison,\nune maison où Jésus vienne, selon sa promesse,\nquand plusieurs se réunissent en son nom.\nTu as accueilli le message de l’ange comme\nun message venant de Dieu, et Tu as reçu,\nen raison de ta foi,\nl’incomparable grâce d’accueillir\nen Toi Dieu Lui-même.\nTu as ouvert aux bergers puis aux mages\nla porte de ta maison, sans que\nnul ne se sente gêné\npar sa pauvreté ou sa richesse.\n\n[R]Sois Celle qui chez moi reçoit.[/R]\n\nAfin que ceux qui ont besoin\nd’être réconfortés le soient;\nceux qui ont le désir de\nrendre grâce puissent le faire ;\nceux qui cherchent la paix la trouvent.\nEt que chacun reparte vers sa propre maison\navec la joie d’avoir rencontré Jésus lui-même,\nLui, le Chemin, la Vérité, la Vie.\nAmen!\n\n[I]Frère Joseph EYQUEM, o.p.,\nFondateur des Équipes du Rosaire[/I]"
+DIZ_INTRO3 = "PRIÈRE À LA VIERGE DU PÈRE EYQUEM\n\n[R]Vers Toi je lève les yeux,\nSainte Mère de Dieu;[/R]\n\ncar je voudrais faire de ma maison,\nune maison où Jésus vienne, selon sa promesse,\nquand plusieurs se réunissent en son nom.\nTu as accueilli le message de l’ange comme\nun message venant de Dieu, et Tu as reçu,\nen raison de ta foi,\nl’incomparable grâce d’accueillir\nen Toi Dieu Lui-même.\nTu as ouvert aux bergers puis aux mages\nla porte de ta maison, sans que\nnul ne se sente gêné\npar sa pauvreté ou sa richesse.\n\n[R]Sois Celle qui chez moi reçoit.[/R]\n\nAfin que ceux qui ont besoin\nd’être réconfortés le soient;\nceux qui ont le désir de\nrendre grâce puissent le faire ;\nceux qui cherchent la paix la trouvent.\nEt que chacun reparte vers sa propre maison\navec la joie d’avoir rencontré Jésus lui-même,\nLui, le Chemin, la Vérité, la Vie.\nAmen!\n\n[R]Frère Joseph EYQUEM, o.p.,\nFondateur des Équipes du Rosaire[/R]"
 DIZ_OUTRO = "SALVE REGINA\n\nSalve Regina, Mater misericordiae;\nvita, dulcedo, et spes nostra salve.\nAd te clamamus, exsules filii Hevae.\nAd te suspiramus, gementes et flentes\nin hac lacrimarum valle.\nEia ergo, advocata nostra,\nillos tuos misericordes oculos ad nos converte;\nEt Iesum, benedictum fructum ventris tui,\nnobis, post hoc exsilium ostende.\nO Clemens, O pia, O dulcis, Virgo Maria.\n\nOra pro nobis, Sancta Dei Genitrix.\nUt digni efficiamur promissionibus Christi.\n\nPRIÈRE FINALE\n\nÔ Dieu, dont le Fils unique nous a acquis\npar sa vie, sa mort et sa résurrection\nles récompenses du salut éternel,\nnous vous supplions : faites que,\nméditant les mystères du très\nSaint Rosaire de\nla Bienheureuse Vierge Marie,\nnous imitions ce qu’ils contiennent\net obtenons ce qu’ils promettent.\nPar le Christ, notre Seigneur. Amen!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nAu Nom du Père, et du Fils et du Saint-Esprit! Amen!"
 
 
@@ -254,11 +262,15 @@ COULEURS_CLAIRES = {"joyeux": "#FF80AB", "lumineux": "#9FA8DA",
 
 
 def _rendre_intro_eyquem(titre_carte="INTRODUCTION"):
-    """Carte de la prière du Père Eyquem. v6.2 : TOUTES les couleurs critiques
-    passent en !important INLINE (parade définitive à l'écrasement par le CSS
-    global — diagnostic terrain : le noir devenait illisible sur le jaune)."""
+    """Carte de la prière du Père Eyquem. Couleurs critiques en !important
+    INLINE. v6.3 : les sauts de ligne sont transformés en <br> AVANT
+    l'assemblage — la carte reste UNE SEULE chaîne sans ligne vide, donc
+    Streamlit ne la casse plus : le rouge [R] et le noir restent en place
+    (constat terrain v6.2 : texte pâle sur jaune, rouge perdu)."""
     texte = DIZ_INTRO3
     t_esc = html.escape(texte)
+    # --- v6.3 : sauts de ligne -> <br>, en premier ---
+    t_esc = t_esc.replace("\n", "<br>")
     t_esc = t_esc.replace("[R]", '</div><div style="color:#D32F2F !important; font-size:0.98rem; font-weight:bold; text-align:center; line-height:1.7; margin:8px 0;">')
     t_esc = t_esc.replace("[/R]", '</div><div style="color:#1a1a1a !important; font-size:0.95rem; line-height:1.7; margin:8px 0;">')
     t_esc = t_esc.replace("[I]", '</div><div style="color:#1a1a1a !important; font-size:0.95rem; font-style:italic; text-align:center; line-height:1.7; margin:8px 0;">')
@@ -276,13 +288,17 @@ def _rendre_intro_eyquem(titre_carte="INTRODUCTION"):
 # ====================================================================
 def _render_page_theme_ensemble():
     """🕯️ Thème → Vue d'ensemble : thème actif + mystère principal +
-    sous-thème du mois + feuillet PDF. Couleurs critiques en !important."""
+    sous-thème du mois + feuillet PDF. Couleurs critiques en !important.
+    v6.3 : textes saisis -> <br> (sauts de ligne ne cassent plus la carte
+    dorée — constat terrain v6.2 : cadre doré perdu)."""
     theme = get_theme_actif()
     if not theme:
         st.info("🕯️ Aucun thème pastoral n'est actuellement actif. "
                 "Il sera publié par le diocèse.")
         return
     texte_theme, mystere_principal, annee_debut = theme
+    # --- v6.3 : échapper + <br> en une fois ---
+    theme_html = html.escape(texte_theme or "").replace("\n", "<br>")
     ligne_mystere = ""
     try:
         mm = get_mystere(int(mystere_principal)) if mystere_principal else None
@@ -300,17 +316,18 @@ def _render_page_theme_ensemble():
         '<div style="color:#9fa6d8 !important; font-size:0.85rem;">🕯️ THÈME PASTORAL '
         + str(annee_debut) + " - " + str(annee_debut + 1) + "</div>"
         '<div style="color:#FFD700 !important; font-size:1.25rem; font-weight:bold; margin-top:8px; line-height:1.5;">« '
-        + html.escape(texte_theme or "") + ' »</div>'
+        + theme_html + ' »</div>'
         + ligne_mystere + "</div>", unsafe_allow_html=True)
 
     mois_courant = date.today().month
     sous = get_sous_theme_du_mois(annee_debut, mois_courant)
     if sous:
         titre_st, contenu_st, feuillet = sous
+        titre_st_html = html.escape(titre_st or "").replace("\n", "<br>")
         contenu_html = html.escape(contenu_st or "").replace("\n", "<br>")
         bloc = ('<div style="background:#121a45; border-radius:15px; margin:10px; padding:20px; border:1px solid #27306b;">'
                 '<div style="color:#ffe082 !important; font-weight:bold; font-size:1.05rem; text-align:center;">📅 Sous-thème de '
-                + MOIS_FR[mois_courant - 1] + " : " + html.escape(titre_st or "") + "</div>"
+                + MOIS_FR[mois_courant - 1] + " : " + titre_st_html + "</div>"
                 + ('<div style="color:#e8eaf6 !important; font-size:0.95rem; line-height:1.7; margin-top:12px; text-align:left;">'
                    + contenu_html + "</div>" if contenu_html else "")
                 + "</div>")
@@ -375,23 +392,25 @@ def _render_page_rosaire_eyquem():
                     '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:0.95rem;">🕯️ MÉDITATION</div>'
                     '<div style="color:#ffffff !important; font-size:0.95rem; line-height:1.7; margin-top:6px;">' + medit_html + "</div>",
                     unsafe_allow_html=True)
-    st.info("📿 Chaque jour, la dizaine à méditer vous attend en haut de cette page — "
+    st.info("📿 Chaque jour, la dizaine à méditer vous attend sur la rubrique 🏠 Actualités — "
             "chaque membre fait avancer la chaîne selon son numéro.")
 
 
 def _render_page_rosaire_theme():
-    """📿 Rosaire → Le thème de l'année : les 20 mystères avec leur lien."""
+    """📿 Rosaire → Le thème de l'année : les 20 mystères avec leur lien.
+    v6.3 : texte du thème -> <br> (cadre doré ne casse plus)."""
     theme = get_theme_actif()
     if not theme:
         st.info("🕯️ Aucun thème pastoral n'est actuellement actif.")
         return
     texte_theme, mystere_principal, annee_debut = theme
+    theme_html = html.escape(texte_theme or "").replace("\n", "<br>")
     st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                 ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
                 ' border:2px solid #FFD700;">'
                 '<div style="color:#9fa6d8 !important; font-size:0.85rem;">📿 LE ROSAIRE SELON LE THÈME DE L’ANNÉE</div>'
                 '<div style="color:#FFD700 !important; font-size:1.1rem; font-weight:bold; margin-top:6px;">« '
-                + html.escape(texte_theme or "") + " »</div></div>", unsafe_allow_html=True)
+                + theme_html + " »</div></div>", unsafe_allow_html=True)
     manquants = 0
     for m in MYSTERES:
         lien = get_lien_mystere(annee_debut, m["id"])
@@ -845,12 +864,15 @@ def show_espace_membre(matloc_membre=None):
         # ---- Carte de bienvenue communautaire ----
         st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                     '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
-                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam</div></div>', unsafe_allow_html=True)
+                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · v6.3</div></div>', unsafe_allow_html=True)
 
-        # ---- Dizaine (hors menu, toujours visible) ----
-        _render_dizaine_du_jour(est_membre=False)
-        if st.session_state.get("diz_ouvert"):
-            return
+        # ---- Dizaine (hors menu) ----
+        # v6.3 : affichée UNIQUEMENT sur 🏠 Actualités (consigne métier :
+        # plus de carte dizaine dans les autres rubriques).
+        if rub == "🏠 Actualités":
+            _render_dizaine_du_jour(est_membre=False)
+            if st.session_state.get("diz_ouvert"):
+                return
 
         # ---- Contenu de la rubrique choisie ----
         st.markdown('<div id="ancre-rubrique" style="height:0;"></div>', unsafe_allow_html=True)
@@ -946,12 +968,14 @@ def show_espace_membre(matloc_membre=None):
 
     st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                 '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
-                '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e)</div></div>', unsafe_allow_html=True)
+                '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · v6.3</div></div>', unsafe_allow_html=True)
 
-    # ---- Dizaine (hors menu, toujours visible) ----
-    _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
-    if st.session_state.get("diz_ouvert"):
-        return
+    # ---- Dizaine (hors menu) ----
+    # v6.3 : affichée UNIQUEMENT sur 🏠 Actualités (consigne métier).
+    if rub == "🏠 Actualités":
+        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
+        if st.session_state.get("diz_ouvert"):
+            return
 
     # ---- Contenu de la rubrique choisie ----
     st.markdown('<div id="ancre-rubrique" style="height:0;"></div>', unsafe_allow_html=True)
