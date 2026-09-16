@@ -7,7 +7,7 @@ from datetime import date
 from streamlit.components.v1 import html as _comp_html
 from database import c, commit_and_sync
 from services import safe_date, compter_visite
-from mysteres import get_mysteres_du_jour, COULEURS_TYPES
+from mysteres import get_mysteres_du_jour, COULEURS_TYPES, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere, get_mystere
 
 
 # ====================================================================
@@ -188,16 +188,70 @@ def _diz_txt(texte, couleur="#333333", taille="0.95rem", gras=False, centre=Fals
             f' text-align:{align}; line-height:1.7; margin:8px 0;">{txt_html}</div>')
 
 
+MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+           "août", "septembre", "octobre", "novembre", "décembre"]
+
+
+def _render_encart_theme():
+    """MISSION 2 — Sous-étape 2 : encart dépliable « Thème pastoral » (Option A
+    choisie par l'utilisateur). Présent dans les 2 espaces, TOUJOURS sous la
+    carte d'accueil, JAMAIS rendu quand le livre est ouvert.
+    SILENCIEUX si aucun thème actif (aucune ligne résiduelle).
+    Contenu : thème actif + mystère principal + sous-thème du mois + feuillet.
+    Le st.markdown est UNE SEULE chaîne concaténée (règle anti-code-visible)."""
+    theme = get_theme_actif()
+    if not theme:
+        return
+    texte_theme, mystere_principal, annee_debut = theme
+    libelle = ("🕯️ Thème pastoral " + str(annee_debut) + " - " + str(annee_debut + 1)
+               + " — cliquez pour découvrir")
+
+    # Mystère principal (facultatif dans l'interface diocèse)
+    ligne_mystere = ""
+    try:
+        mm = get_mystere(int(mystere_principal)) if mystere_principal else None
+    except (ValueError, TypeError):
+        mm = None
+    if mm:
+        ligne_mystere = ('<div style="color:#b39ddb; font-size:0.85rem; margin-top:8px;">'
+                         "📿 Mystère principal : N°" + str(mm["id"]) + " — "
+                         + html.escape(mm["titre"].title()) + "</div>")
+
+    # Sous-thème du mois courant (facultatif) + feuillet PDF éventuel
+    bloc_sous = ""
+    feuillet = None
+    mois_courant = date.today().month
+    sous = get_sous_theme_du_mois(annee_debut, mois_courant)
+    if sous:
+        titre_st, contenu_st, feuillet = sous
+        contenu_html = html.escape(contenu_st or "").replace("\n", "<br>")
+        bloc_sous = ('<div style="border-top:1px solid #27306b; margin-top:14px; padding-top:12px; text-align:left;">'
+                     '<div style="color:#ffe082; font-weight:bold; font-size:0.95rem;">📅 Sous-thème de '
+                     + MOIS_FR[mois_courant - 1] + " : " + html.escape(titre_st or "") + "</div>"
+                     + ('<div style="color:#e8eaf6; font-size:0.9rem; line-height:1.7; margin-top:6px;">'
+                        + contenu_html + "</div>" if contenu_html else "")
+                     + "</div>")
+
+    with st.expander(libelle):
+        st.markdown(
+            '<div style="text-align:center;">'
+            '<div style="color:#FFD700; font-size:1.15rem; font-weight:bold; line-height:1.5;">« '
+            + html.escape(texte_theme or "") + ' »</div>'
+            + ligne_mystere +
+            "</div>"
+            + bloc_sous, unsafe_allow_html=True)
+        if feuillet:
+            _render_pdf_inline(feuillet)
+
+
 def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
     """La dizaine du jour. Membre = automatique via son numero_meditation.
     Sympathisant = jour de naissance (1-31) converti en numéro de chaîne.
     Carte d'invitation en HTML PUR UNE PIÈCE (leçon v4 : plus de tranches →
-    plus de bande noire). Champ numérique SANS steppers, vide au départ,
-    invite « Entrez ici votre jour de naissance (1 - 31) » dans la carte."""
+    plus de bande noire). Champ numérique SANS steppers, vide au départ."""
     st.markdown("---")
 
-    # Migration v3→v4 : purge des anciennes clés texte (aucun widget ne les
-    # utilise plus → pop sans risque, règle du nettoyage différé respectée)
+    # Purge des anciennes clés (migration v3→v4, aucun widget ne les utilise)
     st.session_state.pop("nettoyage_diz", None)
     st.session_state.pop("diz_saisie", None)
 
@@ -219,7 +273,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                 return
             num = jrnais - 20 if jrnais > 20 else jrnais
         else:
-            # Carte complète fermée : titre + phrase d'invite demandée
+            # Carte complète fermée : titre + phrase d'invite
             st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                         ' padding:16px; border-radius:15px; text-align:center; margin:0 10px 6px 10px;'
                         ' border:2px solid #FFD700;">'
@@ -228,11 +282,8 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                         'Entrez ici votre jour de naissance (1 - 31) et rejoignez la chaîne de prière</div></div>',
                         unsafe_allow_html=True)
 
-            # vertical_alignment="bottom" : le ✅ s'aligne sur le champ (validé ✅)
             c_saisie, c_btn = st.columns([4, 1], gap="small", vertical_alignment="bottom")
             with c_saisie:
-                # value=None → champ VIDE au départ (pas de « 0 » affiché).
-                # min/max du widget → impossible de sortir de [1, 31].
                 saisie = st.number_input("Jour de naissance",
                                          min_value=1, max_value=31, value=None, step=1,
                                          label_visibility="collapsed", key="diz_jour")
@@ -348,6 +399,17 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                      + _diz_txt(m["passage"], "#1a1a1a")
                      + _diz_txt("MÉDITATION", couleur, "1rem", gras=True)
                      + _diz_txt(m["meditation"], "#1a1a1a"))
+            # MISSION 2 — Sous-étape 3 : badge « Lien thématique » si CE mystère
+            # est lié au thème pastoral actif (pour 2026-2027 : le N°5).
+            t_actif = get_theme_actif()
+            if t_actif:
+                lien_txt = get_lien_mystere(t_actif[2], m["id"])
+                if lien_txt:
+                    corps += ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:12px 14px; margin:14px 0 2px 0;">'
+                              '<div style="color:#1A237E; font-weight:bold; font-size:0.9rem;">🔗 Lien thématique — '
+                              + html.escape(t_actif[0] or "") + "</div>"
+                              '<div style="color:#1a1a1a; font-size:0.92rem; line-height:1.7; margin-top:6px;">'
+                              + html.escape(lien_txt).replace("\n", "<br>") + "</div></div>")
 
         elif page["t"] == "intentions":
             intentions_html = ""
@@ -610,6 +672,8 @@ def show_espace_membre(matloc_membre=None):
             st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                         '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
                         '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam</div></div>', unsafe_allow_html=True)
+            # MISSION 2 — Sous-étape 2 : encart thème pastoral sous la carte
+            _render_encart_theme()
 
         _render_dizaine_du_jour(est_membre=False)
 
@@ -646,15 +710,12 @@ def show_espace_membre(matloc_membre=None):
 
     _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert)
 
-    # Carte Bienvenue en HTML PUR UNE PIÈCE — pattern EXACT de la carte
-    # communautaire (validée terrain : couleurs violettes rendues).
-    # Leçon v4 : le container(border=True) ne prend ni fond ni couleurs → ABANDONNÉ.
+    # Carte Bienvenue en HTML PUR UNE PIÈCE (pattern validé terrain v4).
+    # Popover SOUS la carte, centré et violet via CSS (width:fit-content).
     if not livre_ouvert:
         st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px 6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                     '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
                     '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e)</div></div>', unsafe_allow_html=True)
-        # Popover SOUS la carte (Option B actée par le terrain) — centré et
-        # violet via CSS (width:fit-content + sélecteur descendant button)
         with st.popover("👤 Mon profil"):
             if membre[6]:
                 try: st.image(membre[6], width=130)
@@ -667,6 +728,8 @@ def show_espace_membre(matloc_membre=None):
             st.write(f"📿 N° méditation : {membre[7] or '—'}")
             d_adh = safe_date(membre[5])
             st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
+        # MISSION 2 — Sous-étape 2 : encart thème pastoral sous le profil
+        _render_encart_theme()
 
     _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
 
