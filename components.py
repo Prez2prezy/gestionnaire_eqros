@@ -227,7 +227,11 @@ def gerer_affiches_bande_annonces():
     if evt[5]:
         with etat_vid:
             st.caption("Bande-annonce actuelle :")
+    if evt[5]:
+        if str(evt[5]).startswith("http"):
             st.video(evt[5])
+        else:
+            st.caption("🎬 Vidéo enregistrée en local — retéléversez-la depuis votre ordinateur pour l'afficher ici.")
     else:
         with etat_vid: st.caption("Bande-annonce actuelle : ❌ aucune")
 
