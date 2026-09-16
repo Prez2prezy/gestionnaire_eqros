@@ -175,13 +175,17 @@ def _compter_bandes(membre=False):
 
 
 def _mesure_entete(cle):
-    """MESURE la hauteur réelle de l'entête et pousse le contenu pile dessous
-    (v7.3 : écart réduit à ZÉRO). Re-mesure quand le nombre de bandes change."""
+    """v7.4c — mesure AUTOCORRIGÉE : le script revérifie toutes les 400 ms et
+    n'écrit que si la hauteur a vraiment changé. L'entête (logo + menu + bandes)
+    se dessine en PLUSIEURS fois : une mesure unique part trop tôt et le
+    contenu reste collé ou recouvert."""
     script = (
-        "<script>(function(){var a=function(){try{var d=window.parent.document;"
-        "var h=d.querySelector('.sticky-header');var b=d.querySelector('.block-container');"
-        "if(h&&b){b.style.setProperty('padding-top',h.offsetHeight+'px','important');}}"
-        "catch(e){}};a();window.parent.addEventListener('resize',a);})();</script>")
+        "<script>(function(){var d0=-1;var a=function(){try{"
+        "var d=window.parent.document;var h=d.querySelector('.sticky-header');"
+        "var b=d.querySelector('.block-container');"
+        "if(h&&b){var n=h.offsetHeight;if(n!==d0){d0=n;"
+        "b.style.setProperty('padding-top',n+'px','important');}}}catch(e){}};"
+        "a();setInterval(a,400);window.parent.addEventListener('resize',a);})();</script>")
     try:
         _comp_html(script, height=0, key=f"mesure_{cle}")
     except Exception:
@@ -913,7 +917,7 @@ def show_espace_membre(matloc_membre=None):
     # ================= ÉTAT 1 : VUE PUBLIQUE (Espace communautaire) =================
     if not matloc_membre:
         _normaliser_nav(RUBRIQUES_PUBLIC)
-        _render_header(masquer_bandes=livre_ouvert, rubriques=RUBRIQUES_PUBLIC)
+        _render_header(masquer_bandes=livre_ouvert, rubriques=(None if livre_ouvert else RUBRIQUES_PUBLIC))
 
         # Le LIVRE OUVERT reste une page autonome, quelle que soit la rubrique
         if livre_ouvert:
@@ -931,7 +935,7 @@ def show_espace_membre(matloc_membre=None):
         # ---- Carte de bienvenue communautaire ----
         st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                     '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
-                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam</div></div>', unsafe_allow_html=True)
+                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · v7.4c</div></div>', unsafe_allow_html=True)
 
         # ---- Contenu de la rubrique choisie ----
         st.markdown('<div id="ancre-rubrique" style="height:0;"></div>', unsafe_allow_html=True)
@@ -991,7 +995,7 @@ def show_espace_membre(matloc_membre=None):
         compter_visite("membre")
 
     _normaliser_nav(RUBRIQUES_MEMBRE)
-    _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert, rubriques=RUBRIQUES_MEMBRE)
+    _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert, rubriques=(None if livre_ouvert else RUBRIQUES_MEMBRE))
 
     # Le LIVRE OUVERT reste une page autonome
     if livre_ouvert:
@@ -1022,7 +1026,7 @@ def show_espace_membre(matloc_membre=None):
 
     st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                 '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
-                '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e)</div></div>', unsafe_allow_html=True)
+                '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · v7.4c</div></div>', unsafe_allow_html=True)
 
     # ---- Contenu de la rubrique choisie ----
     st.markdown('<div id="ancre-rubrique" style="height:0;"></div>', unsafe_allow_html=True)
