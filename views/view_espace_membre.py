@@ -1,35 +1,14 @@
+view_espace_membre.py
+
 import os
 import re
 import html
 import base64
 import streamlit as st
 from datetime import date
-from streamlit.components.v1 import html as _comp_html
 from database import c, commit_and_sync
 from services import safe_date, compter_visite
-from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
-
-
-# ====================================================================
-# v6.3 — Correctifs terrain (4e agent) :
-#   ① _rendre_intro_eyquem : sauts de ligne -> <br> => rouge [R] restauré,
-#      noir lisible sur jaune (le saut de ligne faisait éclater la carte)
-#   ② cartes dorées Thème/Rosaire : texte saisi -> <br> => cadre doré complet
-#   ③ _mesure_entete : revérification toutes les 400 ms => menu jamais caché
-#   ④ dizaine affichée UNIQUEMENT sur 🏠 Actualités (consigne métier)
-#   Marqueur visible : « v6.3 » dans les cartes de bienvenue
-# ====================================================================
-
-# ====================================================================
-# NAVIGATION — rubriques et sous-rubriques (maquette validée v6)
-# ====================================================================
-RUBRIQUES_MEMBRE = ["🏠 Actualités", "🕯️ Thème", "📿 Rosaire", "📅 Mes évènements", "📖 Archives"]
-RUBRIQUES_PUBLIC = ["🏠 Actualités", "📿 Rosaire", "📖 Archives", "🕯️ Thème"]
-SOUS_RUBRIQUES = {
-    "🕯️ Thème": ["🔭 Vue d'ensemble", "🎓 Enseignements", "💬 Discussions"],
-    "📿 Rosaire": ["L'esprit du Père Eyquem", "Le thème de l'année"],
-    "📖 Archives": ["🙏 Prières", "📖 Méditations", "🎵 Musiques"],
-}
+from mysteres import get_mysteres_du_jour, COULEURS_TYPES
 
 
 # ====================================================================
@@ -56,71 +35,13 @@ def _extraire_pdf_legacy(contenu):
     return DIV_PDF_RE.sub("", contenu).strip(), url
 
 
-def _scroll_top(cle):
-    """Remet la vue en haut (sous l'entête) à chaque page du livre."""
-    try:
-        _comp_html("<script>window.parent.scrollTo(0, 0);</script>", height=0, key=f"scroll_{cle}")
-    except Exception:
-        pass
-
-
-def _scroll_vers_contenu():
-    """Après un clic dans le menu, fait défiler jusqu'au bloc « contenu »."""
-    try:
-        _comp_html(
-            "<script>window.parent.document.getElementById('ancre-rubrique').scrollIntoView({behavior:'smooth'});</script>",
-            height=0)
-    except Exception:
-        pass
-
-
-def _compter_bandes(membre=False):
-    """Compte les bandes défilantes RÉELLEMENT affichées (pour la clé de
-    re-mesure de l'entête : quand le nombre change, on re-mesure)."""
-    try:
-        bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
-                              WHERE type_contenu='annonce_defilante'
-                              ORDER BY date_publication DESC, id DESC LIMIT 3""").fetchall()
-    except Exception:
-        return 0
-    n = 0
-    for texte, cible in bandes:
-        if cible == "membre" and not membre:
-            continue
-        if not texte:
-            continue
-        n += 1
-    return n
-
-
-def _mesure_entete(cle):
-    """v6.3 — mesure AUTOCORRIGÉE : le script revérifie toutes les 400 ms et
-    n'écrit que si la hauteur a changé. Fini la course de vitesse entre le
-    script et le dessin de l'entête (cause du menu caché en v6.2 : le script
-    partait avant que l'entête existait et ne réessayait jamais)."""
-    script = (
-        "<script>(function(){var d0=-1;var a=function(){try{"
-        "var d=window.parent.document;var h=d.querySelector('.sticky-header');"
-        "var b=d.querySelector('.block-container');"
-        "if(h&&b){var n=h.offsetHeight+8;if(n!==d0){d0=n;"
-        "b.style.setProperty('padding-top',n+'px','important');}}}catch(e){}};"
-        "a();setInterval(a,400);window.parent.addEventListener('resize',a);})();</script>")
-    try:
-        _comp_html(script, height=0, key=f"mesure_{cle}")
-    except Exception:
-        pass
-
-
-def _render_theme(compact=False):
-    """CSS de l'espace. v6.2 : le padding-top est MESURÉ par _mesure_entete().
-    Le CSS garde une valeur de SECOURS le temps du premier dessin.
-    CSS construit par CONCATÉNATION (jamais de f-string : accolades)."""
-    if compact:
-        secours_1, secours_2, secours_3 = 260, 240, 230
-    else:
-        secours_1, secours_2, secours_3 = 380, 330, 310
+def _render_theme(bandes=0):
+    """CSS de l'espace. Padding compensatoire DYNAMIQUE (40px/bande — estimation
+    majorée après constat terrain). Construit par CONCATÉNATION (jamais de
+    f-string avec du CSS : les accolades doublées ont causé des incidents)."""
+    extra = bandes * 40
     regle_contenu = (
-        ".block-container { padding-top: " + str(secours_1)
+        ".block-container { padding-top: " + str(200 + extra)
         + "px !important; padding-bottom: 4rem !important; max-width: 1050px !important; }"
     )
     st.markdown(
@@ -145,16 +66,8 @@ def _render_theme(compact=False):
     .stButton > button[kind="primary"] { background-color: #4527a0 !important; border-color: #5e35b1 !important; color: #ffffff !important; }
     [data-testid="stAlert"] { background-color: #151b3d !important; }
     [data-testid="stAlert"] p { color: #e8eaf6 !important; }
-    [data-testid="stPopover"] { width: fit-content !important; max-width: 260px !important; margin-left: 0 !important; }
-    [data-testid="stPopover"] button { background-color: #4527a0 !important; color: #ffffff !important; border: 1px solid #5e35b1 !important; border-radius: 20px !important; font-weight: 600 !important; }
-    [data-testid="stPopover"] button:hover { background-color: #5e35b1 !important; }
-    [data-testid="stNumberInput"] { max-width: 220px !important; margin-left: auto !important; margin-right: auto !important; }
-    [data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] { display: none !important; }
-    [data-testid="stRadio"] [role="radiogroup"] { flex-wrap: wrap !important; gap: 8px !important; }
-    [data-testid="stRadio"] [data-baseweb="radio"] { background-color: #1a2150 !important; border: 1px solid #2a3160 !important; border-radius: 20px !important; padding: 6px 14px !important; margin-right: 0 !important; }
-    [data-testid="stRadio"] [data-baseweb="radio"] svg { display: none !important; }
-    [data-testid="stRadio"] [data-baseweb="radio"] div { color: #e8eaf6 !important; font-weight: 600 !important; }
-    [data-testid="stRadio"] [data-baseweb="radio"]:has(input:checked) { background-color: #4527a0 !important; border-color: #5e35b1 !important; }
+    .stApp [data-testid="stVerticalBlockBorderWrapper"] { background-color: #121a45 !important; border: 1px solid #27306b !important; }
+    [data-testid="stPopover"] { max-width: 220px !important; margin-left: auto !important; margin-right: auto !important; }
     .sticky-header { position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
         background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px 0 16px; }
     .header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; }
@@ -174,13 +87,15 @@ def _render_theme(compact=False):
     }
     @media (max-width: 640px) {
         .logo-bloc { width: 150px; }
-        .block-container { padding-top: """ + str(secours_2) + """px !important; }
+        .block-container { padding-top: """ + str(165 + extra) + """px !important; }
         [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
         [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { min-width: 0 !important; }
+        .diz-saisie input { max-width: 160px !important; }
+        .diz-valider button { max-width: 90px !important; padding-left: 8px !important; padding-right: 8px !important; }
     }
     @media (max-width: 360px) {
         .logo-bloc { width: 138px; }
-        .block-container { padding-top: """ + str(secours_3) + """px !important; }
+        .block-container { padding-top: """ + str(155 + extra) + """px !important; }
     }
     </style>""", unsafe_allow_html=True)
 
@@ -241,7 +156,7 @@ def _render_header(membre=None, matloc=None, masquer_bandes=False):
 # ====================================================================
 DIZ_INTRO1 = "Au Nom du Père, et du Fils et du Saint-Esprit! Amen!\n\nPRIÈRE D’ENTRÉE\n\nSeigneur Jésus, nous nous disposons à prier\nce Rosaire en communion avec la Vierge Marie.\nViens, Esprit Saint, remplis les cœurs de tes fidèles et allume en eux le feu de ton amour.\nDonne-nous la grâce de méditer profondément les mystères de ta vie, pour que, en les imitant, nous obtenions les promesses qu’ils renferment.\nPar le Christ, notre Seigneur. Amen.\n\nJE CROIS EN DIEU\n\nJe crois en Dieu, le Père Tout-Puissant, Créateur du ciel et de la terre.\nEt en Jésus-Christ, son Fils unique, Notre Seigneur, qui a été conçu du Saint-Esprit, est né de la Vierge Marie, a souffert sous Ponce Pilate, a été crucifié, est mort et a été enseveli, est descendu aux enfers, le troisième jour est ressuscité des morts, est monté aux cieux, est assis à la droite de Dieu le Père Tout-Puissant, d’où il viendra juger les vivants et les morts.\nJe crois en l’Esprit-Saint, à la Sainte Église catholique, à la communion des Saints, à la rémission des péchés, à la résurrection de la chair, à la vie éternelle.\nAmen."
 DIZ_INTRO2 = "NOTRE PÈRE\n\nNotre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\nque ta volonté soit faite\nsur la terre comme au ciel.\n\nDonne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, mais délivre-nous du Mal. Amen!\n\n3 JE VOUS SALUE MARIE\n\nJe vous salue Marie, pleine de grâce,\nle Seigneur est avec vous. Vous êtes bénie entre toutes les femmes, et Jésus, le fruit de vos entrailles, est béni.\n\nSainte Marie, Mère de Dieu, priez pour nous pauvres pécheurs, maintenant et à l’heure de notre mort. Amen!\n\nGLORIA PATRI\n\nGloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, et in saecula saeculorum. Amen!"
-DIZ_INTRO3 = "PRIÈRE À LA VIERGE DU PÈRE EYQUEM\n\n[R]Vers Toi je lève les yeux,\nSainte Mère de Dieu;[/R]\n\ncar je voudrais faire de ma maison,\nune maison où Jésus vienne, selon sa promesse,\nquand plusieurs se réunissent en son nom.\nTu as accueilli le message de l’ange comme\nun message venant de Dieu, et Tu as reçu,\nen raison de ta foi,\nl’incomparable grâce d’accueillir\nen Toi Dieu Lui-même.\nTu as ouvert aux bergers puis aux mages\nla porte de ta maison, sans que\nnul ne se sente gêné\npar sa pauvreté ou sa richesse.\n\n[R]Sois Celle qui chez moi reçoit.[/R]\n\nAfin que ceux qui ont besoin\nd’être réconfortés le soient;\nceux qui ont le désir de\nrendre grâce puissent le faire ;\nceux qui cherchent la paix la trouvent.\nEt que chacun reparte vers sa propre maison\navec la joie d’avoir rencontré Jésus lui-même,\nLui, le Chemin, la Vérité, la Vie.\nAmen!\n\n[R]Frère Joseph EYQUEM, o.p.,\nFondateur des Équipes du Rosaire[/R]"
+DIZ_INTRO3 = "PRIÈRE À LA VIERGE DU PÈRE EYQUEM\n\n[R]Vers Toi je lève les yeux,\nSainte Mère de Dieu;[/R]\n\ncar je voudrais faire de ma maison,\nune maison où Jésus vienne, selon sa promesse,\nquand plusieurs se réunissent en son nom.\nTu as accueilli le message de l’ange comme\nun message venant de Dieu, et Tu as reçu,\nen raison de ta foi,\nl’incomparable grâce d’accueillir\nen Toi Dieu Lui-même.\nTu as ouvert aux bergers puis aux mages\nla porte de ta maison, sans que\nnul ne se sente gêné\npar sa pauvreté ou sa richesse.\n\n[R]Sois Celle qui chez moi reçoit.[/R]\n\nAfin que ceux qui ont besoin\nd’être réconfortés le soient;\nceux qui ont le désir de\nrendre grâce puissent le faire ;\nceux qui cherchent la paix la trouvent.\nEt que chacun reparte vers sa propre maison\navec la joie d’avoir rencontré Jésus lui-même,\nLui, le Chemin, la Vérité, la Vie.\nAmen!\n\n[I]Frère Joseph EYQUEM, o.p.,\nFondateur des Équipes du Rosaire[/I]"
 DIZ_OUTRO = "SALVE REGINA\n\nSalve Regina, Mater misericordiae;\nvita, dulcedo, et spes nostra salve.\nAd te clamamus, exsules filii Hevae.\nAd te suspiramus, gementes et flentes\nin hac lacrimarum valle.\nEia ergo, advocata nostra,\nillos tuos misericordes oculos ad nos converte;\nEt Iesum, benedictum fructum ventris tui,\nnobis, post hoc exsilium ostende.\nO Clemens, O pia, O dulcis, Virgo Maria.\n\nOra pro nobis, Sancta Dei Genitrix.\nUt digni efficiamur promissionibus Christi.\n\nPRIÈRE FINALE\n\nÔ Dieu, dont le Fils unique nous a acquis\npar sa vie, sa mort et sa résurrection\nles récompenses du salut éternel,\nnous vous supplions : faites que,\nméditant les mystères du très\nSaint Rosaire de\nla Bienheureuse Vierge Marie,\nnous imitions ce qu’ils contiennent\net obtenons ce qu’ils promettent.\nPar le Christ, notre Seigneur. Amen!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nAu Nom du Père, et du Fils et du Saint-Esprit! Amen!"
 
 
@@ -253,238 +168,16 @@ def _diz_txt(texte, couleur="#333333", taille="0.95rem", gras=False, centre=Fals
             f' text-align:{align}; line-height:1.7; margin:8px 0;">{txt_html}</div>')
 
 
-MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
-           "août", "septembre", "octobre", "novembre", "décembre"]
-
-# Versions CLAIRES des couleurs de chapelets (lisibles sur fond nuit).
-COULEURS_CLAIRES = {"joyeux": "#FF80AB", "lumineux": "#9FA8DA",
-                    "douloureux": "#F48FB1", "glorieux": "#A5D6A7"}
-
-
-def _rendre_intro_eyquem(titre_carte="INTRODUCTION"):
-    """Carte de la prière du Père Eyquem. Couleurs critiques en !important
-    INLINE. v6.3 : les sauts de ligne sont transformés en <br> AVANT
-    l'assemblage — la carte reste UNE SEULE chaîne sans ligne vide, donc
-    Streamlit ne la casse plus : le rouge [R] et le noir restent en place
-    (constat terrain v6.2 : texte pâle sur jaune, rouge perdu)."""
-    texte = DIZ_INTRO3
-    t_esc = html.escape(texte)
-    # --- v6.3 : sauts de ligne -> <br>, en premier ---
-    t_esc = t_esc.replace("\n", "<br>")
-    t_esc = t_esc.replace("[R]", '</div><div style="color:#D32F2F !important; font-size:0.98rem; font-weight:bold; text-align:center; line-height:1.7; margin:8px 0;">')
-    t_esc = t_esc.replace("[/R]", '</div><div style="color:#1a1a1a !important; font-size:0.95rem; line-height:1.7; margin:8px 0;">')
-    t_esc = t_esc.replace("[I]", '</div><div style="color:#1a1a1a !important; font-size:0.95rem; font-style:italic; text-align:center; line-height:1.7; margin:8px 0;">')
-    t_esc = t_esc.replace("[/I]", "</div>")
-    corps_intro = '<div style="color:#1a1a1a !important; font-size:0.95rem; line-height:1.7; margin:8px 0;">' + t_esc
-    return (
-        '<div style="background:#FFF9C4 !important; border-radius:12px; padding:18px; margin:6px;">'
-        '<div style="color:#1A237E !important; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">'
-        + html.escape(titre_carte) + "</div>"
-        + corps_intro + "</div>")
-
-
-# ====================================================================
-# PAGES DES RUBRIQUES
-# ====================================================================
-def _render_page_theme_ensemble():
-    """🕯️ Thème → Vue d'ensemble : thème actif + mystère principal +
-    sous-thème du mois + feuillet PDF. Couleurs critiques en !important.
-    v6.3 : textes saisis -> <br> (sauts de ligne ne cassent plus la carte
-    dorée — constat terrain v6.2 : cadre doré perdu)."""
-    theme = get_theme_actif()
-    if not theme:
-        st.info("🕯️ Aucun thème pastoral n'est actuellement actif. "
-                "Il sera publié par le diocèse.")
-        return
-    texte_theme, mystere_principal, annee_debut = theme
-    # --- v6.3 : échapper + <br> en une fois ---
-    theme_html = html.escape(texte_theme or "").replace("\n", "<br>")
-    ligne_mystere = ""
-    try:
-        mm = get_mystere(int(mystere_principal)) if mystere_principal else None
-    except (ValueError, TypeError):
-        mm = None
-    if mm:
-        ligne_mystere = ('<div style="color:#b39ddb !important; font-size:0.9rem; margin-top:8px;">'
-                         "📿 Mystère principal : N°" + str(mm["id"]) + " — "
-                         + html.escape(mm["titre"].title()) + " ("
-                         + html.escape(mm["reference"]) + ")</div>")
-    st.markdown(
-        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-        ' padding:24px; border-radius:15px; text-align:center; margin:10px;'
-        ' border:2px solid #FFD700;">'
-        '<div style="color:#9fa6d8 !important; font-size:0.85rem;">🕯️ THÈME PASTORAL '
-        + str(annee_debut) + " - " + str(annee_debut + 1) + "</div>"
-        '<div style="color:#FFD700 !important; font-size:1.25rem; font-weight:bold; margin-top:8px; line-height:1.5;">« '
-        + theme_html + ' »</div>'
-        + ligne_mystere + "</div>", unsafe_allow_html=True)
-
-    mois_courant = date.today().month
-    sous = get_sous_theme_du_mois(annee_debut, mois_courant)
-    if sous:
-        titre_st, contenu_st, feuillet = sous
-        titre_st_html = html.escape(titre_st or "").replace("\n", "<br>")
-        contenu_html = html.escape(contenu_st or "").replace("\n", "<br>")
-        bloc = ('<div style="background:#121a45; border-radius:15px; margin:10px; padding:20px; border:1px solid #27306b;">'
-                '<div style="color:#ffe082 !important; font-weight:bold; font-size:1.05rem; text-align:center;">📅 Sous-thème de '
-                + MOIS_FR[mois_courant - 1] + " : " + titre_st_html + "</div>"
-                + ('<div style="color:#e8eaf6 !important; font-size:0.95rem; line-height:1.7; margin-top:12px; text-align:left;">'
-                   + contenu_html + "</div>" if contenu_html else "")
-                + "</div>")
-        st.markdown(bloc, unsafe_allow_html=True)
-        if feuillet:
-            st.caption("📄 Feuillet du mois")
-            _render_pdf_inline(feuillet)
-    else:
-        st.info("📅 Le sous-thème de ce mois n'a pas encore été publié.")
-
-
-def _render_page_en_preparation(emoji, titre, description):
-    """Page « en préparation » élégante pour les rubriques à venir."""
-    st.markdown(
-        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-        ' padding:28px; border-radius:15px; text-align:center; margin:10px;'
-        ' border:2px solid #FFD700;">'
-        '<div style="font-size:2.2rem;">🚧</div>'
-        '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold; margin-top:8px;">'
-        + emoji + " " + html.escape(titre) + "</div>"
-        '<div style="color:#e8eaf6 !important; font-size:0.95rem; margin-top:10px; line-height:1.7;">'
-        + html.escape(description) + "</div></div>", unsafe_allow_html=True)
-
-
-GROUPES_CHAPELETS = [
-    ("Joyeux", 1, 5, "Annoncé, né, présenté, retrouvé — la vie cachée et la lumière de l’enfance"),
-    ("Lumineux", 6, 10, "Le Baptême, Cana, l’annonce du Royaume, la Transfiguration, l’Eucharistie"),
-    ("Douloureux", 11, 15, "L’agonie, la flagellation, le couronnement d’épines, le portement de croix, la mort sur la croix"),
-    ("Glorieux", 16, 20, "La Résurrection, l’Ascension, la Pentecôte, l’Assomption, le Couronnement de Marie"),
-]
-
-
-def _render_page_rosaire_eyquem():
-    """📿 Rosaire → L'esprit du Père Eyquem. v6.2 : couleurs critiques en
-    !important inline (lisibilité), mystères cliquables conservés."""
-    st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-                ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
-                ' border:2px solid #FFD700;">'
-                '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold;">📿 Le Rosaire complet selon l’esprit du Père Eyquem</div>'
-                '<div style="color:#e8eaf6 !important; font-size:0.9rem; margin-top:6px;">Quatre chapelets, vingt mystères — la prière du fondateur des Équipes du Rosaire</div></div>',
-                unsafe_allow_html=True)
-    st.markdown(_rendre_intro_eyquem("PRIÈRE À LA VIERGE — Frère Joseph EYQUEM, o.p."), unsafe_allow_html=True)
-
-    for nom_type, debut, fin, resume in GROUPES_CHAPELETS:
-        couleur_forte = COULEURS_TYPES.get(nom_type.lower(), "#9E9E9E")
-        couleur_claire = COULEURS_CLAIRES.get(nom_type.lower(), "#e8eaf6")
-        st.markdown(
-            '<div style="background:#121a45; border-radius:15px; margin:10px 10px 4px 10px; padding:14px 20px; border:1px solid #27306b; border-left:6px solid ' + couleur_forte + ';">'
-            '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:1.05rem;">✝️ Mystères ' + nom_type + "</div>"
-            '<div style="color:#c7cdf5 !important; font-size:0.85rem; margin-top:2px;">' + html.escape(resume) + "</div>"
-            '<div style="color:#ffe082 !important; font-size:0.8rem; font-style:italic; margin-top:4px;">👆 Touchez un mystère pour lire passage et méditation</div>'
-            "</div>", unsafe_allow_html=True)
-        for m in MYSTERES:
-            if not (debut <= m["id"] <= fin):
-                continue
-            with st.expander(f'{m["id"]:02d} — {m["titre"].title()}  ·  {m["reference"]}'):
-                passage_html = html.escape(m["passage"]).replace("\n", "<br>")
-                medit_html = html.escape(m["meditation"]).replace("\n", "<br>")
-                st.markdown(
-                    '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:0.95rem;">📖 PASSAGE</div>'
-                    '<div style="color:#ffffff !important; font-size:0.95rem; line-height:1.7; margin:6px 0 14px 0;">' + passage_html + "</div>"
-                    '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:0.95rem;">🕯️ MÉDITATION</div>'
-                    '<div style="color:#ffffff !important; font-size:0.95rem; line-height:1.7; margin-top:6px;">' + medit_html + "</div>",
-                    unsafe_allow_html=True)
-    st.info("📿 Chaque jour, la dizaine à méditer vous attend sur la rubrique 🏠 Actualités — "
-            "chaque membre fait avancer la chaîne selon son numéro.")
-
-
-def _render_page_rosaire_theme():
-    """📿 Rosaire → Le thème de l'année : les 20 mystères avec leur lien.
-    v6.3 : texte du thème -> <br> (cadre doré ne casse plus)."""
-    theme = get_theme_actif()
-    if not theme:
-        st.info("🕯️ Aucun thème pastoral n'est actuellement actif.")
-        return
-    texte_theme, mystere_principal, annee_debut = theme
-    theme_html = html.escape(texte_theme or "").replace("\n", "<br>")
-    st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-                ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
-                ' border:2px solid #FFD700;">'
-                '<div style="color:#9fa6d8 !important; font-size:0.85rem;">📿 LE ROSAIRE SELON LE THÈME DE L’ANNÉE</div>'
-                '<div style="color:#FFD700 !important; font-size:1.1rem; font-weight:bold; margin-top:6px;">« '
-                + theme_html + " »</div></div>", unsafe_allow_html=True)
-    manquants = 0
-    for m in MYSTERES:
-        lien = get_lien_mystere(annee_debut, m["id"])
-        couleur = COULEURS_CLAIRES.get((m["type"] or "").lower(), "#e8eaf6")
-        if lien:
-            corps_lien = ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:10px 14px; margin-top:8px;">'
-                          '<div style="color:#1A237E !important; font-weight:bold; font-size:0.85rem;">🔗 Lien thématique</div>'
-                          '<div style="color:#1a1a1a !important; font-size:0.9rem; line-height:1.7; margin-top:4px;">'
-                          + html.escape(lien).replace("\n", "<br>") + "</div></div>")
-        else:
-            manquants += 1
-            corps_lien = ('<div style="color:#c7cdf5 !important; font-size:0.85rem; font-style:italic; margin-top:8px;">'
-                          "— lien thématique à préciser par le diocèse —</div>")
-        st.markdown(
-            '<div style="background:#121a45; border-radius:15px; margin:10px; padding:16px; border-left:6px solid ' + couleur + ';">'
-            '<div style="color:' + couleur + ' !important; font-weight:bold; font-size:1rem;">' + str(m["id"]).zfill(2) + " — "
-            + html.escape(m["titre"].title()) + "</div>"
-            '<div style="color:#c7cdf5 !important; font-size:0.82rem;">📖 ' + html.escape(m["reference"]) + "</div>"
-            + corps_lien + "</div>", unsafe_allow_html=True)
-    if manquants:
-        st.caption(f"🔗 {manquants} lien(s) thématique(s) restent à saisir dans l'interface diocèse.")
-
-
-def _render_page_archives_textes(type_contenu, message_vide):
-    """Archives Prières / Méditations. v6.2 : photo en WIDGET NATIF st.image
-    (le moteur HTML des images rendait les photos minuscules — diagnostic
-    terrain). Un seul moteur photo dans toute l'app : st.image."""
-    lignes = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
-                          WHERE type_contenu=? ORDER BY date_publication DESC, id DESC""",
-                       (type_contenu,)).fetchall()
-    if not lignes:
-        st.info(message_vide)
-        return
-    for p in lignes:
-        with st.expander(f"📖 {p[0]}"):
-            texte, url_pdf = (p[1] or ""), p[3]
-            if not url_pdf:
-                texte, url_pdf = _extraire_pdf_legacy(texte)
-            if p[2] and p[2].startswith("http"):
-                try:
-                    st.image(p[2], use_container_width=True)
-                except Exception:
-                    st.warning("Illustration momentanément indisponible.")
-            if texte:
-                st.markdown(texte, unsafe_allow_html=True)
-            if url_pdf:
-                _render_pdf_inline(url_pdf)
-
-
-def _render_page_archives_audios():
-    """Archives Musiques (page pleine)."""
-    audios = c.execute("""SELECT titre, fichier_url FROM espace_spirituel
-                          WHERE type_contenu='audio' ORDER BY date_publication DESC, id DESC""").fetchall()
-    if not audios:
-        st.info("Aucun fichier audio.")
-        return
-    for a in audios:
-        if a[1] and a[1].startswith("http"):
-            st.markdown(f"#### 🎵 {a[0]}")
-            st.audio(a[1])
-            st.markdown("---")
-        else:
-            st.warning(f"Le fichier audio pour '{a[0]}' est introuvable.")
-
-
 def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
-    """La dizaine du jour (pavé numérique, carte une pièce, livre plein écran,
-    badge lien thématique). v6.2 : saisie en COLONNES FANTÔMES (le retrait du
-    ✅ est créé par des colonnes vides — la méthode CSS :has() n'était pas
-    supportée par les navigateurs, d'où son échec PC et Tecno)."""
+    """La dizaine du jour. Membre = automatique via son numero_meditation.
+    Sympathisant = jour de naissance (1-31) converti en numéro de chaîne.
+    Encart conseil « Intention du prochain » UNIQUEMENT au-dessus de la saisie.
+    Dans le livre : TOUTES les intentions préfixées (la dernière comprise)."""
     st.markdown("---")
 
-    st.session_state.pop("nettoyage_diz", None)
-    st.session_state.pop("diz_saisie", None)
+    # Nettoyage différé (saisie contenant des caractères interdits)
+    if st.session_state.pop("nettoyage_diz", False):
+        st.session_state.pop("diz_saisie", None)
 
     num = None
     if est_membre:
@@ -504,31 +197,42 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                 return
             num = jrnais - 20 if jrnais > 20 else jrnais
         else:
+            if not isinstance(st.session_state.get("diz_saisie", ""), str):
+                st.session_state.pop("diz_saisie", None)
+
+            # Carte d'invitation en 3 tranches : HTML haut → saisie+✅ → HTML bas
             st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-                        ' padding:16px; border-radius:15px; text-align:center; margin:0 10px 6px 10px;'
-                        ' border:2px solid #FFD700;">'
+                        ' padding:16px 16px 2px 16px; border-radius:15px 15px 0 0; text-align:center;'
+                        ' border:2px solid #FFD700; border-bottom:none;">'
                         '<div style="color:#FFD700; font-size:1.1rem; font-weight:bold;">🕯️ Un jour, une dizaine</div>'
                         '<div style="color:#ffffff; font-size:0.85rem; margin-top:4px;">'
-                        'Entrez ici votre jour de naissance (1 - 31) et rejoignez la chaîne de prière</div></div>',
+                        'Entrez ici votre jour de naissance et rejoignez la chaîne de prière</div></div>',
                         unsafe_allow_html=True)
 
-            # Colonnes fantômes : 0.07 vide | champ | ✅ | 0.07 vide
-            _, c_saisie, c_btn, _ = st.columns([0.07, 4.5, 1.2, 0.07],
-                                               gap="small", vertical_alignment="bottom")
+            c_saisie, c_btn = st.columns([4, 1], gap="small")
             with c_saisie:
-                saisie = st.number_input("Jour de naissance",
-                                         min_value=1, max_value=31, value=None, step=1,
-                                         label_visibility="collapsed", key="diz_jour")
+                st.markdown('<div class="diz-saisie">', unsafe_allow_html=True)
+                saisie = st.text_input("Jour de naissance",
+                                       placeholder="💡 Votre jour de naissance (1 à 31)",
+                                       label_visibility="collapsed",
+                                       key="diz_saisie").strip()
+                st.markdown("</div>", unsafe_allow_html=True)
             with c_btn:
                 if st.button("✅", key="diz_valider", use_container_width=True, type="primary",
                              help="Valider votre jour de naissance"):
-                    if saisie is not None and 1 <= int(saisie) <= 31:
+                    if saisie.isdigit() and 1 <= int(saisie) <= 31:
                         st.session_state["diz_jrnais"] = int(saisie)
                         st.session_state.pop("diz_erreur", None)
                     else:
-                        st.session_state["diz_erreur"] = "Entrez d'abord votre jour de naissance (chiffre entre 1 et 31)."
+                        st.session_state["diz_erreur"] = "Chiffres uniquement, entre 1 et 31."
+                        st.session_state["nettoyage_diz"] = True
             if st.session_state.get("diz_erreur"):
                 st.warning(st.session_state.pop("diz_erreur"))
+
+            st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+                        ' padding:2px 16px 14px 16px; border-radius:0 0 15px 15px;'
+                        ' border:2px solid #FFD700; border-top:none; margin-top:-14px;">'
+                        '&nbsp;</div>', unsafe_allow_html=True)
 
             if "diz_jrnais" not in st.session_state:
                 return
@@ -562,7 +266,6 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
             f'<div style="color:#9fa6d8; font-size:0.85rem; margin-top:8px;">'
             f'N° méd. {num} — {date.today().strftime("%d/%m/%Y")}</div>'
             f'</div>', unsafe_allow_html=True)
-        _scroll_top("cov")
         if st.button("📿 Égrener la dizaine", key="diz_commencer", use_container_width=True, type="primary"):
             st.session_state["diz_ouvert"] = True
             st.session_state["diz_page"] = 0
@@ -596,7 +299,17 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
     if page["t"] in ("intro1", "intro2", "intro3"):
         texte = {"intro1": DIZ_INTRO1, "intro2": DIZ_INTRO2, "intro3": DIZ_INTRO3}[page["t"]]
         if "[R]" in texte:
-            html_page = _rendre_intro_eyquem("INTRODUCTION")
+            # Intro Eyquem : [R]→rouge centré gras, [I]→italique centré
+            t_esc = html.escape(texte)
+            t_esc = t_esc.replace("[R]", '</div><div style="color:#D32F2F; font-size:0.95rem; font-weight:bold; text-align:center; line-height:1.7; margin:8px 0;">')
+            t_esc = t_esc.replace("[/R]", '</div><div style="color:#1a1a1a; font-size:0.95rem; line-height:1.7; margin:8px 0;">')
+            t_esc = t_esc.replace("[I]", '</div><div style="color:#1a1a1a; font-size:0.95rem; font-style:italic; text-align:center; line-height:1.7; margin:8px 0;">')
+            t_esc = t_esc.replace("[/I]", "</div>")
+            corps_intro = '<div style="color:#1a1a1a; font-size:0.95rem; line-height:1.7; margin:8px 0;">' + t_esc
+            html_page = (
+                f'<div style="background:#FFF9C4; border-radius:12px; padding:18px; margin:6px;">'
+                f'<div style="color:#1A237E; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">INTRODUCTION</div>'
+                f'{corps_intro}</div>')
         else:
             html_page = (
                 f'<div style="background:#FFF9C4; border-radius:12px; padding:18px; margin:6px;">'
@@ -621,15 +334,6 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                      + _diz_txt(m["passage"], "#1a1a1a")
                      + _diz_txt("MÉDITATION", couleur, "1rem", gras=True)
                      + _diz_txt(m["meditation"], "#1a1a1a"))
-            t_actif = get_theme_actif()
-            if t_actif:
-                lien_txt = get_lien_mystere(t_actif[2], m["id"])
-                if lien_txt:
-                    corps += ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:12px 14px; margin:14px 0 2px 0;">'
-                              '<div style="color:#1A237E !important; font-weight:bold; font-size:0.9rem;">🔗 Lien thématique — '
-                              + html.escape(t_actif[0] or "") + "</div>"
-                              '<div style="color:#1a1a1a !important; font-size:0.92rem; line-height:1.7; margin-top:6px;">'
-                              + html.escape(lien_txt).replace("\n", "<br>") + "</div></div>")
 
         elif page["t"] == "intentions":
             intentions_html = ""
@@ -672,9 +376,16 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
         html_page = tete + corps + '</div>'
 
     st.markdown(html_page, unsafe_allow_html=True)
-    _scroll_top(f"p{idx}")
 
     # --- Navigation : ON NE RECULE PAS quand on égrène une dizaine ☺️ ---
+    # --- PAGINATION (code conservé en commentaire, désactivé) ---
+    # c_prec, c_pos, c_suiv = st.columns([1, 2, 1])
+    # with c_prec:
+    #     if idx > 0 and st.button("◀ Précédent", key=f"diz_prev_{idx}", use_container_width=True):
+    #         st.session_state["diz_page"] = idx - 1
+    #         st.rerun()
+    # with c_pos:
+    #     st.caption(f"Page {idx + 1} / {len(pages)}")
     c_av, c_term = st.columns(2)
     with c_av:
         if idx < len(pages) - 1:
@@ -763,8 +474,6 @@ def _render_coin_affiche():
 
 
 def _render_fil_actualites():
-    """v6.2 : photo en WIDGET NATIF st.image (pleine largeur), PUIS la carte
-    titre+texte. Un seul moteur photo dans toute l'app."""
     dernier = c.execute("""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
                            FROM espace_spirituel
                            WHERE type_contenu IN ('priere', 'meditation')
@@ -777,16 +486,13 @@ def _render_fil_actualites():
         if not url_pdf:
             texte, url_pdf = _extraire_pdf_legacy(texte)
 
-        if dernier[3] and dernier[3].startswith("http"):
-            try:
-                st.image(dernier[3], use_container_width=True)
-            except Exception:
-                st.warning("Illustration momentanément indisponible.")
-
         texte_html = texte.replace("\n", "<br>")
+        img_html = (f'<img src="{dernier[3]}" alt="Contenu" style="border-radius:12px; width:100%; height:auto; display:block; margin-bottom:15px;">'
+                    if dernier[3] else "")
         st.markdown(
             f'<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35);">'
             f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{etiquette} — {html.escape(dernier[1])}</div>'
+            f'{img_html}'
             f'<div style="color:#4527a0; font-size:0.98rem; line-height:1.6; text-align:left;">{texte_html}</div>'
             f'</div>', unsafe_allow_html=True)
 
@@ -796,6 +502,58 @@ def _render_fil_actualites():
         st.info("Aucun contenu spirituel n'a encore été publié.")
 
     _render_coin_affiche()
+
+
+def _render_spiritual_tabs():
+    """Onglets avec onglet d'accueil neutre : AUCUN contenu exposé par défaut."""
+    t_accueil, t_prieres, t_medits, t_audios = st.tabs(
+        ["📇 Sommaire", "🙏 Prières", "📖 Méditations", "🎵 Musiques"])
+
+    with t_accueil:
+        st.markdown("👋 Bienvenue dans nos archives spirituelles.")
+        st.caption("Choisissez une section ci-dessus : 🙏 Prières, 📖 Méditations ou 🎵 Musiques.")
+
+    with t_prieres:
+        prieres = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
+                               WHERE type_contenu='priere' ORDER BY date_publication DESC, id DESC""").fetchall()
+        if not prieres:
+            st.info("Aucune prière publiée.")
+        else:
+            for p in prieres:
+                with st.expander(f"📖 {p[0]}"):
+                    texte, url_pdf = (p[1] or ""), p[3]
+                    if not url_pdf: texte, url_pdf = _extraire_pdf_legacy(texte)
+                    if p[2] and p[2].startswith("http"): st.image(p[2], use_container_width=True)
+                    if texte: st.markdown(texte, unsafe_allow_html=True)
+                    if url_pdf: _render_pdf_inline(url_pdf)
+
+    with t_medits:
+        meditations = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
+                                   WHERE type_contenu='meditation' ORDER BY date_publication DESC, id DESC""").fetchall()
+        if not meditations:
+            st.info("Aucune méditation disponible.")
+        else:
+            for m in meditations:
+                with st.expander(f"📖 {m[0]}"):
+                    texte, url_pdf = (m[1] or ""), m[3]
+                    if not url_pdf: texte, url_pdf = _extraire_pdf_legacy(texte)
+                    if m[2] and m[2].startswith("http"): st.image(m[2], use_container_width=True)
+                    if texte: st.markdown(texte, unsafe_allow_html=True)
+                    if url_pdf: _render_pdf_inline(url_pdf)
+
+    with t_audios:
+        audios = c.execute("""SELECT titre, fichier_url FROM espace_spirituel
+                              WHERE type_contenu='audio' ORDER BY date_publication DESC, id DESC""").fetchall()
+        if not audios:
+            st.info("Aucun fichier audio.")
+        else:
+            for a in audios:
+                if a[1] and a[1].startswith("http"):
+                    st.markdown(f"#### 🎵 {a[0]}")
+                    st.audio(a[1])
+                    st.markdown("---")
+                else:
+                    st.warning(f"Le fichier audio pour '{a[0]}' est introuvable.")
 
 
 def _enregistrer_presence(membre_id, evt_id, choix):
@@ -815,12 +573,7 @@ def _enregistrer_presence(membre_id, evt_id, choix):
 # PAGE PRINCIPALE
 # ====================================================================
 def show_espace_membre(matloc_membre=None):
-    livre_ouvert = st.session_state.get("diz_ouvert", False)
-
-    _render_theme(compact=livre_ouvert)
-    # v6.2 : MESURE réelle de l'entête (fini le menu caché sous les bandes)
-    nb_bandes = 0 if livre_ouvert else _compter_bandes(membre=bool(matloc_membre))
-    _mesure_entete(nb_bandes)
+    _render_theme()
 
     # Compteur : 1 visite = 1 session (option A validée)
     if "visite_communaute" not in st.session_state:
@@ -836,72 +589,21 @@ def show_espace_membre(matloc_membre=None):
 
     # ================= ÉTAT 1 : VUE PUBLIQUE (Espace communautaire) =================
     if not matloc_membre:
+        livre_ouvert = st.session_state.get("diz_ouvert", False)
         _render_header(masquer_bandes=livre_ouvert)
 
-        if livre_ouvert:
-            _render_dizaine_du_jour(est_membre=False)
-            return
+        if not livre_ouvert:
+            st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
+                        '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
+                        '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam</div></div>', unsafe_allow_html=True)
 
-        # ---- MENU (rubriques) ----
-        rubriques = RUBRIQUES_PUBLIC
-        if st.session_state.get("nav_rub") not in rubriques:
-            st.session_state.pop("nav_rub", None)
-        rub = st.radio("Navigation", options=rubriques, key="nav_rub",
-                       horizontal=True, label_visibility="collapsed")
-        sous = SOUS_RUBRIQUES.get(rub)
-        sub = None
-        if sous:
-            if st.session_state.get("nav_sub") not in sous:
-                st.session_state.pop("nav_sub", None)
-            sub = st.radio("Sous-section", options=sous, key="nav_sub",
-                           horizontal=True, label_visibility="collapsed")
+        _render_dizaine_du_jour(est_membre=False)
 
-        nav_now = rub + "|" + (sub or "")
-        doit_scroller = (st.session_state.get("nav_last", "") != nav_now
-                         and st.session_state.get("nav_last", "") != "")
-        st.session_state["nav_last"] = nav_now
+        if st.session_state.get("diz_ouvert"):
+            return  # Livre ouvert : il recouvre tout sous l'entête
 
-        # ---- Carte de bienvenue communautaire ----
-        st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
-                    '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
-                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · v6.3</div></div>', unsafe_allow_html=True)
-
-        # ---- Dizaine (hors menu) ----
-        # v6.3 : affichée UNIQUEMENT sur 🏠 Actualités (consigne métier :
-        # plus de carte dizaine dans les autres rubriques).
-        if rub == "🏠 Actualités":
-            _render_dizaine_du_jour(est_membre=False)
-            if st.session_state.get("diz_ouvert"):
-                return
-
-        # ---- Contenu de la rubrique choisie ----
-        st.markdown('<div id="ancre-rubrique" style="height:0;"></div>', unsafe_allow_html=True)
-        if rub == "📿 Rosaire":
-            if sub == "Le thème de l'année":
-                _render_page_rosaire_theme()
-            else:
-                _render_page_rosaire_eyquem()
-        elif rub == "📖 Archives":
-            if sub == "📖 Méditations":
-                _render_page_archives_textes("meditation", "Aucune méditation disponible.")
-            elif sub == "🎵 Musiques":
-                _render_page_archives_audios()
-            else:
-                _render_page_archives_textes("priere", "Aucune prière publiée.")
-        elif rub == "🕯️ Thème":
-            if sub == "🎓 Enseignements":
-                _render_page_en_preparation("🎓", "Enseignements",
-                                            "Cet espace accueillera les résumés des enseignements reçus, publiés par le diocèse. Il est en préparation.")
-            elif sub == "💬 Discussions":
-                _render_page_en_preparation("💬", "Discussions",
-                                            "Cet espace accueillera les cadres de discussions thématiques. Il est en préparation.")
-            else:
-                _render_page_theme_ensemble()
-        else:
-            _render_fil_actualites()
-
-        if doit_scroller:
-            _scroll_vers_contenu()
+        _render_fil_actualites()
+        _render_spiritual_tabs()
         return
 
     # ================= ÉTAT 2 : VUE MEMBRE =================
@@ -921,143 +623,103 @@ def show_espace_membre(matloc_membre=None):
         st.info("💡 Vous pouvez consulter l'espace public ci-dessous.")
         _render_header()
         _render_fil_actualites()
+        _render_spiritual_tabs()
         return
 
     if "visite_membre" not in st.session_state:
         st.session_state["visite_membre"] = True
         compter_visite("membre")
 
+    livre_ouvert = st.session_state.get("diz_ouvert", False)
     _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert)
 
-    if livre_ouvert:
-        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
-        return
+    # Carte Bienvenue avec popover "👤 Mon profil" INTÉGRÉ (tranches HTML +
+    # popover natif : visuellement une seule carte, aucun rechargement).
+    # Le popover est CENTRÉ (rule margin auto via stPopover) et masqué si livre.
+    if not livre_ouvert:
+        st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px 20px 4px 20px; border-radius:15px 15px 0 0; text-align:center; border:1px solid #d1c4e9; border-bottom:none;">'
+                    '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div></div>', unsafe_allow_html=True)
+        c_g, c_p = st.columns([1, 1], gap="small")
+        with c_g:
+            st.markdown('&nbsp;', unsafe_allow_html=True)
+        with c_p:
+            with st.popover("👤 Mon profil"):
+                if membre[6]:
+                    try: st.image(membre[6], width=130)
+                    except Exception: pass
+                st.markdown(f"**{membre[1]} {membre[2]}**")
+                st.caption(f"MatLoc : `{membre[3]}`")
+                st.write(f"👥 Équipe : **{membre[8] or '—'}**")
+                st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
+                st.write(f"💬 WhatsApp : {membre[4] or '—'}")
+                st.write(f"📿 N° méditation : {membre[7] or '—'}")
+                d_adh = safe_date(membre[5])
+                st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
+        st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:2px 20px 18px 20px; border-radius:0 0 15px 15px; border:1px solid #d1c4e9; border-top:none; margin-top:-6px;">&nbsp;</div>', unsafe_allow_html=True)
 
-    # ---- MENU (rubriques — membre : + Mes évènements) ----
-    rubriques = RUBRIQUES_MEMBRE
-    if st.session_state.get("nav_rub") not in rubriques:
-        st.session_state.pop("nav_rub", None)
-    rub = st.radio("Navigation", options=rubriques, key="nav_rub",
-                   horizontal=True, label_visibility="collapsed")
-    sous = SOUS_RUBRIQUES.get(rub)
-    sub = None
-    if sous:
-        if st.session_state.get("nav_sub") not in sous:
-            st.session_state.pop("nav_sub", None)
-        sub = st.radio("Sous-section", options=sous, key="nav_sub",
-                       horizontal=True, label_visibility="collapsed")
+    _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
 
-    nav_now = rub + "|" + (sub or "")
-    doit_scroller = (st.session_state.get("nav_last", "") != nav_now
-                     and st.session_state.get("nav_last", "") != "")
-    st.session_state["nav_last"] = nav_now
+    if st.session_state.get("diz_ouvert"):
+        return  # Livre ouvert : il recouvre tout sous l'entête
 
-    # ---- Profil (popover à gauche) + Carte Bienvenue centrée ----
-    with st.popover("👤 Mon profil"):
-        if membre[6]:
-            try: st.image(membre[6], width=130)
-            except Exception: pass
-        st.markdown(f"**{membre[1]} {membre[2]}**")
-        st.caption(f"MatLoc : `{membre[3]}`")
-        st.write(f"👥 Équipe : **{membre[8] or '—'}**")
-        st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
-        st.write(f"💬 WhatsApp : {membre[4] or '—'}")
-        st.write(f"📿 N° méditation : {membre[7] or '—'}")
-        d_adh = safe_date(membre[5])
-        st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
+    _render_fil_actualites()
 
-    st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
-                '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
-                '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · v6.3</div></div>', unsafe_allow_html=True)
+    # --- RÈGLE 4 : "📅 Mes prochains évènements" = périmètre ÉQUIPE uniquement ---
+    if membre[10] is None:
+        st.info("Vous n'êtes rattaché(e) à aucune équipe pour le moment.")
+    else:
+        st.markdown("### 📅 Mes prochains évènements")
+        evts = c.execute('''
+            SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
+                   (SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=e.id)
+            FROM evenements e
+            JOIN evenement_equipes ee ON e.id = ee.evenement_id
+            WHERE ee.equipe_id = ? AND e.date_evenement >= ?
+            ORDER BY e.date_evenement ASC
+        ''', (membre[0], membre[10], date.today().isoformat())).fetchall()
 
-    # ---- Dizaine (hors menu) ----
-    # v6.3 : affichée UNIQUEMENT sur 🏠 Actualités (consigne métier).
-    if rub == "🏠 Actualités":
-        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
-        if st.session_state.get("diz_ouvert"):
-            return
-
-    # ---- Contenu de la rubrique choisie ----
-    st.markdown('<div id="ancre-rubrique" style="height:0;"></div>', unsafe_allow_html=True)
-    if rub == "📅 Mes évènements":
-        # --- RÈGLE 4 : périmètre ÉQUIPE uniquement ---
-        if membre[10] is None:
-            st.info("Vous n'êtes rattaché(e) à aucune équipe pour le moment.")
+        if not evts:
+            st.success("✅ Aucun événement à venir. Profitez de ce temps de repos !")
         else:
-            st.markdown("### 📅 Mes prochains évènements")
-            evts = c.execute('''
-                SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
-                       (SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=e.id)
-                FROM evenements e
-                JOIN evenement_equipes ee ON e.id = ee.evenement_id
-                WHERE ee.equipe_id = ? AND e.date_evenement >= ?
-                ORDER BY e.date_evenement ASC
-            ''', (membre[0], membre[10], date.today().isoformat())).fetchall()
+            for evt in evts:
+                d = safe_date(evt[1])
+                if not d:
+                    continue
+                delta = (d - date.today()).days
+                delai = "🔴 Aujourd'hui !" if delta == 0 else "🟠 Demain" if delta == 1 else f"📅 Dans {delta} jours"
+                icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
+                         "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(evt[2], "📅")
 
-            if not evts:
-                st.success("✅ Aucun événement à venir. Profitez de ce temps de repos !")
-            else:
-                for evt in evts:
-                    d = safe_date(evt[1])
-                    if not d:
-                        continue
-                    delta = (d - date.today()).days
-                    delai = "🔴 Aujourd'hui !" if delta == 0 else "🟠 Demain" if delta == 1 else f"📅 Dans {delta} jours"
-                    icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
-                             "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(evt[2], "📅")
+                statut = evt[4]
+                marqueur = "✅ " if statut in ('physique', 'spirituel') else ""
 
-                    statut = evt[4]
-                    marqueur = "✅ " if statut in ('physique', 'spirituel') else ""
+                with st.expander(f"{marqueur}{icone} {evt[2]} — {d.strftime('%d/%m/%Y')} ({delai})",
+                                 expanded=(delta <= 1)):
+                    st.write(f"📍 {evt[3] or 'Lieu à définir'}")
 
-                    with st.expander(f"{marqueur}{icone} {evt[2]} — {d.strftime('%d/%m/%Y')} ({delai})",
-                                     expanded=(delta <= 1)):
-                        st.write(f"📍 {evt[3] or 'Lieu à définir'}")
+                    if statut == 'physique':
+                        st.success("✅ Votre réponse de communion : Présent(e) physiquement")
+                    elif statut == 'spirituel':
+                        st.success("🟡 Votre réponse de communion : Présent(e) spirituellement")
+                    else:
+                        st.caption("📿 Réponse de Communion — indiquez comment vous vous joignez à nous :")
 
-                        if statut == 'physique':
-                            st.success("✅ Votre réponse de communion : Présent(e) physiquement")
-                        elif statut == 'spirituel':
-                            st.success("🟡 Votre réponse de communion : Présent(e) spirituellement")
-                        else:
-                            st.caption("📿 Réponse de Communion — indiquez comment vous vous joignez à nous :")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("🟢 Présent physiquement", key=f"rsp_p_{evt[0]}",
+                                     use_container_width=True,
+                                     type="primary" if statut != 'physique' else "secondary"):
+                            _enregistrer_presence(membre[0], evt[0], 'physique')
+                    with c2:
+                        if st.button("🟡 Présent spirituellement", key=f"rsp_s_{evt[0]}",
+                                     use_container_width=True,
+                                     type="primary" if statut != 'spirituel' else "secondary"):
+                            _enregistrer_presence(membre[0], evt[0], 'spirituel')
 
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            if st.button("🟢 Présent physiquement", key=f"rsp_p_{evt[0]}",
-                                         use_container_width=True,
-                                         type="primary" if statut != 'physique' else "secondary"):
-                                _enregistrer_presence(membre[0], evt[0], 'physique')
-                        with c2:
-                            if st.button("🟡 Présent spirituellement", key=f"rsp_s_{evt[0]}",
-                                         use_container_width=True,
-                                         type="primary" if statut != 'spirituel' else "secondary"):
-                                _enregistrer_presence(membre[0], evt[0], 'spirituel')
+    st.markdown("---")
 
-    elif rub == "📿 Rosaire":
-        if sub == "Le thème de l'année":
-            _render_page_rosaire_theme()
-        else:
-            _render_page_rosaire_eyquem()
+    # ARCHIVES
+    _render_spiritual_tabs()
 
-    elif rub == "📖 Archives":
-        if sub == "📖 Méditations":
-            _render_page_archives_textes("meditation", "Aucune méditation disponible.")
-        elif sub == "🎵 Musiques":
-            _render_page_archives_audios()
-        else:
-            _render_page_archives_textes("priere", "Aucune prière publiée.")
 
-    elif rub == "🕯️ Thème":
-        if sub == "🎓 Enseignements":
-            _render_page_en_preparation("🎓", "Enseignements",
-                                        "Cet espace accueillera les résumés des enseignements reçus, publiés par le diocèse. Il est en préparation.")
-        elif sub == "💬 Discussions":
-            _render_page_en_preparation("💬", "Discussions",
-                                        "Cet espace accueillera les cadres de discussions thématiques. Il est en préparation.")
-        else:
-            _render_page_theme_ensemble()
 
-    else:  # 🏠 Actualités (défaut)
-        _render_fil_actualites()
-
-    if doit_scroller:
-        _scroll_vers_contenu()
