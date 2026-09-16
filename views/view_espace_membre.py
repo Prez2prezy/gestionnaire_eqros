@@ -1,8 +1,10 @@
 # ====================================================================
-# view_espace_membre.py — VERSION 7.1
-# v7.1 : menu en BOUTONS natifs (rubrique active violette, fiable tous
-# navigateurs) + écart entête/menu réduit (+2px sous les bandes).
-# Vérification de version : Ctrl+F → "VERSION 7.1", "_menu_navigation".
+# view_espace_membre.py — VERSION 7.2
+# v7.2 : la dizaine du jour s'affiche UNIQUEMENT sur l'Accueil (🏠
+# Actualités) — plus de bloc dizaine dans Thème/Rosaire/Archives/
+# Mes évènements. Le livre ouvert reste une page autonome plein écran.
+# v7.1 : menu en BOUTONS natifs + écart entête/menu réduit (+2px).
+# Vérification de version : Ctrl+F → "VERSION 7.2", "_menu_navigation".
 # ====================================================================
 import os
 import re
@@ -29,11 +31,9 @@ SOUS_RUBRIQUES = {
 
 
 def _menu_navigation(rubriques, prefixe):
-    """v7.1 — Menu en BOUTONS natifs (remplace les radios « coches »).
-    Bouton actif = primary (violet), inactifs = secondary (bleu nuit) :
-    coloration fiable SANS sélecteur CSS moderne. Gère lui-même les
-    sous-rubriques. Retourne (rubrique, sous_rubrique)."""
-    # État courant (pur état applicatif : aucune clé de widget en conflit)
+    """Menu en BOUTONS natifs (rubrique active violette, fiable tous
+    navigateurs). Gère lui-même les sous-rubriques. Retourne (rubrique,
+    sous_rubrique)."""
     if st.session_state.get("nav_rub") not in rubriques:
         st.session_state["nav_rub"] = rubriques[0]
 
@@ -133,9 +133,8 @@ def _compter_bandes(membre=False):
 
 
 def _mesure_entete(cle):
-    """MESURE la hauteur réelle de l'entête et pousse le contenu juste dessous.
-    v7.1 : +2px (au lieu de +8) → écart réduit entre bandes et menu, comme
-    demandé. La clé change quand le nombre de bandes change → re-mesure."""
+    """MESURE la hauteur réelle de l'entête et pousse le contenu juste dessous
+    (+2px : écart réduit v7.1). Re-mesure quand le nombre de bandes change."""
     script = (
         "<script>(function(){var a=function(){try{var d=window.parent.document;"
         "var h=d.querySelector('.sticky-header');var b=d.querySelector('.block-container');"
@@ -148,9 +147,9 @@ def _mesure_entete(cle):
 
 
 def _render_theme(compact=False):
-    """CSS de l'espace. v7.1 : bloc des radios « coches » retiré (menu en
-    boutons natifs). Valeurs de secours padding le temps du premier dessin.
-    CSS construit par CONCATÉNATION (jamais de f-string : accolades)."""
+    """CSS de l'espace. Padding-top MESURÉ par _mesure_entete() ; valeurs de
+    secours le temps du premier dessin. CONCATÉNATION (jamais de f-string
+    avec du CSS : accolades)."""
     if compact:
         secours_1, secours_2, secours_3 = 260, 240, 230
     else:
@@ -414,7 +413,7 @@ def _render_page_rosaire_eyquem():
                     '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:0.95rem;">🕯️ MÉDITATION</div>'
                     '<div style="color:#ffffff !important; font-size:0.95rem; line-height:1.7; margin-top:6px;">' + medit_html + "</div>",
                     unsafe_allow_html=True)
-    st.info("📿 Chaque jour, la dizaine à méditer vous attend en haut de cette page — "
+    st.info("📿 La dizaine du jour vous attend sur l'Accueil (🏠 Actualités) — "
             "chaque membre fait avancer la chaîne selon son numéro.")
 
 
@@ -455,8 +454,7 @@ def _render_page_rosaire_theme():
 
 
 def _render_page_archives_textes(type_contenu, message_vide):
-    """Archives Prières / Méditations. Photo en WIDGET NATIF st.image
-    (un seul moteur photo dans toute l'app)."""
+    """Archives Prières / Méditations. Photo en WIDGET NATIF st.image."""
     lignes = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
                           WHERE type_contenu=? ORDER BY date_publication DESC, id DESC""",
                        (type_contenu,)).fetchall()
@@ -496,8 +494,8 @@ def _render_page_archives_audios():
 
 
 def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
-    """La dizaine du jour (pavé numérique, carte une pièce, livre plein écran,
-    badge lien thématique). Saisie en colonnes fantômes (retrait du ✅)."""
+    """La dizaine du jour — v7.2 : affichée UNIQUEMENT sur l'Accueil
+    (🏠 Actualités). Le livre ouvert reste une page autonome plein écran."""
     st.markdown("---")
 
     st.session_state.pop("nettoyage_diz", None)
@@ -853,6 +851,8 @@ def show_espace_membre(matloc_membre=None):
     if not matloc_membre:
         _render_header(masquer_bandes=livre_ouvert)
 
+        # v7.2 : le LIVRE OUVERT reste une page autonome, quelle que soit
+        # la rubrique mémorisée (il recouvre tout sous l'entête)
         if livre_ouvert:
             _render_dizaine_du_jour(est_membre=False)
             return
@@ -870,12 +870,8 @@ def show_espace_membre(matloc_membre=None):
                     '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
                     '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam</div></div>', unsafe_allow_html=True)
 
-        # ---- Dizaine (hors menu, toujours visible) ----
-        _render_dizaine_du_jour(est_membre=False)
-        if st.session_state.get("diz_ouvert"):
-            return
-
         # ---- Contenu de la rubrique choisie ----
+        # v7.2 : la DIZAINE ne s'affiche plus QUE sur l'Accueil (🏠 Actualités)
         st.markdown('<div id="ancre-rubrique" style="height:0;"></div>', unsafe_allow_html=True)
         if rub == "📿 Rosaire":
             if sub == "Le thème de l'année":
@@ -899,6 +895,10 @@ def show_espace_membre(matloc_membre=None):
             else:
                 _render_page_theme_ensemble()
         else:
+            # 🏠 Actualités (Accueil) : dizaine + fil + Coin Affiche
+            _render_dizaine_du_jour(est_membre=False)
+            if st.session_state.get("diz_ouvert"):
+                return
             _render_fil_actualites()
 
         if doit_scroller:
@@ -930,6 +930,7 @@ def show_espace_membre(matloc_membre=None):
 
     _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert)
 
+    # v7.2 : le LIVRE OUVERT reste une page autonome
     if livre_ouvert:
         _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
         return
@@ -960,12 +961,8 @@ def show_espace_membre(matloc_membre=None):
                 '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
                 '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e)</div></div>', unsafe_allow_html=True)
 
-    # ---- Dizaine (hors menu, toujours visible) ----
-    _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
-    if st.session_state.get("diz_ouvert"):
-        return
-
     # ---- Contenu de la rubrique choisie ----
+    # v7.2 : la DIZAINE ne s'affiche plus QUE sur l'Accueil (🏠 Actualités)
     st.markdown('<div id="ancre-rubrique" style="height:0;"></div>', unsafe_allow_html=True)
     if rub == "📅 Mes évènements":
         # --- RÈGLE 4 : périmètre ÉQUIPE uniquement ---
@@ -1044,7 +1041,11 @@ def show_espace_membre(matloc_membre=None):
         else:
             _render_page_theme_ensemble()
 
-    else:  # 🏠 Actualités (défaut)
+    else:
+        # 🏠 Actualités (Accueil) : dizaine + fil + Coin Affiche
+        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
+        if st.session_state.get("diz_ouvert"):
+            return
         _render_fil_actualites()
 
     if doit_scroller:
