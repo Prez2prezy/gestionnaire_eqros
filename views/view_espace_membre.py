@@ -1,9 +1,10 @@
 # ====================================================================
-# view_espace_membre.py — VERSION 7.3
-# v7.3 : menu FIGÉ (sticky) sous l'entête pendant le scroll + écart
-# réduit à zéro + Archives en dernière position côté communautaire.
-# v7.2 : dizaine uniquement sur l'Accueil. v7.1 : menu en boutons natifs.
-# Vérification de version : Ctrl+F → "VERSION 7.3", "_figer_menu".
+# view_espace_membre.py — VERSION 7.4
+# v7.4 : menu DANS l'entête fixe (Option A validée : logo/badge → menu →
+# sous-menu → bandes). Boutons HTML de l'entête branchés sur les boutons
+# natifs cachés (clic fiable, session préservée). Jamais de scroll perdu.
+# Vérification de version : Ctrl+F → "VERSION 7.4", "_menu_natif",
+# "_brancher_menu". "_figer_menu" ne doit PLUS exister.
 # ====================================================================
 import os
 import re
@@ -29,84 +30,75 @@ SOUS_RUBRIQUES = {
 }
 
 
-def _figer_menu(nb_bandes, rub, sub):
-    """v7.3 — FIGE le menu (rubriques + sous-rubriques) sous l'entête pendant
-    le scroll (position sticky). Le repère invisible #repere-menu (rendu par
-    _menu_navigation juste avant les rangées de boutons) est retrouvé dans le
-    DOM ; les 1-2 rangées qui le suivent deviennent sticky avec top = hauteur
-    RÉELLE de l'entête (mesurée), fond opaque pour que le contenu glisse
-    dessous. La clé inclut rub/sub : si une rangée apparaît ou disparaît
-    (rubrique avec/sans sous-rubriques), le script rejoue.
-    Dégradation douce : si la structure interne de Streamlit change un jour,
-    le menu redevient simplement défilant (jamais cassé)."""
-    script = (
-        "<script>(function(){var f=function(){try{"
-        "var d=window.parent.document;var h=d.querySelector('.sticky-header');"
-        "var rep=d.getElementById('repere-menu');if(!h||!rep)return;"
-        "var H=h.offsetHeight;"
-        "var ec=rep.closest('[data-testid=stElementContainer]')||rep.parentElement;"
-        "var r1=ec.nextElementSibling;if(!r1)return;"
-        "var r2=r1.nextElementSibling;"
-        "var ok2=(r2&&r2.querySelector&&r2.querySelector('button'));"
-        "var st=function(el,top){el.style.position='sticky';el.style.top=top+'px';"
-        "el.style.zIndex='9998';el.style.backgroundColor='#0a0f2c';"
-        "el.style.paddingTop='2px';el.style.paddingBottom='4px';};"
-        "st(r1,H);if(ok2)st(r2,H+r1.offsetHeight);"
-        "}catch(e){}};f();window.parent.addEventListener('resize',f);})();</script>")
-    try:
-        _comp_html(script, height=0, key=f"figer_{nb_bandes}_{rub}_{sub}")
-    except Exception:
-        pass
-
-
-def _menu_navigation(rubriques, prefixe, nb_bandes):
-    """Menu en BOUTONS natifs (rubrique active violette, fiable tous
-    navigateurs). Pose un repère invisible avant les rangées (pour le
-    figeage v7.3), gère les sous-rubriques, puis fige le menu sous l'entête.
-    Retourne (rubrique, sous_rubrique)."""
-    # Repère invisible (servira au script de figeage)
-    st.markdown('<div id="repere-menu" style="display:none;"></div>',
-                unsafe_allow_html=True)
-
+def _normaliser_nav(rubriques):
+    """Garantit que nav_rub/nav_sub sont valides pour CET espace."""
     if st.session_state.get("nav_rub") not in rubriques:
         st.session_state["nav_rub"] = rubriques[0]
-
-    # ---- Rangée des RUBRIQUES ----
-    cols = st.columns(len(rubriques), gap="small")
-    clic = None
-    for i, (col, r) in enumerate(zip(cols, rubriques)):
-        with col:
-            actif = (st.session_state["nav_rub"] == r)
-            if st.button(r, key=f"navr_{prefixe}_{i}", use_container_width=True,
-                         type="primary" if actif else "secondary"):
-                clic = r
-    if clic and clic != st.session_state["nav_rub"]:
-        st.session_state["nav_rub"] = clic
-        st.session_state.pop("nav_sub", None)  # reset sous-rubrique
-        st.rerun()
-
-    # ---- Rangée des SOUS-RUBRIQUES (si la rubrique en possède) ----
-    sub = None
+        st.session_state.pop("nav_sub", None)
     sous = SOUS_RUBRIQUES.get(st.session_state["nav_rub"])
     if sous:
         if st.session_state.get("nav_sub") not in sous:
             st.session_state["nav_sub"] = sous[0]
-        cols2 = st.columns(len(sous), gap="small")
+    elif st.session_state.get("nav_sub"):
+        st.session_state.pop("nav_sub", None)
+
+
+def _brancher_menu(cpt):
+    """Branche les boutons HTML DE L'ENTÊTE sur les natifs cachés : au
+    toucher, on « presse » le natif de même libellé (hors entête), et on
+    CACHE les natifs (leur conteneur stElementContainer → display:none).
+    La clé change à CHAQUE run → le script rejoue après chaque re-rendu,
+    les natifs restent invisibles en permanence."""
+    script = (
+        "<script>(function(){var d=window.parent.document;"
+        "var hs=d.querySelectorAll('.sticky-header .menu-btn');"
+        "var nat=d.querySelectorAll('button');var i,j;"
+        "for(i=0;i<nat.length;i++){var t=nat[i].textContent.trim();"
+        "if(!t)continue;"
+        "for(j=0;j<hs.length;j++){if(hs[j].textContent.trim()===t){"
+        "var el=nat[i];while(el&&el!==d.body&&el.getAttribute('data-testid')!=='stElementContainer'){el=el.parentElement;}"
+        "if(el&&el!==d.body){el.style.display='none';}"
+        "(function(btn){hs[j].addEventListener('click',function(){btn.click();});})(nat[i]);"
+        "break;}}}})();</script>")
+    try:
+        _comp_html(script, height=0, key=f"branche_{cpt}")
+    except Exception:
+        pass
+
+
+def _menu_natif(rubriques, prefixe):
+    """v7.4 — Les VRAIS boutons du menu (natifs : clic fiable, session,
+    sous-rubriques, mémorisation) rendus ici puis CACHÉS par _brancher_menu.
+    Les boutons visibles sont ceux de l'entête (HTML)."""
+    st.session_state["nav_cpt"] = st.session_state.get("nav_cpt", 0) + 1
+
+    clic = None
+    cols = st.columns(len(rubriques), gap="small")
+    for i, (col, r) in enumerate(zip(cols, rubriques)):
+        with col:
+            if st.button(r, key=f"navr_{prefixe}_{i}", use_container_width=True,
+                         type="secondary"):
+                clic = r
+    if clic and clic != st.session_state["nav_rub"]:
+        st.session_state["nav_rub"] = clic
+        st.session_state.pop("nav_sub", None)
+        st.rerun()
+
+    sous = SOUS_RUBRIQUES.get(st.session_state["nav_rub"])
+    if sous:
         clic2 = None
+        cols2 = st.columns(len(sous), gap="small")
         for i, (col, s) in enumerate(zip(cols2, sous)):
             with col:
-                actif2 = (st.session_state["nav_sub"] == s)
                 if st.button(s, key=f"navs_{prefixe}_{i}", use_container_width=True,
-                             type="primary" if actif2 else "secondary"):
+                             type="secondary"):
                     clic2 = s
         if clic2 and clic2 != st.session_state["nav_sub"]:
             st.session_state["nav_sub"] = clic2
             st.rerun()
-        sub = st.session_state["nav_sub"]
 
-    # Fige le menu sous l'entête pendant le scroll (v7.3)
-    _figer_menu(nb_bandes, st.session_state["nav_rub"], sub)
-    return st.session_state["nav_rub"], sub
+    _brancher_menu(st.session_state["nav_cpt"])
+    return st.session_state["nav_rub"], st.session_state.get("nav_sub")
 
 
 # ====================================================================
@@ -222,6 +214,11 @@ def _render_theme(compact=False):
     [data-testid="stPopover"] button:hover { background-color: #5e35b1 !important; }
     [data-testid="stNumberInput"] { max-width: 220px !important; margin-left: auto !important; margin-right: auto !important; }
     [data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] { display: none !important; }
+    .menu-row { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin:8px 10px 0 10px; }
+    .menu-row-sub { margin-top:6px; }
+    .menu-btn { background-color:#1a2150; color:#e8eaf6; border:1px solid #2a3160; border-radius:20px; padding:6px 12px; font-weight:600; font-size:0.85rem; cursor:pointer; white-space:nowrap; user-select:none; }
+    .menu-btn.actif { background-color:#4527a0; border-color:#5e35b1; color:#ffffff; }
+    .menu-btn:active { background-color:#5e35b1; }
     .sticky-header { position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
         background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px 0 16px; }
     .header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; }
@@ -274,9 +271,10 @@ def _bandes_defilantes_html(membre=False):
     return "".join(morceaux)
 
 
-def _render_header(membre=None, matloc=None, masquer_bandes=False):
-    """Entête FIGÉE. Badge conditionnel + bandes masquables (livre ouvert).
-    Tout le HTML sur UNE SEULE LIGNE (règle anti-code-visible)."""
+def _render_header(membre=None, matloc=None, masquer_bandes=False, rubriques=None):
+    """Entête FIGÉE — v7.4 : le menu (rubriques + sous-rubriques) est dessiné
+    DANS le bloc fixe, entre la rangée logo/badge et les bandes (Option A).
+    Les états actifs (violets) viennent de la session. UNE seule chaîne HTML."""
     logo_b64 = _logo_base64()
     logo_html = (f'<img src="data:image/png;base64,{logo_b64}" alt="Logo">'
                  if logo_b64 else '<div style="font-size:4rem;">📿</div>')
@@ -293,13 +291,28 @@ def _render_header(membre=None, matloc=None, masquer_bandes=False):
               ' font-size:0.9rem; display:inline-block; white-space:nowrap;">'
               + badge_txt + '</div></div>')
 
+    menu_html = ""
+    if rubriques:
+        rub_actif = st.session_state.get("nav_rub")
+        items = "".join(
+            '<div class="menu-btn' + (' actif' if r == rub_actif else '') + '">' + r + "</div>"
+            for r in rubriques)
+        menu_html = '<div class="menu-row">' + items + "</div>"
+        sous = SOUS_RUBRIQUES.get(rub_actif)
+        if sous:
+            sub_actif = st.session_state.get("nav_sub")
+            sitems = "".join(
+                '<div class="menu-btn' + (' actif' if s == sub_actif else '') + '">' + s + "</div>"
+                for s in sous)
+            menu_html += '<div class="menu-row menu-row-sub">' + sitems + "</div>"
+
     bandes_html = "" if masquer_bandes else _bandes_defilantes_html(membre=bool(membre))
 
     st.markdown(
         f'<div class="sticky-header"><div class="header-inner">'
         f'<div class="logo-bloc">{logo_html}{titre_svg}</div>'
         f'{droite}'
-        f'</div>{bandes_html}</div>', unsafe_allow_html=True)
+        f'</div>{menu_html}{bandes_html}</div>', unsafe_allow_html=True)
 
 
 # ====================================================================
@@ -886,15 +899,16 @@ def show_espace_membre(matloc_membre=None):
 
     # ================= ÉTAT 1 : VUE PUBLIQUE (Espace communautaire) =================
     if not matloc_membre:
-        _render_header(masquer_bandes=livre_ouvert)
+        _normaliser_nav(RUBRIQUES_PUBLIC)
+        _render_header(masquer_bandes=livre_ouvert, rubriques=RUBRIQUES_PUBLIC)
 
         # Le LIVRE OUVERT reste une page autonome, quelle que soit la rubrique
         if livre_ouvert:
             _render_dizaine_du_jour(est_membre=False)
             return
 
-        # ---- MENU en BOUTONS, FIGÉ sous l'entête (v7.3) ----
-        rub, sub = _menu_navigation(RUBRIQUES_PUBLIC, "pub", nb_bandes)
+        # ---- Natifs cachés : pressés par les boutons de l'entête ----
+        rub, sub = _menu_natif(RUBRIQUES_PUBLIC, "pub")
 
         nav_now = rub + "|" + (sub or "")
         doit_scroller = (st.session_state.get("nav_last", "") != nav_now
@@ -963,15 +977,16 @@ def show_espace_membre(matloc_membre=None):
         st.session_state["visite_membre"] = True
         compter_visite("membre")
 
-    _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert)
+    _normaliser_nav(RUBRIQUES_MEMBRE)
+    _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert, rubriques=RUBRIQUES_MEMBRE)
 
     # Le LIVRE OUVERT reste une page autonome
     if livre_ouvert:
         _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
         return
 
-    # ---- MENU en BOUTONS, FIGÉ sous l'entête (v7.3 — membre : + Mes évènements) ----
-    rub, sub = _menu_navigation(RUBRIQUES_MEMBRE, "mem", nb_bandes)
+    # ---- Natifs cachés : pressés par les boutons de l'entête ----
+    rub, sub = _menu_natif(RUBRIQUES_MEMBRE, "mem")
 
     nav_now = rub + "|" + (sub or "")
     doit_scroller = (st.session_state.get("nav_last", "") != nav_now
