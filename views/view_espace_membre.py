@@ -1,8 +1,7 @@
 # ====================================================================
-# view_espace_membre.py — VERSION 6.2
-# Vérification de version : Ctrl+F → "_mesure_entete", "COULEURS_CLAIRES",
-# "GROUPES_CHAPELETS", "Annoncé" (et NON "Annuncié"). Si un de ces mots
-# manque, ce n'est pas la bonne version.
+# view_espace_membre.py — VERSION 7 (passe d'amélioration complète)
+# Vérification de version : Ctrl+F → "VERSION 7", "_mesure_entete",
+# "COULEURS_CLAIRES", "GROUPES_CHAPELETS", "Annoncé" (et NON "Annuncié").
 # ====================================================================
 import os
 import re
@@ -17,7 +16,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 
 
 # ====================================================================
-# NAVIGATION — rubriques et sous-rubriques (maquette validée v6)
+# NAVIGATION — rubriques et sous-rubriques
 # ====================================================================
 RUBRIQUES_MEMBRE = ["🏠 Actualités", "🕯️ Thème", "📿 Rosaire", "📅 Mes évènements", "📖 Archives"]
 RUBRIQUES_PUBLIC = ["🏠 Actualités", "📿 Rosaire", "📖 Archives", "🕯️ Thème"]
@@ -71,7 +70,8 @@ def _scroll_vers_contenu():
 
 
 def _compter_bandes(membre=False):
-    """Compte les bandes défilantes RÉELLEMENT affichées (clé de re-mesure)."""
+    """Compte les bandes défilantes RÉELLEMENT affichées (clé de re-mesure :
+    quand le nombre change, l'entête change de hauteur → on re-mesure)."""
     try:
         bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
                               WHERE type_contenu='annonce_defilante'
@@ -89,11 +89,10 @@ def _compter_bandes(membre=False):
 
 
 def _mesure_entete(cle):
-    """v6.2 — LA solution du menu caché : on ne devine plus la hauteur de
-    l'entête (logo + badge + bandes), on la MESURE. Un mini-script lit la
-    hauteur réelle du bloc .sticky-header et pousse le contenu exactement
-    dessous (style inline !important, qui bat toute feuille CSS). La clé
-    change quand le nombre de bandes change → re-mesure automatique."""
+    """AMÉLIORATION v7 n°1 — Fini les paddings devinés : un script MESURE la
+    hauteur réelle de l'entête (logo + badge + bandes) et pousse le contenu
+    exactement dessous (style inline !important, qui bat toute feuille CSS).
+    La clé change quand le nombre de bandes change → re-mesure automatique."""
     script = (
         "<script>(function(){var a=function(){try{var d=window.parent.document;"
         "var h=d.querySelector('.sticky-header');var b=d.querySelector('.block-container');"
@@ -106,7 +105,7 @@ def _mesure_entete(cle):
 
 
 def _render_theme(compact=False):
-    """CSS de l'espace. v6.2 : padding-top = MESURÉ par _mesure_entete() ; le
+    """CSS de l'espace. v7 : padding-top = MESURÉ par _mesure_entete() ; le
     CSS garde une valeur de SECOURS le temps du premier dessin.
     CSS construit par CONCATÉNATION (jamais de f-string : accolades)."""
     if compact:
@@ -250,14 +249,17 @@ def _diz_txt(texte, couleur="#333333", taille="0.95rem", gras=False, centre=Fals
 MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
            "août", "septembre", "octobre", "novembre", "décembre"]
 
-# Versions CLAIRES des couleurs de chapelets (lisibles sur fond nuit).
+# AMÉLIORATION v7 n°4 : versions CLAIRES des couleurs de chapelets — les
+# couleurs fortes (rose vif, bordeaux) sont illisibles en TITRE sur fond nuit.
+# Les couleurs fortes restent utilisées pour les bordures/en-têtes de pages.
 COULEURS_CLAIRES = {"joyeux": "#FF80AB", "lumineux": "#9FA8DA",
                     "douloureux": "#F48FB1", "glorieux": "#A5D6A7"}
 
 
 def _rendre_intro_eyquem(titre_carte="INTRODUCTION"):
-    """Carte de la prière du Père Eyquem. v6.2 : TOUTES les couleurs critiques
-    en !important INLINE (parade à l'écrasement par le CSS global)."""
+    """Carte de la prière du Père Eyquem. AMÉLIORATION v7 n°2 : couleurs
+    critiques en !important INLINE (le CSS global du site écrase sinon le
+    noir → illisible sur fond jaune). [R]→rouge centré gras, [I]→italique."""
     texte = DIZ_INTRO3
     t_esc = html.escape(texte)
     t_esc = t_esc.replace("[R]", '</div><div style="color:#D32F2F !important; font-size:0.98rem; font-weight:bold; text-align:center; line-height:1.7; margin:8px 0;">')
@@ -336,6 +338,8 @@ def _render_page_en_preparation(emoji, titre, description):
         + html.escape(description) + "</div></div>", unsafe_allow_html=True)
 
 
+# AMÉLIORATION v7 n°3 : résumés corrigés (« Annoncé » et non « Annuncié ») ;
+# « Joyeux » est invariable en français → jamais de s ajouté en code.
 GROUPES_CHAPELETS = [
     ("Joyeux", 1, 5, "Annoncé, né, présenté, retrouvé — la vie cachée et la lumière de l’enfance"),
     ("Lumineux", 6, 10, "Le Baptême, Cana, l’annonce du Royaume, la Transfiguration, l’Eucharistie"),
@@ -345,9 +349,9 @@ GROUPES_CHAPELETS = [
 
 
 def _render_page_rosaire_eyquem():
-    """📿 Rosaire → L'esprit du Père Eyquem. v6.1/v6.2 : coquilles corrigées
-    (« Joyeux » sans s, « Annoncé »), couleurs CLAIRES, mystères CLIQUABLES
-    (expander : PASSAGE + MÉDITATION), couleurs critiques en !important."""
+    """📿 Rosaire → L'esprit du Père Eyquem. AMÉLIORATION v7 n°5 : chaque
+    mystère est CLIQUABLE (expander → PASSAGE + MÉDITATION en blanc lisible).
+    Titres de chapelets en couleurs claires (n°4), tout en !important (n°2)."""
     st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                 ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
                 ' border:2px solid #FFD700;">'
@@ -382,7 +386,8 @@ def _render_page_rosaire_eyquem():
 
 
 def _render_page_rosaire_theme():
-    """📿 Rosaire → Le thème de l'année : les 20 mystères avec leur lien."""
+    """📿 Rosaire → Le thème de l'année : les 20 mystères avec leur lien
+    thématique saisi par le diocèse (consultation ET relecture)."""
     theme = get_theme_actif()
     if not theme:
         st.info("🕯️ Aucun thème pastoral n'est actuellement actif.")
@@ -418,8 +423,9 @@ def _render_page_rosaire_theme():
 
 
 def _render_page_archives_textes(type_contenu, message_vide):
-    """Archives Prières / Méditations. v6.2 : photo en WIDGET NATIF st.image
-    (le moteur HTML rendait les photos minuscules — constat terrain)."""
+    """Archives Prières / Méditations. AMÉLIORATION v7 n°6 : photo en WIDGET
+    NATIF st.image — un SEUL moteur photo dans toute l'app (le moteur HTML
+    rendait les photos minuscules et différentes entre accueil et archives)."""
     lignes = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
                           WHERE type_contenu=? ORDER BY date_publication DESC, id DESC""",
                        (type_contenu,)).fetchall()
@@ -460,7 +466,9 @@ def _render_page_archives_audios():
 
 def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
     """La dizaine du jour (pavé numérique, carte une pièce, livre plein écran,
-    badge lien thématique). v6.2 : ✅ en COLONNES FANTÔMES (retrait fiable)."""
+    badge lien thématique). AMÉLIORATION v7 n°7 : saisie en COLONNES FANTÔMES
+    (retrait symétrique du champ et du ✅ dans la carte — méthode compatible
+    tous navigateurs, contrairement aux sélecteurs CSS récents)."""
     st.markdown("---")
 
     st.session_state.pop("nettoyage_diz", None)
@@ -492,7 +500,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                         'Entrez ici votre jour de naissance (1 - 31) et rejoignez la chaîne de prière</div></div>',
                         unsafe_allow_html=True)
 
-            # Colonnes fantômes : retrait du champ et du ✅ dans la carte
+            # Colonnes fantômes : vide | champ | ✅ | vide (retrait symétrique)
             _, c_saisie, c_btn, _ = st.columns([0.07, 4.5, 1.2, 0.07],
                                                gap="small", vertical_alignment="bottom")
             with c_saisie:
@@ -743,8 +751,8 @@ def _render_coin_affiche():
 
 
 def _render_fil_actualites():
-    """v6.2 : photo en WIDGET NATIF st.image (pleine largeur), PUIS la carte
-    titre+texte. Un seul moteur photo dans toute l'app."""
+    """AMÉLIORATION v7 n°6 : photo en WIDGET NATIF st.image (pleine largeur)
+    PUIS la carte titre+texte. Même moteur photo que les Archives."""
     dernier = c.execute("""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
                            FROM espace_spirituel
                            WHERE type_contenu IN ('priere', 'meditation')
@@ -798,7 +806,7 @@ def show_espace_membre(matloc_membre=None):
     livre_ouvert = st.session_state.get("diz_ouvert", False)
 
     _render_theme(compact=livre_ouvert)
-    # v6.2 : MESURE réelle de l'entête (fini le menu caché sous les bandes)
+    # AMÉLIORATION v7 n°1 : MESURE réelle de l'entête (fini le menu caché)
     nb_bandes = 0 if livre_ouvert else _compter_bandes(membre=bool(matloc_membre))
     _mesure_entete(nb_bandes)
 
