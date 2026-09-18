@@ -438,6 +438,36 @@ def show_diocese():
 
     elif menu == "🔐 Gérer les accès":
         st.markdown('<h2 style="color:#1A237E;">🔐 Gestion des accès</h2>', unsafe_allow_html=True)
+        st.markdown("### 📡 Service Communication")
+        com = c.execute("SELECT id, username FROM utilisateurs WHERE role='communication'").fetchone()
+        if not com:
+            st.info("Aucun compte Communication. Ce compte donne accès à une vue cloisonnée : la cellule prépare et SOUMET — rien ne se publie sans votre validation.")
+            nom_com = st.text_input("Identifiant du compte", value="communication", key="nom_com")
+            if st.button("➕ Créer le compte Communication", key="creer_com"):
+                if not nom_com.strip():
+                    st.error("Choisissez un identifiant.")
+                elif c.execute("SELECT id FROM utilisateurs WHERE username=?", (nom_com.strip(),)).fetchone():
+                    st.error("Cet identifiant existe déjà.")
+                else:
+                    pwd = generer_mot_de_passe()
+                    c.execute("INSERT INTO utilisateurs (username, password, role, diocese_id, paroisse_id, equipe_id) VALUES (?, ?, 'communication', ?, NULL, NULL)",
+                              (nom_com.strip(), hash_password(pwd), st.session_state['diocese_id']))
+                    commit_and_sync()
+                    st.session_state['new_pwd_com'] = {'user': nom_com.strip(), 'pwd': pwd}
+                    st.rerun()
+        else:
+            st.success("Compte actif : `" + com[1] + "`")
+            if st.button("🔄 Réinitialiser le mot de passe Communication", key="reset_com"):
+                nouveau = generer_mot_de_passe()
+                c.execute("UPDATE utilisateurs SET password=? WHERE id=?", (hash_password(nouveau), com[0]))
+                commit_and_sync()
+                st.session_state['new_pwd_com'] = {'user': com[1], 'pwd': nouveau}
+            if st.session_state.get('new_pwd_com') and st.session_state['new_pwd_com']['user'] == com[1]:
+                st.markdown(f"<div style='background:#e8f5e9;padding:15px;border-radius:10px;border:1px solid #c8e6c9;'>🔑 Nouveau mot de passe pour <code>{st.session_state['new_pwd_com']['user']}</code> : <code style='color:#d84315;font-size:1.2rem;'>{st.session_state['new_pwd_com']['pwd']}</code></div>", unsafe_allow_html=True)
+                if st.button("OK, j'ai noté le mot de passe", key="ok_pwd_com"):
+                    del st.session_state['new_pwd_com']
+                    st.rerun()
+        st.markdown("---")
         st.markdown("### 🏘️ Paroisses")
         for p in c.execute("SELECT id, nom, responsable FROM paroisses").fetchall():
             user = c.execute("SELECT id, username FROM utilisateurs WHERE paroisse_id=? AND role='paroisse'", (p[0],)).fetchone()
