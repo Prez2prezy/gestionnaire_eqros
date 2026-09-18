@@ -1,1259 +1,1059 @@
-import streamlit as st
-import pandas as pd
-import io
+# ====================================================================
+# view_espace_membre.py — VERSION 7.4
+# v7.4 : menu DANS l'entête fixe (Option A validée : logo/badge → menu →
+# sous-menu → bandes). Boutons HTML de l'entête branchés sur les boutons
+# natifs cachés (clic fiable, session préservée). Jamais de scroll perdu.
+# Vérification de version : Ctrl+F → "VERSION 7.4", "_menu_natif",
+# "_brancher_menu". "_figer_menu" ne doit PLUS exister.
+# ====================================================================
+import os
+import re
 import html
-import urllib.parse
-from datetime import date, timedelta
+import base64
+import streamlit as st
+from datetime import date
+from streamlit.components.v1 import html as _comp_html
 from database import c, commit_and_sync
-import qrcode
-from io import BytesIO
-from services import (safe_date, envoyer_notification_telegram, lien_whatsapp,
-                      verifier_abonnement, periode_affichage, get_periode_pastorale,
-                      est_cloture, cloturer_periode, TYPES_EVENEMENTS,
-                      URL_ESPACE_SPIRITUEL, sauvegarder_illustration, supprimer_photo,
-                      sauvegarder_video, sauvegarder_pdf)
-from mysteres import get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
-
-
-def widget_type_abonnement(prefix, m_id, annee):
-    type_abo = st.radio("Type", ["📝 Abonnement", "🔄 Réabonnement"], key=f"type_{prefix}_{m_id}_{annee}", horizontal=True)
-    montant = st.number_input("Montant (FCFA)", min_value=0, value=5000, step=500, key=f"mont_{prefix}_{m_id}_{annee}")
-    return ("abonnement" if "Abonnement" in type_abo else "reabonnement"), montant
-
-def _qrcode_st(url, taille_px=260):
-    """Génère et affiche un QR code scannable (image locale, aucun service tiers)."""
-    qr = qrcode.QRCode(box_size=8, border=2)
-    qr.add_data(url)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    buffer = BytesIO()
-    img.save(buffer, format="PNG")
-    st.image(buffer.getvalue(), width=taille_px)
-
-def ajouter_evenement_agenda(equipe_id=None, paroisse_id=None, diocese_id=None, auteur_nom="Système"):
-    st.markdown('<h3 style="color:#1A237E;">📅 Vos évènements à venir</h3>', unsafe_allow_html=True)
-    prefix = f"ag_{equipe_id}_{paroisse_id}_{diocese_id}"
-
-    # Nettoyage DIFFÉRÉ (un del immédiat sur un widget instancié dans le même
-    # run lèverait une StreamlitAPIException)
-    cles_nettoyage = st.session_state.pop("nettoyage_agenda", None)
-    if cles_nettoyage:
-        for cle in cles_nettoyage:
-            st.session_state.pop(cle, None)
-
-    with st.expander("➕ Ajouter / Enregistrer un évènement à l'agenda"):
-        with st.form(f"ajout_agenda_{prefix}"):
-            c1, c2 = st.columns(2)
-            with c1:
-                date_ag = st.date_input("📅 Date", value=date.today() + timedelta(days=7), key=f"d_ag_{prefix}")
-            with c2:
-                type_ag = st.selectbox("⛪ Type", TYPES_EVENEMENTS, key=f"t_ag_{prefix}")
-
-            lieu_ag = st.text_input("📍 Lieu", key=f"l_ag_{prefix}")
-            desc_ag = st.text_area("📝 Description", key=f"desc_ag_{prefix}")
-            affiche = st.file_uploader("🖼️ Affiche de l'évènement (optionnel — visible dans l'Espace de Prière)",
-                                       type=["jpg", "jpeg", "png", "webp"], key=f"affiche_{prefix}")
-
-            equipes_invitees_ids = []
-            faire_suivre_check = False
-
-            if paroisse_id and not equipe_id and not diocese_id:
-                st.markdown("**👥 Sélectionnez les équipes concernées :**")
-                equipes_paroisse = c.execute("SELECT id, nom_equipe FROM equipes WHERE paroisse_id=?", (paroisse_id,)).fetchall()
-                if equipes_paroisse:
-                    options_equipes = ["🤝 Toutes les équipes"] + [e[1] for e in equipes_paroisse]
-                    eq_dict = {"🤝 Toutes les équipes": "ALL", **{e[1]: e[0] for e in equipes_paroisse}}
-                    cle_selection = f"sel_eq_par_{prefix}"
-                    if type_ag == "Prière commune" and cle_selection not in st.session_state:
-                        st.session_state[cle_selection] = ["🤝 Toutes les équipes"]
-                    equipes_selectionnees = st.multiselect("Équipes", options_equipes, key=cle_selection)
-                    if "🤝 Toutes les équipes" in equipes_selectionnees:
-                        equipes_invitees_ids = [e[0] for e in equipes_paroisse]
-                    else:
-                        equipes_invitees_ids = [eq_dict[nom] for nom in equipes_selectionnees]
-                else:
-                    st.warning("Aucune équipe créée dans cette paroisse.")
-
-            elif equipe_id and not paroisse_id and not diocese_id:
-                eq_info = c.execute("SELECT nom_equipe, paroisse_id FROM equipes WHERE id=?", (equipe_id,)).fetchone()
-                if eq_info:
-                    autres_equipes = c.execute("SELECT id, nom_equipe FROM equipes WHERE paroisse_id=? AND id != ?", (eq_info[1], equipe_id)).fetchall()
-                    if autres_equipes:
-                        st.markdown("**🔗 Co-organiser avec une autre équipe ? (Optionnel)**")
-                        eq_dict_autres = {f"{e[1]}": e[0] for e in autres_equipes}
-                        eq_conjointe = st.multiselect("Autre équipe", list(eq_dict_autres.keys()), key=f"sel_eq_conj_{prefix}")
-                        equipes_invitees_ids = [eq_dict_autres[nom] for nom in eq_conjointe]
-                    faire_suivre_check = st.checkbox("📤 Demander à la Paroisse de faire suivre au Diocèse", value=False, key=f"faire_suivre_{prefix}")
-
-            if st.form_submit_button("📅 Enregistrer", width="stretch"):
-                url_affiche = sauvegarder_illustration(affiche) if affiche else None
-
-                c.execute('''INSERT INTO evenements (equipe_id, paroisse_id, diocese_id, date_evenement, type_evenement, lieu, auteur_nom, affiche_url)
-                             VALUES (?,?,?,?,?,?,?,?)''',
-                          (equipe_id, paroisse_id, diocese_id, date_ag.isoformat(), type_ag, lieu_ag, auteur_nom, url_affiche))
-                new_event_id = c.lastrowid
-
-                if equipe_id:
-                    c.execute("INSERT OR IGNORE INTO evenement_equipes (evenement_id, equipe_id) VALUES (?, ?)", (new_event_id, equipe_id))
-                for eid_inv in equipes_invitees_ids:
-                    c.execute("INSERT OR IGNORE INTO evenement_equipes (evenement_id, equipe_id) VALUES (?, ?)", (new_event_id, eid_inv))
-
-                faire_suivre = 1 if (equipe_id and not paroisse_id and faire_suivre_check) else 0
-                c.execute('''INSERT INTO agenda (equipe_id, paroisse_id, diocese_id, date_event, type_event, lieu, description, auteur_nom, a_faire_suivre, evenement_id)
-                             VALUES (?,?,?,?,?,?,?,?,?,?)''',
-                          (equipe_id, paroisse_id, diocese_id, date_ag.isoformat(), type_ag, lieu_ag, desc_ag, auteur_nom, faire_suivre, new_event_id))
-                commit_and_sync()
-
-                source = "Diocèse"
-                if equipe_id:
-                    eq_res = c.execute("SELECT nom_equipe FROM equipes WHERE id=?", (equipe_id,)).fetchone()
-                    source = eq_res[0] if eq_res and eq_res[0] else "Équipe"
-                elif paroisse_id:
-                    par_res = c.execute('SELECT nom FROM paroisses WHERE id=?', (paroisse_id,)).fetchone()
-                    source = f"Paroisse {par_res[0]}" if par_res and par_res[0] else "Paroisse"
-
-                nb_invites = f" ({len(equipes_invitees_ids)} équipe(s) invitée(s))" if equipes_invitees_ids else ""
-                envoyer_notification_telegram(
-                    f"📅 <b>Nouvel évènement !</b>\n🏢 {html.escape(source)}{nb_invites}\n⛪ {html.escape(type_ag)}\n"
-                    f"🗓 {date_ag.strftime('%d/%m/%Y')}\n📍 {html.escape(lieu_ag or '')}\n👤 {html.escape(auteur_nom)}")
-
-                st.session_state["nettoyage_agenda"] = [f"l_ag_{prefix}", f"desc_ag_{prefix}", f"affiche_{prefix}"]
-                st.session_state["flash_success"] = f"Évènement enregistré ! {nb_invites} ✅"
-                st.rerun()
-
-    _gerer_affiches_evenements(equipe_id, paroisse_id, diocese_id)
-
-
-def _gerer_affiches_evenements(equipe_id, paroisse_id, diocese_id):
-    """Interface équipe/paroisse pour les affiches des évènements DÉJÀ créés.
-    Aucun échec d'upload n'est silencieux."""
-    with st.expander("🖼️ Affiches des évènements à venir (Coin Affiche)"):
-        cle = f"aff_{equipe_id}_{paroisse_id}_{diocese_id}"
-        if equipe_id:
-            evts = c.execute('''SELECT DISTINCT e.id, e.date_evenement, e.type_evenement, e.lieu, e.affiche_url
-                                FROM evenements e JOIN evenement_equipes ee ON e.id=ee.evenement_id
-                                WHERE ee.equipe_id=? AND e.date_evenement >= ? ORDER BY e.date_evenement ASC''',
-                             (equipe_id, date.today().isoformat())).fetchall()
-        elif paroisse_id:
-            evts = c.execute('''SELECT DISTINCT e.id, e.date_evenement, e.type_evenement, e.lieu, e.affiche_url
-                                FROM evenements e LEFT JOIN evenement_equipes ee ON e.id=ee.evenement_id
-                                LEFT JOIN equipes eq ON ee.equipe_id=eq.id
-                                WHERE (e.paroisse_id=? OR eq.paroisse_id=?) AND e.date_evenement >= ? ORDER BY e.date_evenement ASC''',
-                             (paroisse_id, paroisse_id, date.today().isoformat())).fetchall()
-        else:
-            evts = c.execute('''SELECT id, date_evenement, type_evenement, lieu, affiche_url FROM evenements
-                                WHERE date_evenement >= ? ORDER BY date_evenement ASC''',
-                             (date.today().isoformat(),)).fetchall()
-
-        if not evts:
-            st.info("Aucun évènement à venir.")
-            return
-
-        options = {}
-        for e in evts:
-            d = safe_date(e[1])
-            label = f"{d.strftime('%d/%m/%Y') if d else '??/??/????'} - {e[2]} - {e[3] or 'lieu à définir'}" + (" 🖼️" if e[4] else " (sans affiche)")
-            options[label] = e
-        choix = st.selectbox("Évènement", list(options.keys()), key=f"{cle}_sel")
-        evt = options[choix]
-
-        if evt[4]:
-            st.image(evt[4], width=260)
-        else:
-            st.caption("❌ Aucune affiche enregistrée pour cet évènement.")
-
-        fichier = st.file_uploader("Nouvelle affiche (visible dans l'Espace de Prière)",
-                                   type=["jpg", "jpeg", "png", "webp"], key=f"{cle}_up_{evt[0]}")
-        c1, c2, _ = st.columns([1, 1, 2])
-        with c1:
-            if st.button("📤 Publier l'affiche", key=f"{cle}_pub_{evt[0]}", type="primary", width="stretch"):
-                if not fichier:
-                    st.error("⚠️ Sélectionnez d'abord un fichier image ci-dessus.")
-                else:
-                    url = sauvegarder_illustration(fichier)
-                    if url:
-                        if evt[4]: supprimer_photo(evt[4])
-                        c.execute("UPDATE evenements SET affiche_url=? WHERE id=?", (url, evt[0]))
-                        commit_and_sync()
-                        st.session_state["flash_success"] = "Affiche publiée ! ✅"
-                        st.rerun()
-                    else:
-                        st.error("❌ Upload échoué. Vérifiez que : (1) 'cloudinary' figure dans requirements.txt ; (2) les secrets CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY et CLOUDINARY_API_SECRET sont définis.")
-        with c2:
-            if evt[4] and st.button("🗑️ Retirer l'affiche", key=f"{cle}_del_{evt[0]}", width="stretch"):
-                supprimer_photo(evt[4])
-                c.execute("UPDATE evenements SET affiche_url=NULL WHERE id=?", (evt[0],))
-                commit_and_sync()
-                st.session_state["flash_warning"] = "Affiche retirée."
-                st.rerun()
-
-
-def gerer_affiches_bande_annonces():
-    """Onglet DIOCÈSE : affiches (images) et bandes-annonces (YouTube / vidéo)
-    des évènements à venir -> Coin Affiche de l'Espace de Prière.
-    Priorité d'affichage : bande-annonce > affiche > texte."""
-    st.caption("Le visuel du prochain évènement à venir apparaît dans le Coin Affiche de l'Espace de Prière (public et membres). Priorité : bande-annonce > affiche > texte.")
-    evts = c.execute('''SELECT id, date_evenement, type_evenement, lieu, affiche_url, video_url
-                        FROM evenements WHERE date_evenement >= ? ORDER BY date_evenement ASC''',
-                     (date.today().isoformat(),)).fetchall()
-    if not evts:
-        st.info("Aucun évènement à venir.")
-        return
-
-    options = {}
-    for e in evts:
-        d = safe_date(e[1])
-        badges = (" 🖼️" if e[4] else "") + (" 🎬" if e[5] else "")
-        label = f"{d.strftime('%d/%m/%Y') if d else '??/??'} - {e[2]} - {e[3] or 'lieu à définir'}{badges}"
-        options[label] = e
-
-    labels = list(options.keys())
-    # FIX CRITIQUE : les labels sont DYNAMIQUES (badges 🖼️/🎬 qui apparaissent
-    # après chaque publication). L'ancien label mémorisé par Streamlit dans le
-    # session_state n'est alors plus une option valide → StreamlitAPIException
-    # à chaque affichage de l'onglet. On purge la clé si sa valeur est périmée.
-    if st.session_state.get("dio_visuel_sel") not in labels:
-        st.session_state.pop("dio_visuel_sel", None)
-    choix = st.selectbox("Évènement", labels, key="dio_visuel_sel")
-    evt = options[choix]
-
-    etat_img, etat_vid = st.columns(2)
-    if evt[4]:
-        with etat_img:
-            st.caption("Affiche actuelle :")
-            st.image(evt[4], width=260)
-    else:
-        with etat_img: st.caption("Affiche actuelle : ❌ aucune")
-    if evt[5]:
-        with etat_vid:
-            st.caption("Bande-annonce actuelle :")
-    if evt[5]:
-        if str(evt[5]).startswith("http"):
-            st.video(evt[5])
-        else:
-            st.caption("🎬 Vidéo enregistrée en local — retéléversez-la depuis votre ordinateur pour l'afficher ici.")
-    else:
-        with etat_vid: st.caption("Bande-annonce actuelle : ❌ aucune")
-
-    st.markdown("---")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.markdown("**🖼️ Affiche (image)**")
-        fichier = st.file_uploader("Nouvelle affiche", type=["jpg", "jpeg", "png", "webp"], key="dio_affiche_up")
-        b1, b2 = st.columns(2)
-        with b1:
-            if st.button("📤 Publier l'affiche", key="dio_affiche_pub", type="primary", width="stretch"):
-                if not fichier:
-                    st.error("⚠️ Sélectionnez d'abord une image.")
-                else:
-                    url = sauvegarder_illustration(fichier)
-                    if url:
-                        if evt[4]: supprimer_photo(evt[4])
-                        c.execute("UPDATE evenements SET affiche_url=? WHERE id=?", (url, evt[0]))
-                        commit_and_sync()
-                        st.session_state["flash_success"] = "Affiche publiée ! ✅"
-                        st.rerun()
-                    else:
-                        st.error("❌ Upload échoué. Vérifiez : 'cloudinary' dans requirements.txt + secrets CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.")
-        with b2:
-            if evt[4] and st.button("🗑️ Retirer", key="dio_affiche_del", width="stretch"):
-                supprimer_photo(evt[4])
-                c.execute("UPDATE evenements SET affiche_url=NULL WHERE id=?", (evt[0],))
-                commit_and_sync()
-                st.session_state["flash_warning"] = "Affiche retirée."
-                st.rerun()
-    with col_b:
-        st.markdown("**🎬 Bande-annonce**")
-        url_yt = st.text_input("URL YouTube (optionnel)", key="dio_ba_url", placeholder="https://youtu.be/...")
-        fichier_video = st.file_uploader("…ou fichier vidéo (MP4)", type=["mp4", "mov"], key="dio_ba_up")
-        b3, b4 = st.columns(2)
-        with b3:
-            if st.button("📤 Publier la bande-annonce", key="dio_ba_pub", type="primary", width="stretch"):
-                video = url_yt.strip() if url_yt.strip() else (sauvegarder_video(fichier_video) if fichier_video else None)
-                if video:
-                    if evt[5] and "cloudinary" in evt[5]: supprimer_photo(evt[5])
-                    c.execute("UPDATE evenements SET video_url=? WHERE id=?", (video, evt[0]))
-                    commit_and_sync()
-                    st.session_state["flash_success"] = "Bande-annonce publiée ! ✅"
-                    st.rerun()
-                else:
-                    st.error("Collez une URL YouTube ou chargez un fichier vidéo.")
-        with b4:
-            if evt[5] and st.button("🗑️ Retirer", key="dio_ba_del", width="stretch"):
-                if "cloudinary" in evt[5]: supprimer_photo(evt[5])
-                c.execute("UPDATE evenements SET video_url=NULL WHERE id=?", (evt[0],))
-                commit_and_sync()
-                st.session_state["flash_warning"] = "Bande-annonce retirée."
-                st.rerun()
-
-
-def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_id=None):
-    st.markdown('<h3 style="color:#1A237E;">📋 Planification des agendas</h3>', unsafe_allow_html=True)
-    query = '''SELECT id, date_event, type_event, lieu, description, auteur_nom, equipe_id, paroisse_id, diocese_id, a_faire_suivre, evenement_id FROM agenda WHERE date_event >= ? '''
-    params, conditions = [date.today().isoformat()], []
-
-    if equipe_id:
-        conditions.extend([
-            "equipe_id = ?",
-            "(paroisse_id = ? AND equipe_id IS NULL AND (a_faire_suivre IS NULL OR a_faire_suivre != 2))",
-            "(diocese_id = 1 AND paroisse_id IS NULL AND equipe_id IS NULL)"
-        ])
-        pid = c.execute("SELECT paroisse_id FROM equipes WHERE id=?", (equipe_id,)).fetchone()
-        params.extend([equipe_id, pid[0] if pid and pid[0] else -1])
-    elif paroisse_id:
-        conditions.extend(["(paroisse_id = ? AND equipe_id IS NULL)", "equipe_id IN (SELECT id FROM equipes WHERE paroisse_id = ?)", "(diocese_id = 1 AND paroisse_id IS NULL AND equipe_id IS NULL)"])
-        params.extend([paroisse_id, paroisse_id])
-    elif diocese_id:
-        conditions.extend([
-            "(diocese_id = ? AND paroisse_id IS NULL AND equipe_id IS NULL)",
-            "paroisse_id IN (SELECT id FROM paroisses WHERE diocese_id = ?)"
-        ])
-        params.extend([diocese_id, diocese_id])
-
-    if conditions: query += " AND (" + " OR ".join(conditions) + ")"
-    query += " ORDER BY date_event ASC"
-
-    items = c.execute(query, params).fetchall()
-    if not items: return st.info("Aucun évènement à venir.")
-
-    role = st.session_state.get('role')
-    mon_eq = st.session_state.get('equipe_id')
-    ma_par = st.session_state.get('paroisse_id')
-
-    for item in items:
-        i_date = safe_date(item[1])
-        if not i_date: continue
-
-        source_icon, source_nom = "🏛️", "Diocèse"
-        if item[6]:
-            eq_info = c.execute("SELECT nom_equipe FROM equipes WHERE id=?", (item[6],)).fetchone()
-            if eq_info: source_nom, source_icon = f"{eq_info[0]}", "👥"
-        elif item[7]:
-            par_info = c.execute("SELECT nom FROM paroisses WHERE id=?", (item[7],)).fetchone()
-            if par_info: source_nom, source_icon = f"Paroisse {par_info[0]}", "🏘️"
-
-        delta = (i_date - date.today()).days
-        delai = "🔴 Aujourd'hui !" if delta == 0 else "🟠 Demain" if delta == 1 else f"🟡 Dans {delta} jours" if delta <= 7 else f"🟢 Dans {delta} jours"
-        icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨", "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(item[2], "📅")
-
-        titre = f"{icone} {i_date.strftime('%d/%m/%Y')} - {item[2]} - {source_icon} {source_nom} ({delai})"
-        if item[9] == 1: titre = f"🚨 {titre}"
-        elif item[9] == 2: titre = f"📬 {titre}"
-
-        with st.expander(titre):
-            if item[9] == 1:
-                st.markdown('''<div style="background-color: #ffebee; margin: -10px -20px 20px -20px; padding: 15px 20px; border-left: 5px solid #d32f2f; border-radius: 0 8px 8px 0;"><span style="color: #b71c1c; font-weight: bold; font-size: 1.1rem;">🚩 Demande de transmission au Diocèse</span><br><span style="color: #c62828;">L\'équipe émettrice souhaite que cette information soit validée et transmise.</span></div>''', unsafe_allow_html=True)
-            elif item[9] == 2:
-                st.markdown('''<div style="background-color: #e8f5e9; margin: -10px -20px 20px -20px; padding: 15px 20px; border-left: 5px solid #2e7d32; border-radius: 0 8px 8px 0;"><span style="color: #1b5e20; font-weight: bold; font-size: 1.1rem;">📬 Information validée et transmise</span><br><span style="color: #2e7d32;">Cette annonce a été jugée pertinente et remontée par le niveau paroissial.</span></div>''', unsafe_allow_html=True)
-
-            st.write(f"**🏢 Source :** {source_icon} {source_nom}")
-            st.write(f"**👤 Ajouté par :** {item[5]}")
-            if item[3]: st.write(f"**📍 Lieu :** {item[3]}")
-            if item[4]: st.write(f"**📝 Détails :** {item[4]}")
-
-            # Suppression : droits propriétaire/diocèse + CASCADE complète
-            peut_supprimer = (
-                role == 'diocese'
-                or (item[6] is not None and item[6] == mon_eq)
-                or (item[6] is None and item[7] is not None and item[7] == ma_par)
-            )
-            if peut_supprimer:
-                if st.button("🗑️ Supprimer de mon agenda", key=f"del_ag_{item[0]}"):
-                    if item[10]:
-                        evt_id = item[10]
-                        affiche_row = c.execute("SELECT affiche_url FROM evenements WHERE id=?", (evt_id,)).fetchone()
-                        if affiche_row and affiche_row[0]:
-                            supprimer_photo(affiche_row[0])
-                        c.execute("DELETE FROM suivi_presences WHERE evenement_id=?", (evt_id,))
-                        c.execute("DELETE FROM evenement_equipes WHERE evenement_id=?", (evt_id,))
-                        c.execute("DELETE FROM evenements WHERE id=?", (evt_id,))
-                        c.execute("DELETE FROM agenda WHERE evenement_id=?", (evt_id,))
-                    else:
-                        c.execute("DELETE FROM agenda WHERE id=?", (item[0],))
-                    commit_and_sync()
-                    st.session_state["flash_warning"] = "Annonce supprimée."
-                    st.rerun()
-
-            # WhatsApp : lien GROUPE (écran de choix, voulu) + envoi DIRECT par membre
-            if item[10]:
-                base_url = URL_ESPACE_SPIRITUEL
-                magic_link = f"{base_url}/?e={item[10]}"
-                st.markdown("---")
-
-                message = (f"Équipier, confirme ta présence pour la {item[2]} du {i_date.strftime('%d/%m/%Y')}.\n\n"
-                           f"Cliquez ici pour répondre :\n{magic_link}")
-                wa_link = f"https://wa.me/?text={urllib.parse.quote(message, safe=':/?=')}"
-                st.markdown(f'<a href="{wa_link}" target="_blank" class="whatsapp-link">📱 Partager le lien de réponse (groupe / diffusion)</a>', unsafe_allow_html=True)
-
-                if equipe_id:
-                    with st.expander("👤 Envoyer directement à un membre (conversation ouverte)"):
-                        membres_evt = c.execute("""SELECT nom, prenom, whatsapp, matloc FROM membres
-                                                   WHERE equipe_id=? AND statut='actif' ORDER BY nom""",
-                                                (equipe_id,)).fetchall()
-                        if not membres_evt:
-                            st.caption("Aucun membre actif dans l'équipe.")
-                        else:
-                            st.caption("Chaque membre reçoit SON lien personnel : il arrive sur sa page, l'évènement y figure, un clic suffit pour répondre.")
-                            for m in membres_evt:
-                                if not m[2]:
-                                    continue
-                                matloc_propre = str(m[3]).upper().strip()
-                                lien_perso = f"{base_url}/?espace=1&matloc={matloc_propre}"
-                                msg_perso = (f"Bonjour {m[0]} {m[1]},\n\n"
-                                             f"Confirme ta présence pour la {item[2]} du {i_date.strftime('%d/%m/%Y')}"
-                                             f"{f' à {item[3]}' if item[3] else ''}.\n\n"
-                                             f"Ta page personnelle t'attend ici (un clic suffit pour répondre) :\n{lien_perso}\n\n"
-                                             f"💡 Astuce : ajoute ce lien à ton écran d'accueil (menu ⋮ → « Ajouter à l'écran d'accueil ») pour y accéder directement !\n\n"
-                                             f"Si le lien ne s'ouvre pas, saisis ce code sur la page de l'évènement : {matloc_propre}")
-                                wa_perso = lien_whatsapp(m[2], msg_perso)
-                                c_nom, c_btn = st.columns([3, 1])
-                                with c_nom:
-                                    st.write(f"**{m[0]} {m[1]}**")
-                                with c_btn:
-                                    st.markdown(f'<a href="{wa_perso}" target="_blank" class="whatsapp-link">📱 Envoyer</a>', unsafe_allow_html=True)
-
-
-            # ===== SÉPARATION : information responsable VS invitation des membres =====
-            # RÈGLE 4 AFFINÉE : un évènement transmis (ou accusé de réception) est une
-            # information pour le RESPONSABLE. Ce n'est qu'à son initiative (bouton
-            # ci-dessous) que l'évènement devient visible des membres dans
-            # "📅 Mes prochains évènements" avec Réponse de Communion.
-            if role == 'equipe' and item[6] == mon_eq and item[10]:
-                deja_lie = c.execute("SELECT id FROM evenement_equipes WHERE evenement_id=? AND equipe_id=?",
-                                     (item[10], mon_eq)).fetchone()
-                st.markdown("---")
-                if deja_lie:
-                    st.success("✅ Vos membres sont invités à cet évènement (visible dans leur espace, Réponse de Communion active).")
-                    if st.button("↩️ Retirer l'invitation des membres", key=f"uninvite_evt_{item[0]}"):
-                        c.execute("DELETE FROM evenement_equipes WHERE evenement_id=? AND equipe_id=?",
-                                  (item[10], mon_eq))
-                        commit_and_sync()
-                        st.session_state["flash_warning"] = "Invitation retirée : l'évènement disparaît de l'espace de vos membres."
-                        st.rerun()
-                else:
-                    st.info("ℹ️ Information réservée à votre responsabilité — vos membres ne voient pas cet évènement.")
-                    if st.button("📣 Inviter mes membres à cet évènement", key=f"invite_evt_{item[0]}", type="primary"):
-                        c.execute("INSERT OR IGNORE INTO evenement_equipes (evenement_id, equipe_id) VALUES (?, ?)",
-                                  (item[10], mon_eq))
-                        commit_and_sync()
-                        st.session_state["flash_success"] = "Membres invités ! L'évènement apparaît dans leur espace avec la Réponse de Communion, et dans votre formulaire de saisie des présences."
-                        st.rerun()
-
-
-
-            if role == 'paroisse':
-                if item[6] and not item[7] and item[9] == 1:
-                    eq_nom_res = c.execute("SELECT nom_equipe FROM equipes WHERE id=?", (item[6],)).fetchone()
-                    eq_nom = eq_nom_res[0] if eq_nom_res else "Équipe inconnue"
-
-                    c_val, c_ign = st.columns(2)
-                    with c_val:
-                        if st.button("⬆️ Valider et faire suivre", key=f"val_fwd_{item[0]}", type="primary"):
-                            desc_dio = f"📢 **Transmis par la Paroisse**\nOrigine : {eq_nom}\n\n{item[4] or ''}"
-                            c.execute('''INSERT INTO agenda (diocese_id, paroisse_id, date_event, type_event, lieu, description, auteur_nom, a_faire_suivre) VALUES (1, ?, ?, ?, ?, ?, ?, 2)''',
-                                      (ma_par, item[1], item[2], item[3], desc_dio, f"{st.session_state.get('username')} (Transmis)"))
-                            desc_accuse = f"✅ **Accusé de réception**\nVotre demande a été validée et transmise au Diocèse par la Paroisse."
-                            c.execute('''INSERT INTO agenda (equipe_id, date_event, type_event, lieu, description, auteur_nom, a_faire_suivre) VALUES (?, ?, ?, ?, ?, ?, 2)''',
-                                      (item[6], item[1], item[2], item[3], desc_accuse, f"{st.session_state.get('username')} (Accusé)"))
-                            c.execute("DELETE FROM agenda WHERE id=?", (item[0],))
-                            commit_and_sync()
-                            st.session_state["flash_success"] = "Validé ! L'équipe est notifiée et le Diocèse a reçu l'information."
-                            st.rerun()
-
-                    with c_ign:
-                        st.write("")
-                        if st.button("❌ Ignorer la demande", key=f"ign_fwd_{item[0]}"):
-                            c.execute("DELETE FROM agenda WHERE id=?", (item[0],))
-                            commit_and_sync()
-                            st.session_state["flash_warning"] = "Demande ignorée."
-                            st.rerun()
-
-                elif item[8] and not item[6]:
-                    st.markdown("---")
-                    equipes_paroisse = c.execute("SELECT id, nom_equipe FROM equipes WHERE paroisse_id=?", (ma_par,)).fetchall()
-                    if equipes_paroisse:
-                        eq_dict = {e[1]: e[0] for e in equipes_paroisse}
-                        c_sel, c_btn = st.columns([2, 1])
-                        with c_sel:
-                            choix_eq = st.selectbox("Transmettre à l'équipe :", list(eq_dict.keys()), key=f"fwd_sel_eq_{item[0]}")
-                        with c_btn:
-                            st.write("")
-                            if st.button("⬇️ Faire suivre", key=f"fwd_eq_{item[0]}"):
-                                new_desc = f"📢 **Transmis par la Paroisse**\nOrigine : Diocèse\n\n{item[4] or ''}"
-                                # RÈGLE 4 AFFINÉE : la transmission est une INFORMATION
-                                # au responsable d'équipe. On copie la référence de
-                                # l'évènement (item[10]) mais on ne lie PAS l'équipe
-                                # (pas d'evenement_equipes) : c'est le responsable qui
-                                # décidera d'inviter ses membres ou non.
-                                c.execute('''INSERT INTO agenda (equipe_id, date_event, type_event, lieu, description, auteur_nom, a_faire_suivre, evenement_id) VALUES (?,?,?,?,?,?,0,?)''',
-                                          (eq_dict[choix_eq], item[1], item[2], item[3], new_desc, f"{st.session_state.get('username')} (Transmis)", item[10]))
-                                commit_and_sync()
-                                st.session_state["flash_success"] = f"Transmis à {choix_eq} ! Le responsable décidera d'inviter ses membres."
-                                st.rerun()
-
-
-def afficher_historique_suivi(equipe_id, filtre_type="Tous"):
-    # BASCULE : strictement passé (< aujourd'hui). Le jour même, l'évènement
-    # est encore côté formulaire de saisie. Filtrage présences sur CETTE équipe.
-    query = '''SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
-               SUM(CASE WHEN sp.statut='physique' THEN 1 ELSE 0 END),
-               SUM(CASE WHEN sp.statut='spirituel' THEN 1 ELSE 0 END),
-               SUM(CASE WHEN sp.statut='a_contacter' THEN 1 ELSE 0 END)
-               FROM evenements e
-               JOIN evenement_equipes ee ON e.id = ee.evenement_id
-               LEFT JOIN suivi_presences sp ON e.id = sp.evenement_id
-                    AND sp.membre_id IN (SELECT id FROM membres WHERE equipe_id = ?)
-               WHERE ee.equipe_id = ? AND e.date_evenement < ? '''
-    params = [equipe_id, equipe_id, date.today().isoformat()]
-    if filtre_type != "Tous":
-        query += " AND e.type_evenement = ?"
-        params.append(filtre_type)
-    query += " GROUP BY e.id ORDER BY e.date_evenement DESC LIMIT 20"
-
-    annee_pasto, _, _ = get_periode_pastorale()
-    annee_cloturee = est_cloture('equipe', equipe_id, annee_pasto)
-
-    for ev in c.execute(query, params).fetchall():
-        d_ev = safe_date(ev[1])
-        if not d_ev: continue
-        nb_p, nb_e, nb_a = ev[4] or 0, ev[5] or 0, ev[6] or 0
-        taux = (nb_p / (nb_p+nb_e+nb_a) * 100) if (nb_p+nb_e+nb_a) > 0 else 0
-        couleur = "green" if taux >= 75 else "orange" if taux >= 50 else "red"
-        icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨", "Pèlerinage": "🚶‍♂️", "Réunion": "🤝", "Autre": "📌"}.get(ev[2], "📅")
-
-        with st.expander(f"{icone} {d_ev.strftime('%d/%m/%Y')} - {ev[2]} | ✅ {nb_p} ⚠️ {nb_e} ❌ {nb_a}"):
-            st.markdown(f"**Taux de présence :** :{couleur}[{taux:.0f}%]")
-            for statut, label in [('physique', '✅ Présents physiques'), ('spirituel', '🟡 Présents spirituels'), ('a_contacter', '⚪ Sans nouvelles')]:
-                rows = c.execute('''SELECT m.nom, m.prenom FROM membres m
-                                    JOIN suivi_presences sp ON m.id=sp.membre_id
-                                    WHERE sp.evenement_id=? AND sp.statut=? AND m.equipe_id=?''',
-                                 (ev[0], statut, equipe_id)).fetchall()
-                if rows:
-                    st.write(f"{label} : " + ", ".join([f"{r[0]} {r[1]}" for r in rows]))
-
-            if not annee_cloturee:
-                if st.button("✏️ Rouvrir la saisie des présences", key=f"reopen_evt_{ev[0]}"):
-                    st.session_state['rouvrir_evt_id'] = ev[0]
-                    st.rerun()
-
-
-def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
-    t1, t2, t3 = st.tabs(["🎂 Anniversaires", "📢 Rappels réabonnement", "📿 Espace de prière"])
-
-    with t1:
-        # Confidentialité : filtrage par équipe OU paroisse
-        query = '''SELECT m.nom, m.prenom, m.whatsapp, e.nom_equipe, p.nom, m.date_naissance
-                   FROM membres m JOIN equipes e ON m.equipe_id=e.id JOIN paroisses p ON m.paroisse_id=p.id
-                   WHERE m.statut='actif' AND strftime('%m-%d', m.date_naissance) = ?'''
-        params = [date.today().strftime('%m-%d')]
-        if equipe_id:
-            query += " AND m.equipe_id = ?"; params.append(equipe_id)
-        elif paroisse_id:
-            query += " AND m.paroisse_id = ?"; params.append(paroisse_id)
-        ans = c.execute(query, params).fetchall()
-        if ans:
-            for a in ans:
-                st.markdown(f"**🎂 {a[0]} {a[1]}** - 📍 {a[4]} / {a[3]}")
-                if a[2]:
-                    lien = lien_whatsapp(a[2], f"Joyeux anniversaire {a[0]} {a[1]} ! 🎉\\n\\nToute l'équipe du Rosaire vous souhaite une journée bénie.")
-                    if lien: st.markdown(f'<a href="{lien}" target="_blank" class="whatsapp-link">📱 Souhaiter</a>', unsafe_allow_html=True)
-                st.markdown("---")
-        else: st.info("🎉 Aucun anniversaire aujourd'hui")
-
-    with t2:
-        # Défaut = année PASTORALE (pas civile) : évite les faux rappels de janvier à août
-        annee_defaut = get_periode_pastorale()[0]
-        annee = st.number_input("Année de début", 2020, date.today().year + 1, min(annee_defaut, date.today().year + 1), key="rappel_whats")
-        query = '''SELECT m.nom, m.prenom, m.whatsapp, e.nom_equipe, p.nom FROM membres m
-                   JOIN equipes e ON m.equipe_id=e.id JOIN paroisses p ON m.paroisse_id=p.id
-                   WHERE m.statut='actif' AND m.id NOT IN (SELECT a.membre_id FROM abonnements a WHERE a.annee_debut=? AND a.statut='paye')'''
-        params = [annee]
-        if equipe_id:
-            query += " AND m.equipe_id = ?"; params.append(equipe_id)
-        elif paroisse_id:
-            query += " AND m.paroisse_id = ?"; params.append(paroisse_id)
-        query += " ORDER BY p.nom, e.nom_equipe, m.nom"
-        retard = c.execute(query, params).fetchall()
-        if retard:
-            for m in retard:
-                st.markdown(f"**❌ {m[0]} {m[1]}** - 📍 {m[4]} / {m[3]}")
-                if m[2]:
-                    lien = lien_whatsapp(m[2], f"Bonjour {m[0]} {m[1]},\\n\\nVotre réabonnement pour la période {periode_affichage(annee)} n'a pas été enregistré. Merci de régulariser.")
-                    if lien: st.markdown(f'<a href="{lien}" target="_blank" class="whatsapp-link">📱 Rappeler</a>', unsafe_allow_html=True)
-                st.markdown("---")
-        else: st.success(f"🎉 Tous à jour pour {periode_affichage(annee)} !")
-
-    with t3:
-        base_url = URL_ESPACE_SPIRITUEL
-
-        st.markdown("#### 🌐 Lien Public (Pour tout le monde)")
-        st.caption("Partagez ce lien dans vos groupes familiaux ou avec des personnes intéressées par la prière.")
-        lien_public = f"{base_url}/?espace=1"
-        message_public = f"Frères et sœurs, voici l'Espace de Prière et Méditation du Diocèse de Grand-Bassam :\n{lien_public}\n\nBon temps de ressourcement ! 🙏"
-        wa_public = f"https://wa.me/?text={urllib.parse.quote(message_public, safe=':/?=')}"
-        st.markdown(f"""<a href="{wa_public}" target="_blank" class="whatsapp-link">📱 Partager l'espace public sur WhatsApp</a>""", unsafe_allow_html=True)
-        st.code(lien_public)
-        st.markdown("**🔳 QR code de la page d'accueil** *(pour les responsables : connexion au gestionnaire)*")
-        _qrcode_st(URL_ESPACE_SPIRITUEL + "/", 180)
-        st.markdown("**📱 QR code de l'Espace communautaire** *(à projeter ou imprimer)*")
-        _qrcode_st(lien_public, 220)
-
-        if equipe_id:
-            st.markdown("---")
-            st.markdown("#### 👤 Liens Personnalisés (Mon équipe)")
-            st.caption("Envoyez à chaque membre son lien d'accès privé — la conversation s'ouvre directement chez lui.")
-            membres = c.execute("SELECT nom, prenom, whatsapp, matloc FROM membres WHERE equipe_id=? AND statut='actif' ORDER BY nom", (equipe_id,)).fetchall()
-            if not membres:
-                st.info("Aucun membre actif dans l'équipe.")
-            else:
-                for m in membres:
-                    matloc_propre = str(m[3]).upper().strip()
-                    lien_perso = f"{base_url}/?espace=1&matloc={matloc_propre}"
-                    msg_perso = f"Bonjour {m[0]} {m[1]},\n\nVoici votre espace spirituel personnel avec les prières et le programme de votre équipe :\n{lien_perso}\n\n💡 Astuce : ouvrez ce lien, puis menu ⋮ (ou Partager sur iPhone) → « Ajouter à l'écran d'accueil » : vous créerez un raccourci direct, sans plus passer par WhatsApp !\n\nBon temps de prière ! 📿"
-                    col_nom, col_btn = st.columns([3, 1])
-                    with col_nom:
-                        st.write(f"**{m[0]} {m[1]}** (`{matloc_propre}`)")
-                    with col_btn:
-                        if m[2]:
-                            # lien_whatsapp(num, msg) inclut le numéro -> conversation
-                            # directe (l'écran de choix n'était pas voulu ici)
-                            wa_perso = lien_whatsapp(m[2], msg_perso)
-                            st.markdown(f"""<a href="{wa_perso}" target="_blank" class="whatsapp-link">📱 Envoyer</a>""", unsafe_allow_html=True)
-                        else:
-                            st.caption("_Pas de numéro_")
-                        with st.expander("🔳 QR code personnel"):
-                            _qrcode_st(lien_perso, 170)
-                            st.caption(f"À imprimer avec le MatLoc `{matloc_propre}`")
-
-
-def enregistrer_presence_equipe(equipe_id):
-    annee_pasto, debut_pasto, fin_pasto = get_periode_pastorale()
-    if est_cloture('equipe', equipe_id, annee_pasto):
-        st.error(f"⛔ L'année pastorale {annee_pasto} - {annee_pasto+1} est clôturée. Impossible d'ajouter ou modifier des séances.")
-        return
-
-    membres_actifs = c.execute("SELECT id, nom, prenom FROM membres WHERE equipe_id=? AND statut='actif' ORDER BY nom", (equipe_id,)).fetchall()
-    if not membres_actifs:
-        st.warning("Aucun membre actif dans l'équipe pour le moment.")
-        return
-
-    # Mode correction : rouverture d'une séance passée demandée depuis l'historique
-    rouvrir_id = st.session_state.get('rouvrir_evt_id')
-
-    with st.expander("📝 Enregistrer / Modifier une séance", expanded=bool(rouvrir_id)):
-        # RÈGLE DE BASCULE : seuls les évènements À VENIR sont listés
-        # (>= aujourd'hui : le jour même compte encore). Exception : un évènement
-        # rouvert manuellement depuis l'historique (mode correction).
-        evenements_lies = c.execute('''SELECT DISTINCT e.id, e.date_evenement, e.type_evenement, e.lieu, e.auteur_nom
-                                       FROM evenements e JOIN evenement_equipes ee ON e.id = ee.evenement_id
-                                       WHERE ee.equipe_id = ? AND (e.date_evenement >= ? OR e.id = ?)
-                                       ORDER BY e.date_evenement ASC''',
-                                    (equipe_id, date.today().isoformat(), rouvrir_id if rouvrir_id else -1)).fetchall()
-
-        options_evts = {}
-        for ev in evenements_lies:
-            d_ev = safe_date(ev[1])
-            if d_ev:
-                if rouvrir_id and ev[0] == rouvrir_id:
-                    label = f"✏️ [CORRECTION] {d_ev.strftime('%d/%m/%Y')} - {ev[2]}"
-                else:
-                    label = f"{d_ev.strftime('%d/%m/%Y')} - {ev[2]} (Par {ev[4] or 'Mon équipe'})"
-                options_evts[label] = ev[0]
-
-        labels_evts = ["-- Créer un nouvel évènement --"] + list(options_evts.keys())
-        # FIX PRÉVENTIF : avec la bascule J+1, un évènement précédemment
-        # sélectionné peut disparaître des options (il passe dans l'historique)
-        # → purge de la sélection périmée pour éviter la StreamlitAPIException
-        if st.session_state.get("sel_evt_exist") not in labels_evts:
-            st.session_state.pop("sel_evt_exist", None)
-        choix_evt = st.selectbox("📋 Sélectionner un évènement à venir", labels_evts, key="sel_evt_exist")
-
-        event_id = None
-        lieu_event = ""
-        date_event = date.today()
-        type_event = TYPES_EVENEMENTS[0]
-
-        if choix_evt != "-- Créer un nouvel évènement --":
-            event_id = options_evts[choix_evt]
-            ev_details = c.execute("SELECT date_evenement, type_evenement, lieu FROM evenements WHERE id=?", (event_id,)).fetchone()
-            date_event = safe_date(ev_details[0])
-            type_event = ev_details[1]
-            lieu_event = ev_details[2]
-            date_affichee = date_event.strftime('%d/%m/%Y') if date_event else "⚠️ illisible"
-            st.info(f"📅 Date : {date_affichee} | ⛪ Type : {type_event} | 📍 Lieu : {lieu_event or 'Non défini'}")
-            if rouvrir_id and event_id == rouvrir_id:
-                st.warning("✏️ Mode correction : cette séance est déjà passée. Vos modifications seront enregistrées dans l'historique.")
-        else:
-            c1, c2, c3 = st.columns(3)
-            with c1: date_event = st.date_input("📅 Date", value=date.today(), key="date_suivi_eq")
-            with c2: type_event = st.selectbox("⛪ Type", TYPES_EVENEMENTS, key="type_suivi_eq")
-            with c3: lieu_event = st.text_input("📍 Lieu", key="lieu_suivi_eq")
-
-        dernier_event_en_memoire = st.session_state.get("dernier_event_vu")
-        if event_id != dernier_event_en_memoire:
-            cles_a_supprimer = [k for k in st.session_state.keys() if k.startswith("radio_membre_")]
-            for k in cles_a_supprimer:
-                del st.session_state[k]
-            st.session_state["dernier_event_vu"] = event_id
-
-        with st.form("form_suivi_presences"):
-            date_affichee = date_event.strftime('%d/%m/%Y') if date_event else "⚠️ date non définie"
-            st.markdown(f"**Participation de l'équipe pour le {date_affichee} ({type_event}) :**")
-            st.caption("💡 Cochez 'Présent spirituel' pour ceux qui participent à l'évènement depuis chez eux. Les réponses arrivées via les liens des membres sont déjà pré-cochées.")
-
-            # Une seule requête au lieu d'une par membre (N+1)
-            existants = {}
-            if event_id:
-                existants = dict(c.execute("SELECT membre_id, statut FROM suivi_presences WHERE evenement_id=?", (event_id,)).fetchall())
-
-            statuts = {}
-            for m in membres_actifs:
-                db_statut = existants.get(m[0])
-                if db_statut not in ("physique", "spirituel", "a_contacter"):
-                    db_statut = "a_contacter"
-                widget_key = f"radio_membre_{m[0]}"
-                if widget_key not in st.session_state:
-                    st.session_state[widget_key] = db_statut
-
-                statuts[m[0]] = st.radio(
-                    f"{m[1]} {m[2]}",
-                    ["physique", "spirituel", "a_contacter"],
-                    format_func=lambda x: {"physique": "🟢 Présent physiquement", "spirituel": "🟡 Présent spirituellement (à distance)", "a_contacter": "⚪ Sans nouvelles"}[x],
-                    key=widget_key,
-                    horizontal=True
-                )
-
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                submitted = st.form_submit_button("💾 Enregistrer la communion", width="stretch")
-            with col_btn2:
-                clear = st.form_submit_button("🗑️ Effacer cette séance", width="stretch")
-
-            if submitted:
-                if event_id:
-                    c.execute("UPDATE evenements SET lieu=? WHERE id=?", (lieu_event, event_id))
-                else:
-                    if not date_event:
-                        st.session_state["flash_warning"] = "Impossible de créer l'évènement : aucune date valide."
-                        st.rerun()
-                    c.execute("INSERT INTO evenements (equipe_id, type_evenement, date_evenement, lieu, auteur_nom) VALUES (?, ?, ?, ?, ?)",
-                              (equipe_id, type_event, date_event.isoformat(), lieu_event, st.session_state.get('username')))
-                    event_id = c.lastrowid
-                    c.execute("INSERT OR IGNORE INTO evenement_equipes (evenement_id, equipe_id) VALUES (?, ?)", (event_id, equipe_id))
-
-                # Ne supprimer que les présences des membres de CETTE équipe
-                c.execute('''DELETE FROM suivi_presences
-                             WHERE evenement_id=?
-                               AND membre_id IN (SELECT id FROM membres WHERE equipe_id=?)''',
-                          (event_id, equipe_id))
-                for m_id, statut in statuts.items():
-                    c.execute("INSERT INTO suivi_presences (membre_id, evenement_id, statut) VALUES (?, ?, ?)", (m_id, event_id, statut))
-                commit_and_sync()
-                st.session_state.pop('rouvrir_evt_id', None)
-                st.session_state["flash_success"] = "Communion de l'équipe enregistrée avec succès ! ✅"
-                st.rerun()
-
-            if clear:
-                if not event_id:
-                    st.warning("Aucune séance enregistrée à effacer pour le moment.")
-                else:
-                    c.execute('''DELETE FROM suivi_presences
-                                 WHERE evenement_id=? AND membre_id IN (SELECT id FROM membres WHERE equipe_id=?)''',
-                              (event_id, equipe_id))
-                    c.execute("DELETE FROM evenement_equipes WHERE evenement_id=? AND equipe_id=?", (event_id, equipe_id))
-                    restantes = c.execute("SELECT COUNT(*) FROM evenement_equipes WHERE evenement_id=?", (event_id,)).fetchone()[0]
-                    if restantes == 0:
-                        c.execute("DELETE FROM evenements WHERE id=?", (event_id,))
-                    commit_and_sync()
-                    st.session_state.pop('rouvrir_evt_id', None)
-                    st.session_state["flash_warning"] = "Séance effacée."
-                    st.rerun()
-
-    st.markdown("---")
-    st.subheader("📊 Historique et Engagement")
-    filtre_type = st.selectbox("Filtrer par type d'évènement", ["Tous"] + TYPES_EVENEMENTS, key="filtre_hist_eq")
-    afficher_historique_suivi(equipe_id, filtre_type)
-
-
-def afficher_etat_presences_globales(equipe_id):
-    st.markdown('<h3 style="color:#1A237E;">📊 État de l\'engagement spirituel (Croisement par évènement)</h3>', unsafe_allow_html=True)
-
-    annee_actuelle, _, _ = get_periode_pastorale()
-    choix_annee = st.selectbox("Année pastorale", [annee_actuelle, annee_actuelle - 1, annee_actuelle - 2],
-                               format_func=lambda x: f"Sept {x} - Août {x+1}", key="sel_annee_eq_globale")
-
-    debut_periode = date(choix_annee, 9, 1)
-    fin_periode = date(choix_annee + 1, 8, 31)
-
-    if est_cloture('equipe', equipe_id, choix_annee):
-        st.success("✅ Cette année pastorale est clôturée et archivée.")
-    elif choix_annee == annee_actuelle and date.today().month in [6, 7, 8]:
-        if st.button("🔒 Clôturer et archiver cette année", key="cloturer_eq"):
-            cloturer_periode('equipe', equipe_id, choix_annee, st.session_state.get('username'))
-            st.session_state["flash_success"] = "Année clôturée ! Les données sont figées."
-            st.rerun()
-
-    membres = c.execute("SELECT nom, prenom FROM membres WHERE equipe_id=? AND statut='actif' ORDER BY nom", (equipe_id,)).fetchall()
-    if not membres:
-        return st.info("Aucun membre actif dans l'équipe.")
-
-    # Filtre sur l'équipe du MEMBRE (les réponses des autres équipes invitées
-    # polluaient les statistiques sur les évènements partagés)
-    presences = c.execute('''
-        SELECT m.nom, m.prenom, e.type_evenement, sp.statut
-        FROM suivi_presences sp
-        JOIN evenements e ON sp.evenement_id = e.id
-        JOIN membres m ON sp.membre_id = m.id
-        WHERE m.equipe_id = ? AND e.date_evenement >= ? AND e.date_evenement <= ?
-    ''', (equipe_id, debut_periode.isoformat(), fin_periode.isoformat())).fetchall()
-
-    if not presences:
-        return st.info(f"Aucune présence enregistrée pour la période de Sept {choix_annee} à Août {choix_annee+1}.")
-
-    df = pd.DataFrame(presences, columns=["Nom", "Prenom", "Type", "Statut"])
-    df['Est_Engage'] = df['Statut'].isin(['physique', 'spirituel']).astype(int)
-
-    stats = df.groupby(['Nom', 'Prenom', 'Type'])['Est_Engage'].agg(['sum', 'count']).reset_index()
-    stats.columns = ['Nom', 'Prenom', 'Type', 'Engage', 'Total']
-    stats['Taux'] = (stats['Engage'] / stats['Total'] * 100).round(1)
-
-    pivot = stats.pivot_table(index=['Nom', 'Prenom'], columns='Type', values='Taux', aggfunc='first')
-    for t in TYPES_EVENEMENTS:
-        if t not in pivot.columns: pivot[t] = 0.0
-    pivot = pivot[TYPES_EVENEMENTS].fillna(0)
-
-    pivot['Taux global'] = df.groupby(['Nom', 'Prenom'])['Est_Engage'].mean() * 100
-    pivot = pivot.reset_index()
-
-    # Membres actifs sans présence inclus (affichés à 0 %)
-    membres_affiches = set(zip(pivot['Nom'], pivot['Prenom']))
-    lignes_manquantes = [
-        {'Nom': nom, 'Prenom': prenom, **{t: 0.0 for t in TYPES_EVENEMENTS}, 'Taux global': 0.0}
-        for nom, prenom in membres if (nom, prenom) not in membres_affiches
-    ]
-    if lignes_manquantes:
-        pivot = pd.concat([pivot, pd.DataFrame(lignes_manquantes)], ignore_index=True)
-
-    pivot['Membres'] = pivot['Nom'] + ' ' + pivot['Prenom']
-    pivot = pivot.drop(columns=['Nom', 'Prenom'])
-    pivot.insert(0, 'N°', range(1, len(pivot) + 1))
-
-    colonnes_finales = ['N°', 'Membres'] + TYPES_EVENEMENTS + ['Taux global']
-    pivot = pivot[colonnes_finales].round(1)
-
-    # Taux d'équipe calculés depuis les données brutes (pas de moyenne des moyennes)
-    taux_equipe = {'N°': '', 'Membres': "📊 Taux d'engagement équipe"}
-    for t in TYPES_EVENEMENTS:
-        sous_df = df[df['Type'] == t]
-        taux_equipe[t] = round(sous_df['Est_Engage'].mean() * 100, 1) if len(sous_df) else 0.0
-    taux_equipe['Taux global'] = round(df['Est_Engage'].mean() * 100, 1)
-
-    df_affichage = pivot.copy()
-    for col in TYPES_EVENEMENTS + ['Taux global']: df_affichage[col] = df_affichage[col].apply(lambda x: f"{x:.1f}%")
-
-    df_ligne_equipe = pd.DataFrame([taux_equipe])
-    for col in TYPES_EVENEMENTS + ['Taux global']: df_ligne_equipe[col] = df_ligne_equipe[col].apply(lambda x: f"{x:.1f}%")
-
-    df_final = pd.concat([df_affichage, df_ligne_equipe], ignore_index=True)
-    st.dataframe(df_final, hide_index=True, width="stretch")
-
-    st.markdown("---")
-    st.markdown("### 📥 Générer les rapports d'activité")
-    df_excel_complet = pd.concat([pivot, pd.DataFrame([taux_equipe])], ignore_index=True)
-
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-        st.markdown("**🏢 Rapport de l'équipe**")
-        out_team = io.BytesIO()
-        with pd.ExcelWriter(out_team, engine='openpyxl') as w: df_excel_complet.to_excel(w, index=False, sheet_name="Bilan Equipe")
-        out_team.seek(0)
-        st.download_button(label="📥 Télécharger le bilan de l'équipe", data=out_team, file_name=f"bilan_equipe_Sept{choix_annee}.xlsx", key="dl_team_report", width="stretch")
-
-    with col_btn2:
-        st.markdown("**👤 Rapport individuel**")
-        noms_membres = ["-- Sélectionner --"] + [f"{m[0]} {m[1]}" for m in membres]
-        choix_membre = st.selectbox("Choisir un membre", noms_membres, key="select_indiv_report")
-        if choix_membre != noms_membres[0]:
-            df_indiv = pivot[pivot['Membres'] == choix_membre].copy()
-            out_indiv = io.BytesIO()
-            with pd.ExcelWriter(out_indiv, engine='openpyxl') as w: df_indiv.to_excel(w, index=False, sheet_name=f"Bilan {choix_membre.split()[0]}")
-            out_indiv.seek(0)
-            st.download_button(label=f"📥 Télécharger le bilan de {choix_membre.split()[0]}", data=out_indiv,
-                               file_name=f"bilan_{choix_membre.replace(' ', '_')}_Sept{choix_annee}.xlsx", key="dl_indiv_report", width="stretch")
-
-
-def afficher_etat_presences_paroisse(paroisse_id):
-    st.markdown('<h3 style="color:#1A237E;">📊 État de l\'engagement spirituel (Vue Paroisse)</h3>', unsafe_allow_html=True)
-
-    annee_actuelle, _, _ = get_periode_pastorale()
-    choix_annee = st.selectbox("Année pastorale", [annee_actuelle, annee_actuelle - 1, annee_actuelle - 2],
-                               format_func=lambda x: f"Sept {x} - Août {x+1}", key="sel_annee_par_globale")
-
-    debut_periode = date(choix_annee, 9, 1)
-    fin_periode = date(choix_annee + 1, 8, 31)
-
-    if est_cloture('paroisse', paroisse_id, choix_annee):
-        st.success("✅ Cette année pastorale est clôturée et archivée pour la paroisse.")
-    elif choix_annee == annee_actuelle and date.today().month in [6, 7, 8]:
-        if st.button("🔒 Clôturer et archiver cette année (Paroisse)", key="cloturer_par"):
-            cloturer_periode('paroisse', paroisse_id, choix_annee, st.session_state.get('username'))
-            st.session_state["flash_success"] = "Année clôturée !"
-            st.rerun()
-
-    presences = c.execute('''
-        SELECT COALESCE(eq.nom_equipe, 'Événement Paroisse') as Equipe, e.type_evenement, sp.statut
-        FROM suivi_presences sp
-        JOIN membres m ON sp.membre_id = m.id
-        JOIN evenements e ON sp.evenement_id = e.id
-        LEFT JOIN evenement_equipes ee ON e.id = ee.evenement_id AND ee.equipe_id = m.equipe_id
-        LEFT JOIN equipes eq ON ee.equipe_id = eq.id
-        WHERE (e.paroisse_id = ? OR eq.paroisse_id = ?) AND e.date_evenement >= ? AND e.date_evenement <= ?
-    ''', (paroisse_id, paroisse_id, debut_periode.isoformat(), fin_periode.isoformat())).fetchall()
-
-    if not presences:
-        return st.info(f"Aucune présence enregistrée pour la période de Sept {choix_annee} à Août {choix_annee+1}.")
-
-    df = pd.DataFrame(presences, columns=["Equipe", "Type", "Statut"])
-    df['Est_Engage'] = df['Statut'].isin(['physique', 'spirituel']).astype(int)
-
-    stats = df.groupby(['Equipe', 'Type'])['Est_Engage'].agg(['sum', 'count']).reset_index()
-    stats.columns = ['Equipe', 'Type', 'Engage', 'Total']
-    stats['Taux'] = (stats['Engage'] / stats['Total'] * 100).round(1)
-
-    pivot = stats.pivot_table(index='Equipe', columns='Type', values='Taux', aggfunc='first')
-    for t in TYPES_EVENEMENTS:
-        if t not in pivot.columns: pivot[t] = 0.0
-    pivot = pivot[TYPES_EVENEMENTS].fillna(0)
-
-    pivot['Taux global'] = df.groupby('Equipe')['Est_Engage'].mean().mul(100)
-    pivot = pivot.reset_index()
-
-    # Équipes sans présence incluses (affichées à 0 %)
-    equipes_paroisse = [r[0] for r in c.execute(
-        "SELECT nom_equipe FROM equipes WHERE paroisse_id=? ORDER BY nom_equipe", (paroisse_id,)).fetchall()]
-    equipes_affichees = set(pivot['Equipe'])
-    lignes_manquantes = [
-        {'Equipe': eq, **{t: 0.0 for t in TYPES_EVENEMENTS}, 'Taux global': 0.0}
-        for eq in equipes_paroisse if eq not in equipes_affichees
-    ]
-    if lignes_manquantes:
-        pivot = pd.concat([pivot, pd.DataFrame(lignes_manquantes)], ignore_index=True)
-
-    pivot.insert(0, 'N°', range(1, len(pivot) + 1))
-    colonnes_finales = ['N°', 'Equipe'] + TYPES_EVENEMENTS + ['Taux global']
-    pivot = pivot[colonnes_finales].round(1)
-
-    taux_paroisse = {'N°': '', 'Equipe': "📊 Taux d'engagement Paroisse"}
-    for t in TYPES_EVENEMENTS:
-        sous_df = df[df['Type'] == t]
-        taux_paroisse[t] = round(sous_df['Est_Engage'].mean() * 100, 1) if len(sous_df) else 0.0
-    taux_paroisse['Taux global'] = round(df['Est_Engage'].mean() * 100, 1)
-
-    df_affichage = pivot.copy()
-    for col in TYPES_EVENEMENTS + ['Taux global']: df_affichage[col] = df_affichage[col].apply(lambda x: f"{x:.1f}%")
-
-    df_ligne_paroisse = pd.DataFrame([taux_paroisse])
-    for col in TYPES_EVENEMENTS + ['Taux global']: df_ligne_paroisse[col] = df_ligne_paroisse[col].apply(lambda x: f"{x:.1f}%")
-
-    df_final = pd.concat([df_affichage, df_ligne_paroisse], ignore_index=True)
-    st.dataframe(df_final, hide_index=True, width="stretch")
-
-    out = io.BytesIO()
-    with pd.ExcelWriter(out, engine='openpyxl') as w:
-        pd.concat([pivot, pd.DataFrame([taux_paroisse])], ignore_index=True).to_excel(w, index=False, sheet_name="Bilan Paroisse")
-    out.seek(0)
-    st.download_button("📥 Télécharger le bilan de la paroisse", data=out,
-                       file_name=f"bilan_paroisse_Sept{choix_annee}.xlsx", key="dl_par_report", width="stretch")
-
-
-def afficher_historique_paroisse(paroisse_id, filtre_type="Tous"):
-    # BASCULE : strictement passé (< aujourd'hui), cohérent avec l'historique équipe
-    query = '''SELECT e.id, e.date_evenement, e.type_evenement, e.lieu, GROUP_CONCAT(DISTINCT eq.nom_equipe) as noms_equipes,
-               COUNT(DISTINCT CASE WHEN sp.statut='physique' THEN sp.membre_id END),
-               COUNT(DISTINCT CASE WHEN sp.statut='spirituel' THEN sp.membre_id END),
-               COUNT(DISTINCT CASE WHEN sp.statut='a_contacter' THEN sp.membre_id END)
-               FROM evenements e
-               JOIN evenement_equipes ee ON e.id = ee.evenement_id
-               JOIN equipes eq ON ee.equipe_id = eq.id
-               LEFT JOIN suivi_presences sp ON e.id = sp.evenement_id
-               WHERE eq.paroisse_id = ? AND e.date_evenement < ? '''
-    params = [paroisse_id, date.today().isoformat()]
-    if filtre_type != "Tous":
-        query += " AND e.type_evenement = ?"
-        params.append(filtre_type)
-    query += " GROUP BY e.id ORDER BY e.date_evenement DESC LIMIT 20"
-
-    for ev in c.execute(query, params).fetchall():
-        d_ev = safe_date(ev[1])
-        if not d_ev: continue
-        nb_p, nb_e, nb_a = ev[5] or 0, ev[6] or 0, ev[7] or 0
-        total = nb_p + nb_e + nb_a
-        taux = (nb_p / total * 100) if total > 0 else 0
-        couleur = "green" if taux >= 75 else "orange" if taux >= 50 else "red"
-        icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨", "Pèlerinage": "🚶‍♂️", "Réunion": "🤝", "Autre": "📌"}.get(ev[2], "📅")
-
-        with st.expander(f"{icone} {d_ev.strftime('%d/%m/%Y')} - {ev[2]} ({ev[4] or '—'}) | ✅ {nb_p} ⚠️ {nb_e} ❌ {nb_a}"):
-            st.markdown(f"**Taux de présence :** :{couleur}[{taux:.0f}%]")
-            for statut, label in [('physique', '✅ Présents physiques'), ('spirituel', '🟡 Présents spirituels'), ('a_contacter', '⚪ Sans nouvelles')]:
-                rows = c.execute('''SELECT m.nom, m.prenom, eq.nom_equipe FROM membres m
-                                    JOIN suivi_presences sp ON m.id=sp.membre_id
-                                    JOIN equipes eq ON m.equipe_id=eq.id
-                                    WHERE sp.evenement_id=? AND sp.statut=?''', (ev[0], statut)).fetchall()
-                if rows:
-                    st.write(f"{label} : " + ", ".join([f"{r[0]} {r[1]} ({r[2]})" for r in rows]))
-
-
-def afficher_page_reponse_membre(event_id):
-    st.caption("🔒 En saisissant votre identifiant, vous acceptez que vos données de présence soient enregistrées par les responsables de votre équipe.")
-    st.markdown("<h2 style='text-align:center; color:#1A237E; font-size: 1.5rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>📿 Réponse de Communion</h2>", unsafe_allow_html=True)
-
+from services import safe_date, compter_visite
+from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
+
+
+# ====================================================================
+# NAVIGATION — rubriques et sous-rubriques
+# ====================================================================
+RUBRIQUES_MEMBRE = ["🏠 Actualités", "🕯️ Thème", "📿 Rosaire", "📅 Mes évènements", "📖 Archives"]
+RUBRIQUES_PUBLIC = ["🏠 Actualités", "📿 Rosaire", "🕯️ Thème", "📖 Archives"]
+SOUS_RUBRIQUES = {
+    "🕯️ Thème": ["🔭 Vue d'ensemble", "🎓 Enseignements", "💬 Discussions"],
+    "📿 Rosaire": ["L'esprit du Père Eyquem", "Le thème de l'année"],
+    "📖 Archives": ["🙏 Prières", "📖 Méditations", "🎵 Musiques"],
+}
+
+def _lire_nav(rubriques):
+    """v7.5 — rubrique/sous-rubrique lues dans l'URL (?r=..&s=..).
+    Navigation par LIENS HTML purs : aucun pont JS, aucun timing, les clics
+    fonctionnent toujours. Fini les boutons natifs cachés (double menu)."""
+    rub = rubriques[0]
     try:
-        event_id = int(event_id)
+        i = int(str(st.query_params.get("r", "")))
+        if 0 <= i < len(rubriques):
+            rub = rubriques[i]
     except (ValueError, TypeError):
-        st.error("Lien invalide.")
+        pass
+    sous = SOUS_RUBRIQUES.get(rub)
+    sub = None
+    if sous:
+        sub = sous[0]
+        try:
+            j = int(str(st.query_params.get("s", "")))
+            if 0 <= j < len(sous):
+                sub = sous[j]
+        except (ValueError, TypeError):
+            pass
+    return rub, sub
+
+# ====================================================================
+# HELPERS
+# ====================================================================
+@st.cache_data
+def _logo_base64():
+    try:
+        with open(os.path.join("images", "logo.png"), "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except Exception:
+        return None
+
+
+PDF_URL_RE = re.compile(r'href="(https://res\.cloudinary\.com/[^"]+\.pdf)"')
+DIV_PDF_RE = re.compile(r'<div[^>]*1px dashed #4527a0.*?</div>\s*', re.DOTALL)
+
+
+def _extraire_pdf_legacy(contenu):
+    if not contenu or ("cloudinary" not in contenu and "data:application/pdf" not in contenu):
+        return contenu, None
+    m = PDF_URL_RE.search(contenu)
+    url = m.group(1) if m else None
+    return DIV_PDF_RE.sub("", contenu).strip(), url
+
+
+def _scroll_top(cle):
+    """Remet la vue en haut (sous l'entête) à chaque page du livre."""
+    try:
+        _comp_html("<script>window.parent.scrollTo(0, 0);</script>", height=0, key=f"scroll_{cle}")
+    except Exception:
+        pass
+
+
+def _compter_bandes(membre=False):
+    """Compte les bandes défilantes RÉELLEMENT affichées (clé de re-mesure)."""
+    try:
+        bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
+                              WHERE type_contenu='annonce_defilante'
+                              ORDER BY date_publication DESC, id DESC LIMIT 3""").fetchall()
+    except Exception:
+        return 0
+    n = 0
+    for texte, cible in bandes:
+        if cible == "membre" and not membre:
+            continue
+        if not texte:
+            continue
+        n += 1
+    return n
+
+
+def _mesure_entete(cle):
+    """v7.5 — mesure AUTOCORRIGÉE : revérifie toutes les 400 ms, n'écrit que
+    si la hauteur a changé. L'entête (logo + menu + bandes) se dessine en
+    PLUSIEURS fois : une mesure unique part trop tôt."""
+    script = (
+        "<script>(function(){var d0=-1;var a=function(){try{"
+        "var d=window.parent.document;var h=d.querySelector('.sticky-header');"
+        "var b=d.querySelector('.block-container');"
+        "if(h&&b){var n=h.offsetHeight;if(n!==d0){d0=n;"
+        "b.style.setProperty('padding-top',n+'px','important');}}}catch(e){}};"
+        "a();setInterval(a,400);window.parent.addEventListener('resize',a);})();</script>")
+    try:
+        _comp_html(script, height=0, key=f"mesure_{cle}")
+    except Exception:
+        pass
+
+def _render_theme(compact=False):
+    """CSS de l'espace. Padding-top MESURÉ par _mesure_entete() ; valeurs de
+    secours le temps du premier dessin. CONCATÉNATION (jamais de f-string
+    avec du CSS : accolades)."""
+    if compact:
+        secours_1, secours_2, secours_3 = 260, 240, 230
+    else:
+        secours_1, secours_2, secours_3 = 380, 330, 310
+    regle_contenu = (
+        ".block-container { padding-top: " + str(secours_1)
+        + "px !important; padding-bottom: 4rem !important; max-width: 1050px !important; }"
+    )
+    st.markdown(
+        '<style>'
+        + regle_contenu +
+        """
+    [data-testid="stHeader"] { display: none !important; }
+    .stApp, [data-testid="stAppViewContainer"] { background-color: #0a0f2c !important; }
+    .stApp .stMarkdown, .stApp .stMarkdown p, .stApp .stMarkdown li, .stApp .stMarkdown span,
+    .stApp .stMarkdown h1, .stApp .stMarkdown h2, .stApp .stMarkdown h3, .stApp .stMarkdown h4,
+    .stApp .stMarkdown strong, .stApp .stMarkdown em { color: #e8eaf6 !important; }
+    .stApp .stMarkdown a { color: #b39ddb !important; }
+    [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: #9fa6d8 !important; }
+    [data-testid="stExpander"] { background-color: #121a45 !important; border: 1px solid #27306b !important; border-radius: 12px !important; }
+    details, [data-testid="stExpanderDetails"] { background-color: transparent !important; }
+    summary, [data-testid="stExpander"] p { color: #e8eaf6 !important; }
+    [data-baseweb="tab-list"] { border-bottom-color: #27306b !important; }
+    [data-baseweb="tab"] p { color: #e8eaf6 !important; font-weight: 600 !important; }
+    [data-baseweb="tab"][aria-selected="true"] p { color: #ffffff !important; }
+    [data-baseweb="tab-highlight"] { background-color: #7b1fa2 !important; }
+    .stButton > button { background-color: #1a2150 !important; color: #e8eaf6 !important; border: 1px solid #2a3160 !important; }
+    .stButton > button[kind="primary"] { background-color: #4527a0 !important; border-color: #5e35b1 !important; color: #ffffff !important; }
+    [data-testid="stAlert"] { background-color: #151b3d !important; }
+    [data-testid="stAlert"] p { color: #e8eaf6 !important; }
+    [data-testid="stPopover"] { width: fit-content !important; max-width: 260px !important; margin-left: 0 !important; }
+    [data-testid="stPopover"] button { background-color: #4527a0 !important; color: #ffffff !important; border: 1px solid #5e35b1 !important; border-radius: 20px !important; font-weight: 600 !important; }
+    [data-testid="stPopover"] button:hover { background-color: #5e35b1 !important; }
+    [data-testid="stNumberInput"] { max-width: 220px !important; margin-left: auto !important; margin-right: auto !important; }
+    [data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] { display: none !important; }
+    .menu-ligne { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin:8px auto 0 auto; max-width:1200px; }
+    .menu-item { position:relative; }
+    .menu-lien { display:block; background-color:#1a2150; color:#e8eaf6; border:1px solid #2a3160; border-radius:20px; padding:6px 14px; font-weight:600; font-size:0.85rem; text-decoration:none; white-space:nowrap; cursor:pointer; }
+    .menu-item.actif .menu-lien { background-color:#4527a0; border-color:#5e35b1; color:#ffffff; }
+    .menu-item:hover .menu-lien { background-color:#5e35b1; color:#ffffff; }
+    .sous-ruban { display:none; position:absolute; top:100%; left:50%; transform:translateX(-50%); z-index:10001; background:#121a45; border:1px solid #27306b; border-radius:10px; padding:6px; min-width:210px; box-shadow:0 6px 18px rgba(0,0,0,0.5); }
+    .menu-item:hover .sous-ruban { display:flex; flex-direction:column; gap:4px; }
+    .menu-sub { display:block; background:#1a2150; color:#e8eaf6; border:1px solid #2a3160; border-radius:14px; padding:6px 12px; font-size:0.82rem; font-weight:600; text-decoration:none; white-space:nowrap; }
+    .menu-sub.actif { background:#4527a0; border-color:#5e35b1; color:#ffffff; }
+    .menu-sub:hover { background:#5e35b1; color:#ffffff; }
+    .menu-mobile { display:none; }
+    @media (max-width:640px) {
+        .menu-ligne { display:none; }
+        .menu-mobile { display:block; position:relative; margin:6px auto 0 auto; width:fit-content; }
+        .menu-mobile summary { list-style:none; background:#4527a0; color:#ffffff; border:1px solid #5e35b1; border-radius:20px; padding:6px 22px; font-size:1.1rem; font-weight:bold; cursor:pointer; }
+        .menu-mobile summary::-webkit-details-marker { display:none; }
+        .menu-mobile[open] summary { background:#5e35b1; }
+        .mob-panneau { position:absolute; top:calc(100% + 6px); left:50%; transform:translateX(-50%); width:250px; max-height:60vh; overflow-y:auto; background:#121a45; border:1px solid #27306b; border-radius:12px; padding:8px; z-index:10001; box-shadow:0 6px 18px rgba(0,0,0,0.5); display:flex; flex-direction:column; gap:4px; }
+        .mob-lien { display:block; background:#1a2150; color:#e8eaf6; border:1px solid #2a3160; border-radius:14px; padding:8px 12px; font-weight:600; font-size:0.9rem; text-decoration:none; }
+        .mob-lien.actif { background:#4527a0; border-color:#5e35b1; color:#ffffff; }
+        .mob-sous { display:block; color:#c7cdf5; padding:4px 10px 4px 22px; font-size:0.85rem; text-decoration:none; }
+        .mob-sous.actif { color:#ffe082; font-weight:700; }
+    }
+    .sticky-header { position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+        background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px 0 16px; }
+    .header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; }
+    .logo-bloc { width: 190px; text-align: center; }
+    .logo-bloc img { width: 100%; height: auto; border-radius: 10px; display: block; margin: 0 auto; }
+    .logo-titre-svg { display: block; width: 100%; margin-top: 6px; }
+    .bande-defilante { overflow: hidden; white-space: nowrap;
+        background: linear-gradient(90deg, #1a2150, #27306b);
+        border-top: 1px solid #27306b; }
+    .bande-defilante-inner { display: inline-block; padding: 8px 0; white-space: nowrap;
+        color: #ffe082 !important; font-weight: 600; font-size: 0.9rem;
+        animation: defilement 30s linear infinite; }
+    .bande-defilante:hover .bande-defilante-inner { animation-play-state: paused; }
+    @keyframes defilement { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
+    @media (prefers-reduced-motion: reduce) {
+        .bande-defilante-inner { animation: none; padding: 8px 15px; }
+    }
+    @media (max-width: 640px) {
+        .logo-bloc { width: 150px; }
+        .block-container { padding-top: """ + str(secours_2) + """px !important; }
+        [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { min-width: 0 !important; }
+    }
+    @media (max-width: 360px) {
+        .logo-bloc { width: 138px; }
+        .block-container { padding-top: """ + str(secours_3) + """px !important; }
+    }
+    </style>""", unsafe_allow_html=True)
+
+
+def _bandes_defilantes_html(membre=False):
+    """HTML des bandes défilantes pour l'entête fixe (retourne une chaîne)."""
+    try:
+        bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
+                              WHERE type_contenu='annonce_defilante'
+                              ORDER BY date_publication DESC, id DESC LIMIT 3""").fetchall()
+    except Exception:
+        return ""
+    morceaux = []
+    for texte, cible in bandes:
+        if cible == "membre" and not membre:
+            continue
+        if not texte:
+            continue
+        duree = max(15, min(60, len(texte) // 2))
+        texte_html = html.escape(texte)
+        morceaux.append(
+            f'<div class="bande-defilante"><div class="bande-defilante-inner" style="animation-duration:{duree}s;">'
+            f"📻 {texte_html} &nbsp;&nbsp;📻 {texte_html}</div></div>")
+    return "".join(morceaux)
+
+
+def _render_header(membre=None, matloc=None, masquer_bandes=False,
+                   rubriques=None, rub_act=None, sub_act=None):
+    """Entête FIGÉE — v7.5 : menu en LIENS HTML purs (zéro JS).
+    PC : ligne de rubriques + ruban de sous-rubriques au survol (:hover CSS).
+    Mobile : bouton ☰ en <details> HTML natif, déroulé par-dessus le contenu.
+    Le livre ouvert masque tout le menu (plein écran de prière)."""
+    logo_b64 = _logo_base64()
+    logo_html = (f'<img src="data:image/png;base64,{logo_b64}" alt="Logo">'
+                 if logo_b64 else '<div style="font-size:4rem;">📿</div>')
+
+    titre_svg = ('<svg class="logo-titre-svg" viewBox="0 0 190 22" width="100%" height="22" '
+                 'preserveAspectRatio="none" role="img" aria-label="Diocèse de Grand-Bassam">'
+                 '<text x="95" y="17" text-anchor="middle" textLength="188" lengthAdjust="spacingAndGlyphs" '
+                 'style="fill:#e8eaf6; font-weight:600; font-size:14px;">Diocèse de Grand-Bassam</text></svg>')
+
+    badge_txt = "Espace Membre" if (membre and matloc) else "Espace communautaire"
+    droite = ('<div style="padding-top:14px;">'
+              '<div style="background-color:#4527a0; color:#ffffff;'
+              ' padding:10px 18px; border-radius:30px; font-weight:bold;'
+              ' font-size:0.9rem; display:inline-block; white-space:nowrap;">'
+              + badge_txt + '</div></div>')
+
+    menu_html = ""
+    if rubriques:
+        base = "?espace=1"
+        if matloc:
+            base += "&matloc=" + str(matloc)
+        items = []
+        for i, r in enumerate(rubriques):
+            href_r = base + "&nav=1&r=" + str(i)
+            sous = SOUS_RUBRIQUES.get(r)
+            ruban = ""
+            if sous:
+                sitems = ""
+                for k, s in enumerate(sous):
+                    href_s = href_r + "&s=" + str(k)
+                    cls = "menu-sub" + (" actif" if (r == rub_act and s == sub_act) else "")
+                    sitems += '<a class="' + cls + '" href="' + href_s + '">' + s + "</a>"
+                ruban = '<div class="sous-ruban">' + sitems + "</div>"
+            cls_lien = "menu-lien"
+            cls_item = "menu-item" + (" actif" if r == rub_act else "")
+            items.append('<div class="' + cls_item + '"><a class="' + cls_lien + '" href="' + href_r + '">' + r + "</a>" + ruban + "</div>")
+        menu_html = '<div class="menu-ligne">' + "".join(items) + "</div>"
+        mitems = []
+        for i, r in enumerate(rubriques):
+            href_r = base + "&nav=1&r=" + str(i)
+            mitems.append('<a class="mob-lien' + (" actif" if r == rub_act else "") + '" href="' + href_r + '">' + r + "</a>")
+            sous = SOUS_RUBRIQUES.get(r)
+            if sous:
+                for k, s in enumerate(sous):
+                    href_s = href_r + "&s=" + str(k)
+                    cls = "mob-sous" + (" actif" if (r == rub_act and s == sub_act) else "")
+                    mitems.append('<a class="' + cls + '" href="' + href_s + '">· ' + s + "</a>")
+        menu_html += ('<details class="menu-mobile"><summary>☰</summary>'
+                      '<div class="mob-panneau">' + "".join(mitems) + "</div></details>")
+
+    bandes_html = "" if masquer_bandes else _bandes_defilantes_html(membre=bool(membre))
+
+    st.markdown(
+        '<div class="sticky-header"><div class="header-inner">'
+        '<div class="logo-bloc">' + logo_html + titre_svg + "</div>"
+        + droite + "</div>"
+        + menu_html + bandes_html + "</div>", unsafe_allow_html=True)
+
+
+# ====================================================================
+# MA DIZAINE AU QUOTIDIEN — portage web de l'application Android
+# © MOTIAN TOFFÉ Ahua Innocent — intégrée avec son autorisation
+# ====================================================================
+DIZ_INTRO1 = "Au Nom du Père, et du Fils et du Saint-Esprit! Amen!\n\nPRIÈRE D’ENTRÉE\n\nSeigneur Jésus, nous nous disposons à prier\nce Rosaire en communion avec la Vierge Marie.\nViens, Esprit Saint, remplis les cœurs de tes fidèles et allume en eux le feu de ton amour.\nDonne-nous la grâce de méditer profondément les mystères de ta vie, pour que, en les imitant, nous obtenions les promesses qu’ils renferment.\nPar le Christ, notre Seigneur. Amen.\n\nJE CROIS EN DIEU\n\nJe crois en Dieu, le Père Tout-Puissant, Créateur du ciel et de la terre.\nEt en Jésus-Christ, son Fils unique, Notre Seigneur, qui a été conçu du Saint-Esprit, est né de la Vierge Marie, a souffert sous Ponce Pilate, a été crucifié, est mort et a été enseveli, est descendu aux enfers, le troisième jour est ressuscité des morts, est monté aux cieux, est assis à la droite de Dieu le Père Tout-Puissant, d’où il viendra juger les vivants et les morts.\nJe crois en l’Esprit-Saint, à la Sainte Église catholique, à la communion des Saints, à la rémission des péchés, à la résurrection de la chair, à la vie éternelle.\nAmen."
+DIZ_INTRO2 = "NOTRE PÈRE\n\nNotre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\nque ta volonté soit faite\nsur la terre comme au ciel.\n\nDonne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, mais délivre-nous du Mal. Amen!\n\n3 JE VOUS SALUE MARIE\n\nJe vous salue Marie, pleine de grâce,\nle Seigneur est avec vous. Vous êtes bénie entre toutes les femmes, et Jésus, le fruit de vos entrailles, est béni.\n\nSainte Marie, Mère de Dieu, priez pour nous pauvres pécheurs, maintenant et à l’heure de notre mort. Amen!\n\nGLORIA PATRI\n\nGloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, et in saecula saeculorum. Amen!"
+DIZ_INTRO3 = "PRIÈRE À LA VIERGE DU PÈRE EYQUEM\n\n[R]Vers Toi je lève les yeux,\nSainte Mère de Dieu;[/R]\n\ncar je voudrais faire de ma maison,\nune maison où Jésus vienne, selon sa promesse,\nquand plusieurs se réunissent en son nom.\nTu as accueilli le message de l’ange comme\nun message venant de Dieu, et Tu as reçu,\nen raison de ta foi,\nl’incomparable grâce d’accueillir\nen Toi Dieu Lui-même.\nTu as ouvert aux bergers puis aux mages\nla porte de ta maison, sans que\nnul ne se sente gêné\npar sa pauvreté ou sa richesse.\n\n[R]Sois Celle qui chez moi reçoit.[/R]\n\nAfin que ceux qui ont besoin\nd’être réconfortés le soient;\nceux qui ont le désir de\nrendre grâce puissent le faire ;\nceux qui cherchent la paix la trouvent.\nEt que chacun reparte vers sa propre maison\navec la joie d’avoir rencontré Jésus lui-même,\nLui, le Chemin, la Vérité, la Vie.\nAmen!\n\n[I]Frère Joseph EYQUEM, o.p.,\nFondateur des Équipes du Rosaire[/I]"
+DIZ_OUTRO = "SALVE REGINA\n\nSalve Regina, Mater misericordiae;\nvita, dulcedo, et spes nostra salve.\nAd te clamamus, exsules filii Hevae.\nAd te suspiramus, gementes et flentes\nin hac lacrimarum valle.\nEia ergo, advocata nostra,\nillos tuos misericordes oculos ad nos converte;\nEt Iesum, benedictum fructum ventris tui,\nnobis, post hoc exsilium ostende.\nO Clemens, O pia, O dulcis, Virgo Maria.\n\nOra pro nobis, Sancta Dei Genitrix.\nUt digni efficiamur promissionibus Christi.\n\nPRIÈRE FINALE\n\nÔ Dieu, dont le Fils unique nous a acquis\npar sa vie, sa mort et sa résurrection\nles récompenses du salut éternel,\nnous vous supplions : faites que,\nméditant les mystères du très\nSaint Rosaire de\nla Bienheureuse Vierge Marie,\nnous imitions ce qu’ils contiennent\net obtenons ce qu’ils promettent.\nPar le Christ, notre Seigneur. Amen!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nAu Nom du Père, et du Fils et du Saint-Esprit! Amen!"
+
+
+def _diz_txt(texte, couleur="#333333", taille="0.95rem", gras=False, centre=False):
+    txt_html = html.escape(texte).replace("\n", "<br>")
+    poids = "bold" if gras else "normal"
+    align = "center" if centre else "left"
+    return (f'<div style="color:{couleur}; font-size:{taille}; font-weight:{poids};'
+            f' text-align:{align}; line-height:1.7; margin:8px 0;">{txt_html}</div>')
+
+
+MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+           "août", "septembre", "octobre", "novembre", "décembre"]
+
+# Couleurs CLAIRES pour titres sur fond nuit ; les fortes restent pour les
+# bordures / en-têtes du livre.
+COULEURS_CLAIRES = {"joyeux": "#FF80AB", "lumineux": "#9FA8DA",
+                    "douloureux": "#F48FB1", "glorieux": "#A5D6A7"}
+
+
+def _rendre_intro_eyquem(titre_carte="INTRODUCTION"):
+    """Carte de la prière du Père Eyquem. Couleurs critiques en !important
+    INLINE (le CSS global écrase sinon le noir → illisible sur jaune)."""
+    texte = DIZ_INTRO3
+    t_esc = html.escape(texte)
+    t_esc = t_esc.replace("[R]", '</div><div style="color:#D32F2F !important; font-size:0.98rem; font-weight:bold; text-align:center; line-height:1.7; margin:8px 0;">')
+    t_esc = t_esc.replace("[/R]", '</div><div style="color:#1a1a1a !important; font-size:0.95rem; line-height:1.7; margin:8px 0;">')
+    t_esc = t_esc.replace("[I]", '</div><div style="color:#1a1a1a !important; font-size:0.95rem; font-style:italic; text-align:center; line-height:1.7; margin:8px 0;">')
+    t_esc = t_esc.replace("[/I]", "</div>")
+    corps_intro = '<div style="color:#1a1a1a !important; font-size:0.95rem; line-height:1.7; margin:8px 0;">' + t_esc
+    return (
+        '<div style="background:#FFF9C4 !important; border-radius:12px; padding:18px; margin:6px;">'
+        '<div style="color:#1A237E !important; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">'
+        + html.escape(titre_carte) + "</div>"
+        + corps_intro + "</div>")
+
+
+# ====================================================================
+# PAGES DES RUBRIQUES
+# ====================================================================
+def _render_page_theme_ensemble():
+    """🕯️ Thème → Vue d'ensemble : thème actif + mystère principal +
+    sous-thème du mois + feuillet PDF. Couleurs critiques en !important."""
+    theme = get_theme_actif()
+    if not theme:
+        st.info("🕯️ Aucun thème pastoral n'est actuellement actif. "
+                "Il sera publié par le diocèse.")
+        return
+    texte_theme, mystere_principal, annee_debut = theme
+    ligne_mystere = ""
+    try:
+        mm = get_mystere(int(mystere_principal)) if mystere_principal else None
+    except (ValueError, TypeError):
+        mm = None
+    if mm:
+        ligne_mystere = ('<div style="color:#b39ddb !important; font-size:0.9rem; margin-top:8px;">'
+                         "📿 Mystère principal : N°" + str(mm["id"]) + " — "
+                         + html.escape(mm["titre"].title()) + " ("
+                         + html.escape(mm["reference"]) + ")</div>")
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+        ' padding:24px; border-radius:15px; text-align:center; margin:10px;'
+        ' border:2px solid #FFD700;">'
+        '<div style="color:#9fa6d8 !important; font-size:0.85rem;">🕯️ THÈME PASTORAL '
+        + str(annee_debut) + " - " + str(annee_debut + 1) + "</div>"
+        '<div style="color:#FFD700 !important; font-size:1.25rem; font-weight:bold; margin-top:8px; line-height:1.5;">« '
+        + html.escape(texte_theme or "") + ' »</div>'
+        + ligne_mystere + "</div>", unsafe_allow_html=True)
+
+    mois_courant = date.today().month
+    sous = get_sous_theme_du_mois(annee_debut, mois_courant)
+    if sous:
+        titre_st, contenu_st, feuillet = sous
+        contenu_html = html.escape(contenu_st or "").replace("\n", "<br>")
+        bloc = ('<div style="background:#121a45; border-radius:15px; margin:10px; padding:20px; border:1px solid #27306b;">'
+                '<div style="color:#ffe082 !important; font-weight:bold; font-size:1.05rem; text-align:center;">📅 Sous-thème de '
+                + MOIS_FR[mois_courant - 1] + " : " + html.escape(titre_st or "") + "</div>"
+                + ('<div style="color:#e8eaf6 !important; font-size:0.95rem; line-height:1.7; margin-top:12px; text-align:left;">'
+                   + contenu_html + "</div>" if contenu_html else "")
+                + "</div>")
+        st.markdown(bloc, unsafe_allow_html=True)
+        if feuillet:
+            st.caption("📄 Feuillet du mois")
+            _render_pdf_inline(feuillet)
+    else:
+        st.info("📅 Le sous-thème de ce mois n'a pas encore été publié.")
+
+
+def _render_page_en_preparation(emoji, titre, description):
+    """Page « en préparation » élégante pour les rubriques à venir."""
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+        ' padding:28px; border-radius:15px; text-align:center; margin:10px;'
+        ' border:2px solid #FFD700;">'
+        '<div style="font-size:2.2rem;">🚧</div>'
+        '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold; margin-top:8px;">'
+        + emoji + " " + html.escape(titre) + "</div>"
+        '<div style="color:#e8eaf6 !important; font-size:0.95rem; margin-top:10px; line-height:1.7;">'
+        + html.escape(description) + "</div></div>", unsafe_allow_html=True)
+
+
+GROUPES_CHAPELETS = [
+    ("Joyeux", 1, 5, "Annoncé, né, présenté, retrouvé — la vie cachée et la lumière de l’enfance"),
+    ("Lumineux", 6, 10, "Le Baptême, Cana, l’annonce du Royaume, la Transfiguration, l’Eucharistie"),
+    ("Douloureux", 11, 15, "L’agonie, la flagellation, le couronnement d’épines, le portement de croix, la mort sur la croix"),
+    ("Glorieux", 16, 20, "La Résurrection, l’Ascension, la Pentecôte, l’Assomption, le Couronnement de Marie"),
+]
+
+
+def _render_page_rosaire_eyquem():
+    """📿 Rosaire → L'esprit du Père Eyquem : prière + 4 chapelets ; chaque
+    mystère CLIQUABLE (expander → PASSAGE + MÉDITATION en blanc)."""
+    st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+                ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
+                ' border:2px solid #FFD700;">'
+                '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold;">📿 Le Rosaire complet selon l’esprit du Père Eyquem</div>'
+                '<div style="color:#e8eaf6 !important; font-size:0.9rem; margin-top:6px;">Quatre chapelets, vingt mystères — la prière du fondateur des Équipes du Rosaire</div></div>',
+                unsafe_allow_html=True)
+    st.markdown(_rendre_intro_eyquem("PRIÈRE À LA VIERGE — Frère Joseph EYQUEM, o.p."), unsafe_allow_html=True)
+
+    for nom_type, debut, fin, resume in GROUPES_CHAPELETS:
+        couleur_forte = COULEURS_TYPES.get(nom_type.lower(), "#9E9E9E")
+        couleur_claire = COULEURS_CLAIRES.get(nom_type.lower(), "#e8eaf6")
+        st.markdown(
+            '<div style="background:#121a45; border-radius:15px; margin:10px 10px 4px 10px; padding:14px 20px; border:1px solid #27306b; border-left:6px solid ' + couleur_forte + ';">'
+            '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:1.05rem;">✝️ Mystères ' + nom_type + "</div>"
+            '<div style="color:#c7cdf5 !important; font-size:0.85rem; margin-top:2px;">' + html.escape(resume) + "</div>"
+            '<div style="color:#ffe082 !important; font-size:0.8rem; font-style:italic; margin-top:4px;">👆 Touchez un mystère pour lire passage et méditation</div>'
+            "</div>", unsafe_allow_html=True)
+        for m in MYSTERES:
+            if not (debut <= m["id"] <= fin):
+                continue
+            with st.expander(f'{m["id"]:02d} — {m["titre"].title()}  ·  {m["reference"]}'):
+                passage_html = html.escape(m["passage"]).replace("\n", "<br>")
+                medit_html = html.escape(m["meditation"]).replace("\n", "<br>")
+                st.markdown(
+                    '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:0.95rem;">📖 PASSAGE</div>'
+                    '<div style="color:#ffffff !important; font-size:0.95rem; line-height:1.7; margin:6px 0 14px 0;">' + passage_html + "</div>"
+                    '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:0.95rem;">🕯️ MÉDITATION</div>'
+                    '<div style="color:#ffffff !important; font-size:0.95rem; line-height:1.7; margin-top:6px;">' + medit_html + "</div>",
+                    unsafe_allow_html=True)
+    st.info("📿 La dizaine du jour vous attend sur l'Accueil (🏠 Actualités) — "
+            "chaque membre fait avancer la chaîne selon son numéro.")
+
+
+def _render_page_rosaire_theme():
+    """📿 Rosaire → Le thème de l'année : les 20 mystères avec leur lien."""
+    theme = get_theme_actif()
+    if not theme:
+        st.info("🕯️ Aucun thème pastoral n'est actuellement actif.")
+        return
+    texte_theme, mystere_principal, annee_debut = theme
+    st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+                ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
+                ' border:2px solid #FFD700;">'
+                '<div style="color:#9fa6d8 !important; font-size:0.85rem;">📿 LE ROSAIRE SELON LE THÈME DE L’ANNÉE</div>'
+                '<div style="color:#FFD700 !important; font-size:1.1rem; font-weight:bold; margin-top:6px;">« '
+                + html.escape(texte_theme or "") + " »</div></div>", unsafe_allow_html=True)
+    manquants = 0
+    for m in MYSTERES:
+        lien = get_lien_mystere(annee_debut, m["id"])
+        couleur = COULEURS_CLAIRES.get((m["type"] or "").lower(), "#e8eaf6")
+        if lien:
+            corps_lien = ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:10px 14px; margin-top:8px;">'
+                          '<div style="color:#1A237E !important; font-weight:bold; font-size:0.85rem;">🔗 Lien thématique</div>'
+                          '<div style="color:#1a1a1a !important; font-size:0.9rem; line-height:1.7; margin-top:4px;">'
+                          + html.escape(lien).replace("\n", "<br>") + "</div></div>")
+        else:
+            manquants += 1
+            corps_lien = ('<div style="color:#c7cdf5 !important; font-size:0.85rem; font-style:italic; margin-top:8px;">'
+                          "— lien thématique à préciser par le diocèse —</div>")
+        st.markdown(
+            '<div style="background:#121a45; border-radius:15px; margin:10px; padding:16px; border-left:6px solid ' + couleur + ';">'
+            '<div style="color:' + couleur + ' !important; font-weight:bold; font-size:1rem;">' + str(m["id"]).zfill(2) + " — "
+            + html.escape(m["titre"].title()) + "</div>"
+            '<div style="color:#c7cdf5 !important; font-size:0.82rem;">📖 ' + html.escape(m["reference"]) + "</div>"
+            + corps_lien + "</div>", unsafe_allow_html=True)
+    if manquants:
+        st.caption(f"🔗 {manquants} lien(s) thématique(s) restent à saisir dans l'interface diocèse.")
+
+
+def _render_page_archives_textes(type_contenu, message_vide):
+    """Archives Prières / Méditations. Photo en WIDGET NATIF st.image."""
+    lignes = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
+                          WHERE type_contenu=? ORDER BY date_publication DESC, id DESC""",
+                       (type_contenu,)).fetchall()
+    if not lignes:
+        st.info(message_vide)
+        return
+    for p in lignes:
+        with st.expander(f"📖 {p[0]}"):
+            texte, url_pdf = (p[1] or ""), p[3]
+            if not url_pdf:
+                texte, url_pdf = _extraire_pdf_legacy(texte)
+            if p[2] and p[2].startswith("http"):
+                try:
+                    st.image(p[2], use_container_width=True)
+                except Exception:
+                    st.warning("Illustration momentanément indisponible.")
+            if texte:
+                st.markdown(texte, unsafe_allow_html=True)
+            if url_pdf:
+                _render_pdf_inline(url_pdf)
+
+
+def _render_page_archives_audios():
+    """Archives Musiques (page pleine)."""
+    audios = c.execute("""SELECT titre, fichier_url FROM espace_spirituel
+                          WHERE type_contenu='audio' ORDER BY date_publication DESC, id DESC""").fetchall()
+    if not audios:
+        st.info("Aucun fichier audio.")
+        return
+    for a in audios:
+        if a[1] and a[1].startswith("http"):
+            st.markdown(f"#### 🎵 {a[0]}")
+            st.audio(a[1])
+            st.markdown("---")
+        else:
+            st.warning(f"Le fichier audio pour '{a[0]}' est introuvable.")
+
+
+def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
+    """La dizaine du jour — affichée UNIQUEMENT sur l'Accueil (v7.2).
+    Le livre ouvert reste une page autonome plein écran."""
+    st.markdown("---")
+
+    st.session_state.pop("nettoyage_diz", None)
+    st.session_state.pop("diz_saisie", None)
+
+    num = None
+    if est_membre:
+        try:
+            num = int(numero_meditation) if numero_meditation else None
+        except (ValueError, TypeError):
+            num = None
+        if not num or not (1 <= num <= 20):
+            st.info("📿 Votre numéro de méditation (1-20) n’est pas encore renseigné. "
+                    "Demandez-le à votre responsable d’équipe pour recevoir votre dizaine du jour.")
+            return
+    else:
+        if st.session_state.get("diz_ouvert"):
+            jrnais = st.session_state.get("diz_jrnais", 0)
+            if not jrnais:
+                st.session_state["diz_ouvert"] = False
+                return
+            num = jrnais - 20 if jrnais > 20 else jrnais
+        else:
+            st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+                        ' padding:16px; border-radius:15px; text-align:center; margin:0 10px 6px 10px;'
+                        ' border:2px solid #FFD700;">'
+                        '<div style="color:#FFD700; font-size:1.1rem; font-weight:bold;">🕯️ Un jour, une dizaine</div>'
+                        '<div style="color:#ffffff; font-size:0.85rem; margin-top:4px;">'
+                        'Entrez ici votre jour de naissance (1 - 31) et rejoignez la chaîne de prière</div></div>',
+                        unsafe_allow_html=True)
+
+            _, c_saisie, c_btn, _ = st.columns([0.07, 4.5, 1.2, 0.07],
+                                               gap="small", vertical_alignment="bottom")
+            with c_saisie:
+                saisie = st.number_input("Jour de naissance",
+                                         min_value=1, max_value=31, value=None, step=1,
+                                         label_visibility="collapsed", key="diz_jour")
+            with c_btn:
+                if st.button("✅", key="diz_valider", use_container_width=True, type="primary",
+                             help="Valider votre jour de naissance"):
+                    if saisie is not None and 1 <= int(saisie) <= 31:
+                        st.session_state["diz_jrnais"] = int(saisie)
+                        st.session_state.pop("diz_erreur", None)
+                    else:
+                        st.session_state["diz_erreur"] = "Entrez d'abord votre jour de naissance (chiffre entre 1 et 31)."
+            if st.session_state.get("diz_erreur"):
+                st.warning(st.session_state.pop("diz_erreur"))
+
+            if "diz_jrnais" not in st.session_state:
+                return
+            jrnais = st.session_state["diz_jrnais"]
+            num = jrnais - 20 if jrnais > 20 else jrnais
+
+    mysteres_jour = get_mysteres_du_jour(num)
+    if not mysteres_jour:
         return
 
-    evt = c.execute("SELECT type_evenement, date_evenement, lieu FROM evenements WHERE id=?", (event_id,)).fetchone()
-    if not evt:
-        st.error("Cet événement n'existe pas.")
+    if st.session_state.get("diz_num") != num:
+        st.session_state["diz_num"] = num
+        st.session_state["diz_ouvert"] = False
+        st.session_state["diz_page"] = 0
+
+    # ---------- COUVERTURE ----------
+    if not st.session_state.get("diz_ouvert"):
+        pastilles = "".join(
+            f'<div style="width:52px; height:52px; border-radius:50%; background:#FFD700;'
+            f' color:#1A237E; font-weight:bold; font-size:1.2rem; display:flex;'
+            f' align-items:center; justify-content:center;">{m["id"]:02d}</div>'
+            for m in mysteres_jour)
+        titres = " • ".join(m["titre"].title() for m in mysteres_jour)
+        st.markdown(
+            f'<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+            f' padding:24px; border-radius:15px; text-align:center; margin:10px;'
+            f' border:2px solid #FFD700;">'
+            f'<div style="color:#FFD700; font-size:1.3rem; font-weight:bold;">📿 Ta dizaine du jour</div>'
+            f'<div style="display:flex; justify-content:center; gap:10px; margin:18px 0;">{pastilles}</div>'
+            f'<div style="color:#ffffff; font-size:1rem;">{html.escape(titres)}</div>'
+            f'<div style="color:#9fa6d8; font-size:0.85rem; margin-top:8px;">'
+            f'N° méd. {num} — {date.today().strftime("%d/%m/%Y")}</div>'
+            f'</div>', unsafe_allow_html=True)
+        _scroll_top("cov")
+        if st.button("📿 Égrener la dizaine", key="diz_commencer", use_container_width=True, type="primary"):
+            st.session_state["diz_ouvert"] = True
+            st.session_state["diz_page"] = 0
+            st.rerun()
         return
 
-    date_evt = safe_date(evt[1])
-    st.markdown(f"""
-    <div style="background-color:#f3e5f5; padding:20px; border-radius:10px; text-align:center; margin-bottom:30px;">
-        <h3 style="color:#4A148C; margin-bottom:10px;">{evt[0]}</h3>
-        <p style="font-size:1.1rem; color:#1A237E; margin:5px 0;">📅 {date_evt.strftime('%d/%m/%Y') if date_evt else 'Date inconnue'}</p>
-        <p style="font-size:1.1rem; color:#1A237E; margin:5px 0;">📍 {evt[2] or 'Lieu non défini'}</p>
-    </div>
-    """, unsafe_allow_html=True)
+    # ---------- LE LIVRE ----------
+    pages = []
+    for m in mysteres_jour:
+        if m["id"] == 1:
+            pages.append({"t": "intro1"})
+            pages.append({"t": "intro2"})
+            pages.append({"t": "intro3"})
+        pages.append({"t": "contenu", "m": m})
+        pages.append({"t": "intentions", "m": m})
+        pages.append({"t": "notrepere", "m": m})
+        for g in range(1, 11):
+            pages.append({"t": "grain", "m": m, "g": g})
+        pages.append({"t": "gloria", "m": m})
+        if m["id"] == 20:
+            pages.append({"t": "outro"})
 
-    if st.session_state.get('event_id_verifie') != event_id:
-        st.session_state['membre_verifie'] = False
-        st.session_state['membre_info'] = None
-        st.session_state['membre_a_repondu'] = False
-        st.session_state['event_id_verifie'] = event_id
+    if "diz_page" not in st.session_state or st.session_state["diz_page"] >= len(pages):
+        st.session_state["diz_page"] = 0
+    idx = st.session_state["diz_page"]
+    page = pages[idx]
 
-    # --- ÉTAPE 1 : VÉRIFICATION ---
-    if not st.session_state.get('membre_verifie', False):
-        st.markdown("**Entrez votre numéro de membre (MatLoc) :**")
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            matloc_saisi = st.text_input("MatLoc", placeholder="Ex: GBA-A1B2C", label_visibility="collapsed").upper().strip()
-        with col2:
-            st.write("")
-            bouton_verifier = st.button("Vérifier", width="stretch")
+    m = page.get("m")
+    couleur = COULEURS_TYPES.get((m["type"] or "").lower(), "#9E9E9E") if m else "#1A237E"
 
-        if bouton_verifier and matloc_saisi:
-            membre = c.execute("""
-                SELECT m.id, m.nom, m.prenom
-                FROM membres m
-                JOIN evenement_equipes ee ON m.equipe_id = ee.equipe_id
-                WHERE m.matloc = ? AND ee.evenement_id = ? AND m.statut = 'actif'
-            """, (matloc_saisi, event_id)).fetchone()
+    if page["t"] in ("intro1", "intro2", "intro3"):
+        texte = {"intro1": DIZ_INTRO1, "intro2": DIZ_INTRO2, "intro3": DIZ_INTRO3}[page["t"]]
+        if "[R]" in texte:
+            html_page = _rendre_intro_eyquem("INTRODUCTION")
+        else:
+            html_page = (
+                f'<div style="background:#FFF9C4; border-radius:12px; padding:18px; margin:6px;">'
+                f'<div style="color:#1A237E; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">INTRODUCTION</div>'
+                f'{_diz_txt(texte, "#1a1a1a")}</div>')
 
-            if not membre:
-                st.error("❌ MatLoc inconnu ou vous ne faites pas partie d'une équipe invitée à cet événement.")
-            else:
-                st.session_state['membre_verifie'] = True
-                st.session_state['membre_info'] = membre
-                st.session_state['membre_matloc'] = matloc_saisi
+    elif page["t"] == "outro":
+        html_page = (
+            f'<div style="background:#FFF9C4; border-radius:12px; padding:18px; margin:6px;">'
+            f'<div style="color:#1A237E; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">FIN DU ROSAIRE</div>'
+            f'{_diz_txt(DIZ_OUTRO, "#1a1a1a")}</div>')
+
+    else:
+        tete = (
+            f'<div style="background:{couleur}; border-radius:12px 12px 0 0; padding:12px 16px; margin:6px 6px 0 6px;">'
+            f'<div style="color:#ffffff; font-weight:bold; font-size:1.05rem;">{m["id"]} — {html.escape(m["titre"])}</div>'
+            f'<div style="color:#ffffff; font-size:0.85rem;">📖 {html.escape(m["reference"])}</div></div>'
+            f'<div style="background:#FFF9C4; border-radius:0 0 12px 12px; padding:18px; margin:0 6px 6px 6px;">')
+
+        if page["t"] == "contenu":
+            corps = (_diz_txt("PASSAGE", couleur, "1rem", gras=True)
+                     + _diz_txt(m["passage"], "#1a1a1a")
+                     + _diz_txt("MÉDITATION", couleur, "1rem", gras=True)
+                     + _diz_txt(m["meditation"], "#1a1a1a"))
+            t_actif = get_theme_actif()
+            if t_actif:
+                lien_txt = get_lien_mystere(t_actif[2], m["id"])
+                if lien_txt:
+                    corps += ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:12px 14px; margin:14px 0 2px 0;">'
+                              '<div style="color:#1A237E !important; font-weight:bold; font-size:0.9rem;">🔗 Lien thématique — '
+                              + html.escape(t_actif[0] or "") + "</div>"
+                              '<div style="color:#1a1a1a !important; font-size:0.92rem; line-height:1.7; margin-top:6px;">'
+                              + html.escape(lien_txt).replace("\n", "<br>") + "</div></div>")
+
+        elif page["t"] == "intentions":
+            intentions_html = ""
+            for ligne in m["intentions"].split("\n"):
+                l = ligne.strip().lstrip("*").strip()
+                if not l:
+                    continue
+                intentions_html += _diz_txt("🕯️ Vierge Marie, mère de Dieu, intercède : " + l, "#1a1a1a")
+            fruits_html = "".join(
+                _diz_txt("✨ " + ligne.strip(), "#1a1a1a")
+                for ligne in m["fruits"].split("\n") if ligne.strip())
+            corps = (_diz_txt("INTENTIONS", couleur, "1rem", gras=True)
+                     + intentions_html
+                     + _diz_txt("FRUITS DU MYSTÈRE", couleur, "1rem", gras=True)
+                     + fruits_html)
+
+        elif page["t"] == "notrepere":
+            corps = (_diz_txt("NOTRE PÈRE", couleur, "1rem", gras=True)
+                     + _diz_txt("Notre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\nque ta volonté soit faite\nsur la terre comme au ciel.\n\nDonne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, mais délivre-nous du Mal. Amen!", "#1a1a1a"))
+
+        elif page["t"] == "grain":
+            g = page["g"]
+            clausule = m["clausules"][g - 1] if g <= len(m["clausules"]) else ""
+            carrés = "".join(
+                f'<div style="width:22px; height:22px; border-radius:4px; display:flex; align-items:center;'
+                f' justify-content:center; font-size:0.7rem; font-weight:bold;'
+                f' background:{"#1A237E" if i <= g else "#cccccc"}; color:{"#ffffff" if i == g else "#888888"};">{i}</div>'
+                for i in range(1, 11))
+            corps = (
+                f'<div style="display:flex; gap:5px; margin:6px 0;">{carrés}</div>'
+                + _diz_txt("Je vous salue Marie, pleine de grâce,\nle Seigneur est avec vous.\nVous êtes bénie entre toutes les femmes,", "#1a1a1a")
+                + _diz_txt("et Jésus, " + clausule, couleur, "1.1rem", gras=True)
+                + _diz_txt("le fruit de vos entrailles, est béni.", "#1a1a1a")
+                + _diz_txt("Sainte Marie, Mère de Dieu,\npriez pour nous pauvres pécheurs,\nmaintenant et à l’heure de notre mort.\nAmen!", "#1a1a1a"))
+
+        else:  # gloria
+            corps = (_diz_txt("GLORIA PATRI", couleur, "1rem", gras=True)
+                     + _diz_txt("Gloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, et in saecula saeculorum. Amen!\n\nÔ mon Jésus, pardonne-nous nos péchés; préserve-nous du feu de l’Enfer, attire au Ciel toutes les âmes, principalement celles qui ont le plus besoin de ta miséricorde. Amen!\n\nNotre Dame du très Saint Rosaire!\nPriez pour nous!", "#1a1a1a"))
+
+        html_page = tete + corps + '</div>'
+
+    st.markdown(html_page, unsafe_allow_html=True)
+    _scroll_top(f"p{idx}")
+
+    # --- Navigation : ON NE RECULE PAS quand on égrène une dizaine ☺️ ---
+    c_av, c_term = st.columns(2)
+    with c_av:
+        if idx < len(pages) - 1:
+            if st.button("Suivant ▶", key=f"diz_next_{idx}", use_container_width=True, type="primary"):
+                st.session_state["diz_page"] = idx + 1
+                st.rerun()
+        else:
+            if st.button("✕ Terminer", key=f"diz_end_{idx}", use_container_width=True):
+                st.session_state["diz_ouvert"] = False
+                st.session_state["diz_page"] = 0
                 st.rerun()
 
-    # --- ÉTAPE 2 : LE CHOIX ---
+
+def _render_pdf_inline(url_pdf):
+    """PDF en iframe directe Cloudinary + lien de secours plein écran."""
+    lien_txt = "📄 Si le document ne s'affiche pas, ouvrez-le ici"
+    st.markdown(
+        f'<div style="margin:12px 10px 18px 10px; border-radius:12px; overflow:hidden; border:1px solid #27306b;">'
+        f'<iframe src="{url_pdf}" width="100%" height="700" style="border:none;" title="Document"></iframe>'
+        f'<div style="text-align:center; padding:8px; background:#121a45;">'
+        f'<a href="{url_pdf}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">{lien_txt}</a>'
+        f'</div></div>', unsafe_allow_html=True)
+
+
+def _render_coin_affiche():
+    lignes = []
+    erreur_sql = None
+    try:
+        lignes = c.execute("""SELECT type_evenement, date_evenement, lieu, affiche_url, video_url FROM evenements
+                              WHERE (affiche_url IS NOT NULL OR video_url IS NOT NULL) AND date_evenement >= ?
+                              ORDER BY date_evenement ASC LIMIT 5""",
+                          (date.today().isoformat(),)).fetchall()
+    except Exception as e:
+        erreur_sql = str(e)
+        lignes = []
+
+    if st.query_params.get("debug") == "1":
+        with st.expander("🔎 DEBUG Coin Affiche"):
+            st.write("Aujourd'hui :", date.today().isoformat())
+            if erreur_sql:
+                st.error(f"REQUÊTE PRINCIPALE EN ÉCHEC : {erreur_sql}")
+            try:
+                st.write("Évènements avec visuel (tous) :",
+                         c.execute("SELECT id, type_evenement, date_evenement, affiche_url, video_url FROM evenements WHERE affiche_url IS NOT NULL OR video_url IS NOT NULL").fetchall())
+            except Exception as e:
+                st.write("ERREUR SQL :", e)
+
+    visuel = None
+    for a in lignes:
+        if safe_date(a[1]):
+            visuel = a
+            break
+
+    if visuel:
+        d_v = safe_date(visuel[1])
+        date_txt = d_v.strftime("%d/%m/%Y") if d_v else "Date à définir"
+        img_part = (f'<img src="{visuel[3]}" alt="Affiche" style="width:100%; height:auto; display:block; border-bottom:3px solid #7b1fa2;">'
+                    if visuel[3] else "")
+        st.markdown(
+            f'<div style="background:#121a45; border-radius:15px; overflow:hidden; border:1px solid #27306b; margin:0 10px 15px 10px; box-shadow:0 2px 8px rgba(0,0,0,0.4);">'
+            f'{img_part}'
+            f'<div style="padding:15px; text-align:center;">'
+            f'<h4 style="margin:0 0 5px 0; color:#e8eaf6; font-size:1.1rem;">📣 {html.escape(visuel[0])}</h4>'
+            f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(visuel[2] or "Lieu à définir")}</p>'
+            f'</div></div>', unsafe_allow_html=True)
+        if visuel[4]:
+            st.video(visuel[4])
     else:
-        membre = st.session_state.get('membre_info')
-        if not membre:
-            st.session_state['membre_verifie'] = False
-            st.rerun()
+        try:
+            prochain = c.execute("""SELECT type_evenement, date_evenement, lieu FROM evenements
+                                    WHERE date_evenement >= ? ORDER BY date_evenement ASC LIMIT 1""",
+                                 (date.today().isoformat(),)).fetchone()
+        except Exception:
+            prochain = None
+        if prochain:
+            d = safe_date(prochain[1])
+            date_txt = d.strftime("%d/%m/%Y") if d else "Date à définir"
+            icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
+                     "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(prochain[0], "📅")
+            st.markdown(
+                f'<div style="background:linear-gradient(135deg,#1a2150 0%,#121a45 100%); border-radius:15px; margin:0 10px 15px 10px; border:1px solid #27306b;">'
+                f'<div style="padding:15px; text-align:center;">'
+                f'<h4 style="margin:0 0 5px 0; color:#e8eaf6; font-size:1.1rem;">{icone} {html.escape(prochain[0])}</h4>'
+                f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p>'
+                f'</div></div>', unsafe_allow_html=True)
+
+
+def _render_fil_actualites():
+    """Photo en WIDGET NATIF st.image (pleine largeur) PUIS carte titre+texte."""
+    dernier = c.execute("""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
+                           FROM espace_spirituel
+                           WHERE type_contenu IN ('priere', 'meditation')
+                           ORDER BY date_publication DESC, id DESC LIMIT 1""").fetchone()
+
+    if dernier:
+        etiquette = {"priere": "🙏 Prière du jour", "meditation": "📖 Méditation du jour"}.get(dernier[0], "📿 Du jour")
+        texte = dernier[2] or ""
+        url_pdf = dernier[4]
+        if not url_pdf:
+            texte, url_pdf = _extraire_pdf_legacy(texte)
+
+        if dernier[3] and dernier[3].startswith("http"):
+            try:
+                st.image(dernier[3], use_container_width=True)
+            except Exception:
+                st.warning("Illustration momentanément indisponible.")
+
+        texte_html = texte.replace("\n", "<br>")
+        st.markdown(
+            f'<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35);">'
+            f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{etiquette} — {html.escape(dernier[1])}</div>'
+            f'<div style="color:#4527a0; font-size:0.98rem; line-height:1.6; text-align:left;">{texte_html}</div>'
+            f'</div>', unsafe_allow_html=True)
+
+        if url_pdf:
+            _render_pdf_inline(url_pdf)
+    else:
+        st.info("Aucun contenu spirituel n'a encore été publié.")
+
+    _render_coin_affiche()
+
+
+def _enregistrer_presence(membre_id, evt_id, choix):
+    deja = c.execute("SELECT id FROM suivi_presences WHERE membre_id=? AND evenement_id=?",
+                     (membre_id, evt_id)).fetchone()
+    if deja:
+        c.execute("UPDATE suivi_presences SET statut=? WHERE id=?", (choix, deja[0]))
+    else:
+        c.execute("INSERT INTO suivi_presences (membre_id, evenement_id, statut) VALUES (?, ?, ?)",
+                  (membre_id, evt_id, choix))
+    commit_and_sync()
+    st.session_state["flash_success"] = "Merci pour votre engagement ! 🙏"
+    st.rerun()
+
+
+# ====================================================================
+# PAGE PRINCIPALE
+# ====================================================================
+def show_espace_membre(matloc_membre=None):
+    livre_ouvert = st.session_state.get("diz_ouvert", False)
+
+    _render_theme(compact=livre_ouvert)
+    # MESURE réelle de l'entête — écart réduit à zéro (v7.3)
+    nb_bandes = 0 if livre_ouvert else _compter_bandes(membre=bool(matloc_membre))
+    _mesure_entete(nb_bandes)
+
+    # Compteur : 1 visite = 1 session (option A validée)
+    if "visite_communaute" not in st.session_state:
+        st.session_state["visite_communaute"] = True
+        compter_visite("communautaire")
+
+    msg_ok = st.session_state.pop("flash_success", None)
+    if msg_ok:
+        st.success(msg_ok)
+    msg_warn = st.session_state.pop("flash_warning", None)
+    if msg_warn:
+        st.warning(msg_warn)
+
+    # ================= ÉTAT 1 : VUE PUBLIQUE (Espace communautaire) =================
+    if not matloc_membre:
+        # v7.5 : 1 visite = 1 ARRIVÉE (les navigations internes ont &nav=1)
+        if "nav" not in st.query_params and "visite_communaute" not in st.session_state:
+            st.session_state["visite_communaute"] = True
+            compter_visite("communautaire")
+
+        rub, sub = _lire_nav(RUBRIQUES_PUBLIC)
+        _render_header(masquer_bandes=livre_ouvert,
+                       rubriques=(None if livre_ouvert else RUBRIQUES_PUBLIC),
+                       rub_act=rub, sub_act=sub)
+
+        if livre_ouvert:
+            _render_dizaine_du_jour(est_membre=False)
             return
 
-        st.success(f"Bonjour **{membre[1]} {membre[2]}** ! Comment vous joignez-vous à nous ?")
+        st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
+                    '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
+                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · v7.5</div></div>', unsafe_allow_html=True)
 
-        deja_repondu = c.execute("SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=?",
-                                 (membre[0], event_id)).fetchone()
-        index_defaut = 1 if (deja_repondu and deja_repondu[0] == 'spirituel') else 0
-
-        choix = st.radio(
-            "Votre engagement :",
-            ["physique", "spirituel"],
-            format_func=lambda x: {"physique": "🟢 Je serai présent physiquement", "spirituel": "🟡 Je prierai de chez moi (Spirituel)"}[x],
-            index=index_defaut,
-            horizontal=False
-        )
-
-        if st.button("✅ Confirmer ma réponse", width="stretch", type="primary"):
-            if deja_repondu:
-                c.execute("UPDATE suivi_presences SET statut=? WHERE membre_id=? AND evenement_id=?", (choix, membre[0], event_id))
+        if rub == "📿 Rosaire":
+            if sub == "Le thème de l'année":
+                _render_page_rosaire_theme()
             else:
-                c.execute("INSERT INTO suivi_presences (membre_id, evenement_id, statut) VALUES (?, ?, ?)", (membre[0], event_id, choix))
-            commit_and_sync()
-            st.session_state['membre_a_repondu'] = True
-
-        if st.session_state.get('membre_a_repondu'):
-            if choix == "physique":
-                st.balloons()
-                st.success("À bientôt en communion physique ! 🙏")
+                _render_page_rosaire_eyquem()
+        elif rub == "📖 Archives":
+            if sub == "📖 Méditations":
+                _render_page_archives_textes("meditation", "Aucune méditation disponible.")
+            elif sub == "🎵 Musiques":
+                _render_page_archives_audios()
             else:
-                st.snow()
-                st.success("Merci pour votre communion spirituelle, nous nous unirons à vous ! 🙏")
-
-            # Pont vers l'Espace de Prière (avec matloc du membre)
-            st.markdown("---")
-            lien_espace = f"{URL_ESPACE_SPIRITUEL}/?espace=1&matloc={st.session_state.get('membre_matloc', '')}"
-            st.markdown(f"""
-            <div style="text-align: center; margin-top: 30px; padding: 20px; background: #f3e5f5; border-radius: 15px;">
-                <p style="font-size: 1.1rem; color: #4527a0; font-weight: bold;">Découvrez les ressources de la semaine</p>
-                <a href="{lien_espace}" target="_blank"
-                   style="background-color: #4527a0; color: white; padding: 12px 30px; text-decoration: none; border-radius: 30px; font-weight: bold; display: inline-block; font-size: 1.1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                    🕊️ Accéder à l'Espace de Prière
-                </a>
-            </div>
-            """, unsafe_allow_html=True)
-
-
-def gerer_theme_pastoral():
-    """🕯️ Interface diocèse : thème annuel, 12 sous-thèmes mensuels (feuillets),
-    et le lien du thème avec CHACUN des 20 mystères."""
-    st.caption("Structure : un thème annuel porté par un mystère (ex. 2026-2027 : "
-               "« IL POSAIT DES QUESTIONS. FORCE DE LA FOI ! » — Mystère N°5, le "
-               "Recouvrement au Temple), décliné en 12 sous-thèmes mensuels, et relié "
-               "à chacun des 20 mystères. Affiché dans les deux espaces et dans le "
-               "livre de la dizaine.")
-
-    # ---------- 1. THÈME ANNUEL ----------
-    st.markdown("### 1️⃣ Le thème de l'année")
-    themes = c.execute("SELECT id, annee_debut, texte_theme, mystere_principal, actif FROM themes_pastoraux ORDER BY annee_debut DESC").fetchall()
-    if themes:
-        for t in themes:
-            etat = "🟢 ACTIF" if t[4] else "⚪"
-            c_txt, c_act = st.columns([5, 1])
-            with c_txt:
-                st.write(f"**{t[1]}-{t[1]+1}** {etat} — Mystère N°{t[3] or '?'}")
-                st.caption(t[2])
-            with c_act:
-                if not t[4] and st.button("Activer", key=f"act_theme_{t[0]}"):
-                    c.execute("UPDATE themes_pastoraux SET actif=0")
-                    c.execute("UPDATE themes_pastoraux SET actif=1 WHERE id=?", (t[0],))
-                    commit_and_sync()
-                    st.rerun()
-
-    with st.form("form_theme_annuel"):
-        st.markdown("**Créer / mettre à jour le thème d'une année pastorale**")
-        annee_t = st.number_input("Année de début", min_value=2020, max_value=2060,
-                                  value=get_periode_pastorale()[0], step=1, key="tp_annee")
-        texte_t = st.text_area("Texte du thème", key="tp_texte",
-                               placeholder="Ex. : IL POSAIT DES QUESTIONS. FORCE DE LA FOI !")
-        myst_t = st.number_input("Mystère porteur (1-20)", min_value=1, max_value=20,
-                                 value=5, step=1, key="tp_myst")
-        if st.form_submit_button("🕯️ Enregistrer le thème", width="stretch"):
-            if not texte_t.strip():
-                st.error("Le texte du thème est obligatoire.")
+                _render_page_archives_textes("priere", "Aucune prière publiée.")
+        elif rub == "🕯️ Thème":
+            if sub == "🎓 Enseignements":
+                _render_page_en_preparation("🎓", "Enseignements",
+                                            "Cet espace accueillera les résumés des enseignements reçus, publiés par le diocèse. Il est en préparation.")
+            elif sub == "💬 Discussions":
+                _render_page_en_preparation("💬", "Discussions",
+                                            "Cet espace accueillera les cadres de discussions thématiques. Il est en préparation.")
             else:
-                existant = c.execute("SELECT id FROM themes_pastoraux WHERE annee_debut=?", (annee_t,)).fetchone()
-                if existant:
-                    c.execute("""UPDATE themes_pastoraux SET texte_theme=?, mystere_principal=? WHERE id=?""",
-                              (texte_t.strip(), myst_t, existant[0]))
-                else:
-                    c.execute("UPDATE themes_pastoraux SET actif=0")
-                    c.execute("""INSERT INTO themes_pastoraux (annee_debut, texte_theme, mystere_principal, actif)
-                                 VALUES (?, ?, ?, 1)""", (annee_t, texte_t.strip(), myst_t))
-                commit_and_sync()
-                st.session_state["flash_success"] = "Thème pastoral enregistré ! ✅"
-                st.rerun()
+                _render_page_theme_ensemble()
+        else:
+            _render_dizaine_du_jour(est_membre=False)
+            if st.session_state.get("diz_ouvert"):
+                return
+            _render_fil_actualites()
+        return
 
-    st.markdown("---")
+    # ================= ÉTAT 2 : VUE MEMBRE =================
+    matloc_membre = str(matloc_membre).upper().strip()
 
-    # ---------- 2. SOUS-THÈMES MENSUELS ----------
-    st.markdown("### 2️⃣ Les 12 sous-thèmes mensuels (feuillets)")
-    mois_actuel, _, _ = get_periode_pastorale()
-    annees_existantes = [t[1] for t in themes] or [mois_actuel]
-    annee_st = st.selectbox("Année pastorale", annees_existantes, key="tp_annee_st")
+    membre = c.execute("""
+        SELECT m.id, m.nom, m.prenom, m.matloc, m.whatsapp, m.date_adhesion, m.photo_path,
+               m.numero_meditation, e.nom_equipe, p.nom, m.equipe_id, m.paroisse_id
+        FROM membres m
+        LEFT JOIN equipes e ON m.equipe_id = e.id
+        LEFT JOIN paroisses p ON m.paroisse_id = p.id
+        WHERE m.matloc=? AND m.statut='actif'
+    """, (matloc_membre,)).fetchone()
 
-    MOIS_NOMS = ["Septembre", "Octobre", "Novembre", "Décembre", "Janvier", "Février",
-                 "Mars", "Avril", "Mai", "Juin", "Juillet", "Août"]
+    if not membre:
+        st.error("Identifiant inconnu ou membre inactif.")
+        st.info("💡 Vous pouvez consulter l'espace public ci-dessous.")
+        _render_header()
+        _render_fil_actualites()
+        return
 
-    with st.form("form_sous_theme"):
-        mois_st = st.selectbox("Mois pastoral", MOIS_NOMS, key="tp_mois")
-        titre_st = st.text_input("Titre du sous-thème", key="tp_st_titre")
-        contenu_st = st.text_area("Contenu / développement", height=120, key="tp_st_contenu")
-        pdf_st = st.file_uploader("Feuillet du mois (PDF, optionnel)", type=["pdf"], key="tp_st_pdf")
-        if st.form_submit_button("📅 Enregistrer le sous-thème", width="stretch"):
-            if not titre_st.strip():
-                st.error("Le titre du sous-thème est obligatoire.")
+    if "nav" not in st.query_params and "visite_membre" not in st.session_state:
+        st.session_state["visite_membre"] = True
+        compter_visite("membre")
+
+    rub, sub = _lire_nav(RUBRIQUES_MEMBRE)
+    _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert,
+                   rubriques=(None if livre_ouvert else RUBRIQUES_MEMBRE),
+                   rub_act=rub, sub_act=sub)
+
+    if livre_ouvert:
+        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
+        return
+
+    with st.popover("👤 Mon profil"):
+        if membre[6]:
+            try: st.image(membre[6], width=130)
+            except Exception: pass
+        st.markdown(f"**{membre[1]} {membre[2]}**")
+        st.caption(f"MatLoc : `{membre[3]}`")
+        st.write(f"👥 Équipe : **{membre[8] or '—'}**")
+        st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
+        st.write(f"💬 WhatsApp : {membre[4] or '—'}")
+        st.write(f"📿 N° méditation : {membre[7] or '—'}")
+        d_adh = safe_date(membre[5])
+        st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
+
+    st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
+                '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
+                '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · v7.5</div></div>', unsafe_allow_html=True)
+
+    if rub == "📅 Mes évènements":
+        if membre[10] is None:
+            st.info("Vous n'êtes rattaché(e) à aucune équipe pour le moment.")
+        else:
+            st.markdown("### 📅 Mes prochains évènements")
+            evts = c.execute('''
+                SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
+                       (SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=e.id)
+                FROM evenements e
+                JOIN evenement_equipes ee ON e.id = ee.evenement_id
+                WHERE ee.equipe_id = ? AND e.date_evenement >= ?
+                ORDER BY e.date_evenement ASC
+            ''', (membre[0], membre[10], date.today().isoformat())).fetchall()
+
+            if not evts:
+                st.success("✅ Aucun événement à venir. Profitez de ce temps de repos !")
             else:
-                url_pdf = sauvegarder_pdf(pdf_st) if pdf_st else None
-                mois_num = MOIS_NOMS.index(mois_st) + 1
-                existant = c.execute("SELECT id, feuillet_pdf FROM sous_themes WHERE annee_debut=? AND mois=?",
-                                     (annee_st, mois_num)).fetchone()
-                if existant:
-                    feuillet = url_pdf if url_pdf else existant[1]
-                    c.execute("""UPDATE sous_themes SET titre=?, contenu=?, feuillet_pdf=? WHERE id=?""",
-                              (titre_st.strip(), contenu_st.strip(), feuillet, existant[0]))
-                else:
-                    c.execute("""INSERT INTO sous_themes (annee_debut, mois, titre, contenu, feuillet_pdf)
-                                 VALUES (?, ?, ?, ?, ?)""",
-                              (annee_st, mois_num, titre_st.strip(), contenu_st.strip(), url_pdf))
-                commit_and_sync()
-                st.session_state["flash_success"] = f"Sous-thème de {mois_st} enregistré ! ✅"
-                st.rerun()
+                for evt in evts:
+                    d = safe_date(evt[1])
+                    if not d:
+                        continue
+                    delta = (d - date.today()).days
+                    delai = "🔴 Aujourd'hui !" if delta == 0 else "🟠 Demain" if delta == 1 else f"📅 Dans {delta} jours"
+                    icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
+                             "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(evt[2], "📅")
 
-    existants_st = c.execute("""SELECT mois, titre, feuillet_pdf FROM sous_themes
-                                WHERE annee_debut=? ORDER BY mois""", (annee_st,)).fetchall()
-    if existants_st:
-        st.caption("Sous-thèmes enregistrés :")
-        for s in existants_st:
-            c_m, c_t, c_p, c_d = st.columns([1, 5, 1, 1])
-            with c_m: st.write(f"**{MOIS_NOMS[s[0]-1]}**")
-            with c_t: st.write(s[1] + (" 📄" if s[2] else ""))
-            with c_p:
-                if s[2]:
-                    st.markdown(f'<a href="{s[2]}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">📄 Voir</a>', unsafe_allow_html=True)
-            with c_d:
-                if st.button("🗑️", key=f"del_st_{annee_st}_{s[0]}"):
-                    c.execute("DELETE FROM sous_themes WHERE annee_debut=? AND mois=?", (annee_st, s[0]))
-                    commit_and_sync()
-                    st.rerun()
+                    statut = evt[4]
+                    marqueur = "✅ " if statut in ('physique', 'spirituel') else ""
 
-    st.markdown("---")
+                    with st.expander(f"{marqueur}{icone} {evt[2]} — {d.strftime('%d/%m/%Y')} ({delai})",
+                                     expanded=(delta <= 1)):
+                        st.write(f"📍 {evt[3] or 'Lieu à définir'}")
 
-    # ---------- 3. LE LIEN AVEC LES 20 MYSTÈRES ----------
-    st.markdown("### 3️⃣ Le lien du thème avec les 20 mystères")
-    st.caption("Pour chaque mystère, la phrase qui relie son contenu au thème de l'année. "
-               "Cet encart apparaîtra dans le livre de la dizaine, sur la page du mystère.")
-    annee_lien = st.selectbox("Année pastorale", annees_existantes, key="tp_annee_lien")
+                        if statut == 'physique':
+                            st.success("✅ Votre réponse de communion : Présent(e) physiquement")
+                        elif statut == 'spirituel':
+                            st.success("🟡 Votre réponse de communion : Présent(e) spirituellement")
+                        else:
+                            st.caption("📿 Réponse de Communion — indiquez comment vous vous joignez à nous :")
 
-    with st.form("form_lien_mystere"):
-        myst_lien = st.number_input("Mystère (1-20)", min_value=1, max_value=20, value=1, step=1, key="tp_myst_lien")
-        existant_lien = c.execute("SELECT texte_lien FROM theme_mystere WHERE annee_debut=? AND mystere_id=?",
-                                  (annee_lien, myst_lien)).fetchone()
-        valeur_initiale = existant_lien[0] if existant_lien else ""
-        texte_lien = st.text_area("Texte du lien thématique",
-                                  value=valeur_initiale, height=100, key="tp_lien_txt",
-                                  placeholder="Ex. (mystère 5) : Comme Jésus retrouvé au Temple, "
-                                              "interrogeons notre foi : que demandons-nous à Dieu cette année ?")
-        if st.form_submit_button("🔗 Enregistrer le lien", width="stretch"):
-            if texte_lien.strip():
-                c.execute("""INSERT INTO theme_mystere (annee_debut, mystere_id, texte_lien)
-                             VALUES (?, ?, ?)
-                             ON CONFLICT(annee_debut, mystere_id)
-                             DO UPDATE SET texte_lien=excluded.texte_lien""",
-                          (annee_lien, myst_lien, texte_lien.strip()))
-                commit_and_sync()
-                st.session_state["flash_success"] = f"Lien du mystère N°{myst_lien} enregistré ! ✅"
-                st.rerun()
-            else:
-                st.error("Le texte du lien est obligatoire (ou videz le champ et utilisez Supprimer).")
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            if st.button("🟢 Présent physiquement", key=f"rsp_p_{evt[0]}",
+                                         use_container_width=True,
+                                         type="primary" if statut != 'physique' else "secondary"):
+                                _enregistrer_presence(membre[0], evt[0], 'physique')
+                        with c2:
+                            if st.button("🟡 Présent spirituellement", key=f"rsp_s_{evt[0]}",
+                                         use_container_width=True,
+                                         type="primary" if statut != 'spirituel' else "secondary"):
+                                _enregistrer_presence(membre[0], evt[0], 'spirituel')
 
-    liens_existants = c.execute("""SELECT mystere_id, texte_lien FROM theme_mystere
-                                   WHERE annee_debut=? ORDER BY mystere_id""", (annee_lien,)).fetchall()
-    if liens_existants:
-        st.caption(f"{len(liens_existants)} lien(s) enregistré(s) pour {annee_lien}-{annee_lien+1} :")
-        for lm in liens_existants:
-            c_m, c_t, c_d = st.columns([1, 6, 1])
-            with c_m: st.write(f"**N°{lm[0]}**")
-            with c_t: st.caption(lm[1][:100] + ("…" if len(lm[1]) > 100 else ""))
-            with c_d:
-                if st.button("🗑️", key=f"del_lien_{annee_lien}_{lm[0]}"):
-                    c.execute("DELETE FROM theme_mystere WHERE annee_debut=? AND mystere_id=?", (annee_lien, lm[0]))
-                    commit_and_sync()
-                    st.rerun()
+    elif rub == "📿 Rosaire":
+        if sub == "Le thème de l'année":
+            _render_page_rosaire_theme()
+        else:
+            _render_page_rosaire_eyquem()
+
+    elif rub == "📖 Archives":
+        if sub == "📖 Méditations":
+            _render_page_archives_textes("meditation", "Aucune méditation disponible.")
+        elif sub == "🎵 Musiques":
+            _render_page_archives_audios()
+        else:
+            _render_page_archives_textes("priere", "Aucune prière publiée.")
+
+    elif rub == "🕯️ Thème":
+        if sub == "🎓 Enseignements":
+            _render_page_en_preparation("🎓", "Enseignements",
+                                        "Cet espace accueillera les résumés des enseignements reçus, publiés par le diocèse. Il est en préparation.")
+        elif sub == "💬 Discussions":
+            _render_page_en_preparation("💬", "Discussions",
+                                        "Cet espace accueillera les cadres de discussions thématiques. Il est en préparation.")
+        else:
+            _render_page_theme_ensemble()
+
+    else:
+        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
+        if st.session_state.get("diz_ouvert"):
+            return
+        _render_fil_actualites()
