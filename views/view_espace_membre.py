@@ -85,7 +85,9 @@ def _scroll_top(cle):
 
 
 def _compter_bandes(membre=False):
-    """Compte les bandes défilantes RÉELLEMENT affichées (clé de re-mesure)."""
+    """Compte les bandes défilantes réellement affichées.
+    v7.4c : accès par INDEX (jamais d'unpack) — insensible au nombre de
+    colonnes retournées, blindé contre les collages décalés."""
     try:
         bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
                               WHERE type_contenu='annonce_defilante'
@@ -93,14 +95,17 @@ def _compter_bandes(membre=False):
     except Exception:
         return 0
     n = 0
-    for texte, cible in bandes:
+    for ligne in bandes:
+        if len(ligne) < 1:
+            continue
+        texte = ligne[0]
+        cible = ligne[1] if len(ligne) > 1 else None
         if cible == "membre" and not membre:
             continue
         if not texte:
             continue
         n += 1
     return n
-
 
 def _mesure_entete(cle):
     """v7.5 — mesure AUTOCORRIGÉE : revérifie toutes les 400 ms, n'écrit que
@@ -211,7 +216,9 @@ def _render_theme(compact=False):
 
 
 def _bandes_defilantes_html(membre=False):
-    """HTML des bandes défilantes pour l'entête fixe (retourne une chaîne)."""
+    """HTML des bandes défilantes pour l'entête fixe.
+    v7.4c : accès par INDEX (jamais d'unpack) — même blindage que
+    _compter_bandes."""
     try:
         bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
                               WHERE type_contenu='annonce_defilante'
@@ -219,7 +226,11 @@ def _bandes_defilantes_html(membre=False):
     except Exception:
         return ""
     morceaux = []
-    for texte, cible in bandes:
+    for ligne in bandes:
+        if len(ligne) < 1:
+            continue
+        texte = ligne[0]
+        cible = ligne[1] if len(ligne) > 1 else None
         if cible == "membre" and not membre:
             continue
         if not texte:
@@ -230,7 +241,6 @@ def _bandes_defilantes_html(membre=False):
             f'<div class="bande-defilante"><div class="bande-defilante-inner" style="animation-duration:{duree}s;">'
             f"📻 {texte_html} &nbsp;&nbsp;📻 {texte_html}</div></div>")
     return "".join(morceaux)
-
 
 def _render_header(membre=None, matloc=None, masquer_bandes=False,
                    rubriques=None, rub_act=None, sub_act=None):
