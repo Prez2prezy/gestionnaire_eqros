@@ -193,6 +193,3 @@ elif st.session_state['role'] == 'paroisse':
 elif st.session_state['role'] == 'equipe':
     from views.view_equipe import show_equipe
     show_equipe()
-elif st.session_state['role'] == 'communication':
-    from views.view_communication import show_communication
-    show_communication()
