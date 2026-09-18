@@ -33,6 +33,10 @@ def _assurer_table():
 TYPES_EVENEMENT = ["Prière mensuelle", "Prière commune", "Prière spéciale",
                    "Pèlerinage", "Réunion"]
 
+LIBELLES = {"priere": "🙏 Prière", "meditation": "📖 Méditation",
+            "audio": "🎵 Musique", "annonce_defilante": "📻 Bande défilante",
+            "evenement": "📅 Évènement"}
+
 STATUTS = {"attente": "🟡 En attente de validation du diocèse",
            "publie": "✅ Publiée par le diocèse",
            "refuse": "❌ Refusée par le diocèse"}
