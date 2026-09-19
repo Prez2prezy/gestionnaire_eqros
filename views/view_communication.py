@@ -84,7 +84,7 @@ def show_communication():
 
     t_pm, t_mu, t_bd, t_ev, t_hist = st.tabs(
         ["🙏 Prière / Méditation", "🎵 Musique", "📻 Bande défilante",
-         "📅 Évènement", "📨 Mes soumissions"])
+         "📅 Évènement", "📨 Journal des publications"])
 
     # ---------------- PRIÈRE / MÉDITATION ----------------
     with t_pm:
