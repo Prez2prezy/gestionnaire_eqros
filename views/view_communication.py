@@ -43,23 +43,66 @@ STATUTS = {"attente": "🟡 En attente de validation du diocèse",
 
 
 def _soumettre(d):
-    """Enregistre une soumission en attente + notifie le diocèse (Telegram)."""
+    """v2 — RÈGLE MÉTIER ACTUALISÉE (recadrage utilisateur) : publication
+    IMMÉDIATE au profit de la communauté (missions, invitations aux
+    réunions, activités). Le diocèse garde le regard et le retrait (R3),
+    et reçoit une notification Telegram en temps réel (son radar).
+    La table soumissions_comm sert de journal de bord de la cellule."""
+    # 1) Publication immédiate dans les tables publiques
+    if d.get("type_contenu") in ("priere", "meditation"):
+        c.execute("""INSERT INTO espace_spirituel
+                     (type_contenu, titre, contenu_texte, image_url,
+                      fichier_url, date_publication)
+                     VALUES (?, ?, ?, ?, ?, ?)""",
+                  (d["type_contenu"], d.get("titre"), d.get("contenu_texte"),
+                   d.get("image_url"), d.get("fichier_url"),
+                   date.today().isoformat()))
+    elif d.get("type_contenu") == "audio":
+        c.execute("""INSERT INTO espace_spirituel
+                     (type_contenu, titre, fichier_url, date_publication)
+                     VALUES (?, ?, ?, ?)""",
+                  ("audio", d.get("titre"), d.get("fichier_url"),
+                   date.today().isoformat()))
+    elif d.get("type_contenu") == "annonce_defilante":
+        c.execute("""INSERT INTO espace_spirituel
+                     (type_contenu, titre, contenu_texte, fichier_url,
+                      date_publication)
+                     VALUES (?, ?, ?, ?, ?)""",
+                  ("annonce_defilante", d.get("titre") or "Bande défilante",
+                   d.get("contenu_texte"),
+                   "membre" if d.get("fichier_url") == "membre" else None,
+                   date.today().isoformat()))
+    elif d.get("type_contenu") == "evenement":
+        c.execute("""INSERT INTO evenements
+                     (type_evenement, date_evenement, lieu, affiche_url, video_url)
+                     VALUES (?, ?, ?, ?, ?)""",
+                  (d.get("titre"), d.get("date_evenement"), d.get("lieu"),
+                   d.get("image_url"), d.get("video_url")))
+    commit_and_sync()
+
+    # 2) Journal de bord de la cellule
     c.execute("""INSERT INTO soumissions_comm
                  (auteur_id, type_contenu, titre, contenu_texte, image_url,
-                  fichier_url, video_url, date_evenement, lieu, statut, date_soumission)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'attente', ?)""",
-              (st.session_state.get('user_id'), d.get("type_contenu"), d.get("titre"),
-               d.get("contenu_texte"), d.get("image_url"), d.get("fichier_url"),
-               d.get("video_url"), d.get("date_evenement"), d.get("lieu"),
+                  fichier_url, video_url, date_evenement, lieu, statut,
+                  date_soumission)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'publie', ?)""",
+              (st.session_state.get('user_id'), d.get("type_contenu"),
+               d.get("titre"), d.get("contenu_texte"), d.get("image_url"),
+               d.get("fichier_url"), d.get("video_url"),
+               d.get("date_evenement"), d.get("lieu"),
                date.today().isoformat()))
     commit_and_sync()
+
+    # 3) Radar Telegram du diocèse
     try:
         envoyer_notification_telegram(
-            "📡 <b>Service Communication</b> — nouvelle soumission à valider : "
+            "📡 <b>Service Communication</b> — publication : "
             + (d.get("titre") or "(sans titre)"))
     except Exception:
         pass
-    st.success("📨 Soumission transmise au diocèse. Rien ne sera publié sans sa validation.")
+
+    st.success("✅ Publié ! La communauté en profite dès maintenant. "
+               "Le diocèse en a été informé (Telegram).")
 
 
 def _bandeau():
@@ -78,7 +121,7 @@ def show_communication():
 
     t_pm, t_mu, t_bd, t_ev, t_hist = st.tabs(
         ["🙏 Prière / Méditation", "🎵 Musique", "📻 Bande défilante",
-         "📅 Évènement", "📨 Mes soumissions"])
+         "📅 Évènement", "📔 Journal des publications"])
 
     # ---------------- PRIÈRE / MÉDITATION ----------------
     with t_pm:
