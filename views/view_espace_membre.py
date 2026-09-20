@@ -1038,10 +1038,41 @@ def show_espace_membre(matloc_membre=None):
     nb_bandes = 0 if livre_ouvert else _compter_bandes(membre=bool(matloc_membre))
     _mesure_entete(nb_bandes)
 
+    # QR signé ?p=ID : capture de l'ORIGINE paroissiale (fidèle anonyme).
+    if "paroisse_origine" not in st.session_state:
+        p_raw = st.query_params.get("p")
+        if isinstance(p_raw, list):
+            p_raw = p_raw[0] if p_raw else None
+        if p_raw:
+            try:
+                p_int = int(p_raw)
+                if c.execute("SELECT id FROM paroisses WHERE id=?", (p_int,)).fetchone():
+                    st.session_state["paroisse_origine"] = p_int
+            except (ValueError, TypeError):
+                pass
+
     # Compteur : 1 visite = 1 session (option A validée)
     if "visite_communaute" not in st.session_state:
         st.session_state["visite_communaute"] = True
         compter_visite("communautaire")
+        # Traçabilité missionnaire : la visite vient d'un QR paroissial signé
+        _origine = st.session_state.get("paroisse_origine")
+        if _origine:
+            try:
+                c.execute("INSERT INTO visites_paroisse (paroisse_id, date_visite) VALUES (?, ?)",
+                          (_origine, date.today().isoformat()))
+                commit_and_sync()
+            except Exception:
+                try:
+                    c.execute("""CREATE TABLE IF NOT EXISTS visites_paroisse (
+                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    paroisse_id INTEGER,
+                                    date_visite TEXT)""")
+                    c.execute("INSERT INTO visites_paroisse (paroisse_id, date_visite) VALUES (?, ?)",
+                              (_origine, date.today().isoformat()))
+                    commit_and_sync()
+                except Exception:
+                    pass
 
     msg_ok = st.session_state.pop("flash_success", None)
     if msg_ok:
@@ -1061,6 +1092,13 @@ def show_espace_membre(matloc_membre=None):
         _render_header(masquer_bandes=livre_ouvert,
                        rubriques=(None if livre_ouvert else RUBRIQUES_PUBLIC),
                        rub_act=rub, sub_act=sub)
+        # Accueil personnalisé si arrivée par QR paroissial signé
+        _origine = st.session_state.get("paroisse_origine")
+        if _origine:
+            _nom_par = c.execute("SELECT nom FROM paroisses WHERE id=?", (_origine,)).fetchone()
+            if _nom_par:
+                st.caption("🕊️ Bienvenue ! Vous découvrez cet espace via la communauté **"
+                           + _nom_par[0] + "** — toute la chaîne de prière du diocèse vous accompagne.")
 
         if livre_ouvert:
             _render_dizaine_du_jour(est_membre=False)
