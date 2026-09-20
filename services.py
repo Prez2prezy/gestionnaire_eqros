@@ -229,7 +229,7 @@ def archiver_membre(membre_id, situation, annee_debut, annee_fin, commentaire, a
     # Convention unique : 1er septembre (cohérent année pastorale)
     c.execute('''INSERT INTO archives (membre_id, situation, date_debut, date_fin, commentaire, auteur_id, auteur_nom, auteur_role, paroisse_id, equipe_id)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-              (membre_id, situation, date(annee_debut, 9, 1), date(annee_fin, 9, 1), commentaire, auteur_id, auteur_nom, auteur_role, paroisse_id, equipe_id))
+(membre_id, situation, date(annee_debut, 9, 1).isoformat(), date(annee_fin, 9, 1).isoformat(), commentaire, auteur_id, auteur_nom, auteur_role, paroisse_id, equipe_id))
     commit_and_sync()
 
 def enregistrer_abonnement(membre_id, annee_debut, montant=0, type_abonnement='abonnement'):
