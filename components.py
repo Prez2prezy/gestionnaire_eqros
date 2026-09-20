@@ -30,6 +30,81 @@ def _qrcode_st(url, taille_px=260):
     img.save(buffer, format="PNG")
     st.image(buffer.getvalue(), width=taille_px)
 
+
+def _qrcode_png_bytes(url):
+    """Retourne les octets PNG d'un QR code (pour téléchargement sur affiche)."""
+    qr = qrcode.QRCode(box_size=8, border=2)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def gerer_qr_paroissiaux():
+    """🔳 QR paroissiaux (diocèse) : chaque paroisse reçoit un QR SIGNÉ vers
+    l'Espace communautaire (?espace=1&p=ID). L'app enregistre l'ORIGINE
+    paroissiale de chaque visite — fidèle anonyme, aucune donnée personnelle
+    (conforme aux mentions légales)."""
+    st.markdown('<h3 style="color:#1A237E;">🔳 QR paroissiaux (traçabilité missionnaire)</h3>', unsafe_allow_html=True)
+    st.caption("Chaque QR mène au même Espace communautaire, mais SIGNÉ : l'app sait "
+               "quelle paroisse a émis l'affiche et compte les visites d'origine. "
+               "Imprimez le QR de chaque paroisse sur SES affiches, missions et annonces.")
+
+    paroisses = c.execute("SELECT id, nom, commune, ville FROM paroisses ORDER BY nom").fetchall()
+    if not paroisses:
+        st.info("Aucune paroisse enregistrée.")
+        return
+
+    options = [f"{p[1]} ({p[2] or '—'} – {p[3] or '—'})" for p in paroisses]
+    if st.session_state.get("qr_par_sel") not in options:
+        st.session_state.pop("qr_par_sel", None)
+    choix = st.selectbox("Paroisse", options, key="qr_par_sel")
+    p = paroisses[options.index(choix)]
+
+    url_signee = f"{URL_ESPACE_SPIRITUEL}/?espace=1&p={p[0]}"
+    st.code(url_signee)
+
+    c_qr, c_info = st.columns([1, 2])
+    with c_qr:
+        png = _qrcode_png_bytes(url_signee)
+        st.image(png, width=220)
+    with c_info:
+        st.download_button("📥 Télécharger le QR (PNG pour affiche)", data=png,
+                           file_name=f"qr_paroisse_{p[0]}.png", key=f"qr_dl_{p[0]}",
+                           width="stretch")
+        message = (f"Frères et sœurs, voici l'Espace de Prière et Méditation "
+                   f"de la paroisse {p[1]} (Diocèse de Grand-Bassam) :\n{url_signee}\n\n"
+                   f"Bon temps de ressourcement ! 🙏")
+        wa = f"https://wa.me/?text={urllib.parse.quote(message, safe=':/?=')}"
+        st.markdown(f'<a href="{wa}" target="_blank" class="whatsapp-link">📱 Partager sur WhatsApp</a>', unsafe_allow_html=True)
+        st.caption("💡 Ce QR se décline sur toutes les affiches de la paroisse. Les visites "
+                   "scannées apparaissent dans les statistiques diocésaines (origine "
+                   "paroissiale, fidèles anonymes).")
+
+
+def afficher_stats_qr_paroissiaux():
+    """📈 Visites par origine paroissiale (QR signés — 30 derniers jours)."""
+    st.markdown("### 📈 Visites par origine paroissiale (30 jours)")
+    try:
+        lignes = c.execute("""SELECT pa.nom, COUNT(*) FROM visites_paroisse vp
+                              JOIN paroisses pa ON vp.paroisse_id = pa.id
+                              WHERE vp.date_visite >= ?
+                              GROUP BY vp.paroisse_id ORDER BY COUNT(*) DESC""",
+                           ((date.today() - timedelta(days=30)).isoformat(),)).fetchall()
+    except Exception:
+        st.caption("Aucune visite signée enregistrée pour l'instant.")
+        return
+    if not lignes:
+        st.caption("Aucune visite signée enregistrée pour l'instant.")
+        return
+    total = sum(l[1] for l in lignes)
+    st.write(f"**{total} visite(s) signée(s)** ces 30 derniers jours :")
+    for nom, nb in lignes:
+        st.write(f"• **{nom}** : {nb}")
+    st.bar_chart(pd.DataFrame(lignes, columns=["Paroisse", "Visites"]).set_index("Paroisse"))
+
 def ajouter_evenement_agenda(equipe_id=None, paroisse_id=None, diocese_id=None, auteur_nom="Système"):
     st.markdown('<h3 style="color:#1A237E;">📅 Vos évènements à venir</h3>', unsafe_allow_html=True)
     prefix = f"ag_{equipe_id}_{paroisse_id}_{diocese_id}"
