@@ -219,7 +219,7 @@ def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
             for p in prières:
                 with st.expander(f"📖 {p[0]}"):
                     if len(p) > 2 and p[2] and p[2].startswith("http"): 
-                        st.image(p[2], use_column_width="auto")
+                        st.image(p[2], use_container_width=True)
                     if p[1]:
                         st.markdown(p[1], unsafe_allow_html=True)
 
@@ -231,7 +231,7 @@ def _render_spiritual_tabs(tab_priere, tab_meditation, tab_musique):
             for m in meditations:
                 with st.expander(f"📖 {m[0]}"):
                     if len(m) > 2 and m[2] and m[2].startswith("http"): 
-                        st.image(m[2], use_column_width="auto")
+                        st.image(m[2], use_container_width=True)
                     if m[1]:
                         st.markdown(m[1], unsafe_allow_html=True)
 
