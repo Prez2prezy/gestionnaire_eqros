@@ -1,5 +1,3 @@
-_membre.py
-
 # ====================================================================
 # view_espace_membre.py — VERSION 7.4
 # v7.4 : menu DANS l'entête fixe (Option A validée : logo/badge → menu →
