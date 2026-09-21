@@ -953,7 +953,7 @@ En résumé, les Équipes du Rosaire sont un mouvement vivant et missionnaire, c
 **Vous voulez rejoindre une équipe ?** Adressez-vous au responsable paroissial **{_resp}**. La dizaine du jour vous attend déjà ici, juste en dessous de cette page : entrez votre jour de naissance et priez avec nous. 🕊️"""
     with st.expander("📿 Découvrez les Équipes du Rosaire !"):
         st.markdown(_txt)
-        
+
 
 def _render_coin_affiche():
     lignes = []
@@ -1141,9 +1141,17 @@ def show_espace_membre(matloc_membre=None):
             _render_dizaine_du_jour(est_membre=False)
             return
 
+        _nom_par_aff = ""
+        if st.session_state.get("paroisse_origine"):
+            _res_par = c.execute("SELECT nom FROM paroisses WHERE id=?", (st.session_state["paroisse_origine"],)).fetchone()
+            if _res_par:
+                _nom_par_aff = " — Paroisse " + _res_par[0]
         st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                     '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
-                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · v7.6</div></div>', unsafe_allow_html=True)
+                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam'
+                    + _nom_par_aff + ' · v7.6</div></div>', unsafe_allow_html=True)
+        # Dépliant de rentrée : présentation du Mouvement (responsable adapté si QR signé)
+        _depliant_mouvement(st.session_state.get("paroisse_origine"))
 
         if rub == "📿 Rosaire":
             if sub == "Le thème de l'année":
