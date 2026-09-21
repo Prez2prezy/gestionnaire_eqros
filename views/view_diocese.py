@@ -421,9 +421,6 @@ def show_diocese():
                             st.success("Musique publiée avec succès !")
                             st.rerun()
 
-        with tab_theme:
-            gerer_theme_pastoral()
-
         with tab_manage:
             contenus = c.execute("SELECT id, type_contenu, titre, date_publication FROM espace_spirituel ORDER BY date_publication DESC").fetchall()
             if not contenus:
