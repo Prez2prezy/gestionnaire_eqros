@@ -980,29 +980,33 @@ def _render_coin_affiche():
 
 
 def _render_fil_actualites():
-    """Photo en WIDGET NATIF st.image (pleine largeur) PUIS carte titre+texte."""
+    """v7.5c — fil du jour BLINDÉ (leçon des incidents de collage) : la
+    ligne lue est complétée à 5 cases avant tout accès par index. Aucun
+    IndexError possible, quelle que soit la forme de la donnée."""
     dernier = c.execute("""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
                            FROM espace_spirituel
                            WHERE type_contenu IN ('priere', 'meditation')
                            ORDER BY date_publication DESC, id DESC LIMIT 1""").fetchone()
 
     if dernier:
-        etiquette = {"priere": "🙏 Prière du jour", "meditation": "📖 Méditation du jour"}.get(dernier[0], "📿 Du jour")
-        texte = dernier[2] or ""
-        url_pdf = dernier[4]
+        # Blindage : garantit 5 cases lisibles (les manquantes valent None)
+        ligne = list(dernier) + [None] * max(0, 5 - len(dernier))
+        etiquette = {"priere": "🙏 Prière du jour", "meditation": "📖 Méditation du jour"}.get(ligne[0], "📿 Du jour")
+        texte = ligne[2] or ""
+        url_pdf = ligne[4]
         if not url_pdf:
             texte, url_pdf = _extraire_pdf_legacy(texte)
 
-        if dernier[3] and dernier[3].startswith("http"):
+        if ligne[3] and str(ligne[3]).startswith("http"):
             try:
-                st.image(dernier[3], use_container_width=True)
+                st.image(ligne[3], use_container_width=True)
             except Exception:
                 st.warning("Illustration momentanément indisponible.")
 
         texte_html = texte.replace("\n", "<br>")
         st.markdown(
             f'<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35);">'
-            f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{etiquette} — {html.escape(dernier[1])}</div>'
+            f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{etiquette} — {html.escape(ligne[1] or "")}</div>'
             f'<div style="color:#4527a0; font-size:0.98rem; line-height:1.6; text-align:left;">{texte_html}</div>'
             f'</div>', unsafe_allow_html=True)
 
