@@ -151,51 +151,55 @@ if 'logged_in' not in st.session_state:
         *Conformément aux principes de protection des données personnelles.*
         """)
 
-    st.sidebar.title("🔐 Connexion")
+        st.sidebar.title("🔐 Connexion")
 
-    # v7.6.3 — PARADE AUTOFILL : les gestionnaires de mots de passe remplissent
-    # les champs VISUELLEMENT mais Streamlit ne voit rien (l'autofill écrit
-    # hors de son état interne). L'utilisateur devait cliquer dans le champ
-    # pour « réveiller » la valeur. Parade : ① composant HTML caché qui
-    # capte ce que l'autofill a écrit (champ miroir) ; ② au clic, on accepte
-    # le widget OU le miroir. Compatible Chrome/Edge/Safari mobiles.
-    _miroir = _comp_html("""
-        <div id="autofill-miroir" style="display:none;"></div>
+    # v7.6.3 — PARADE AUTOFILL (correcte) : les gestionnaires de mots de passe
+    # remplissent les champs SANS déclencher l'événement que Streamlit écoute
+    # → les widgets restent « vides » en interne (l'utilisateur devait cliquer
+    # dans le champ pour « réveiller » la valeur). Correctif : détecter toute
+    # valeur apparue SANS événement « input » (signature de l'autofill) et la
+    # faire connaître à Streamlit (setter natif + événement synthétique).
+    # NB : st.components.v1.html n'accepte PAS key= → appel SANS key.
+    _comp_html("""
         <script>
         (function(){
-            var essais=0;
-            var t=setInterval(function(){
-                essais++;
-                var d=window.parent.document;
-                var ins=d.querySelectorAll('input[data-testid="stTextInput"] input, [data-testid="stSidebar"] input[type="text"], [data-testid="stSidebar"] input[type="password"]');
-                var usr=null,pwd=null;
-                for(var i=0;i<ins.length;i++){
-                    if(ins[i].type==='password'){pwd=ins[i];}
-                    else if(!usr){usr=ins[i];}
+          function brancher(f){
+            if(f.dataset.pf76 !== undefined) return;
+            f.dataset.pf76 = f.value;
+            f.addEventListener('input', function(){ f.dataset.pf76 = f.value; });
+          }
+          var essais = 0;
+          var t = setInterval(function(){
+            essais++;
+            try {
+              var d = window.parent.document;
+              var zone = d.querySelector('[data-testid="stSidebar"]') || d;
+              var ins = zone.querySelectorAll('input[type="text"], input[type="password"]');
+              for(var i=0;i<ins.length;i++){ brancher(ins[i]); }
+              for(var j=0;j<ins.length;j++){
+                var f = ins[j];
+                if(f.value !== (f.dataset.pf76 || '')){
+                  try{
+                    var natif = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;
+                    natif.call(f, f.value);
+                  }catch(e){}
+                  f.dispatchEvent(new Event('input', {bubbles:true}));
+                  f.dispatchEvent(new Event('change', {bubbles:true}));
+                  f.dataset.pf76 = f.value;
                 }
-                if(usr&&pwd){
-                    var m=document.getElementById('autofill-miroir');
-                    if(m&&(usr.value||pwd.value)){m.dataset.u=usr.value;m.dataset.p=pwd.value;}
-                    clearInterval(t);
-                } else if(essais>20){clearInterval(t);}
-            },250);
+              }
+            } catch(e) {}
+            if(essais > 600){ clearInterval(t); }
+          }, 300);
         })();
-        </script>""", height=0, key="autofill_miroir")
+        </script>
+    """, height=0)
 
     u = st.sidebar.text_input("Utilisateur", key="login_user")
     p = st.sidebar.text_input("Mot de passe", type="password", key="login_pass")
 
     if st.sidebar.button("Se connecter"):
-        # Réconciliation autofill : si les widgets sont vides mais que le
-        # miroir a capté des valeurs, on utilise celles du miroir.
-        u_eff = (u or "").strip()
-        p_eff = (p or "").strip()
-        if not u_eff and not p_eff:
-            try:
-                _dom = st.query_params  # (garde-fou inoffensif)
-            except Exception:
-                pass
-        user = c.execute("SELECT * FROM utilisateurs WHERE username=? AND password=?", (u_eff, hash_password(p_eff))).fetchone()
+        user = c.execute("SELECT * FROM utilisateurs WHERE username=? AND password=?", ((u or "").strip(), hash_password(p or ""))).fetchone()
         if user:
             st.session_state.update({
                 'logged_in': True,
@@ -206,10 +210,10 @@ if 'logged_in' not in st.session_state:
                 'paroisse_id': user[5],
                 'equipe_id': user[6]
             })
-            st.success(f"Bienvenue {u_eff}")
+            st.success(f"Bienvenue {(u or '').strip()}")
             st.rerun()
         else:
-            st.sidebar.error("Identifiants incorrects — si les champs semblent remplis, effacez-les et retapez-les manuellement.")
+            st.sidebar.error("Identifiants incorrects. Si les champs semblent remplis automatiquement, effacez-les et retapez-les une fois manuellement.")
     st.stop()
 
 afficher_logo()
