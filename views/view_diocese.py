@@ -1,3 +1,4 @@
+
 import os
 import shutil
 import streamlit as st
@@ -81,17 +82,6 @@ def show_diocese():
             with st.expander(f"🏛️ {nom} ({commune} / {ville}) - {nb_equipes} équipe(s) - {nb_membres} membre(s)"):
                 st.write(f"**Responsable :** {responsable}")
                 st.write(f"**Bureau :** {bureau}")
-
-                # QR signé de CETTE paroisse (traçabilité missionnaire)
-                with st.expander("🔳 QR paroissial de cette paroisse"):
-                    _url_signee = f"{URL_ESPACE_SPIRITUEL}/?espace=1&p={pid}"
-                    st.code(_url_signee)
-                    _png = _qrcode_png_bytes(_url_signee)
-                    st.image(_png, width=200)
-                    st.download_button("📥 Télécharger le QR (PNG)", data=_png,
-                                       file_name=f"qr_paroisse_{pid}.png",
-                                       key=f"qr_dl_{pid}", use_container_width=True)
-                    st.caption("Imprimez ce QR sur les affiches de la paroisse : chaque scan est compté à son origine (fidèle anonyme).")
 
                 # QR signé de CETTE paroisse (traçabilité missionnaire)
                 with st.expander("🔳 QR paroissial de cette paroisse"):
