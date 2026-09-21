@@ -915,6 +915,45 @@ def _render_pdf_inline(url_pdf):
         f'<a href="{url_pdf}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">{lien_txt}</a>'
         f'</div></div>', unsafe_allow_html=True)
 
+def _depliant_mouvement(paroisse_id=None):
+    """v7.6.2 — Dépliant de présentation du Mouvement (rentrée pastorale).
+    Statique (option A). Si le visiteur est arrivé par QR signé, l'appel
+    s'adresse au responsable de SA paroisse ; sinon, appel générique.
+    Texte fourni et validé par l'utilisateur (fondation 1955, Ordre des
+    Prêcheurs 1972, Dominique YOVAN 1980, organisation, feuillets)."""
+    _resp = "le responsable paroissial"
+    if paroisse_id:
+        try:
+            _r = c.execute("SELECT responsable FROM paroisses WHERE id=?", (paroisse_id,)).fetchone()
+            if _r and _r[0]:
+                _resp = _r[0]
+        except Exception:
+            pass
+    _txt = f"""**Les Équipes du Rosaire** sont un mouvement catholique de prière et d'apostolat des laïcs, fondé en 1955, qui rassemble des petits groupes pour méditer le Rosaire et vivre la mission évangélique au quotidien.
+
+**Présentation générale**
+Les Équipes du Rosaire sont un mouvement de spiritualité mariale et missionnaire reconnu par l'Église et par l'Ordre des Prêcheurs (Dominicains) en 1972. Dominique YOVAN : Fondateur des Equipes du Rosaire de Côte d'Ivoire. 1er Responsable National des Equipes du Rosaire de Côte d'Ivoire. Octobre 1980, il introduit en Côte d'Ivoire le Mouvement des Equipes du Rosaire en créant la première Equipe à l'Eglise Sainte Famille de la Riviera à Cocody. Il a été rappelé à Dieu le 10 juillet 2015 à Abidjan en Côte d'Ivoire.
+
+**Organisation et fonctionnement**
+Chaque équipe regroupe 4 à 12 personnes, dont un responsable d'équipe, et peut se concentrer sur un quartier, une rue, un immeuble ou un village. Chacun reçoit un numéro (Numéro dans l'équipe / Numéro de Méditation compris entre 1 et 20) : chaque jour, selon la date, il médite sa dizaine — et ensemble, sans se voir, les 20 mystères du Rosaire sont couverts chaque jour. C'est la chaîne de prière universelle. La paroisse, avec un minimum d'une équipe a un responsable paroissial. Les équipes, les paroisses sont coordonnées par un responsable diocésain et par un aumônier diocésain ou sectoriel, et le bureau national dirige le mouvement sur le plan national.
+
+Le fonctionnement repose sur deux temps de prière :
+
+- **Prière personnelle quotidienne**, méditant un des mystères du Rosaire en lien avec les autres membres grâce au « Livret de Prière Quotidienne ».
+- **Rencontre mensuelle**, où l'équipe se réunit chez l'un des membres pour une prière commune, méditation de la Parole de Dieu, partage d'intentions et réflexion sur la vie quotidienne, guidée par le feuillet mensuel « Le Rosaire en Équipe ».
+
+**Mission et spiritualité**
+Le mouvement est animé par la passion de l'Évangile et le salut des hommes. Il a un objectif missionnaire local, aidant amis et voisins à vivre l'Évangile avec Marie, même ceux qui n'ont pas l'habitude d'aller à l'église. Les équipes favorisent un climat fraternel, permettant à chacun de participer à la prière et à la méditation dans un cadre convivial et accessible.
+
+**Ressources et outils**
+Les membres reçoivent chaque mois le feuillet de 16 pages « Le Rosaire en Équipe », qui propose la prière du mois, des enseignements théologiques accessibles et des réflexions pour la vie quotidienne. Ces outils permettent de structurer la prière et de renforcer la cohésion de l'équipe.
+
+En résumé, les Équipes du Rosaire sont un mouvement vivant et missionnaire, combinant prière personnelle, méditation communautaire et engagement apostolique, pour vivre et partager la foi catholique au quotidien.
+
+**Vous voulez rejoindre une équipe ?** Adressez-vous au responsable paroissial **{_resp}**. La dizaine du jour vous attend déjà ici, juste en dessous de cette page : entrez votre jour de naissance et priez avec nous. 🕊️"""
+    with st.expander("📿 Découvrez les Équipes du Rosaire !"):
+        st.markdown(_txt)
+        
 
 def _render_coin_affiche():
     lignes = []
@@ -989,7 +1028,7 @@ def _render_fil_actualites():
 
     if dernier:
         ligne = list(dernier) + [None] * max(0, 5 - len(dernier))
-        etiquette = {"priere": "🙏 Prière du jour", "meditation": "📖 Méditation du jour"}.get(ligne[0], "📿 Du jour")
+        etiquette = {"priere": "", "meditation": ""}.get(ligne[0], "📿 Du jour")
         texte = ligne[2] or ""
         url_pdf = ligne[4]
         if not url_pdf:
@@ -1004,7 +1043,7 @@ def _render_fil_actualites():
         texte_html = texte.replace("\n", "<br>")
         st.markdown(
             f'<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35);">'
-            f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{etiquette} — {html.escape(ligne[1] or "")}</div>'
+            f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{html.escape(ligne[1] or "")}</div>'
             f'<div style="color:#4527a0; font-size:0.98rem; line-height:1.6; text-align:left;">{texte_html}</div>'
             f'</div>', unsafe_allow_html=True)
 
