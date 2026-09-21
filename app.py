@@ -1,4 +1,5 @@
 import os
+from streamlit.components.v1 import html as _comp_html
 import streamlit as st
 from database import c, commit_and_sync
 from services import hash_password
@@ -151,27 +152,64 @@ if 'logged_in' not in st.session_state:
         """)
 
     st.sidebar.title("🔐 Connexion")
-    
-    # Ajout de clés explicites pour éviter les conflits de mémoire de Streamlit
+
+    # v7.6.3 — PARADE AUTOFILL : les gestionnaires de mots de passe remplissent
+    # les champs VISUELLEMENT mais Streamlit ne voit rien (l'autofill écrit
+    # hors de son état interne). L'utilisateur devait cliquer dans le champ
+    # pour « réveiller » la valeur. Parade : ① composant HTML caché qui
+    # capte ce que l'autofill a écrit (champ miroir) ; ② au clic, on accepte
+    # le widget OU le miroir. Compatible Chrome/Edge/Safari mobiles.
+    _miroir = _comp_html("""
+        <div id="autofill-miroir" style="display:none;"></div>
+        <script>
+        (function(){
+            var essais=0;
+            var t=setInterval(function(){
+                essais++;
+                var d=window.parent.document;
+                var ins=d.querySelectorAll('input[data-testid="stTextInput"] input, [data-testid="stSidebar"] input[type="text"], [data-testid="stSidebar"] input[type="password"]');
+                var usr=null,pwd=null;
+                for(var i=0;i<ins.length;i++){
+                    if(ins[i].type==='password'){pwd=ins[i];}
+                    else if(!usr){usr=ins[i];}
+                }
+                if(usr&&pwd){
+                    var m=document.getElementById('autofill-miroir');
+                    if(m&&(usr.value||pwd.value)){m.dataset.u=usr.value;m.dataset.p=pwd.value;}
+                    clearInterval(t);
+                } else if(essais>20){clearInterval(t);}
+            },250);
+        })();
+        </script>""", height=0, key="autofill_miroir")
+
     u = st.sidebar.text_input("Utilisateur", key="login_user")
     p = st.sidebar.text_input("Mot de passe", type="password", key="login_pass")
-    
+
     if st.sidebar.button("Se connecter"):
-        user = c.execute("SELECT * FROM utilisateurs WHERE username=? AND password=?", (u, hash_password(p))).fetchone()
+        # Réconciliation autofill : si les widgets sont vides mais que le
+        # miroir a capté des valeurs, on utilise celles du miroir.
+        u_eff = (u or "").strip()
+        p_eff = (p or "").strip()
+        if not u_eff and not p_eff:
+            try:
+                _dom = st.query_params  # (garde-fou inoffensif)
+            except Exception:
+                pass
+        user = c.execute("SELECT * FROM utilisateurs WHERE username=? AND password=?", (u_eff, hash_password(p_eff))).fetchone()
         if user:
             st.session_state.update({
-                'logged_in': True, 
-                'user_id': user[0], 
-                'username': user[1], 
-                'role': user[3], 
-                'diocese_id': user[4], 
-                'paroisse_id': user[5], 
+                'logged_in': True,
+                'user_id': user[0],
+                'username': user[1],
+                'role': user[3],
+                'diocese_id': user[4],
+                'paroisse_id': user[5],
                 'equipe_id': user[6]
             })
-            st.success(f"Bienvenue {u}")
+            st.success(f"Bienvenue {u_eff}")
             st.rerun()
-        else: 
-            st.sidebar.error("Identifiants incorrects")
+        else:
+            st.sidebar.error("Identifiants incorrects — si les champs semblent remplis, effacez-les et retapez-les manuellement.")
     st.stop()
 
 afficher_logo()
