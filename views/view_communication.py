@@ -1089,7 +1089,9 @@ def show_espace_membre(matloc_membre=None):
             compter_visite("communautaire")
 
         rub, sub = _lire_nav(RUBRIQUES_PUBLIC)
-        _render_header(masquer_bandes=livre_ouvert)
+        _render_header(masquer_bandes=livre_ouvert,
+                       rubriques=(None if livre_ouvert else RUBRIQUES_PUBLIC),
+                       rub_act=rub, sub_act=sub)
         # Accueil personnalisé si arrivée par QR paroissial signé
         _origine = st.session_state.get("paroisse_origine")
         if _origine:
