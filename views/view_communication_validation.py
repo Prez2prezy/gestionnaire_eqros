@@ -1,8 +1,7 @@
 # ====================================================================
 # views/view_communication_validation.py — VERSION 1.0
 # Le sceau du diocèse : chaque soumission du Service Communication est
-# relue, puis PUBLIÉE (tables publiques, évangélisation élargie) ou
-# REFUSÉE avec motif (la cellule lit le motif dans son journal).
+# relue, puis PUBLIÉE (tables publiques) ou REFUSÉE avec motif.
 # ====================================================================
 import streamlit as st
 from datetime import date
@@ -14,36 +13,32 @@ LIBELLES = {"priere": "🙏 Prière", "meditation": "📖 Méditation",
             "evenement": "📅 Évènement"}
 
 
-def _notifier(soumission, action, motif=None):
+def _notifier(soumission, action):
     try:
         if action == "publie":
             envoyer_notification_telegram(
-                "🕊️ <b>Diocèse</b> — soumission PUBLIÉE : "
-                + (soumission[2] or "(sans titre)"))
+                "🕊️ <b>Diocèse</b> — soumission PUBLIÉE : " + (soumission[2] or "(sans titre)"))
         else:
             envoyer_notification_telegram(
-                "🕊️ <b>Diocèse</b> — soumission REFUSÉE : "
-                + (soumission[2] or "(sans titre)"))
+                "🕊️ <b>Diocèse</b> — soumission REFUSÉE : " + (soumission[2] or "(sans titre)"))
     except Exception:
         pass
 
 
 def show_validation_communication():
     st.markdown('<h2 style="color:#1A237E;">🕊️ Soumissions du Service Communication</h2>', unsafe_allow_html=True)
-    st.caption("Le Service Communication prépare — VOUS seul publiez. Chaque contenu "
-               "validé rejoint l'Espace de Prière (évangélisation élargie : il est "
-               "visible de toute la communauté, membres et visiteurs).")
+    st.caption("Le Service Communication prépare — VOUS seul publiez. Chaque contenu validé "
+               "rejoint l'Espace de Prière (évangélisation élargie : visible de toute la "
+               "communauté, membres et visiteurs).")
 
     en_attente = c.execute("""SELECT id, type_contenu, titre, contenu_texte, image_url,
-                                     fichier_url, video_url, date_evenement, lieu,
-                                     date_soumission
+                                     fichier_url, video_url, date_evenement, lieu, date_soumission
                               FROM soumissions_comm WHERE statut='attente'
                               ORDER BY id ASC""").fetchall()
 
     st.markdown(f"### 🟡 En attente de validation ({len(en_attente)})")
     if not en_attente:
-        st.info("Aucune soumission en attente. La cellule de communication n'a rien "
-                "préparé pour l'instant.")
+        st.info("Aucune soumission en attente. La cellule n'a rien préparé pour l'instant.")
     for s in en_attente:
         libelle = LIBELLES.get(s[1], s[1])
         with st.expander(f"{libelle} — {s[2] or '(sans titre)'} ({s[9]})"):
@@ -97,15 +92,14 @@ def show_validation_communication():
                     st.session_state[f"refus_encours_{s[0]}"] = True
                     st.rerun()
             if st.session_state.get(f"refus_encours_{s[0]}"):
-                motif = st.text_area("Motif du refus (communiqué à la cellule)",
-                                     key=f"motif_{s[0]}")
+                motif = st.text_area("Motif du refus (communiqué à la cellule)", key=f"motif_{s[0]}")
                 c_ok, c_ann = st.columns(2)
                 with c_ok:
                     if st.button("Confirmer le refus", key=f"refok_{s[0]}", type="primary"):
                         c.execute("UPDATE soumissions_comm SET statut='refuse', motif_refus=? WHERE id=?",
                                   (motif.strip() or "Sans motif précisé", s[0]))
                         commit_and_sync()
-                        _notifier(s, "refuse", motif)
+                        _notifier(s, "refuse")
                         st.session_state.pop(f"refus_encours_{s[0]}", None)
                         st.session_state["flash_warning"] = "Soumission refusée — la cellule en est informée."
                         st.rerun()
@@ -114,7 +108,6 @@ def show_validation_communication():
                         st.session_state.pop(f"refus_encours_{s[0]}", None)
                         st.rerun()
 
-    # ---------- HISTORIQUE ----------
     st.markdown("---")
     st.markdown("### 📔 Historique des décisions")
     historique = c.execute("""SELECT id, type_contenu, titre, statut, motif_refus, date_soumission
