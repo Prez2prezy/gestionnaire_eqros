@@ -8,10 +8,11 @@ from datetime import date
 from database import c, commit_and_sync
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation, 
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale, 
-                      sauvegarder_audio, sauvegarder_illustration)
+                      sauvegarder_audio, sauvegarder_illustration, URL_ESPACE_SPIRITUEL)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, 
                         afficher_whatsapp_tabs, afficher_historique_paroisse, 
-                        afficher_etat_presences_paroisse)
+                        afficher_etat_presences_paroisse, gerer_theme_pastoral,
+                        _qrcode_png_bytes)
 
 def show_diocese():
     d_info = c.execute("SELECT nom, responsable, bureau FROM diocese WHERE id=?", (1,)).fetchone()
@@ -19,8 +20,9 @@ def show_diocese():
 
     menu = st.sidebar.radio("Navigation", [
         "🏛️ Voir diocèse", "🏘️ Créer paroisses", "📋 Gérer paroisses", 
-        "📅 Abonnements", "📌 Suivi", "🕊️ Espace spirituel", "💬 WhatsApp", 
-        "🔍 Rechercher matricule", "🔐 Gérer les accès", "📊 Statistiques", "📥 Export Excel",  # AJOUT ICI
+        "📅 Abonnements", "📌 Suivi", "🕊️ Espace spirituel", "🕯️ Thème pastoral",
+        "📡 Communication", "🔳 QR paroissiaux", "💬 WhatsApp", 
+        "🔍 Rechercher matricule", "🔐 Gérer les accès", "📊 Statistiques", "📥 Export Excel",
         "📦 Archives", "🗑️ Réinitialiser"
     ])
 
@@ -79,6 +81,28 @@ def show_diocese():
             with st.expander(f"🏛️ {nom} ({commune} / {ville}) - {nb_equipes} équipe(s) - {nb_membres} membre(s)"):
                 st.write(f"**Responsable :** {responsable}")
                 st.write(f"**Bureau :** {bureau}")
+
+                # QR signé de CETTE paroisse (traçabilité missionnaire)
+                with st.expander("🔳 QR paroissial de cette paroisse"):
+                    _url_signee = f"{URL_ESPACE_SPIRITUEL}/?espace=1&p={pid}"
+                    st.code(_url_signee)
+                    _png = _qrcode_png_bytes(_url_signee)
+                    st.image(_png, width=200)
+                    st.download_button("📥 Télécharger le QR (PNG)", data=_png,
+                                       file_name=f"qr_paroisse_{pid}.png",
+                                       key=f"qr_dl_{pid}", use_container_width=True)
+                    st.caption("Imprimez ce QR sur les affiches de la paroisse : chaque scan est compté à son origine (fidèle anonyme).")
+
+                # QR signé de CETTE paroisse (traçabilité missionnaire)
+                with st.expander("🔳 QR paroissial de cette paroisse"):
+                    _url_signee = f"{URL_ESPACE_SPIRITUEL}/?espace=1&p={pid}"
+                    st.code(_url_signee)
+                    _png = _qrcode_png_bytes(_url_signee)
+                    st.image(_png, width=200)
+                    st.download_button("📥 Télécharger le QR (PNG)", data=_png,
+                                       file_name=f"qr_paroisse_{pid}.png",
+                                       key=f"qr_dl_{pid}", use_container_width=True)
+                    st.caption("Imprimez ce QR sur les affiches de la paroisse : chaque scan est compté à son origine (fidèle anonyme).")
                 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -291,10 +315,18 @@ def show_diocese():
 
     elif menu == "🕊️ Espace spirituel":
         st.markdown('<h2 style="color:#1A237E;">🕊️ Gestion de l\'Espace Spirituel</h2>', unsafe_allow_html=True)
-        st.caption("Ici, vous publiez les prières, méditations et musiques qui apparaîtront dans l'espace des membres.")
+        st.caption("Ici, vous publiez les prières, méditations et musiques, gérez le thème pastoral, et validez les soumissions du Service Communication.")
         
-        tab_add, tab_manage = st.tabs(["➕ Publier du contenu", "📋 Contenu existant"])
+        tab_theme, tab_com, tab_add, tab_manage = st.tabs(
+            ["🕯️ Thème pastoral", "📡 Communication", "➕ Publier du contenu", "📋 Contenu existant"])
         
+        with tab_theme:
+            gerer_theme_pastoral()
+
+        with tab_com:
+            from views.view_communication_validation import show_validation_communication
+            show_validation_communication()
+
         with tab_add:
             # On crée 3 sous-onglets pour séparer les espaces
             s_tab_priere, s_tab_med, s_tab_audio = st.tabs(["🙏 Prière", "📖 Méditation", "🎵 Musique"])
@@ -388,6 +420,9 @@ def show_diocese():
                                 
                             st.success("Musique publiée avec succès !")
                             st.rerun()
+
+        with tab_theme:
+            gerer_theme_pastoral()
 
         with tab_manage:
             contenus = c.execute("SELECT id, type_contenu, titre, date_publication FROM espace_spirituel ORDER BY date_publication DESC").fetchall()
