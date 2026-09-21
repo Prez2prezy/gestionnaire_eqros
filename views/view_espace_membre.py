@@ -1,10 +1,11 @@
 # ====================================================================
-# view_espace_membre.py — VERSION 7.4
-# v7.4 : menu DANS l'entête fixe (Option A validée : logo/badge → menu →
-# sous-menu → bandes). Boutons HTML de l'entête branchés sur les boutons
-# natifs cachés (clic fiable, session préservée). Jamais de scroll perdu.
-# Vérification de version : Ctrl+F → "VERSION 7.4", "_menu_natif",
-# "_brancher_menu". "_figer_menu" ne doit PLUS exister.
+# view_espace_membre.py — VERSION 7.6 (réécriture une pièce)
+# v7.6 : ① liens du menu naviguent DANS l'onglet courant (fini les 10
+# onglets) ; ② fil du jour blindé ; ③ compteur fusionné « 1 visite =
+# 1 arrivée » ; ④ fonctions bandes blindées (accès par index).
+# Hérite de v7.5 : menu liens HTML purs + ruban hover + ☰ mobile,
+# navigation ?r=&s=, mesure autocorrigée, QR paroissial, lecteur complet.
+# Marqueurs : Ctrl+F → "VERSION 7.6", "_liens_meme_onglet", "· v7.6".
 # ====================================================================
 import os
 import re
@@ -20,7 +21,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 
 
 # ====================================================================
-# NAVIGATION — rubriques et sous-rubriques
+# NAVIGATION
 # ====================================================================
 RUBRIQUES_MEMBRE = ["🏠 Actualités", "🕯️ Thème", "📿 Rosaire", "📅 Mes évènements", "📖 Archives"]
 RUBRIQUES_PUBLIC = ["🏠 Actualités", "📿 Rosaire", "🕯️ Thème", "📖 Archives"]
@@ -31,9 +32,8 @@ SOUS_RUBRIQUES = {
 }
 
 def _lire_nav(rubriques):
-    """v7.5 — rubrique/sous-rubrique lues dans l'URL (?r=..&s=..).
-    Navigation par LIENS HTML purs : aucun pont JS, aucun timing, les clics
-    fonctionnent toujours. Fini les boutons natifs cachés (double menu)."""
+    """Rubrique/sous-rubrique lues dans l'URL (?r=..&s=..). Navigation par
+    LIENS HTML purs : aucun pont JS fragile."""
     rub = rubriques[0]
     try:
         i = int(str(st.query_params.get("r", "")))
@@ -85,8 +85,34 @@ def _scroll_top(cle):
         pass
 
 
+def _liens_meme_onglet(cle):
+    """v7.6 — LES LIENS DU MENU NAVIGUENT DANS L'ONGLET COURANT.
+    Constat terrain : Streamlit force certains liens vers un nouvel onglet
+    (10 clics = 10 onglets). Double parade : ① target="_self" écrit dans le
+    HTML des ancres ; ② intercepteur qui reprend le clic et navigue le
+    document parent. Ré-attaché à chaque run (le DOM est recréé)."""
+    script = (
+        "<script>(function(){var d=window.parent.document;var essais=0;"
+        "var t=setInterval(function(){essais++;"
+        "var as=d.querySelectorAll('.menu-ligne a,.mob-panneau a');var n=0;"
+        "for(var i=0;i<as.length;i++){"
+        "if(!as[i].getAttribute('data-self76')){"
+        "as[i].setAttribute('data-self76','1');as[i].setAttribute('target','_self');"
+        "(function(a){a.addEventListener('click',function(e){e.preventDefault();"
+        "window.top.location.href=a.href;});})(as[i]);}"
+        "n++;}"
+        "if(n>0&&essais>2){clearInterval(t);}"
+        "else if(essais>20){clearInterval(t);}"
+        "},300);})();</script>")
+    try:
+        _comp_html(script, height=0, key=f"self76_{cle}")
+    except Exception:
+        pass
+
+
 def _compter_bandes(membre=False):
-    """Compte les bandes défilantes RÉELLEMENT affichées (clé de re-mesure)."""
+    """Compte les bandes RÉELLEMENT affichées. v7.6 : accès par INDEX
+    (jamais d'unpack) — blindé contre tout décalage de colonnes."""
     try:
         bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
                               WHERE type_contenu='annonce_defilante'
@@ -94,7 +120,11 @@ def _compter_bandes(membre=False):
     except Exception:
         return 0
     n = 0
-    for texte, cible in bandes:
+    for ligne in bandes:
+        if len(ligne) < 1:
+            continue
+        texte = ligne[0]
+        cible = ligne[1] if len(ligne) > 1 else None
         if cible == "membre" and not membre:
             continue
         if not texte:
@@ -104,9 +134,8 @@ def _compter_bandes(membre=False):
 
 
 def _mesure_entete(cle):
-    """v7.5 — mesure AUTOCORRIGÉE : revérifie toutes les 400 ms, n'écrit que
-    si la hauteur a changé. L'entête (logo + menu + bandes) se dessine en
-    PLUSIEURS fois : une mesure unique part trop tôt."""
+    """Mesure AUTOCORRIGÉE : revérifie toutes les 400 ms, n'écrit que si la
+    hauteur a changé (l'entête se dessine en plusieurs fois)."""
     script = (
         "<script>(function(){var d0=-1;var a=function(){try{"
         "var d=window.parent.document;var h=d.querySelector('.sticky-header');"
@@ -120,9 +149,7 @@ def _mesure_entete(cle):
         pass
 
 def _render_theme(compact=False):
-    """CSS de l'espace. Padding-top MESURÉ par _mesure_entete() ; valeurs de
-    secours le temps du premier dessin. CONCATÉNATION (jamais de f-string
-    avec du CSS : accolades)."""
+    """CSS de l'espace. CONCATÉNATION (jamais de f-string avec du CSS)."""
     if compact:
         secours_1, secours_2, secours_3 = 260, 240, 230
     else:
@@ -212,7 +239,7 @@ def _render_theme(compact=False):
 
 
 def _bandes_defilantes_html(membre=False):
-    """HTML des bandes défilantes pour l'entête fixe (retourne une chaîne)."""
+    """HTML des bandes défilantes. v7.6 : accès par INDEX (blindé)."""
     try:
         bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
                               WHERE type_contenu='annonce_defilante'
@@ -220,7 +247,11 @@ def _bandes_defilantes_html(membre=False):
     except Exception:
         return ""
     morceaux = []
-    for texte, cible in bandes:
+    for ligne in bandes:
+        if len(ligne) < 1:
+            continue
+        texte = ligne[0]
+        cible = ligne[1] if len(ligne) > 1 else None
         if cible == "membre" and not membre:
             continue
         if not texte:
@@ -235,10 +266,9 @@ def _bandes_defilantes_html(membre=False):
 
 def _render_header(membre=None, matloc=None, masquer_bandes=False,
                    rubriques=None, rub_act=None, sub_act=None):
-    """Entête FIGÉE — v7.5 : menu en LIENS HTML purs (zéro JS).
-    PC : ligne de rubriques + ruban de sous-rubriques au survol (:hover CSS).
-    Mobile : bouton ☰ en <details> HTML natif, déroulé par-dessus le contenu.
-    Le livre ouvert masque tout le menu (plein écran de prière)."""
+    """Entête FIGÉE — v7.6 : menu en liens HTML avec target="_self"
+    (navigation DANS l'onglet courant ; l'intercepteur _liens_meme_onglet
+    garantit le résultat). PC : ruban au survol. Mobile : ☰ en <details>."""
     logo_b64 = _logo_base64()
     logo_html = (f'<img src="data:image/png;base64,{logo_b64}" alt="Logo">'
                  if logo_b64 else '<div style="font-size:4rem;">📿</div>')
@@ -270,22 +300,21 @@ def _render_header(membre=None, matloc=None, masquer_bandes=False,
                 for k, s in enumerate(sous):
                     href_s = href_r + "&s=" + str(k)
                     cls = "menu-sub" + (" actif" if (r == rub_act and s == sub_act) else "")
-                    sitems += '<a class="' + cls + '" href="' + href_s + '">' + s + "</a>"
+                    sitems += '<a class="' + cls + '" href="' + href_s + '" target="_self">' + s + "</a>"
                 ruban = '<div class="sous-ruban">' + sitems + "</div>"
-            cls_lien = "menu-lien"
             cls_item = "menu-item" + (" actif" if r == rub_act else "")
-            items.append('<div class="' + cls_item + '"><a class="' + cls_lien + '" href="' + href_r + '">' + r + "</a>" + ruban + "</div>")
+            items.append('<div class="' + cls_item + '"><a class="menu-lien" href="' + href_r + '" target="_self">' + r + "</a>" + ruban + "</div>")
         menu_html = '<div class="menu-ligne">' + "".join(items) + "</div>"
         mitems = []
         for i, r in enumerate(rubriques):
             href_r = base + "&nav=1&r=" + str(i)
-            mitems.append('<a class="mob-lien' + (" actif" if r == rub_act else "") + '" href="' + href_r + '">' + r + "</a>")
+            mitems.append('<a class="mob-lien' + (" actif" if r == rub_act else "") + '" href="' + href_r + '" target="_self">' + r + "</a>")
             sous = SOUS_RUBRIQUES.get(r)
             if sous:
                 for k, s in enumerate(sous):
                     href_s = href_r + "&s=" + str(k)
                     cls = "mob-sous" + (" actif" if (r == rub_act and s == sub_act) else "")
-                    mitems.append('<a class="' + cls + '" href="' + href_s + '">· ' + s + "</a>")
+                    mitems.append('<a class="' + cls + '" href="' + href_s + '" target="_self">· ' + s + "</a>")
         menu_html += ('<details class="menu-mobile"><summary>☰</summary>'
                       '<div class="mob-panneau">' + "".join(mitems) + "</div></details>")
 
@@ -319,15 +348,12 @@ def _diz_txt(texte, couleur="#333333", taille="0.95rem", gras=False, centre=Fals
 MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
            "août", "septembre", "octobre", "novembre", "décembre"]
 
-# Couleurs CLAIRES pour titres sur fond nuit ; les fortes restent pour les
-# bordures / en-têtes du livre.
 COULEURS_CLAIRES = {"joyeux": "#FF80AB", "lumineux": "#9FA8DA",
                     "douloureux": "#F48FB1", "glorieux": "#A5D6A7"}
 
 
 def _rendre_intro_eyquem(titre_carte="INTRODUCTION"):
-    """Carte de la prière du Père Eyquem. Couleurs critiques en !important
-    INLINE (le CSS global écrase sinon le noir → illisible sur jaune)."""
+    """Carte de la prière du Père Eyquem. Couleurs critiques en !important."""
     texte = DIZ_INTRO3
     t_esc = html.escape(texte)
     t_esc = t_esc.replace("[R]", '</div><div style="color:#D32F2F !important; font-size:0.98rem; font-weight:bold; text-align:center; line-height:1.7; margin:8px 0;">')
@@ -346,8 +372,7 @@ def _rendre_intro_eyquem(titre_carte="INTRODUCTION"):
 # PAGES DES RUBRIQUES
 # ====================================================================
 def _render_page_theme_ensemble():
-    """🕯️ Thème → Vue d'ensemble : thème actif + mystère principal +
-    sous-thème du mois + feuillet PDF. Couleurs critiques en !important."""
+    """🕯️ Thème → Vue d'ensemble."""
     theme = get_theme_actif()
     if not theme:
         st.info("🕯️ Aucun thème pastoral n'est actuellement actif. "
@@ -369,7 +394,7 @@ def _render_page_theme_ensemble():
         ' padding:24px; border-radius:15px; text-align:center; margin:10px;'
         ' border:2px solid #FFD700;">'
         '<div style="color:#9fa6d8 !important; font-size:0.85rem;">🕯️ THÈME PASTORAL '
-        + str(annee_debut) + " - " + str(annee_debut + 1) + "</div>"
+        + str(annee_debut) + " - " + str(annee_debut + 1) + " · v7.6</div>"
         '<div style="color:#FFD700 !important; font-size:1.25rem; font-weight:bold; margin-top:8px; line-height:1.5;">« '
         + html.escape(texte_theme or "") + ' »</div>'
         + ligne_mystere + "</div>", unsafe_allow_html=True)
@@ -394,7 +419,7 @@ def _render_page_theme_ensemble():
 
 
 def _render_page_en_preparation(emoji, titre, description):
-    """Page « en préparation » élégante pour les rubriques à venir."""
+    """Page « en préparation » élégante."""
     st.markdown(
         '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
         ' padding:28px; border-radius:15px; text-align:center; margin:10px;'
@@ -415,13 +440,12 @@ GROUPES_CHAPELETS = [
 
 
 def _render_page_rosaire_eyquem():
-    """📿 Rosaire → L'esprit du Père Eyquem : prière + 4 chapelets ; chaque
-    mystère CLIQUABLE (expander → PASSAGE + MÉDITATION en blanc)."""
+    """📿 Rosaire → L'esprit du Père Eyquem : prière + 4 chapelets cliquables."""
     st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                 ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
                 ' border:2px solid #FFD700;">'
                 '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold;">📿 Le Rosaire complet selon l’esprit du Père Eyquem</div>'
-                '<div style="color:#e8eaf6 !important; font-size:0.9rem; margin-top:6px;">Quatre chapelets, vingt mystères — la prière du fondateur des Équipes du Rosaire</div></div>',
+                '<div style="color:#e8eaf6 !important; font-size:0.9rem; margin-top:6px;">Quatre chapelets, vingt mystères — la prière du fondateur des Équipes du Rosaire · v7.6</div></div>',
                 unsafe_allow_html=True)
     st.markdown(_rendre_intro_eyquem("PRIÈRE À LA VIERGE — Frère Joseph EYQUEM, o.p."), unsafe_allow_html=True)
 
@@ -460,7 +484,7 @@ def _render_page_rosaire_theme():
     st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                 ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
                 ' border:2px solid #FFD700;">'
-                '<div style="color:#9fa6d8 !important; font-size:0.85rem;">📿 LE ROSAIRE SELON LE THÈME DE L’ANNÉE</div>'
+                '<div style="color:#9fa6d8 !important; font-size:0.85rem;">📿 LE ROSAIRE SELON LE THÈME DE L’ANNÉE · v7.6</div>'
                 '<div style="color:#FFD700 !important; font-size:1.1rem; font-weight:bold; margin-top:6px;">« '
                 + html.escape(texte_theme or "") + " »</div></div>", unsafe_allow_html=True)
     manquants = 0
@@ -511,10 +535,7 @@ def _render_page_archives_textes(type_contenu, message_vide):
 
 
 def _render_page_archives_audios():
-    """Archives Musiques — v7.5 : LECTEUR COMPLET récupéré de la v1
-    (playlist cliquable, ⏮️/⏭️, 🔀 aléatoire, 🔁 boucle 3 modes, sélection
-    de pistes) — code validé terrain à l'époque de la v1. Un seul lecteur
-    pour toutes les pistes, au lieu de st.audio répété."""
+    """Archives Musiques — LECTEUR COMPLET (playlist, ⏮️⏭️, 🔀, 🔁, sélection)."""
     audios = c.execute("""SELECT titre, fichier_url FROM espace_spirituel
                           WHERE type_contenu='audio' ORDER BY date_publication DESC, id DESC""").fetchall()
     if not audios:
@@ -529,11 +550,9 @@ def _render_page_archives_audios():
     player_html = """
     <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 15px; border: 1px solid #27306b; border-radius: 15px; background: #121a45;">
         <h3 style="text-align:center; color:#ffe082; margin-top:0;">🎵 Lecteur Spirituel</h3>
-
         <div id="now-playing" style="text-align:center; font-weight:bold; font-size:1.1rem; margin-bottom:15px; min-height: 30px; color:#e8eaf6;">
             Cliquez sur une piste
         </div>
-
         <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
             <button id="btn-prev" style="background:none; border:none; font-size:20px; cursor:pointer; padding:5px;">⏮️</button>
             <button id="btn-shuffle" style="background:none; border:none; font-size:20px; cursor:pointer; opacity:0.5; padding:5px;">🔀</button>
@@ -541,12 +560,9 @@ def _render_page_archives_audios():
             <button id="btn-next" style="background:none; border:none; font-size:20px; cursor:pointer; padding:5px;">⏭️</button>
             <button id="btn-play-selection" style="background:#4527a0; color:white; border:none; font-size:14px; cursor:pointer; opacity:0.5; padding:5px 10px; border-radius:15px;">▶️ Sélection</button>
         </div>
-
         <video id="audio-player" controls controlsList="nodownload" style="width: 100%; outline:none; max-height: 150px; background:black; border-radius:8px;"></video>
-
         <ul id="playlist" style="list-style: none; padding: 0; margin-top: 15px; max-height: 350px; overflow-y: auto; border-top: 1px solid #27306b; padding-top: 10px;"></ul>
     </div>
-
     <script>
         const tracks = TRACKS_DATA;
         let currentTrackIndex = 0;
@@ -554,14 +570,12 @@ def _render_page_archives_audios():
         let loopMode = 0;
         let playbackOrder = tracks.map((_, i) => i);
         let selectedTracks = new Set();
-
         const audio = document.getElementById('audio-player');
         const nowPlaying = document.getElementById('now-playing');
         const playlistEl = document.getElementById('playlist');
         const btnShuffle = document.getElementById('btn-shuffle');
         const btnLoop = document.getElementById('btn-loop');
         const btnPlaySel = document.getElementById('btn-play-selection');
-
         function renderPlaylist() {
             playlistEl.innerHTML = '';
             playbackOrder.forEach((origIndex) => {
@@ -573,7 +587,6 @@ def _render_page_archives_audios():
                 li.style.cursor = 'pointer';
                 li.style.borderLeft = origIndex === currentTrackIndex ? '5px solid #FFD700' : '5px solid transparent';
                 li.style.color = '#e8eaf6';
-
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
                 checkbox.checked = selectedTracks.has(origIndex);
@@ -587,17 +600,14 @@ def _render_page_archives_audios():
                     updateSelectionButton();
                 };
                 li.prepend(checkbox);
-
                 const textSpan = document.createElement('span');
                 textSpan.innerHTML = '<span style="color:#FFD700">🎵</span> ' + tracks[origIndex].title;
                 li.appendChild(textSpan);
-
                 li.onclick = () => playTrack(origIndex);
                 playlistEl.appendChild(li);
             });
             updateSelectionButton();
         }
-
         function updateSelectionButton() {
             if (selectedTracks.size > 0) {
                 btnPlaySel.style.opacity = '1';
@@ -607,13 +617,11 @@ def _render_page_archives_audios():
                 btnPlaySel.innerText = '▶️ Sélection';
             }
         }
-
         function playSelection() {
             if (selectedTracks.size === 0) return;
             playbackOrder = Array.from(selectedTracks);
             playTrack(playbackOrder[0]);
         }
-
         function playTrack(index) {
             currentTrackIndex = index;
             audio.src = tracks[index].url;
@@ -621,7 +629,6 @@ def _render_page_archives_audios():
             audio.play().catch(e => console.error("Erreur de lecture:", e));
             renderPlaylist();
         }
-
         function nextTrack() {
             let currentDisplayIndex = playbackOrder.indexOf(currentTrackIndex);
             if (currentDisplayIndex < playbackOrder.length - 1) {
@@ -630,7 +637,6 @@ def _render_page_archives_audios():
                 playTrack(playbackOrder[0]);
             }
         }
-
         function prevTrack() {
             if (audio.currentTime > 3) {
                 audio.currentTime = 0;
@@ -643,7 +649,6 @@ def _render_page_archives_audios():
                 }
             }
         }
-
         function toggleShuffle() {
             isShuffled = !isShuffled;
             btnShuffle.style.opacity = isShuffled ? '1' : '0.5';
@@ -657,7 +662,6 @@ def _render_page_archives_audios():
             }
             renderPlaylist();
         }
-
         function toggleLoop() {
             loopMode = (loopMode + 1) % 3;
             if (loopMode === 0) {
@@ -676,19 +680,16 @@ def _render_page_archives_audios():
                 btnLoop.innerText = '🔂';
             }
         }
-
         audio.addEventListener('ended', () => {
             if (!audio.loop) {
                 nextTrack();
             }
         });
-
         document.getElementById('btn-prev').addEventListener('click', prevTrack);
         document.getElementById('btn-next').addEventListener('click', nextTrack);
         document.getElementById('btn-shuffle').addEventListener('click', toggleShuffle);
         document.getElementById('btn-loop').addEventListener('click', toggleLoop);
         document.getElementById('btn-play-selection').addEventListener('click', playSelection);
-
         renderPlaylist();
     </script>
     """.replace("TRACKS_DATA", json.dumps(pistes))
@@ -697,8 +698,7 @@ def _render_page_archives_audios():
 
 
 def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
-    """La dizaine du jour — affichée UNIQUEMENT sur l'Accueil (v7.2).
-    Le livre ouvert reste une page autonome plein écran."""
+    """La dizaine du jour — UNIQUEMENT sur l'Accueil. Livre = page autonome."""
     st.markdown("---")
 
     st.session_state.pop("nettoyage_diz", None)
@@ -777,7 +777,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
             f'<div style="display:flex; justify-content:center; gap:10px; margin:18px 0;">{pastilles}</div>'
             f'<div style="color:#ffffff; font-size:1rem;">{html.escape(titres)}</div>'
             f'<div style="color:#9fa6d8; font-size:0.85rem; margin-top:8px;">'
-            f'N° méd. {num} — {date.today().strftime("%d/%m/%Y")}</div>'
+            f'N° méd. {num} — {date.today().strftime("%d/%m/%Y")} · v7.6</div>'
             f'</div>', unsafe_allow_html=True)
         _scroll_top("cov")
         if st.button("📿 Égrener la dizaine", key="diz_commencer", use_container_width=True, type="primary"):
@@ -906,7 +906,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
 
 
 def _render_pdf_inline(url_pdf):
-    """PDF en iframe directe Cloudinary + lien de secours plein écran."""
+    """PDF en iframe directe Cloudinary + lien de secours."""
     lien_txt = "📄 Si le document ne s'affiche pas, ouvrez-le ici"
     st.markdown(
         f'<div style="margin:12px 10px 18px 10px; border-radius:12px; overflow:hidden; border:1px solid #27306b;">'
@@ -980,16 +980,14 @@ def _render_coin_affiche():
 
 
 def _render_fil_actualites():
-    """v7.5c — fil du jour BLINDÉ (leçon des incidents de collage) : la
-    ligne lue est complétée à 5 cases avant tout accès par index. Aucun
-    IndexError possible, quelle que soit la forme de la donnée."""
+    """v7.6 — fil du jour BLINDÉ : la ligne est complétée à 5 cases avant
+    tout accès par index (fini l'IndexError, quelle que soit la donnée)."""
     dernier = c.execute("""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
                            FROM espace_spirituel
                            WHERE type_contenu IN ('priere', 'meditation')
                            ORDER BY date_publication DESC, id DESC LIMIT 1""").fetchone()
 
     if dernier:
-        # Blindage : garantit 5 cases lisibles (les manquantes valent None)
         ligne = list(dernier) + [None] * max(0, 5 - len(dernier))
         etiquette = {"priere": "🙏 Prière du jour", "meditation": "📖 Méditation du jour"}.get(ligne[0], "📿 Du jour")
         texte = ligne[2] or ""
@@ -1038,11 +1036,12 @@ def show_espace_membre(matloc_membre=None):
     livre_ouvert = st.session_state.get("diz_ouvert", False)
 
     _render_theme(compact=livre_ouvert)
-    # MESURE réelle de l'entête — écart réduit à zéro (v7.3)
     nb_bandes = 0 if livre_ouvert else _compter_bandes(membre=bool(matloc_membre))
     _mesure_entete(nb_bandes)
+    # v7.6 : les liens du menu naviguent dans l'onglet courant
+    _liens_meme_onglet("nav")
 
-    # QR signé ?p=ID : capture de l'ORIGINE paroissiale (fidèle anonyme).
+    # QR signé ?p=ID : capture de l'ORIGINE paroissiale (fidèle anonyme)
     if "paroisse_origine" not in st.session_state:
         p_raw = st.query_params.get("p")
         if isinstance(p_raw, list):
@@ -1055,29 +1054,6 @@ def show_espace_membre(matloc_membre=None):
             except (ValueError, TypeError):
                 pass
 
-    # Compteur : 1 visite = 1 session (option A validée)
-    if "visite_communaute" not in st.session_state:
-        st.session_state["visite_communaute"] = True
-        compter_visite("communautaire")
-        # Traçabilité missionnaire : la visite vient d'un QR paroissial signé
-        _origine = st.session_state.get("paroisse_origine")
-        if _origine:
-            try:
-                c.execute("INSERT INTO visites_paroisse (paroisse_id, date_visite) VALUES (?, ?)",
-                          (_origine, date.today().isoformat()))
-                commit_and_sync()
-            except Exception:
-                try:
-                    c.execute("""CREATE TABLE IF NOT EXISTS visites_paroisse (
-                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                    paroisse_id INTEGER,
-                                    date_visite TEXT)""")
-                    c.execute("INSERT INTO visites_paroisse (paroisse_id, date_visite) VALUES (?, ?)",
-                              (_origine, date.today().isoformat()))
-                    commit_and_sync()
-                except Exception:
-                    pass
-
     msg_ok = st.session_state.pop("flash_success", None)
     if msg_ok:
         st.success(msg_ok)
@@ -1085,12 +1061,30 @@ def show_espace_membre(matloc_membre=None):
     if msg_warn:
         st.warning(msg_warn)
 
-    # ================= ÉTAT 1 : VUE PUBLIQUE (Espace communautaire) =================
+    # ================= ÉTAT 1 : VUE PUBLIQUE =================
     if not matloc_membre:
-        # v7.5 : 1 visite = 1 ARRIVÉE (les navigations internes ont &nav=1)
+        # v7.6 : compteur fusionné — 1 visite = 1 ARRIVÉE (les navigations
+        # internes portent &nav=1). Journal missionnaire si QR signé.
         if "nav" not in st.query_params and "visite_communaute" not in st.session_state:
             st.session_state["visite_communaute"] = True
             compter_visite("communautaire")
+            _origine = st.session_state.get("paroisse_origine")
+            if _origine:
+                try:
+                    c.execute("INSERT INTO visites_paroisse (paroisse_id, date_visite) VALUES (?, ?)",
+                              (_origine, date.today().isoformat()))
+                    commit_and_sync()
+                except Exception:
+                    try:
+                        c.execute("""CREATE TABLE IF NOT EXISTS visites_paroisse (
+                                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                        paroisse_id INTEGER,
+                                        date_visite TEXT)""")
+                        c.execute("INSERT INTO visites_paroisse (paroisse_id, date_visite) VALUES (?, ?)",
+                                  (_origine, date.today().isoformat()))
+                        commit_and_sync()
+                    except Exception:
+                        pass
 
         rub, sub = _lire_nav(RUBRIQUES_PUBLIC)
         _render_header(masquer_bandes=livre_ouvert,
@@ -1110,7 +1104,7 @@ def show_espace_membre(matloc_membre=None):
 
         st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                     '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
-                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · v7.5</div></div>', unsafe_allow_html=True)
+                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · v7.6</div></div>', unsafe_allow_html=True)
 
         if rub == "📿 Rosaire":
             if sub == "Le thème de l'année":
@@ -1159,6 +1153,7 @@ def show_espace_membre(matloc_membre=None):
         _render_fil_actualites()
         return
 
+    # v7.6 : compteur membre — 1 visite = 1 ARRIVÉE (même sémantique)
     if "nav" not in st.query_params and "visite_membre" not in st.session_state:
         st.session_state["visite_membre"] = True
         compter_visite("membre")
@@ -1187,7 +1182,7 @@ def show_espace_membre(matloc_membre=None):
 
     st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                 '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
-                '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · v7.5</div></div>', unsafe_allow_html=True)
+                '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · v7.6</div></div>', unsafe_allow_html=True)
 
     if rub == "📅 Mes évènements":
         if membre[10] is None:
