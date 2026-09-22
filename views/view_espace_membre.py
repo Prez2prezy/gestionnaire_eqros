@@ -923,10 +923,10 @@ def _depliant_mouvement(paroisse_id=None):
     Prêcheurs 1972, Dominique YOVAN 1980, organisation, feuillets)."""
     _resp = None
     _wa = None
-    _etiquette = "le responsable paroissial"
+    _etiquette = "responsable paroissial"
     if paroisse_id:
         # Arrivée par QR signé → contact du responsable DE CETTE PAROISSE
-        _etiquette = "le responsable paroissial"
+        _etiquette = "responsable paroissial"
         try:
             _r = c.execute("SELECT responsable, whatsapp_responsable FROM paroisses WHERE id=?", (paroisse_id,)).fetchone()
             if _r and _r[0]:
@@ -937,7 +937,7 @@ def _depliant_mouvement(paroisse_id=None):
             pass
     else:
         # Visite directe (sans QR) → contact du RESPONSABLE DIOCÉSAIN
-        _etiquette = "le responsable diocésain"
+        _etiquette = "responsable diocésain"
         try:
             _d = c.execute("SELECT responsable, whatsapp_responsable FROM diocese WHERE id=?", (1,)).fetchone()
             if _d and _d[0]:
@@ -967,7 +967,7 @@ Les membres reçoivent chaque mois le feuillet de 16 pages « Le Rosaire en Équ
 
 En résumé, les Équipes du Rosaire sont un mouvement vivant et missionnaire, combinant prière personnelle, méditation communautaire et engagement apostolique, pour vivre et partager la foi catholique au quotidien.
 
-**Vous voulez rejoindre une équipe ?** Adressez-vous à {_etiquette} **{(_resp or "").strip() or "du Mouvement"}**. La dizaine du jour vous attend déjà ici, juste en dessous de cette page : entrez votre jour de naissance et priez avec nous. 🕊️"""
+**Vous voulez rejoindre une équipe ?** Adressez-vous au {_etiquette} **{(_resp or "").strip() or "du Mouvement"}**.\nn La dizaine du jour vous attend déjà ici, juste en dessous de cette page : entrez votre jour de naissance et priez avec nous. 🕊️"""
     with st.expander("📿 Découvrez les Équipes du Rosaire !"):
         st.markdown(_txt)
         if _wa:
