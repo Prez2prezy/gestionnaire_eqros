@@ -16,7 +16,7 @@ import streamlit as st
 from datetime import date
 from streamlit.components.v1 import html as _comp_html
 from database import c, commit_and_sync
-from services import safe_date, compter_visite
+from services import safe_date, compter_visite, lien_whatsapp
 from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
 
 
@@ -922,11 +922,14 @@ def _depliant_mouvement(paroisse_id=None):
     Texte fourni et validé par l'utilisateur (fondation 1955, Ordre des
     Prêcheurs 1972, Dominique YOVAN 1980, organisation, feuillets)."""
     _resp = "le responsable paroissial"
+    _wa = None
     if paroisse_id:
         try:
-            _r = c.execute("SELECT responsable FROM paroisses WHERE id=?", (paroisse_id,)).fetchone()
+            _r = c.execute("SELECT responsable, whatsapp_responsable FROM paroisses WHERE id=?", (paroisse_id,)).fetchone()
             if _r and _r[0]:
                 _resp = _r[0]
+            if _r and len(_r) > 1 and _r[1]:
+                _wa = _r[1]
         except Exception:
             pass
     _txt = f"""**Les Équipes du Rosaire** sont un mouvement catholique de prière et d'apostolat des laïcs, fondé en 1955, qui rassemble des petits groupes pour méditer le Rosaire et vivre la mission évangélique au quotidien.
@@ -953,6 +956,10 @@ En résumé, les Équipes du Rosaire sont un mouvement vivant et missionnaire, c
 **Vous voulez rejoindre une équipe ?** Adressez-vous au responsable paroissial **{_resp}**. La dizaine du jour vous attend déjà ici, juste en dessous de cette page : entrez votre jour de naissance et priez avec nous. 🕊️"""
     with st.expander("📿 Découvrez les Équipes du Rosaire !"):
         st.markdown(_txt)
+        if _wa:
+            _lien_resp = lien_whatsapp(_wa, "Bonjour, je souhaite rejoindre une Équipe du Rosaire dans notre paroisse. Merci de me renseigner. 📿")
+            if _lien_resp:
+                st.markdown(f'<a href="{_lien_resp}" target="_blank" class="whatsapp-link">📱 Écrire au responsable</a>', unsafe_allow_html=True)
 
 
 def _render_coin_affiche():
