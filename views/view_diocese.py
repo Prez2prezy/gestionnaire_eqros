@@ -8,7 +8,8 @@ from datetime import date
 from database import c, commit_and_sync
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation, 
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale, 
-                      sauvegarder_audio, sauvegarder_illustration, URL_ESPACE_SPIRITUEL)
+                      sauvegarder_audio, sauvegarder_illustration, URL_ESPACE_SPIRITUEL,
+                      lien_whatsapp)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, 
                         afficher_whatsapp_tabs, afficher_historique_paroisse, 
                         afficher_etat_presences_paroisse, gerer_theme_pastoral,
@@ -17,6 +18,16 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
 def show_diocese():
     d_info = c.execute("SELECT nom, responsable, bureau FROM diocese WHERE id=?", (1,)).fetchone()
     nom_dio = d_info[0] if d_info else "Diocèse"
+
+    # Migration douce : WhatsApp du responsable paroissial (idempotent, sans risque)
+    try:
+        c.execute("SELECT whatsapp_responsable FROM paroisses LIMIT 1")
+    except Exception:
+        try:
+            c.execute("ALTER TABLE paroisses ADD COLUMN whatsapp_responsable TEXT")
+            commit_and_sync()
+        except Exception:
+            pass
 
     menu = st.sidebar.radio("Navigation", [
         "🏛️ Voir diocèse", "🏘️ Créer paroisses", "📋 Gérer paroisses", 
@@ -45,6 +56,7 @@ def show_diocese():
                 nom = st.text_input("Nom de la paroisse")
                 commune = st.text_input("Commune")
                 responsable = st.text_input("Responsable")
+                wa_resp = st.text_input("📱 WhatsApp du responsable (ex. 0700000000)")
             with c2:
                 ville = st.text_input("Ville")
                 bureau = st.text_area("Bureau")
@@ -53,7 +65,7 @@ def show_diocese():
                     if c.execute("SELECT id FROM paroisses WHERE nom=? AND commune=? AND ville=?", (nom, commune, ville)).fetchone():
                         st.error("❌ Cette paroisse existe déjà !")
                     else:
-                        c.execute("INSERT INTO paroisses (nom, commune, ville, responsable, bureau, diocese_id) VALUES (?,?,?,?,?,?)", (nom, commune, ville, responsable, bureau, 1))
+                        c.execute("INSERT INTO paroisses (nom, commune, ville, responsable, bureau, whatsapp_responsable, diocese_id) VALUES (?,?,?,?,?,?,?)", (nom, commune, ville, responsable, bureau, wa_resp.strip() or None, 1))
                         pid = c.lastrowid
                         username = f"paroisse_{pid}"
                         mdp = generer_mot_de_passe()
@@ -61,6 +73,20 @@ def show_diocese():
                         commit_and_sync()
                         st.success(f"✅ Paroisse '{nom}' créée")
                         st.markdown(f"<div style='background:#e8f5e9;padding:15px;border-radius:10px;border:1px solid #c8e6c9;'>🔑 Identifiant : <code style='color:#d84315;'>{username}</code><br>🔒 Mot de passe : <code style='color:#d84315;'>{mdp}</code></div>", unsafe_allow_html=True)
+                        if wa_resp.strip():
+                            _msg = ("🕊️ Bénédiction !\n\n"
+                                    + "La paroisse " + nom + " est enregistrée sur le Gestionnaire des Équipes du Rosaire (Diocèse de Grand-Bassam).\n\n"
+                                    + "🔐 Vos identifiants de connexion (portail gestionnaire) :\n"
+                                    + "👤 Utilisateur : " + username + "\n"
+                                    + "🔑 Mot de passe : " + mdp + "\n"
+                                    + "🌐 Le portail : " + URL_ESPACE_SPIRITUEL + "\n\n"
+                                    + "🔳 Lien signé de votre Espace communautaire (à mettre sur vos affiches — le QR correspondant se télécharge dans le gestionnaire, menu Gérer paroisses) :\n"
+                                    + URL_ESPACE_SPIRITUEL + "/?espace=1&p=" + str(pid) + "\n\n"
+                                    + "📿 Que le Rosaire unisse votre paroisse !")
+                            _wa_link = lien_whatsapp(wa_resp, _msg)
+                            st.markdown("#### 📨 Expédition des identifiants")
+                            st.caption("Un clic ouvre WhatsApp avec le message prêt — envoyez-le au responsable.")
+                            st.markdown(f'<a href="{_wa_link}" target="_blank" class="whatsapp-link">📱 Envoyer les identifiants au responsable</a>', unsafe_allow_html=True)
                 else:
                     st.error("Tous les champs sont requis")
 
@@ -70,10 +96,10 @@ def show_diocese():
         for state in ['show_equipes', 'show_equipiers', 'show_membres_equipe']:
             if state not in st.session_state: st.session_state[state] = None
         
-        paroisses = c.execute("SELECT id, nom, commune, ville, responsable, bureau FROM paroisses ORDER BY nom").fetchall()
+        paroisses = c.execute("SELECT id, nom, commune, ville, responsable, bureau, whatsapp_responsable FROM paroisses ORDER BY nom").fetchall()
         
         for p in paroisses:
-            pid, nom, commune, ville, responsable, bureau = p
+            pid, nom, commune, ville, responsable, bureau, wa_resp_actuel = p
             nb_equipes = c.execute("SELECT COUNT(*) FROM equipes WHERE paroisse_id=?", (pid,)).fetchone()[0]
             nb_membres = c.execute("SELECT COUNT(*) FROM membres WHERE paroisse_id=? AND statut='actif'", (pid,)).fetchone()[0]
             
@@ -91,7 +117,17 @@ def show_diocese():
                                        file_name=f"qr_paroisse_{pid}.png",
                                        key=f"qr_dl_{pid}", use_container_width=True)
                     st.caption("Imprimez ce QR sur les affiches de la paroisse : chaque scan est compté à son origine (fidèle anonyme).")
-                
+
+                # 📱 WhatsApp du responsable (édition — le responsable peut changer)
+                with st.expander("📱 WhatsApp du responsable paroissial"):
+                    _wa_new = st.text_input("Numéro WhatsApp", value=wa_resp_actuel or "",
+                                            key=f"wa_edit_{pid}")
+                    if st.button("💾 Enregistrer le numéro", key=f"wa_save_{pid}"):
+                        c.execute("UPDATE paroisses SET whatsapp_responsable=? WHERE id=?",
+                                  (_wa_new.strip() or None, pid))
+                        commit_and_sync()
+                        st.success("Numéro WhatsApp enregistré ! ✅")
+
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button(f"👥 Voir les équipes", key=f"btn_equipes_{pid}"):
