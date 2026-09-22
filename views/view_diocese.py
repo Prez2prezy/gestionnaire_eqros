@@ -1,4 +1,3 @@
-
 import os
 import shutil
 import streamlit as st
@@ -21,8 +20,7 @@ def show_diocese():
 
     menu = st.sidebar.radio("Navigation", [
         "🏛️ Voir diocèse", "🏘️ Créer paroisses", "📋 Gérer paroisses", 
-        "📅 Abonnements", "📌 Suivi", "🕊️ Espace spirituel", "🕯️ Thème pastoral",
-        "📡 Communication", "🔳 QR paroissiaux", "💬 WhatsApp", 
+        "📅 Abonnements", "📌 Suivi", "🕊️ Espace spirituel", "💬 WhatsApp", 
         "🔍 Rechercher matricule", "🔐 Gérer les accès", "📊 Statistiques", "📥 Export Excel",
         "📦 Archives", "🗑️ Réinitialiser"
     ])
