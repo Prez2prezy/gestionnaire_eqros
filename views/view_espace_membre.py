@@ -967,7 +967,7 @@ Les membres reçoivent chaque mois le feuillet de 16 pages « Le Rosaire en Équ
 
 En résumé, les Équipes du Rosaire sont un mouvement vivant et missionnaire, combinant prière personnelle, méditation communautaire et engagement apostolique, pour vivre et partager la foi catholique au quotidien.
 
-**Vous voulez rejoindre une équipe ?** Adressez-vous au {_etiquette} **{(_resp or "").strip() or "du Mouvement"}**.\n\nLa dizaine du jour vous attend déjà ici, juste en dessous de cette page : entrez votre jour de naissance et priez avec nous. 🕊️"""
+**Vous voulez rejoindre une équipe ?** Adressez-vous au {_etiquette} **{(_resp or "").strip() or "du Mouvement"}**.\n\n La dizaine du jour dans "🕯️ Un jour, une dizaine" vous attend déjà ici, juste en dessous de cette page : entrez votre jour de naissance et priez avec nous. 🕊️"""
     with st.expander("📿 Découvrez les Équipes du Rosaire !"):
         st.markdown(_txt)
         if _wa:
