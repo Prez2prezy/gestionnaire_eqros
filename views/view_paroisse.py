@@ -286,8 +286,9 @@ def show_paroisse():
         st.write(f"**Période observée :** {periode_affichage(annee)}")
         
         stats_p = c.execute('''SELECT COUNT(m.id), SUM(CASE WHEN a.annee_debut=? AND a.statut='paye' THEN 1 ELSE 0 END) FROM membres m LEFT JOIN abonnements a ON m.id = a.membre_id AND a.annee_debut=? WHERE m.paroisse_id=? AND m.statut='actif' ''', (annee, annee, pid)).fetchone()
-        total_p = stats_p[0] or 0
-        payes_p = stats_p[1] or 0
+        # v-pb1 — blindage : Turso peut renvoyer les agrégats en TEXTE
+        total_p = int(stats_p[0]) if stats_p and stats_p[0] else 0
+        payes_p = int(stats_p[1]) if stats_p and stats_p[1] else 0
         
         if total_p > 0:
             pourcent_str = str(round(payes_p / total_p * 100)) + "%"
@@ -305,8 +306,9 @@ def show_paroisse():
             stats_eq = c.execute('''SELECT COUNT(m.id) as total, SUM(CASE WHEN a.annee_debut=? AND a.statut='paye' THEN 1 ELSE 0 END) as payes FROM membres m LEFT JOIN abonnements a ON m.id = a.membre_id AND a.annee_debut=? WHERE m.equipe_id=? AND m.statut='actif' GROUP BY m.equipe_id''', (annee, annee, eq[0])).fetchone()
             
             if stats_eq:
-                total_eq = stats_eq[0] or 0
-                payes_eq = stats_eq[1] or 0
+                # v-pb1 — blindage identique
+                total_eq = int(stats_eq[0]) if stats_eq[0] else 0
+                payes_eq = int(stats_eq[1]) if stats_eq[1] else 0
                 
                 if total_eq > 0:
                     pourcent_eq_str = str(round(payes_eq / total_eq * 100)) + "%"
