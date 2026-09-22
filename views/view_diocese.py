@@ -28,6 +28,15 @@ def show_diocese():
             commit_and_sync()
         except Exception:
             pass
+    # Migration douce : WhatsApp du responsable DIOCÉSAIN
+    try:
+        c.execute("SELECT whatsapp_responsable FROM diocese LIMIT 1")
+    except Exception:
+        try:
+            c.execute("ALTER TABLE diocese ADD COLUMN whatsapp_responsable TEXT")
+            commit_and_sync()
+        except Exception:
+            pass
 
     menu = st.sidebar.radio("Navigation", [
         "🏛️ Voir diocèse", "🏘️ Créer paroisses", "📋 Gérer paroisses", 
@@ -42,10 +51,22 @@ def show_diocese():
             st.markdown(f'<div class="custom-info-box"><b>Responsable diocésain :</b> {d_info[1]}<br><b>Bureau diocésain :</b> {d_info[2]}</div>', unsafe_allow_html=True)
             with st.expander("✏️ Modifier les informations"):
                 with st.form("form_edit_dio"):
-                    nr = st.text_input("Nouveau responsable", value=d_info[1])
-                    nb = st.text_area("Nouveau bureau", value=d_info[2])
+                    c_ed1, c_ed2 = st.columns(2)
+                    with c_ed1:
+                        nr = st.text_input("Nouveau responsable", value=d_info[1])
+                        _wa_dio_actuel = ""
+                        try:
+                            _row_dio = c.execute("SELECT whatsapp_responsable FROM diocese WHERE id=?", (1,)).fetchone()
+                            if _row_dio and _row_dio[0]:
+                                _wa_dio_actuel = _row_dio[0]
+                        except Exception:
+                            pass
+                        _wa_dio = st.text_input("📱 WhatsApp du responsable diocésain", value=_wa_dio_actuel)
+                    with c_ed2:
+                        nb = st.text_area("Nouveau bureau", value=d_info[2])
                     if st.form_submit_button("💾 Enregistrer"):
                         c.execute("UPDATE diocese SET responsable=?, bureau=? WHERE id=?", (nr, nb, 1))
+                        c.execute("UPDATE diocese SET whatsapp_responsable=? WHERE id=?", (_wa_dio.strip() or None, 1))
                         commit_and_sync(); st.success("Mis à jour !"); st.rerun()
 
     elif menu == "🏘️ Créer paroisses":
