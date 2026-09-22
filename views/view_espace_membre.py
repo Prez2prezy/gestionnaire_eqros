@@ -921,15 +921,29 @@ def _depliant_mouvement(paroisse_id=None):
     s'adresse au responsable de SA paroisse ; sinon, appel générique.
     Texte fourni et validé par l'utilisateur (fondation 1955, Ordre des
     Prêcheurs 1972, Dominique YOVAN 1980, organisation, feuillets)."""
-    _resp = "le responsable paroissial"
+    _resp = None
     _wa = None
+    _etiquette = "le responsable paroissial"
     if paroisse_id:
+        # Arrivée par QR signé → contact du responsable DE CETTE PAROISSE
+        _etiquette = "le responsable paroissial"
         try:
             _r = c.execute("SELECT responsable, whatsapp_responsable FROM paroisses WHERE id=?", (paroisse_id,)).fetchone()
             if _r and _r[0]:
                 _resp = _r[0]
             if _r and len(_r) > 1 and _r[1]:
                 _wa = _r[1]
+        except Exception:
+            pass
+    else:
+        # Visite directe (sans QR) → contact du RESPONSABLE DIOCÉSAIN
+        _etiquette = "le responsable diocésain"
+        try:
+            _d = c.execute("SELECT responsable, whatsapp_responsable FROM diocese WHERE id=?", (1,)).fetchone()
+            if _d and _d[0]:
+                _resp = _d[0]
+            if _d and len(_d) > 1 and _d[1]:
+                _wa = _d[1]
         except Exception:
             pass
     _txt = f"""**Les Équipes du Rosaire** sont un mouvement catholique de prière et d'apostolat des laïcs, fondé en 1955, qui rassemble des petits groupes pour méditer le Rosaire et vivre la mission évangélique au quotidien.
@@ -953,11 +967,14 @@ Les membres reçoivent chaque mois le feuillet de 16 pages « Le Rosaire en Équ
 
 En résumé, les Équipes du Rosaire sont un mouvement vivant et missionnaire, combinant prière personnelle, méditation communautaire et engagement apostolique, pour vivre et partager la foi catholique au quotidien.
 
-**Vous voulez rejoindre une équipe ?** Adressez-vous au responsable paroissial **{_resp}**. La dizaine du jour vous attend déjà ici, juste en dessous de cette page : entrez votre jour de naissance et priez avec nous. 🕊️"""
+**Vous voulez rejoindre une équipe ?** Adressez-vous à {_etiquette} **{(_resp or "").strip() or "du Mouvement"}**. La dizaine du jour vous attend déjà ici, juste en dessous de cette page : entrez votre jour de naissance et priez avec nous. 🕊️"""
     with st.expander("📿 Découvrez les Équipes du Rosaire !"):
         st.markdown(_txt)
         if _wa:
-            _lien_resp = lien_whatsapp(_wa, "Bonjour, je souhaite rejoindre une Équipe du Rosaire dans notre paroisse. Merci de me renseigner. 📿")
+            _msg_resp = ("Bonjour, je souhaite rejoindre une Équipe du Rosaire. "
+                         if not paroisse_id else
+                         "Bonjour, je souhaite rejoindre une Équipe du Rosaire dans notre paroisse. ")
+            _lien_resp = lien_whatsapp(_wa, _msg_resp + "Merci de me renseigner. 📿")
             if _lien_resp:
                 st.markdown(f'<a href="{_lien_resp}" target="_blank" class="whatsapp-link">📱 Écrire au responsable</a>', unsafe_allow_html=True)
 
