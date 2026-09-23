@@ -60,7 +60,7 @@ def definir_mot_de_passe(p):
     return f"pbkdf2${salt}${dk.hex()}"
 
 def verifier_mot_de_passe(p, stocke):
-    """Vérifie indifféremment un hachage PBKDF2 (v2) ou SHA-256 (legacy)."""
+    """Vérifie indifféremment un hachage PBKDF2 (v2) ou SHA-256 (ancien)."""
     if not stocke:
         return False
     if stocke.startswith("pbkdf2$"):
@@ -73,7 +73,7 @@ def verifier_mot_de_passe(p, stocke):
     return secrets.compare_digest(hash_password(p), stocke)
 
 def migrer_hash_si_legacy(user_id, stocke, mot_de_passe_en_clair):
-    """Au login réussi d'un compte SHA-256 : re-hachage PBKDF2 transparent."""
+    """Au login réussi d'un compte ancien (SHA-256) : re-hachage PBKDF2 transparent."""
     if stocke and not stocke.startswith("pbkdf2$"):
         try:
             c.execute("UPDATE utilisateurs SET password=? WHERE id=?",
