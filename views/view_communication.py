@@ -11,6 +11,10 @@ from database import c, commit_and_sync
 from services import (sauvegarder_illustration, sauvegarder_audio,
                       envoyer_notification_telegram)
 
+def _liste_paroisses():
+    """Liste des paroisses pour le choix de cible (id, nom)."""
+    return c.execute("SELECT id, nom FROM paroisses ORDER BY nom").fetchall()
+
 
 def _assurer_table():
     """Crée la table des soumissions si absente (idempotent, sans risque)."""
@@ -52,13 +56,13 @@ def _soumettre(d):
     c.execute("""INSERT INTO soumissions_comm
                  (auteur_id, type_contenu, titre, contenu_texte, image_url,
                   fichier_url, video_url, date_evenement, lieu, statut,
-                  date_soumission)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'attente', ?)""",
+                  date_soumission, paroisse_cible)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'attente', ?, ?)""",
               (st.session_state.get('user_id'), d.get("type_contenu"),
                d.get("titre"), d.get("contenu_texte"), d.get("image_url"),
                d.get("fichier_url"), d.get("video_url"),
                d.get("date_evenement"), d.get("lieu"),
-               date.today().isoformat()))
+               date.today().isoformat(), d.get("paroisse_cible")))
     commit_and_sync()
     try:
         envoyer_notification_telegram(
@@ -95,29 +99,38 @@ def show_communication():
             contenu = st.text_area("Contenu du texte")
             img = st.file_uploader("Illustration (photo — facultatif)", type=["jpg", "jpeg", "png"])
             pdf_url = st.text_input("Lien PDF (facultatif — https://...)")
+            _paroisses = _liste_paroisses()
+            _opts = ["🌍 Diocèse (tous)"] + [f"🏘️ Paroisse : {p[1]}" for p in _paroisses]
+            cible_pm = st.selectbox("🎯 Cible de publication", _opts)
             if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
                 if not titre.strip() or not contenu.strip():
                     st.error("Le titre et le contenu sont obligatoires.")
                 else:
                     img_url = sauvegarder_illustration(img) if img else None
+                    _cible = None if cible_pm.startswith("🌍") else _paroisses[[i for i, o in enumerate(_opts) if o == cible_pm][0] - 1][0]
                     _soumettre({
                         "type_contenu": "priere" if type_pm == "Prière" else "meditation",
                         "titre": titre.strip(), "contenu_texte": contenu.strip(),
-                        "image_url": img_url, "fichier_url": pdf_url.strip() or None})
+                        "image_url": img_url, "fichier_url": pdf_url.strip() or None,
+                        "paroisse_cible": _cible})
 
     # ---------------- MUSIQUE ----------------
     with t_mu:
         with st.form("form_mu", clear_on_submit=True):
             titre_mu = st.text_input("Titre du morceau")
             audio = st.file_uploader("Fichier audio (MP3)", type=["mp3", "wav", "m4a"])
+            _paroisses = _liste_paroisses()
+            _opts = ["🌍 Diocèse (tous)"] + [f"🏘️ Paroisse : {p[1]}" for p in _paroisses]
+            cible_mu = st.selectbox("🎯 Cible de publication", _opts)
             if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
                 if not titre_mu.strip() or audio is None:
                     st.error("Le titre et le fichier audio sont obligatoires.")
                 else:
                     url_mu = sauvegarder_audio(audio)
                     if url_mu:
+                        _cible = None if cible_mu.startswith("🌍") else _paroisses[[i for i, o in enumerate(_opts) if o == cible_mu][0] - 1][0]
                         _soumettre({"type_contenu": "audio", "titre": titre_mu.strip(),
-                                    "fichier_url": url_mu})
+                                    "fichier_url": url_mu, "paroisse_cible": _cible})
                     else:
                         st.error("L'envoi du fichier a échoué. Réessayez.")
 
@@ -126,16 +139,20 @@ def show_communication():
         with st.form("form_bd", clear_on_submit=True):
             texte_bd = st.text_area("Texte de l'annonce défilante (court et percutant)",
                                     max_chars=250)
-            cible = st.selectbox("Cible de l'annonce",
-                                 ["🌍 Public (tous)", "👤 Membres uniquement"])
+            _portee = st.selectbox("Portée", ["🌍 Public (tous)", "👤 Membres uniquement"])
+            _paroisses = _liste_paroisses()
+            _opts = ["🌍 Diocèse (tous)"] + [f"🏘️ Paroisse : {p[1]}" for p in _paroisses]
+            cible_bd = st.selectbox("🎯 Cible de publication", _opts)
             if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
                 if not texte_bd.strip():
                     st.error("Le texte est obligatoire.")
                 else:
+                    _cible = None if cible_bd.startswith("🌍") else _paroisses[[i for i, o in enumerate(_opts) if o == cible_bd][0] - 1][0]
                     _soumettre({"type_contenu": "annonce_defilante",
                                 "titre": "Bande défilante",
                                 "contenu_texte": texte_bd.strip(),
-                                "fichier_url": "membre" if cible.startswith("👤") else None})
+                                "fichier_url": ("membre" if _portee.startswith("👤") else "defaut") if not _cible else None,
+                                "paroisse_cible": _cible})
 
     # ---------------- ÉVÈNEMENT ----------------
     with t_ev:
@@ -149,13 +166,18 @@ def show_communication():
                 lieu_ev = st.text_input("Lieu")
             affiche = st.file_uploader("Affiche (photo — facultatif)", type=["jpg", "jpeg", "png"])
             video_url = st.text_input("Lien vidéo (facultatif — https://...)")
+            _paroisses = _liste_paroisses()
+            _opts = ["🌍 Diocèse (tous)"] + [f"🏘️ Paroisse : {p[1]}" for p in _paroisses]
+            cible_ev = st.selectbox("🎯 Cible de publication", _opts)
             if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
                 img_ev = sauvegarder_illustration(affiche) if affiche else None
+                _cible = None if cible_ev.startswith("🌍") else _paroisses[[i for i, o in enumerate(_opts) if o == cible_ev][0] - 1][0]
                 _soumettre({"type_contenu": "evenement", "titre": type_ev,
                             "date_evenement": d_ev.isoformat(),
                             "lieu": lieu_ev.strip() or None,
                             "image_url": img_ev,
-                            "video_url": video_url.strip() or None})
+                            "video_url": video_url.strip() or None,
+                            "paroisse_cible": _cible})
 
     # ---------------- JOURNAL DES PUBLICATIONS ----------------
     with t_hist:
