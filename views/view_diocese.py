@@ -385,8 +385,8 @@ def show_diocese():
                    "Ce qui est validé rejoint l'Espace de Prière : évangélisation élargie, membres et visiteurs.")
         afficher_messages_flash()
 
-        tab_theme, tab_com, tab_defil, tab_manage = st.tabs(
-            ["🕯️ Thème pastoral", "📡 Communication", "📺 Bandes défilantes", "📋 Contenu existant"])
+        tab_theme, tab_com, tab_defil, tab_visuels, tab_manage = st.tabs(
+            ["🕯️ Thème pastoral", "📡 Communication", "📺 Bandes défilantes", "🖼️ Affiches & Bandes-annonces", "📋 Contenu existant"])
 
         with tab_theme:
             gerer_theme_pastoral()
@@ -434,6 +434,9 @@ def show_diocese():
                             c.execute("DELETE FROM espace_spirituel WHERE id=?", (b[0],))
                             commit_and_sync()
                             st.rerun()
+
+        with tab_visuels:
+            gerer_affiches_bande_annonces()
 
         with tab_manage:
             contenus = c.execute("""SELECT id, type_contenu, titre, date_publication, image_url, fichier_url
