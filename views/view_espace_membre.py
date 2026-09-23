@@ -984,7 +984,7 @@ def _render_coin_affiche():
     erreur_sql = None
     try:
         lignes = c.execute("""SELECT type_evenement, date_evenement, lieu, affiche_url, video_url FROM evenements
-                              WHERE (affiche_url IS NOT NULL OR video_url IS NOT NULL) AND date_evenement >= ?
+                              WHERE date_evenement >= ?
                               ORDER BY date_evenement ASC LIMIT 5""",
                           (date.today().isoformat(),)).fetchall()
     except Exception as e:
@@ -1043,38 +1043,44 @@ def _render_coin_affiche():
 
 
 def _render_fil_actualites():
-    """v7.6 — fil du jour BLINDÉ : la ligne est complétée à 5 cases avant
-    tout accès par index (fini l'IndexError, quelle que soit la donnée)."""
-    dernier = c.execute("""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
-                           FROM espace_spirituel
-                           WHERE type_contenu IN ('priere', 'meditation')
-                           ORDER BY date_publication DESC, id DESC LIMIT 1""").fetchone()
+    """v7.7 — 5 ZONES : les 5 dernières prières/méditations coexistent
+    (fini le remplacement de l'ancienne). Chaque contenu = UNE CARTE
+    PARCHMIN (image + texte unifiés, une seule pièce HTML — pattern validé).
+    Blindage par index conservé."""
+    lignes = c.execute("""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
+                          FROM espace_spirituel
+                          WHERE type_contenu IN ('priere', 'meditation')
+                          ORDER BY date_publication DESC, id DESC LIMIT 5""").fetchall()
 
-    if dernier:
-        ligne = list(dernier) + [None] * max(0, 5 - len(dernier))
-        etiquette = {"priere": "", "meditation": ""}.get(ligne[0], "📿 Du jour")
-        texte = ligne[2] or ""
-        url_pdf = ligne[4]
-        if not url_pdf:
-            texte, url_pdf = _extraire_pdf_legacy(texte)
-
-        if ligne[3] and str(ligne[3]).startswith("http"):
-            try:
-                st.image(ligne[3], use_container_width=True)
-            except Exception:
-                st.warning("Illustration momentanément indisponible.")
-
-        texte_html = texte.replace("\n", "<br>")
-        st.markdown(
-            f'<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35);">'
-            f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{html.escape(ligne[1] or "")}</div>'
-            f'<div style="color:#4527a0; font-size:0.98rem; line-height:1.6; text-align:left;">{texte_html}</div>'
-            f'</div>', unsafe_allow_html=True)
-
-        if url_pdf:
-            _render_pdf_inline(url_pdf)
-    else:
+    if not lignes:
         st.info("Aucun contenu spirituel n'a encore été publié.")
+    else:
+        for dernier in lignes:
+            ligne = list(dernier) + [None] * max(0, 5 - len(dernier))
+            etiquette = {"priere": "🙏 Prière", "meditation": "📖 Méditation"}.get(ligne[0], "📿 Du jour")
+            texte = ligne[2] or ""
+            url_pdf = ligne[4]
+            if not url_pdf:
+                texte, url_pdf = _extraire_pdf_legacy(texte)
+
+            img_html = (f'<img src="{ligne[3]}" alt="Illustration" style="border-radius:10px;'
+                        f' width:100%; height:auto; display:block; margin:0 0 12px 0;">'
+                        if ligne[3] and str(ligne[3]).startswith("http") else "")
+
+            texte_html = texte.replace("\n", "<br>")
+            st.markdown(
+                f'<div style="background:linear-gradient(135deg,#FFF8E1 0%,#FFF9C4 100%);'
+                f' border:1px solid #E8D9A0; border-radius:15px; padding:18px; margin:12px 10px;'
+                f' box-shadow:0 3px 10px rgba(0,0,0,0.15);">'
+                f'<div style="color:#4A148C; font-size:1.1rem; font-weight:bold;'
+                f' border-bottom:1px solid #E8D9A0; padding-bottom:6px; margin-bottom:10px;">'
+                f'{etiquette} — {html.escape(ligne[1] or "")}</div>'
+                f'{img_html}'
+                f'<div style="color:#4527a0; font-size:0.98rem; line-height:1.7; text-align:left;">{texte_html}</div>'
+                f'</div>', unsafe_allow_html=True)
+
+            if url_pdf:
+                _render_pdf_inline(url_pdf)
 
     _render_coin_affiche()
 
@@ -1126,11 +1132,14 @@ def show_espace_membre(matloc_membre=None):
 
     # ================= ÉTAT 1 : VUE PUBLIQUE =================
     if not matloc_membre:
-        # v7.6 : compteur fusionné — 1 visite = 1 ARRIVÉE (les navigations
-        # internes portent &nav=1). Journal missionnaire si QR signé.
-        if "nav" not in st.query_params and "visite_communaute" not in st.session_state:
+        # v7.6.4 — compteur : l'ARRIVÉE est le premier chargement SANS &nav=1
+        # (règle v7.5 conservée) MAIS avec filet : si aucun comptage n'a eu
+        # lieu pour ce navigateur (nouvelle session réelle), on compte une
+        # seule fois même si le visiteur atterrit via un lien de menu.
+        if "visite_communaute" not in st.session_state:
             st.session_state["visite_communaute"] = True
-            compter_visite("communautaire")
+            if "nav" not in st.query_params:
+                compter_visite("communautaire")
             _origine = st.session_state.get("paroisse_origine")
             if _origine:
                 try:
@@ -1225,9 +1234,10 @@ def show_espace_membre(matloc_membre=None):
         return
 
     # v7.6 : compteur membre — 1 visite = 1 ARRIVÉE (même sémantique)
-    if "nav" not in st.query_params and "visite_membre" not in st.session_state:
+    if "visite_membre" not in st.session_state:
         st.session_state["visite_membre"] = True
-        compter_visite("membre")
+        if "nav" not in st.query_params:
+            compter_visite("membre")
 
     rub, sub = _lire_nav(RUBRIQUES_MEMBRE)
     _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert,
