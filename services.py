@@ -49,7 +49,38 @@ def afficher_messages_flash():
 # SÉCURITÉ & IDENTIFIANTS
 # ============================================================
 # TODO futur : pbkdf2_hmac + salt avec re-hash progressif au login.
-def hash_password(p): return hashlib.sha256(p.encode()).hexdigest()
+def hash_password(p):
+    """SHA-256 — compatibilité historique uniquement. Pour un NOUVEAU mot de passe,
+    utilisez definir_mot_de_passe()."""
+    return hashlib.sha256(p.encode()).hexdigest()
+
+def definir_mot_de_passe(p):
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", p.encode(), bytes.fromhex(salt), 200_000)
+    return f"pbkdf2${salt}${dk.hex()}"
+
+def verifier_mot_de_passe(p, stocke):
+    """Vérifie indifféremment un hachage PBKDF2 (v2) ou SHA-256 (legacy)."""
+    if not stocke:
+        return False
+    if stocke.startswith("pbkdf2$"):
+        try:
+            _, salt, h = stocke.split("$", 2)
+            dk = hashlib.pbkdf2_hmac("sha256", p.encode(), bytes.fromhex(salt), 200_000)
+            return secrets.compare_digest(dk.hex(), h)
+        except Exception:
+            return False
+    return secrets.compare_digest(hash_password(p), stocke)
+
+def migrer_hash_si_legacy(user_id, stocke, mot_de_passe_en_clair):
+    """Au login réussi d'un compte SHA-256 : re-hachage PBKDF2 transparent."""
+    if stocke and not stocke.startswith("pbkdf2$"):
+        try:
+            c.execute("UPDATE utilisateurs SET password=? WHERE id=?",
+                      (definir_mot_de_passe(mot_de_passe_en_clair), user_id))
+            commit_and_sync()
+        except Exception:
+            pass
 
 def generer_mot_de_passe(l=8):
     return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(l))
