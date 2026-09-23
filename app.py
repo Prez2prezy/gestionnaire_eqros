@@ -134,86 +134,44 @@ def afficher_logo():
 # --- AUTH ---
 if 'logged_in' not in st.session_state:
     afficher_logo()
-    
     st.caption("🔒 Application réservée aux gestionnaires autorisés.")
-    with st.expander("📜 Mentions Légales & Confidentialité"):
-        st.markdown("""
-        **Responsable de traitement :** Diocèse de Grand-Bassam.
-        
-        **Finalité :** Gestion administrative, spirituelle et logistique des membres des équipes du Rosaire (contacts, présences, abonnements, photos).
-        
-        **Données collectées :** Nom, prénom, date de naissance, numéro WhatsApp, photo d'identité.
-        
-        **Durée de conservation :** Les données sont conservées tant que le membre est actif, puis archivées. Elles sont supprimées 3 ans après le départ définitif.
-        
-        **Vos droits :** Vous pouvez demander au responsable de votre équipe de modifier ou supprimer vos informations en lui envoyant un message WhatsApp.
-        
-        *Conformément aux principes de protection des données personnelles.*
-        """)
 
-        st.sidebar.title("🔐 Connexion")
-
-    # v7.6.3 — PARADE AUTOFILL (correcte) : les gestionnaires de mots de passe
-    # remplissent les champs SANS déclencher l'événement que Streamlit écoute
-    # → les widgets restent « vides » en interne (l'utilisateur devait cliquer
-    # dans le champ pour « réveiller » la valeur). Correctif : détecter toute
-    # valeur apparue SANS événement « input » (signature de l'autofill) et la
-    # faire connaître à Streamlit (setter natif + événement synthétique).
-    # NB : st.components.v1.html n'accepte PAS key= → appel SANS key.
-    _comp_html("""
-        <script>
-        (function(){
-          function brancher(f){
-            if(f.dataset.pf76 !== undefined) return;
-            f.dataset.pf76 = f.value;
-            f.addEventListener('input', function(){ f.dataset.pf76 = f.value; });
-          }
-          var essais = 0;
-          var t = setInterval(function(){
-            essais++;
-            try {
-              var d = window.parent.document;
-              var zone = d.querySelector('[data-testid="stSidebar"]') || d;
-              var ins = zone.querySelectorAll('input[type="text"], input[type="password"]');
-              for(var i=0;i<ins.length;i++){ brancher(ins[i]); }
-              for(var j=0;j<ins.length;j++){
-                var f = ins[j];
-                if(f.value !== (f.dataset.pf76 || '')){
-                  try{
-                    var natif = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;
-                    natif.call(f, f.value);
-                  }catch(e){}
-                  f.dispatchEvent(new Event('input', {bubbles:true}));
-                  f.dispatchEvent(new Event('change', {bubbles:true}));
-                  f.dataset.pf76 = f.value;
-                }
-              }
-            } catch(e) {}
-            if(essais > 600){ clearInterval(t); }
-          }, 300);
-        })();
-        </script>
-    """, height=0)
+    # 🔑 Secours diocèse : activez en ajoutant RESET_TOKEN dans les secrets Streamlit
+    _reset_token = None
+    try:
+        _reset_token = st.secrets.get("RESET_TOKEN")
+    except Exception:
+        pass
+    if _reset_token:
+        with st.sidebar.expander("🔑 Mot de passe oublié ?"):
+            tok = st.text_input("Clé de secours", type="password", key="rst_tok")
+            nu = st.text_input("Utilisateur", value="diocese", key="rst_user")
+            np1 = st.text_input("Nouveau mot de passe", type="password", key="rst_pwd")
+            if st.button("Réinitialiser"):
+                if tok != _reset_token or not np1:
+                    st.sidebar.error("Clé invalide ou mot de passe vide.")
+                elif not c.execute("SELECT 1 FROM utilisateurs WHERE username=?", ((nu or "").strip(),)).fetchone():
+                    st.sidebar.error("Utilisateur inconnu.")
+                else:
+                    c.execute("UPDATE utilisateurs SET password=? WHERE username=?",
+                              (definir_mot_de_passe(np1), (nu or "").strip()))
+                    commit_and_sync()
+                    st.sidebar.success("Mot de passe réinitialisé ! Connectez-vous.")
 
     u = st.sidebar.text_input("Utilisateur", key="login_user")
     p = st.sidebar.text_input("Mot de passe", type="password", key="login_pass")
-
     if st.sidebar.button("Se connecter"):
-        user = c.execute("SELECT * FROM utilisateurs WHERE username=? AND password=?", ((u or "").strip(), hash_password(p or ""))).fetchone()
-        if user:
+        row = c.execute("SELECT id, username, password, role, diocese_id, paroisse_id, equipe_id FROM utilisateurs WHERE username=?",
+                        ((u or "").strip(),)).fetchone()
+        if row and verifier_mot_de_passe(p or "", row[2]):
+            migrer_hash_si_legacy(row[0], row[2], p or "")
             st.session_state.update({
-                'logged_in': True,
-                'user_id': user[0],
-                'username': user[1],
-                'role': user[3],
-                'diocese_id': user[4],
-                'paroisse_id': user[5],
-                'equipe_id': user[6]
+                'logged_in': True, 'user_id': row[0], 'username': row[1],
+                'role': row[3], 'diocese_id': row[4], 'paroisse_id': row[5], 'equipe_id': row[6]
             })
-            st.success(f"Bienvenue {(u or '').strip()}")
             st.rerun()
         else:
-            st.sidebar.error("Identifiants incorrects. Si les champs semblent remplis automatiquement, effacez-les et retapez-les une fois manuellement.")
+            st.sidebar.error("Identifiants incorrects.")
     st.stop()
 
 afficher_logo()
