@@ -17,21 +17,20 @@ def _liste_paroisses():
 
 
 def _assurer_table():
-    """Crée la table des soumissions si absente (idempotent, sans risque)."""
     c.execute("""CREATE TABLE IF NOT EXISTS soumissions_comm (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    auteur_id INTEGER,
-                    type_contenu TEXT,
-                    titre TEXT,
-                    contenu_texte TEXT,
-                    image_url TEXT,
-                    fichier_url TEXT,
-                    video_url TEXT,
-                    date_evenement TEXT,
-                    lieu TEXT,
-                    statut TEXT DEFAULT 'attente',
-                    motif_refus TEXT,
-                    date_soumission TEXT)""")
+                    auteur_id INTEGER, type_contenu TEXT, titre TEXT,
+                    contenu_texte TEXT, image_url TEXT, fichier_url TEXT,
+                    video_url TEXT, date_evenement TEXT, lieu TEXT,
+                    statut TEXT DEFAULT 'attente', motif_refus TEXT,
+                    date_soumission TEXT, paroisse_cible INTEGER)""")
+    try:
+        c.execute("SELECT paroisse_cible FROM soumissions_comm LIMIT 1")
+    except Exception:
+        try:
+            c.execute("ALTER TABLE soumissions_comm ADD COLUMN paroisse_cible INTEGER")
+        except Exception:
+            pass
     commit_and_sync()
 
 
@@ -151,7 +150,7 @@ def show_communication():
                     _soumettre({"type_contenu": "annonce_defilante",
                                 "titre": "Bande défilante",
                                 "contenu_texte": texte_bd.strip(),
-                                "fichier_url": ("membre" if _portee.startswith("👤") else "defaut") if not _cible else None,
+                                "fichier_url": ("membre" if _portee.startswith("👤") else "defaut"),
                                 "paroisse_cible": _cible})
 
     # ---------------- ÉVÈNEMENT ----------------
