@@ -12,7 +12,10 @@ logger = logging.getLogger(__name__)
 # --- Connexion DB ---
 def create_connection():
     try:
-        from libsql import connect as turso_connect
+        try:
+            from libsql import connect as turso_connect
+        except ImportError:
+            from libsql_experimental import connect as turso_connect
         import streamlit as st
         url = st.secrets.get("TURSO_URL")
         token = st.secrets.get("TURSO_AUTH_TOKEN")
@@ -179,7 +182,7 @@ def init_tables_and_migrations():
     # WhatsApp responsables
     safe_migrate("ALTER TABLE paroisses ADD COLUMN whatsapp_responsable TEXT")
     safe_migrate("ALTER TABLE diocese ADD COLUMN whatsapp_responsable TEXT")
-    # Sécurité base ancienne : colonnes/tables ajoutées rétroactivement
+    # Base ancienne : colonne ajoutée rétroactivement
     safe_migrate("ALTER TABLE soumissions_comm ADD COLUMN paroisse_cible INTEGER")
 
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
