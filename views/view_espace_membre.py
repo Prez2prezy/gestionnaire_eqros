@@ -19,7 +19,7 @@ import streamlit as st
 from datetime import date
 from streamlit.components.v1 import html as _comp_html
 from database import c, commit_and_sync
-from services import safe_date, compter_visite
+from services import safe_date, compter_visite, lien_whatsapp
 from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
 
 
