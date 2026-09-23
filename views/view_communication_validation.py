@@ -13,6 +13,26 @@ LIBELLES = {"priere": "🙏 Prière", "meditation": "📖 Méditation",
             "evenement": "📅 Évènement"}
 
 
+def _assurer_colonnes_cible():
+    """Migration douce : paroisse_cible sur soumissions + tables publiques."""
+    for _t in ("soumissions_comm", "espace_spirituel", "evenements"):
+        try:
+            c.execute(f"SELECT paroisse_cible FROM {_t} LIMIT 1")
+        except Exception:
+            try:
+                c.execute(f"ALTER TABLE {_t} ADD COLUMN paroisse_cible INTEGER")
+                commit_and_sync()
+            except Exception:
+                pass
+
+
+def _nom_paroisse(pid):
+    if not pid:
+        return None
+    r = c.execute("SELECT nom FROM paroisses WHERE id=?", (pid,)).fetchone()
+    return r[0] if r else None
+
+
 def _notifier(soumission, action):
     try:
         if action == "publie":
@@ -26,13 +46,15 @@ def _notifier(soumission, action):
 
 
 def show_validation_communication():
+    _assurer_colonnes_cible()
     st.markdown('<h2 style="color:#1A237E;">🕊️ Soumissions du Service Communication</h2>', unsafe_allow_html=True)
     st.caption("Le Service Communication prépare — VOUS seul publiez. Chaque contenu validé "
                "rejoint l'Espace de Prière (évangélisation élargie : visible de toute la "
                "communauté, membres et visiteurs).")
 
     en_attente = c.execute("""SELECT id, type_contenu, titre, contenu_texte, image_url,
-                                     fichier_url, video_url, date_evenement, lieu, date_soumission
+                                     fichier_url, video_url, date_evenement, lieu,
+                                     date_soumission, paroisse_cible
                               FROM soumissions_comm WHERE statut='attente'
                               ORDER BY id ASC""").fetchall()
 
@@ -54,6 +76,8 @@ def show_validation_communication():
                 st.markdown(f"🎬 [Vidéo jointe]({s[6]})")
             if s[1] == "evenement":
                 st.write(f"📅 **Date :** {s[7] or 'à définir'} — 📍 **Lieu :** {s[8] or 'à définir'}")
+            _nom_c = _nom_paroisse(s[10]) if len(s) > 10 else None
+            st.info("🎯 Cible : " + (_nom_c if _nom_c else "🌍 Diocèse (tous)"))
 
             c_pub, c_ref = st.columns(2)
             with c_pub:
@@ -61,27 +85,31 @@ def show_validation_communication():
                     if s[1] in ("priere", "meditation"):
                         c.execute("""INSERT INTO espace_spirituel
                                      (type_contenu, titre, contenu_texte, image_url,
-                                      fichier_url, date_publication, auteur_nom)
-                                     VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                                      fichier_url, date_publication, auteur_nom, paroisse_cible)
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                                   (s[1], s[2], s[3], s[4], s[5],
-                                   date.today().isoformat(), "Service Communication"))
+                                   date.today().isoformat(), "Service Communication",
+                                   s[10] if len(s) > 10 else None))
                     elif s[1] == "audio":
                         c.execute("""INSERT INTO espace_spirituel
-                                     (type_contenu, titre, fichier_url, date_publication, auteur_nom)
-                                     VALUES (?, ?, ?, ?, ?)""",
-                                  ("audio", s[2], s[5], date.today().isoformat(), "Service Communication"))
+                                     (type_contenu, titre, fichier_url, date_publication, auteur_nom, paroisse_cible)
+                                     VALUES (?, ?, ?, ?, ?, ?)""",
+                                  ("audio", s[2], s[5], date.today().isoformat(), "Service Communication",
+                                   s[10] if len(s) > 10 else None))
                     elif s[1] == "annonce_defilante":
                         cible = s[5] if s[5] in ("membre", None) else None
                         c.execute("""INSERT INTO espace_spirituel
-                                     (type_contenu, titre, contenu_texte, fichier_url, date_publication, auteur_nom)
-                                     VALUES (?, ?, ?, ?, ?, ?)""",
+                                     (type_contenu, titre, contenu_texte, fichier_url, date_publication, auteur_nom, paroisse_cible)
+                                     VALUES (?, ?, ?, ?, ?, ?, ?)""",
                                   ("annonce_defilante", s[2] or "Bande défilante", s[3], cible,
-                                   date.today().isoformat(), "Service Communication"))
+                                   date.today().isoformat(), "Service Communication",
+                                   s[10] if len(s) > 10 else None))
                     elif s[1] == "evenement":
                         c.execute("""INSERT INTO evenements
-                                     (type_evenement, date_evenement, lieu, affiche_url, video_url, auteur_nom)
-                                     VALUES (?, ?, ?, ?, ?, ?)""",
-                                  (s[2], s[7], s[8], s[4], s[6], "Service Communication"))
+                                     (type_evenement, date_evenement, lieu, affiche_url, video_url, auteur_nom, paroisse_cible)
+                                     VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                                  (s[2], s[7], s[8], s[4], s[6], "Service Communication",
+                                   s[10] if len(s) > 10 else None))
                     c.execute("UPDATE soumissions_comm SET statut='publie' WHERE id=?", (s[0],))
                     commit_and_sync()
                     _notifier(s, "publie")
