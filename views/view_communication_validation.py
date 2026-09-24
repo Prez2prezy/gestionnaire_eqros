@@ -97,7 +97,7 @@ def show_validation_communication():
                                   ("audio", s[2], s[5], date.today().isoformat(), "Service Communication",
                                    s[10] if len(s) > 10 else None))
                     elif s[1] == "annonce_defilante":
-                        cible = s[5] if s[5] in ("membre", None) else None
+                        cible = s[5] if s[5] in ("membre", "defaut") else None
                         c.execute("""INSERT INTO espace_spirituel
                                      (type_contenu, titre, contenu_texte, fichier_url, date_publication, auteur_nom, paroisse_cible)
                                      VALUES (?, ?, ?, ?, ?, ?, ?)""",
