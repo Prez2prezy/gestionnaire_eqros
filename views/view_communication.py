@@ -17,6 +17,7 @@ def _liste_paroisses():
 
 
 def _assurer_table():
+    """Crée la table des soumissions si absente (idempotent, sans risque)."""
     c.execute("""CREATE TABLE IF NOT EXISTS soumissions_comm (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     auteur_id INTEGER, type_contenu TEXT, titre TEXT,
