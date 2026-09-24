@@ -13,23 +13,20 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
 
 def generer_identifiant_equipe(nom_paroisse, nom_commune, nom_equipe, paroisse_id):
     nom_propre = nom_paroisse.lower()
-    # CORRECTION DU BUG : On remplace "l'[\w]*" par "l'" pour ne manger que le "l'" et pas le mot suivant (ex: Assomption)
     motifs_exclus = [r"notre[\s\-]*dame", r"sainte?", r"st\.?", r"notre", r"dame", r"du\b", r"d'", r"l'", r"de\b"]
-    for motif in motifs_exclus: nom_propre = re.sub(motif, "", nom_propre, flags=re.IGNORECASE)
+    for motif in motifs_exclus:
+        nom_propre = re.sub(motif, "", nom_propre, flags=re.IGNORECASE)
     nom_propre = re.sub(r"[\s'\-]", "", nom_propre)
-    
-    # Sécurité : Si le nom est vide après nettoyage, on prend les 3 premières lettres du mot "Paroisse"
     prefixe_par = sans_accents(nom_propre[:3]) if nom_propre else "par"
     prefixe_com = sans_accents(nom_commune[:3])
-    
-    est_jeune = "jeune" in nom_equipe.lower()
-    if est_jeune:
-        suffixe = "j"
-        nb_existant = c.execute("SELECT COUNT(*) FROM equipes WHERE paroisse_id=? AND LOWER(nom_equipe) LIKE '%jeune%'", (paroisse_id,)).fetchone()[0]
-    else:
-        suffixe = "eq"
-        nb_existant = c.execute("SELECT COUNT(*) FROM equipes WHERE paroisse_id=? AND LOWER(nom_equipe) NOT LIKE '%jeune%'", (paroisse_id,)).fetchone()[0]
-    return f"{prefixe_par}{prefixe_com}{suffixe}{nb_existant + 1}".lower()
+    suffixe = "j" if "jeune" in nom_equipe.lower() else "eq"
+    base = f"{prefixe_par}{prefixe_com}{suffixe}"
+    # Anti-collision : on vérifie parmi TOUS les comptes existants (même supprimés
+    # puis recréés, jamais deux fois le même identifiant de connexion)
+    n = 1
+    while c.execute("SELECT 1 FROM utilisateurs WHERE username=?", (f"{base}{n}",)).fetchone():
+        n += 1
+    return f"{base}{n}".lower()
 
 def get_max_membres(equipe_id):
     paroisse_info = c.execute("""
@@ -261,13 +258,16 @@ def show_paroisse():
                                     if af <= ad: st.error("Année invalide.")
                                     elif sit == "Transféré" and not equipe_destination: st.error("Sélectionnez une équipe.")
                                     elif sit == "Transféré":
-                                        c.execute("UPDATE membres SET statut='archive' WHERE id=?", (m[0],))
-                                        c.execute('''INSERT INTO archives (membre_id, situation, date_debut, date_fin, commentaire, auteur_id, auteur_nom, auteur_role, paroisse_id, equipe_id) VALUES (?, 'Transféré', ?, ?, ?, ?, ?, ?, ?, ?)''', (m[0], ad, date(af, 10, 1), f"Transféré vers {dest_nom}", st.session_state['user_id'], st.session_state['username'], 'paroisse', pid, eid))
-                                        c.execute("UPDATE membres SET equipe_id=?, statut='actif' WHERE id=?", (equipe_destination, m[0]))
-                                        commit_and_sync()
-                                        del st.session_state[f'form_arch_p_{m[0]}']
-                                        st.success(f"Membre transféré vers {dest_nom} !")
-                                        st.rerun()
+                                        if c.execute("SELECT COUNT(*) FROM membres WHERE equipe_id=? AND statut='actif'", (equipe_destination,)).fetchone()[0] >= get_max_membres(equipe_destination):
+                                            st.error("Impossible : l'équipe d'accueil est pleine.")
+                                        else:
+                                            c.execute("UPDATE membres SET statut='archive' WHERE id=?", (m[0],))
+                                            c.execute('''INSERT INTO archives (membre_id, situation, date_debut, date_fin, commentaire, auteur_id, auteur_nom, auteur_role, paroisse_id, equipe_id) VALUES (?, 'Transféré', ?, ?, ?, ?, ?, ?, ?, ?)''', (m[0], date(ad, 9, 1).isoformat(), date(af, 9, 1).isoformat(), f"Transféré vers {dest_nom}", st.session_state['user_id'], st.session_state['username'], 'paroisse', pid, eid))
+                                            c.execute("UPDATE membres SET equipe_id=?, statut='actif' WHERE id=?", (equipe_destination, m[0]))
+                                            commit_and_sync()
+                                            del st.session_state[f'form_arch_p_{m[0]}']
+                                            st.success(f"Membre transféré vers {dest_nom} !")
+                                            st.rerun()
                                     else:
                                         archiver_membre(m[0], sit, ad, af, com, st.session_state['user_id'], st.session_state['username'], 'paroisse', pid, eid)
                                         del st.session_state[f'form_arch_p_{m[0]}']; st.success("Archivé !"); st.rerun()
