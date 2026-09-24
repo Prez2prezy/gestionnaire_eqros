@@ -153,7 +153,22 @@ if 'logged_in' not in st.session_state:
 
     st.sidebar.title("🔐 Connexion")
 
-    # 🔑 Secours : activez en ajoutant RESET_TOKEN dans les secrets Streamlit
+    u = st.sidebar.text_input("Utilisateur", key="login_user")
+    p = st.sidebar.text_input("Mot de passe", type="password", key="login_pass")
+    if st.sidebar.button("Se connecter"):
+        row = c.execute("SELECT id, username, password, role, diocese_id, paroisse_id, equipe_id FROM utilisateurs WHERE username=?",
+                        ((u or "").strip(),)).fetchone()
+        if row and verifier_mot_de_passe(p or "", row[2]):
+            migrer_hash_si_legacy(row[0], row[2], p or "")
+            st.session_state.update({
+                'logged_in': True, 'user_id': row[0], 'username': row[1],
+                'role': row[3], 'diocese_id': row[4], 'paroisse_id': row[5], 'equipe_id': row[6]
+            })
+            st.rerun()
+        else:
+            st.sidebar.error("Identifiants incorrects.")
+
+    # 🔑 Secours « mot de passe oublié » — placé APRÈS le bouton Se connecter
     _reset_token = None
     try:
         _reset_token = st.secrets.get("RESET_TOKEN")
@@ -175,20 +190,6 @@ if 'logged_in' not in st.session_state:
                     commit_and_sync()
                     st.sidebar.success("Mot de passe réinitialisé ! Connectez-vous.")
 
-    u = st.sidebar.text_input("Utilisateur", key="login_user")
-    p = st.sidebar.text_input("Mot de passe", type="password", key="login_pass")
-    if st.sidebar.button("Se connecter"):
-        row = c.execute("SELECT id, username, password, role, diocese_id, paroisse_id, equipe_id FROM utilisateurs WHERE username=?",
-                        ((u or "").strip(),)).fetchone()
-        if row and verifier_mot_de_passe(p or "", row[2]):
-            migrer_hash_si_legacy(row[0], row[2], p or "")
-            st.session_state.update({
-                'logged_in': True, 'user_id': row[0], 'username': row[1],
-                'role': row[3], 'diocese_id': row[4], 'paroisse_id': row[5], 'equipe_id': row[6]
-            })
-            st.rerun()
-        else:
-            st.sidebar.error("Identifiants incorrects.")
     st.stop()
 
 afficher_logo()
