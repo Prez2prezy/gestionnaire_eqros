@@ -1057,7 +1057,10 @@ def _depliant_mouvement(paroisse_id=None):
 
     _blocs = ['<div style="padding:12px;">', _bandeau]
     if PHOTO_BANDEAU:
-        _blocs.append(_img(PHOTO_BANDEAU, 'width:100%; border-radius:12px; display:block; margin-top:12px;'))
+        _blocs.append('<div style="text-align:center; margin-top:12px;">'
+                      f'<img src="{PHOTO_BANDEAU}" alt="" '
+                      'style="width:100%; max-width:700px; border-radius:12px; display:inline-block;">'
+                      '</div>')
     _blocs.append(_section("📜", "Qui sommes-nous ?",
         "Un mouvement catholique de prière et d’apostolat des laïcs, fondé en 1955, reconnu par l’Église "
         "et par l’Ordre des Prêcheurs (Dominicains) en 1972. En Côte d’Ivoire, "
