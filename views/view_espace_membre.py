@@ -983,7 +983,7 @@ def _depliant_mouvement(paroisse_id=None):
     """📿 Dépliant « vivant » du Mouvement — Espace COMMUNAUTAIRE uniquement.
     Toutes les images se configurent dans le bloc PHOTOS ci-dessous."""
     # ============ 📷 IMAGES DU DÉPLIANT — collez vos URLs ici ============
-    PHOTO_BANDEAU    = "https://ibb.co/6c7XBZTs"   # grande photo sous le bandeau (facultatif)
+    PHOTO_BANDEAU    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # grande photo sous le bandeau (facultatif)
     PHOTO_QUI        = None   # section 📜 Qui sommes-nous ?
     PHOTO_COMMENT    = None   # section ⛪ Comment ça marche ?
     PHOTO_PRIERES    = None   # section 🙏 Deux temps de prière
