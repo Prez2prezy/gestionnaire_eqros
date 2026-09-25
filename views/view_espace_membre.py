@@ -1,7 +1,7 @@
 # ====================================================================
 # view_espace_membre.py — VERSION 7.6 (réécriture une pièce)
 # v7.6 : ① liens du menu naviguent DANS l'onglet courant (fini les 10
-# onglets) ; ② fil du jour blindé ; ③ compteur fusionné « 1 visite =
+# onglets) ; ② fil du mjour blindé ; ③ compteur fusionné « 1 visite =
 # 1 arrivée » ; ④ fonctions bandes blindées (accès par index).
 # Hérite de v7.5 : menu liens HTML purs + ruban hover + ☰ mobile,
 # navigation ?r=&s=, mesure autocorrigée, QR paroissial, lecteur complet.
@@ -984,11 +984,11 @@ def _depliant_mouvement(paroisse_id=None):
     Toutes les images se configurent dans le bloc PHOTOS ci-dessous."""
     # ============ 📷 IMAGES DU DÉPLIANT — collez vos URLs ici ============
     PHOTO_BANDEAU    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # grande photo sous le bandeau (facultatif)
-    PHOTO_QUI        = None   # section 📜 Qui sommes-nous ?
-    PHOTO_COMMENT    = None   # section ⛪ Comment ça marche ?
-    PHOTO_PRIERES    = None   # section 🙏 Deux temps de prière
-    PHOTO_MISSION    = None   # section ❤️ Notre mission
-    PHOTO_RESSOURCES = None   # section 📖 Ressources
+    PHOTO_QUI        = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 📜 Qui sommes-nous ?
+    PHOTO_COMMENT    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section ⛪ Comment ça marche ?
+    PHOTO_PRIERES    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 🙏 Deux temps de prière
+    PHOTO_MISSION    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section ❤️ Notre mission
+    PHOTO_RESSOURCES = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 📖 Ressources
     # =====================================================================
 
     _resp, _wa, _etiquette = None, None, "le responsable diocésain"
