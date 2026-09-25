@@ -56,7 +56,7 @@ def show_diocese():
         "📅 Abonnements", "📌 Suivi", "🕊️ Espace spirituel", "💬 WhatsApp",
         "🔍 Rechercher matricule", "🔐 Gérer les accès", "📊 Statistiques", "📥 Export Excel",
         "📦 Archives", "🗑️ Réinitialiser"
-    ])
+    ], key="nav_dio")
 
     if menu == "🏛️ Voir diocèse":
         st.markdown(f'<h2 style="color:#1A237E; font-size: 1.4rem;">🏛️ {html.escape(nom_dio).upper()}</h2>', unsafe_allow_html=True)
