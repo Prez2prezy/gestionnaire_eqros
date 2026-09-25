@@ -16,7 +16,7 @@ import streamlit as st
 from datetime import date
 from streamlit.components.v1 import html as _comp_html
 from database import c, commit_and_sync
-from services import safe_date, compter_visite
+from services import safe_date, compter_visite, lien_whatsapp
 from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
 
 
@@ -979,6 +979,64 @@ def _render_coin_affiche():
                 f'</div></div>', unsafe_allow_html=True)
 
 
+def _depliant_mouvement(paroisse_id=None):
+    """Dépliant de présentation du Mouvement (rentrée pastorale).
+    Si paroisse_id : le bouton WhatsApp écrit au responsable PAROISSIAL ;
+    sinon, au responsable DIOCÉSAINT (s'il est renseigné dans le gestionnaire)."""
+    _resp = None
+    _wa = None
+    _etiquette = "le responsable paroissial"
+    if paroisse_id:
+        try:
+            _r = c.execute("SELECT responsable, whatsapp_responsable FROM paroisses WHERE id=?", (paroisse_id,)).fetchone()
+            if _r and _r[0]:
+                _resp = _r[0]
+            if _r and len(_r) > 1 and _r[1]:
+                _wa = _r[1]
+        except Exception:
+            pass
+    else:
+        _etiquette = "le responsable diocésain"
+        try:
+            _d = c.execute("SELECT responsable, whatsapp_responsable FROM diocese WHERE id=?", (1,)).fetchone()
+            if _d and _d[0]:
+                _resp = _d[0]
+            if _d and len(_d) > 1 and _d[1]:
+                _wa = _d[1]
+        except Exception:
+            pass
+    _txt = f"""**Les Équipes du Rosaire** sont un mouvement catholique de prière et d'apostolat des laïcs, fondé en 1955, qui rassemble des petits groupes pour méditer le Rosaire et vivre la mission évangélique au quotidien.
+
+**Présentation générale**
+Les Équipes du Rosaire sont un mouvement de spiritualité mariale et missionnaire reconnu par l'Église et par l'Ordre des Prêcheurs (Dominicains) en 1972. Dominique YOVAN : Fondateur des Equipes du Rosaire de Côte d'Ivoire. 1er Responsable National des Equipes du Rosaire de Côte d'Ivoire. Octobre 1980, il introduit en Côte d'Ivoire le Mouvement des Equipes du Rosaire en créant la première Equipe à l'Eglise Sainte Famille de la Riviera à Cocody. Il a été rappelé à Dieu le 10 juillet 2015 à Abidjan en Côte d'Ivoire.
+
+**Organisation et fonctionnement**
+Chaque équipe regroupe 4 à 12 personnes, dont un responsable d'équipe, et peut se concentrer sur un quartier, une rue, un immeuble ou un village. Chacun reçoit un numéro (Numéro dans l'équipe / Numéro de Méditation compris entre 1 et 20) : chaque jour, selon la date, il médite sa dizaine — et ensemble, sans se voir, les 20 mystères du Rosaire sont couverts chaque jour. C'est la chaîne de prière universelle. La paroisse, avec un minimum d'une équipe a un responsable paroissial. Les équipes, les paroisses sont coordonnées par un responsable diocésain et par un aumônier diocésain ou sectoriel, et le bureau national dirige le mouvement sur le plan national.
+
+Le fonctionnement repose sur deux temps de prière :
+
+- **Prière personnelle quotidienne**, méditant un des mystères du Rosaire en lien avec les autres membres grâce au « Livret de Prière Quotidienne ».
+- **Rencontre mensuelle**, où l'équipe se réunit chez l'un des membres pour une prière commune, méditation de la Parole de Dieu, partage d'intentions et réflexion sur la vie quotidienne, guidée par le feuillet mensuel « Le Rosaire en Équipe ».
+
+**Mission et spiritualité**
+Le mouvement est animé par la passion de l'Évangile et le salut des hommes. Il a un objectif missionnaire local, aidant amis et voisins à vivre l'Évangile avec Marie, même ceux qui n'ont pas l'habitude d'aller à l'église. Les équipes favorisent un climat fraternel, permettant à chacun de participer à la prière et à la méditation dans un cadre convivial et accessible.
+
+**Ressources et outils**
+Les membres reçoivent chaque mois le feuillet de 16 pages « Le Rosaire en Équipe », qui propose la prière du mois, des enseignements théologiques accessibles et des réflexions pour la vie quotidienne. Ces outils permettent de structurer la prière et de renforcer la cohésion de l'équipe.
+
+En résumé, les Équipes du Rosaire sont un mouvement vivant et missionnaire, combinant prière personnelle, méditation communautaire et engagement apostolique, pour vivre et partager la foi catholique au quotidien.
+
+**Vous voulez rejoindre une équipe ?** Adressez-vous à {_etiquette} **{(_resp or "").strip() or "du Mouvement"}**. La dizaine du jour vous attend juste au-dessus de ce dépliant : entrez votre jour de naissance et priez avec nous. 🕊️"""
+    with st.expander("📿 Découvrez les Équipes du Rosaire !"):
+        st.markdown(_txt)
+        if _wa:
+            _msg_resp = ("Bonjour, je souhaite rejoindre une Équipe du Rosaire. "
+                         if not paroisse_id else
+                         "Bonjour, je souhaite rejoindre une Équipe du Rosaire dans notre paroisse. ")
+            _lien_resp = lien_whatsapp(_wa, _msg_resp + "Merci de me renseigner. 📿")
+            if _lien_resp:
+                st.markdown(f'<a href="{_lien_resp}" target="_blank" class="whatsapp-link">📱 Écrire au responsable</a>', unsafe_allow_html=True)
+
 def _render_fil_actualites():
     """v7.6 — fil du jour BLINDÉ : la ligne est complétée à 5 cases avant
     tout accès par index (fini l'IndexError, quelle que soit la donnée)."""
@@ -1132,6 +1190,7 @@ def show_espace_membre(matloc_membre=None):
             if st.session_state.get("diz_ouvert"):
                 return
             _render_fil_actualites()
+            _depliant_mouvement(st.session_state.get("paroisse_origine"))
         return
 
     # ================= ÉTAT 2 : VUE MEMBRE =================
@@ -1265,3 +1324,4 @@ def show_espace_membre(matloc_membre=None):
         if st.session_state.get("diz_ouvert"):
             return
         _render_fil_actualites()
+        _depliant_mouvement(membre[11])
