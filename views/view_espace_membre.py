@@ -984,11 +984,11 @@ def _depliant_mouvement(paroisse_id=None):
     Toutes les images se configurent dans le bloc PHOTOS ci-dessous."""
     # ============ 📷 IMAGES DU DÉPLIANT — collez vos URLs ici ============
     PHOTO_BANDEAU    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # grande photo sous le bandeau (facultatif)
-    PHOTO_QUI        = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 📜 Qui sommes-nous ?
-    PHOTO_COMMENT    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section ⛪ Comment ça marche ?
-    PHOTO_PRIERES    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 🙏 Deux temps de prière
-    PHOTO_MISSION    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section ❤️ Notre mission
-    PHOTO_RESSOURCES = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 📖 Ressources
+    PHOTO_QUI        = None   # section 📜 Qui sommes-nous ?
+    PHOTO_COMMENT    = None   # section ⛪ Comment ça marche ?
+    PHOTO_PRIERES    = None   # section 🙏 Deux temps de prière
+    PHOTO_MISSION    = None   # section ❤️ Notre mission
+    PHOTO_RESSOURCES = None   # section 📖 Ressources
     # =====================================================================
 
     _resp, _wa, _etiquette = None, None, "le responsable diocésain"
@@ -1017,8 +1017,8 @@ def _depliant_mouvement(paroisse_id=None):
                   'style="width:56px; border-radius:10px; border:2px solid #FFD700; display:block;">'
                   if _logo_b64 else '<div style="font-size:2.4rem; line-height:1;">📿</div>')
 
-    def _img(url, style="width:100%; height:140px; object-fit:cover; border-radius:8px; display:block; margin-bottom:10px;"):
-        return f'<img src="{url}" alt="" style="{style}">' if url else ""
+    def _img(url, classe="dpl-photo"):
+        return f'<img src="{url}" alt="" class="{classe}">' if url else ""
 
     _perles = "".join('<div style="width:12px; height:12px; border-radius:50%; background:#FFD700; '
                       'box-shadow:0 0 5px rgba(255,215,0,0.8);"></div>' for _ in range(10))
@@ -1057,7 +1057,7 @@ def _depliant_mouvement(paroisse_id=None):
 
     _blocs = ['<div style="padding:12px;">', _bandeau]
     if PHOTO_BANDEAU:
-        _blocs.append(_img(PHOTO_BANDEAU, 'width:100%; border-radius:12px; display:block; margin-top:12px;'))
+        _blocs.append(_img(PHOTO_BANDEAU, "dpl-photo-bandeau"))
     _blocs.append(_section("📜", "Qui sommes-nous ?",
         "Un mouvement catholique de prière et d’apostolat des laïcs, fondé en 1955, reconnu par l’Église "
         "et par l’Ordre des Prêcheurs (Dominicains) en 1972. En Côte d’Ivoire, "
@@ -1097,8 +1097,14 @@ def _depliant_mouvement(paroisse_id=None):
     _blocs.append('</div>')
     _corps = "".join(_blocs)
 
-    st.markdown('<style>.depliant-eq76 summary::-webkit-details-marker{display:none;}'
-                '.depliant-eq76 summary{list-style:none;}</style>', unsafe_allow_html=True)
+    st.markdown('<style>'
+                '.depliant-eq76 summary::-webkit-details-marker{display:none;}'
+                '.depliant-eq76 summary{list-style:none;}'
+                '.dpl-photo { width:100%; max-width:860px; height:150px; object-fit:cover; '
+                'border-radius:8px; display:block; margin:0 auto 10px auto; }'
+                '.dpl-photo-bandeau { width:100%; border-radius:12px; display:block; margin-top:12px; }'
+                '@media (min-width:769px) { .dpl-photo { height:230px; } }'
+                '</style>', unsafe_allow_html=True)
     st.markdown(
         '<details class="depliant-eq76" style="background:#121a45 !important; border:1px solid #FFD700; '
         'border-radius:15px; margin:12px 10px; overflow:hidden;">'
