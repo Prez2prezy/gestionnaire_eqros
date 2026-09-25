@@ -977,14 +977,18 @@ def _render_coin_affiche():
                 f'<h4 style="margin:0 0 5px 0; color:#e8eaf6; font-size:1.1rem;">{icone} {html.escape(prochain[0])}</h4>'
                 f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p>'
                 f'</div></div>', unsafe_allow_html=True)
-
+# 
 
 def _depliant_mouvement(paroisse_id=None):
     """📿 Dépliant « vivant » du Mouvement (rentrée pastorale) — Espace
     COMMUNAUTAIRE uniquement. Photo d'illustration optionnelle : collez
     une URL https dans DEPLIANT_PHOTO_URL ci-dessous."""
-    DEPLIANT_PHOTO_URL = None  # ex. : "https://res.cloudinary.com/....jpg"
+    DEPLIANT_PHOTO_URL = "https://console.cloudinary.com/app/c-c7b384286a5ec26d99744a63ad9698/image/studio?publicId=t%C3%A9l%C3%A9charger_dzqdch&back_url=%2Fapp%2Fc-c7b384286a5ec26d99744a63ad9698%2Fimage%2Fhome"
 
+    
+    #une URL https dans DEPLIANT_PHOTO_URL ci-dessous."""
+    #DEPLIANT_PHOTO_URL = None  # ex. : "https://res.cloudinary.com/....jpg"
+    
     _resp, _wa, _etiquette = None, None, "le responsable diocésain"
     if paroisse_id:
         _etiquette = "le responsable paroissial"
