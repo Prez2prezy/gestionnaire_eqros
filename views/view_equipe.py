@@ -23,7 +23,7 @@ def show_equipe():
     pid = pid_result[0]
     max_membres = get_max_membres(eid)
 
-    menu = st.sidebar.radio("Navigation", ["👥 Mon équipe", "👤 Mes membres", "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "📦 Archives"])
+    menu = st.sidebar.radio("Navigation", ["👥 Mon équipe", "👤 Mes membres", "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "📦 Archives"], key="nav_eq")
 
     # CORRECTION MÉMOIRE : Ajout de 'modif_abo_id' au nettoyage pour éviter les formulaires fantômes
     if st.session_state.get('last_menu') != menu:
