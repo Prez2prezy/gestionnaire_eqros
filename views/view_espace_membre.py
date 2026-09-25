@@ -983,12 +983,12 @@ def _depliant_mouvement(paroisse_id=None):
     """📿 Dépliant « vivant » du Mouvement — Espace COMMUNAUTAIRE uniquement.
     Toutes les images se configurent dans le bloc PHOTOS ci-dessous."""
     # ============ 📷 IMAGES DU DÉPLIANT — collez vos URLs ici ============
-    PHOTO_BANDEAU    = None   # grande photo sous le bandeau (facultatif)
+    PHOTO_BANDEAU    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # grande photo sous le bandeau (facultatif)
     PHOTO_QUI        = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 📜 Qui sommes-nous ?
-    PHOTO_COMMENT    = None   # section ⛪ Comment ça marche ?
-    PHOTO_PRIERES    = None   # section 🙏 Deux temps de prière
-    PHOTO_MISSION    = None   # section ❤️ Notre mission
-    PHOTO_RESSOURCES = None   # section 📖 Ressources
+    PHOTO_COMMENT    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section ⛪ Comment ça marche ?
+    PHOTO_PRIERES    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 🙏 Deux temps de prière
+    PHOTO_MISSION    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section ❤️ Notre mission
+    PHOTO_RESSOURCES = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 📖 Ressources
     # =====================================================================
 
     _resp, _wa, _etiquette = None, None, "le responsable diocésain"
