@@ -1,5 +1,6 @@
 import os
 import streamlit as st
+from streamlit.components.v1 import html as _comp_html
 from database import c, commit_and_sync
 from services import (hash_password, verifier_mot_de_passe,
                       migrer_hash_si_legacy, definir_mot_de_passe)
@@ -153,6 +154,44 @@ if 'logged_in' not in st.session_state:
 
     st.sidebar.title("🔐 Connexion")
 
+    # PARADE AUTOFILL : le gestionnaire de mots de passe remplit les champs sans
+    # déclencher l'événement que Streamlit écoute. Ce script détecte toute valeur
+    # apparue sans événement « input » et la fait connaître à Streamlit.
+    _comp_html("""
+        <script>
+        (function(){
+          function brancher(f){
+            if(f.dataset.pf76 !== undefined) return;
+            f.dataset.pf76 = f.value;
+            f.addEventListener('input', function(){ f.dataset.pf76 = f.value; });
+          }
+          var essais = 0;
+          var t = setInterval(function(){
+            essais++;
+            try {
+              var d = window.parent.document;
+              var zone = d.querySelector('[data-testid="stSidebar"]') || d;
+              var ins = zone.querySelectorAll('input[type="text"], input[type="password"]');
+              for(var i=0;i<ins.length;i++){ brancher(ins[i]); }
+              for(var j=0;j<ins.length;j++){
+                var f = ins[j];
+                if(f.value !== (f.dataset.pf76 || '')){
+                  try{
+                    var natif = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;
+                    natif.call(f, f.value);
+                  }catch(e){}
+                  f.dispatchEvent(new Event('input', {bubbles:true}));
+                  f.dispatchEvent(new Event('change', {bubbles:true}));
+                  f.dataset.pf76 = f.value;
+                }
+              }
+            } catch(e) {}
+            if(essais > 600){ clearInterval(t); }
+          }, 300);
+        })();
+        </script>
+    """, height=0)
+
     u = st.sidebar.text_input("Utilisateur", key="login_user")
     p = st.sidebar.text_input("Mot de passe", type="password", key="login_pass")
     if st.sidebar.button("Se connecter"):
@@ -164,6 +203,13 @@ if 'logged_in' not in st.session_state:
                 'logged_in': True, 'user_id': row[0], 'username': row[1],
                 'role': row[3], 'diocese_id': row[4], 'paroisse_id': row[5], 'equipe_id': row[6]
             })
+            # On force le menu de navigation sur la PREMIÈRE rubrique du rôle
+            _entrees = {"diocese": ("nav_dio", "🏛️ Voir diocèse"),
+                        "paroisse": ("nav_par", "🏘️ Ma paroisse"),
+                        "equipe": ("nav_eq", "👥 Mon équipe")}
+            if row[3] in _entrees:
+                _cle, _val = _entrees[row[3]]
+                st.session_state[_cle] = _val
             st.rerun()
         else:
             st.sidebar.error("Identifiants incorrects.")
