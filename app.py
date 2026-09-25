@@ -154,16 +154,20 @@ if 'logged_in' not in st.session_state:
 
     st.sidebar.title("🔐 Connexion")
 
-    # PARADE AUTOFILL : le gestionnaire de mots de passe remplit les champs sans
-    # déclencher l'événement que Streamlit écoute. Ce script détecte toute valeur
-    # apparue sans événement « input » et la fait connaître à Streamlit.
+    # PARADE AUTOFILL (v2) : le gestionnaire de mots de passe remplit les champs
+    # sans déclencher l'événement que Streamlit écoute. On notifie Streamlit de
+    # TOUTE valeur présente au branchement (autofill déjà effectué) puis de tout
+    # changement ultérieur sans événement.
     _comp_html("""
         <script>
         (function(){
-          function brancher(f){
-            if(f.dataset.pf76 !== undefined) return;
-            f.dataset.pf76 = f.value;
-            f.addEventListener('input', function(){ f.dataset.pf76 = f.value; });
+          function notifier(f){
+            try{
+              var natif = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;
+              natif.call(f, f.value);
+            }catch(e){}
+            f.dispatchEvent(new Event('input', {bubbles:true}));
+            f.dispatchEvent(new Event('change', {bubbles:true}));
           }
           var essais = 0;
           var t = setInterval(function(){
@@ -172,17 +176,15 @@ if 'logged_in' not in st.session_state:
               var d = window.parent.document;
               var zone = d.querySelector('[data-testid="stSidebar"]') || d;
               var ins = zone.querySelectorAll('input[type="text"], input[type="password"]');
-              for(var i=0;i<ins.length;i++){ brancher(ins[i]); }
-              for(var j=0;j<ins.length;j++){
-                var f = ins[j];
-                if(f.value !== (f.dataset.pf76 || '')){
-                  try{
-                    var natif = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;
-                    natif.call(f, f.value);
-                  }catch(e){}
-                  f.dispatchEvent(new Event('input', {bubbles:true}));
-                  f.dispatchEvent(new Event('change', {bubbles:true}));
-                  f.dataset.pf76 = f.value;
+              for(var i=0;i<ins.length;i++){
+                var f = ins[i];
+                if(f.dataset.pf77 === undefined){
+                  f.dataset.pf77 = f.value || '';
+                  if(f.value){ notifier(f); }
+                  f.addEventListener('input', function(){ this.dataset.pf77 = this.value; });
+                } else if(f.value !== (f.dataset.pf77 || '')){
+                  notifier(f);
+                  f.dataset.pf77 = f.value;
                 }
               }
             } catch(e) {}
