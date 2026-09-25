@@ -977,18 +977,20 @@ def _render_coin_affiche():
                 f'<h4 style="margin:0 0 5px 0; color:#e8eaf6; font-size:1.1rem;">{icone} {html.escape(prochain[0])}</h4>'
                 f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p>'
                 f'</div></div>', unsafe_allow_html=True)
-# 
+
 
 def _depliant_mouvement(paroisse_id=None):
-    """📿 Dépliant « vivant » du Mouvement (rentrée pastorale) — Espace
-    COMMUNAUTAIRE uniquement. Photo d'illustration optionnelle : collez
-    une URL https dans DEPLIANT_PHOTO_URL ci-dessous."""
-    DEPLIANT_PHOTO_URL = "https://console.cloudinary.com/app/c-c7b384286a5ec26d99744a63ad9698/image/studio?publicId=t%C3%A9l%C3%A9charger_dzqdch&back_url=%2Fapp%2Fc-c7b384286a5ec26d99744a63ad9698%2Fimage%2Fhome"
+    """📿 Dépliant « vivant » du Mouvement — Espace COMMUNAUTAIRE uniquement.
+    Toutes les images se configurent dans le bloc PHOTOS ci-dessous."""
+    # ============ 📷 IMAGES DU DÉPLIANT — collez vos URLs ici ============
+    PHOTO_BANDEAU    = None   # grande photo sous le bandeau (facultatif)
+    PHOTO_QUI        = None   # section 📜 Qui sommes-nous ?
+    PHOTO_COMMENT    = None   # section ⛪ Comment ça marche ?
+    PHOTO_PRIERES    = None   # section 🙏 Deux temps de prière
+    PHOTO_MISSION    = None   # section ❤️ Notre mission
+    PHOTO_RESSOURCES = None   # section 📖 Ressources
+    # =====================================================================
 
-    
-    #une URL https dans DEPLIANT_PHOTO_URL ci-dessous."""
-    #DEPLIANT_PHOTO_URL = None  # ex. : "https://res.cloudinary.com/....jpg"
-    
     _resp, _wa, _etiquette = None, None, "le responsable diocésain"
     if paroisse_id:
         _etiquette = "le responsable paroissial"
@@ -1012,25 +1014,23 @@ def _depliant_mouvement(paroisse_id=None):
 
     _logo_b64 = _logo_base64()
     _logo_html = (f'<img src="data:image/png;base64,{_logo_b64}" alt="Logo" '
-                  'style="width:72px; border-radius:12px; border:2px solid #FFD700;">'
-                  if _logo_b64 else '<div style="font-size:3rem; line-height:1;">📿</div>')
+                  'style="width:56px; border-radius:10px; border:2px solid #FFD700; display:block;">'
+                  if _logo_b64 else '<div style="font-size:2.4rem; line-height:1;">📿</div>')
 
-    _photo_html = (f'<img src="{DEPLIANT_PHOTO_URL}" alt="Les Équipes du Rosaire" '
-                   'style="width:100%; border-radius:12px; display:block; margin-top:12px;">'
-                   if DEPLIANT_PHOTO_URL else "")
+    def _img(url, style="width:100%; height:140px; object-fit:cover; border-radius:8px; display:block; margin-bottom:10px;"):
+        return f'<img src="{url}" alt="" style="{style}">' if url else ""
 
-    _perles = "".join('<div style="width:13px; height:13px; border-radius:50%; '
-                      'background:#FFD700; box-shadow:0 0 5px rgba(255,215,0,0.8);"></div>'
-                      for _ in range(10))
-    _chapelet = ('<div style="display:flex; align-items:center; justify-content:center; '
-                 'gap:6px; margin-top:12px;">' + _perles +
-                 '<div style="font-size:1.4rem; margin-left:6px;">✝️</div></div>')
+    _perles = "".join('<div style="width:12px; height:12px; border-radius:50%; background:#FFD700; '
+                      'box-shadow:0 0 5px rgba(255,215,0,0.8);"></div>' for _ in range(10))
+    _chapelet = ('<div style="display:flex; align-items:center; justify-content:center; gap:6px; margin-top:10px;">'
+                 + _perles + '<div style="font-size:1.3rem; margin-left:6px;">✝️</div></div>')
 
-    def _section(titre, corps):
+    def _section(emoji, titre, corps, photo=None):
         return ('<div style="background:#1a2150 !important; border:1px solid #27306b; '
                 'border-left:5px solid #FFD700; border-radius:10px; padding:12px 14px; margin:10px 0;">'
+                + _img(photo) +
                 '<div style="color:#FFD700 !important; font-weight:bold; font-size:1.02rem; '
-                'font-family:Georgia, serif; margin-bottom:6px;">' + titre + '</div>'
+                'font-family:Georgia, serif; margin-bottom:6px;">' + emoji + ' ' + titre + '</div>'
                 '<div style="color:#e8eaf6 !important; font-size:0.92rem; line-height:1.75;">' + corps + '</div></div>')
 
     _bouton = ""
@@ -1039,68 +1039,75 @@ def _depliant_mouvement(paroisse_id=None):
                 else "Bonjour, je souhaite rejoindre une Équipe du Rosaire dans notre paroisse. ")
         _lien = lien_whatsapp(_wa, _msg + "Merci de me renseigner. 📿")
         if _lien:
-            _bouton = ('<div style="text-align:center; margin-top:14px;">'
+            _bouton = ('<div style="text-align:center; margin-top:12px;">'
                        '<a href="' + _lien + '" target="_blank" '
                        'style="display:inline-block; background:#25D366 !important; color:#ffffff !important; '
-                       'padding:12px 26px; border-radius:30px; font-weight:bold; text-decoration:none; '
-                       'font-size:1rem; font-family:Georgia, serif;">📱 Écrire à ' + _etiquette + '</a></div>')
+                       'padding:11px 24px; border-radius:30px; font-weight:bold; text-decoration:none; '
+                       'font-size:0.95rem;">📱 Écrire à ' + _etiquette + '</a></div>')
 
-    _corps = (
-        '<div style="padding:14px;">'
-        '<div style="background:linear-gradient(135deg,#1A237E,#4527a0); border-radius:12px; padding:16px; text-align:center;">'
-        '<div style="display:flex; align-items:center; justify-content:center; gap:14px;">' + _logo_html +
-        '<div style="text-align:left;">'
-        '<div style="color:#FFD700 !important; font-weight:bold; font-size:1.25rem; font-family:Georgia, serif;">LES ÉQUIPES DU ROSAIRE</div>'
-        '<div style="color:#e8eaf6 !important; font-size:0.85rem; font-family:Georgia, serif;">Prier • S’unir • Missionner — depuis 1955</div>'
-        '</div></div>' + _chapelet + '</div>'
-        + _photo_html
-        + _section("📜 Qui sommes-nous ?",
-                   "Un mouvement catholique de prière et d’apostolat des laïcs, fondé en 1955, reconnu par l’Église "
-                   "et par l’Ordre des Prêcheurs (Dominicains) en 1972. En Côte d’Ivoire, "
-                   "<b style='color:#FFD700 !important;'>Dominique YOVAN</b> introduit le Mouvement en octobre 1980 — "
-                   "première équipe à l’Église Sainte Famille de la Riviera à Cocody — et en devient le 1er Responsable "
-                   "National, jusqu’à son rappel à Dieu le 10 juillet 2015 à Abidjan.")
-        + _section("⛪ Comment ça marche ?",
-                   "Chaque équipe regroupe 4 à 12 personnes autour d’un responsable, ancrée dans un quartier, une rue, "
-                   "un immeuble ou un village. Chacun reçoit un <b style='color:#FFD700 !important;'>numéro de méditation (1 à 20)</b> : "
-                   "chaque jour, selon la date, il médite sa dizaine — et ensemble, sans se voir, les 20 mystères du Rosaire "
-                   "sont couverts chaque jour. C’est la chaîne de prière universelle. Les équipes et paroisses sont coordonnées "
-                   "par un responsable paroissial, un responsable diocésain et un aumônier, sous l’autorité du bureau national.")
-        + _section("🙏 Deux temps de prière",
-                   "<b style='color:#FFD700 !important;'>• La prière personnelle quotidienne</b> : méditer un mystère du Rosaire, "
-                   "en communion avec toute la chaîne.<br>"
-                   "<b style='color:#FFD700 !important;'>• La rencontre mensuelle</b> : prière commune chez un membre, méditation "
-                   "de la Parole de Dieu, partage d’intentions et de la vie quotidienne, guidée par le feuillet mensuel "
-                   "« Le Rosaire en Équipe ».")
-        + _section("❤️ Notre mission",
-                   "Animés par la passion de l’Évangile et le salut des hommes, nous avons un objectif missionnaire local : "
-                   "aider amis et voisins à vivre l’Évangile avec Marie, même ceux qui n’ont pas l’habitude d’aller à l’église. "
-                   "Les équipes favorisent un climat fraternel, convivial et accessible à tous.")
-        + _section("📖 Ressources",
-                   "Chaque mois, le feuillet de 16 pages « Le Rosaire en Équipe » propose la prière du mois, des enseignements "
-                   "théologiques accessibles et des réflexions pour la vie quotidienne — des outils qui structurent la prière "
-                   "et renforcent la cohésion de l’équipe.")
-        + '<div style="background:#FFF9C4 !important; border:2px solid #FFD700; border-radius:12px; padding:14px; margin-top:12px; text-align:center;">'
-        + '<div style="color:#1A237E !important; font-weight:bold; font-size:1.05rem; font-family:Georgia, serif;">Vous voulez rejoindre une équipe ?</div>'
-        + '<div style="color:#4527a0 !important; font-size:0.92rem; line-height:1.6; margin-top:6px;">Adressez-vous à '
-        + _etiquette + ' <b style="color:#1A237E !important;">' + html.escape((_resp or "").strip() or "du Mouvement") + '</b>.<br>'
-        + 'La dizaine du jour vous attend juste en dessous de ce dépliant : entrez votre jour de naissance et priez avec nous. 🕊️</div>'
-        + _bouton + '</div>'
-        + '</div>')
+    _bandeau = (
+        '<div style="background:linear-gradient(135deg,#1A237E,#4527a0); border-radius:12px; padding:14px 12px 12px 12px; text-align:center;">'
+        '<div style="display:flex; justify-content:flex-start; margin-bottom:4px;">' + _logo_html + '</div>'
+        '<div style="color:#FFFFFF !important; font-weight:bold; font-family:Georgia, serif; '
+        'font-size:clamp(1.0rem, 5.2vw, 1.45rem); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:0.5px;">'
+        'LES ÉQUIPES DU ROSAIRE</div>'
+        '<div style="color:#e8eaf6 !important; font-size:clamp(0.7rem, 3.1vw, 0.88rem); margin-top:7px; line-height:1.7;">'
+        '• Un Mouvement d’Église &nbsp;• Une École de Prière &nbsp;• Un Esprit Missionnaire<br>— depuis 1955 —</div>'
+        + _chapelet + '</div>')
 
-    st.markdown('<style>'
-                '.depliant-eq76 summary::-webkit-details-marker{display:none;}'
-                '.depliant-eq76 summary{list-style:none;}'
-                '</style>', unsafe_allow_html=True)
+    _blocs = ['<div style="padding:12px;">', _bandeau]
+    if PHOTO_BANDEAU:
+        _blocs.append(_img(PHOTO_BANDEAU, 'width:100%; border-radius:12px; display:block; margin-top:12px;'))
+    _blocs.append(_section("📜", "Qui sommes-nous ?",
+        "Un mouvement catholique de prière et d’apostolat des laïcs, fondé en 1955, reconnu par l’Église "
+        "et par l’Ordre des Prêcheurs (Dominicains) en 1972. En Côte d’Ivoire, "
+        "<b style='color:#FFD700 !important;'>Dominique YOVAN</b> introduit le Mouvement en octobre 1980 — "
+        "première équipe à l’Église Sainte Famille de la Riviera à Cocody — et en devient le 1er Responsable "
+        "National, jusqu’à son rappel à Dieu le 10 juillet 2015 à Abidjan.", PHOTO_QUI))
+    _blocs.append(_section("⛪", "Comment ça marche ?",
+        "Chaque équipe regroupe 4 à 12 personnes autour d’un responsable, ancrée dans un quartier, une rue, "
+        "un immeuble ou un village. Chacun reçoit un <b style='color:#FFD700 !important;'>numéro de méditation (1 à 20)</b> : "
+        "chaque jour, selon la date, il médite sa dizaine — et ensemble, sans se voir, les 20 mystères du Rosaire "
+        "sont couverts chaque jour. C’est la chaîne de prière universelle. Les équipes et paroisses sont coordonnées "
+        "par un responsable paroissial, un responsable diocésain et un aumônier, sous l’autorité du bureau national.",
+        PHOTO_COMMENT))
+    _blocs.append(_section("🙏", "Deux temps de prière",
+        "<b style='color:#FFD700 !important;'>• La prière personnelle quotidienne</b> : méditer un mystère du Rosaire, "
+        "en communion avec toute la chaîne.<br>"
+        "<b style='color:#FFD700 !important;'>• La rencontre mensuelle</b> : prière commune chez un membre, méditation "
+        "de la Parole de Dieu, partage d’intentions et de la vie quotidienne, guidée par le feuillet mensuel "
+        "« Le Rosaire en Équipe ».", PHOTO_PRIERES))
+    _blocs.append(_section("❤️", "Notre mission",
+        "Animés par la passion de l’Évangile et le salut des hommes, nous avons un objectif missionnaire local : "
+        "aider amis et voisins à vivre l’Évangile avec Marie, même ceux qui n’ont pas l’habitude d’aller à l’église. "
+        "Les équipes favorisent un climat fraternel, convivial et accessible à tous.", PHOTO_MISSION))
+    _blocs.append(_section("📖", "Ressources",
+        "Chaque mois, le feuillet de 16 pages « Le Rosaire en Équipe » propose la prière du mois, des enseignements "
+        "théologiques accessibles et des réflexions pour la vie quotidienne — des outils qui structurent la prière "
+        "et renforcent la cohésion de l’équipe.", PHOTO_RESSOURCES))
+    _blocs.append(
+        '<div style="background:#FFF9C4 !important; border:2px solid #FFD700; border-radius:12px; padding:14px; '
+        'margin-top:12px; text-align:center;">'
+        '<div style="color:#1A237E !important; font-weight:bold; font-size:1.05rem; font-family:Georgia, serif;">'
+        'Vous voulez rejoindre une équipe ?</div>'
+        '<div style="color:#4527a0 !important; font-size:0.92rem; line-height:1.6; margin-top:6px;">Adressez-vous à '
+        + _etiquette + ' <b style="color:#1A237E !important;">' + html.escape((_resp or "").strip() or "du Mouvement")
+        + '</b>.<br>La dizaine du jour vous attend juste en dessous de ce dépliant : entrez votre jour de naissance '
+        'et priez avec nous. 🕊️</div>' + _bouton + '</div>')
+    _blocs.append('</div>')
+    _corps = "".join(_blocs)
+
+    st.markdown('<style>.depliant-eq76 summary::-webkit-details-marker{display:none;}'
+                '.depliant-eq76 summary{list-style:none;}</style>', unsafe_allow_html=True)
     st.markdown(
         '<details class="depliant-eq76" style="background:#121a45 !important; border:1px solid #FFD700; '
         'border-radius:15px; margin:12px 10px; overflow:hidden;">'
-        '<summary style="cursor:pointer; padding:14px 18px; background:linear-gradient(135deg,#1A237E,#4527a0); '
-        'color:#FFD700 !important; font-weight:bold; font-size:1.15rem; font-family:Georgia, serif;">'
-        '📿 Découvrez les Équipes du Rosaire !'
-        '<span style="color:#e8eaf6 !important; font-size:0.8rem; font-weight:normal;"> — cliquez pour ouvrir ▾</span>'
-        '</summary>' + _corps + '</details>', unsafe_allow_html=True)
-
+        '<summary style="cursor:pointer; padding:12px 14px; background:linear-gradient(135deg,#1A237E,#4527a0); text-align:center;">'
+        '<div style="color:#FFFFFF !important; font-weight:bold; font-family:Georgia, serif; '
+        'font-size:clamp(0.95rem, 4.3vw, 1.25rem); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">'
+        '📿 Découvrez les Équipes du Rosaire !</div>'
+        '<div style="color:#e8eaf6 !important; font-size:clamp(0.7rem, 3vw, 0.82rem); font-weight:normal; margin-top:2px;">'
+        'cliquez pour ouvrir ▾</div></summary>' + _corps + '</details>', unsafe_allow_html=True)
 
 
 def _render_fil_actualites():
