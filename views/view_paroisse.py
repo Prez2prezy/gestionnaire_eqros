@@ -19,11 +19,17 @@ def generer_identifiant_equipe(nom_paroisse, nom_commune, nom_equipe, paroisse_i
     nom_propre = re.sub(r"[\s'\-]", "", nom_propre)
     prefixe_par = sans_accents(nom_propre[:3]) if nom_propre else "par"
     prefixe_com = sans_accents(nom_commune[:3])
-    suffixe = "j" if "jeune" in nom_equipe.lower() else "eq"
+    est_jeune = "jeune" in nom_equipe.lower()
+    suffixe = "j" if est_jeune else "eq"
     base = f"{prefixe_par}{prefixe_com}{suffixe}"
-    # Anti-collision : on vérifie parmi TOUS les comptes existants (même supprimés
-    # puis recréés, jamais deux fois le même identifiant de connexion)
-    n = 1
+    # Numérotation naturelle : (nombre d'équipes actuelles du même type) + 1
+    if est_jeune:
+        nb = c.execute("SELECT COUNT(*) FROM equipes WHERE paroisse_id=? AND LOWER(nom_equipe) LIKE '%jeune%'", (paroisse_id,)).fetchone()[0]
+    else:
+        nb = c.execute("SELECT COUNT(*) FROM equipes WHERE paroisse_id=? AND LOWER(nom_equipe) NOT LIKE '%jeune%'", (paroisse_id,)).fetchone()[0]
+    n = nb + 1
+    # Sécurité anti-crash : si ce numéro est déjà porté par un compte existant
+    # (cas rare), on passe au suivant au lieu de provoquer une erreur SQL.
     while c.execute("SELECT 1 FROM utilisateurs WHERE username=?", (f"{base}{n}",)).fetchone():
         n += 1
     return f"{base}{n}".lower()
@@ -64,7 +70,7 @@ def show_paroisse():
         return
     nom_p = p_info[0]
     
-    menu = st.sidebar.radio("Navigation", ["🏘️ Ma paroisse", "👥 Mes équipes", "👤 Membres", "📊 Statistiques", "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "📥 Export Excel", "📦 Archives"])
+    menu = st.sidebar.radio("Navigation", ["🏘️ Ma paroisse", "👥 Mes équipes", "👤 Membres", "📊 Statistiques", "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "📥 Export Excel", "📦 Archives"], key="nav_par")
 
     if menu == "🏘️ Ma paroisse":
         st.markdown(f'<h2 style="color:#1A237E;">🏘️ {nom_p}</h2>', unsafe_allow_html=True)
