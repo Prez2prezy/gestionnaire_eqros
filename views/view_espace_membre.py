@@ -1049,7 +1049,7 @@ def _depliant_mouvement(paroisse_id=None):
         '<div style="background:linear-gradient(135deg,#1A237E,#4527a0); border-radius:12px; padding:14px 12px 12px 12px; text-align:center;">'
         '<div style="display:flex; justify-content:flex-start; margin-bottom:4px;">' + _logo_html + '</div>'
         '<div style="color:#FFFFFF !important; font-weight:bold; font-family:Georgia, serif; '
-        'font-size:clamp(1.0rem, 5.2vw, 1.45rem); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:0.5px;">'
+        'font-size:clamp(0.85rem, 4.2vw, 1.2rem); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:0.5px;">'
         'LES ÉQUIPES DU ROSAIRE</div>'
         '<div style="color:#e8eaf6 !important; font-size:clamp(0.7rem, 3.1vw, 0.88rem); margin-top:7px; line-height:1.7;">'
         '• Un Mouvement d’Église &nbsp;• Une École de Prière &nbsp;• Un Esprit Missionnaire<br>— depuis 1955 —</div>'
