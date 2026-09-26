@@ -407,7 +407,7 @@ def _render_page_theme_ensemble():
         + ligne_mystere + "</div>", unsafe_allow_html=True)
     if affiche_theme:
         try:
-            st.image(affiche_theme, use_container_width=True)
+            st.image(affiche_theme, width="stretch")
         except Exception:
             pass
 
@@ -542,7 +542,7 @@ def _render_page_archives_textes(type_contenu, message_vide):
                 texte, url_pdf = _extraire_pdf_legacy(texte)
             if p[2] and p[2].startswith("http"):
                 try:
-                    st.image(p[2], use_container_width=True)
+                    st.image(p[2], width="stretch")
                 except Exception:
                     st.warning("Illustration momentanément indisponible.")
             if texte:
@@ -754,7 +754,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                                          min_value=1, max_value=31, value=None, step=1,
                                          label_visibility="collapsed", key="diz_jour")
             with c_btn:
-                if st.button("✅", key="diz_valider", use_container_width=True, type="primary",
+                if st.button("✅", key="diz_valider", width="stretch", type="primary",
                              help="Valider votre jour de naissance"):
                     if saisie is not None and 1 <= int(saisie) <= 31:
                         st.session_state["diz_jrnais"] = int(saisie)
@@ -797,7 +797,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
             f'N° méd. {num} — {date.today().strftime("%d/%m/%Y")} · v7.6</div>'
             f'</div>', unsafe_allow_html=True)
         _scroll_top("cov")
-        if st.button("📿 Égrener la dizaine", key="diz_commencer", use_container_width=True, type="primary"):
+        if st.button("📿 Égrener la dizaine", key="diz_commencer", width="stretch", type="primary"):
             st.session_state["diz_ouvert"] = True
             st.session_state["diz_page"] = 0
             st.rerun()
@@ -912,11 +912,11 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
     c_av, c_term = st.columns(2)
     with c_av:
         if idx < len(pages) - 1:
-            if st.button("Suivant ▶", key=f"diz_next_{idx}", use_container_width=True, type="primary"):
+            if st.button("Suivant ▶", key=f"diz_next_{idx}", width="stretch", type="primary"):
                 st.session_state["diz_page"] = idx + 1
                 st.rerun()
         else:
-            if st.button("✕ Terminer", key=f"diz_end_{idx}", use_container_width=True):
+            if st.button("✕ Terminer", key=f"diz_end_{idx}", width="stretch"):
                 st.session_state["diz_ouvert"] = False
                 st.session_state["diz_page"] = 0
                 st.rerun()
@@ -1150,14 +1150,14 @@ def _render_actualites(pid=None):
             st.caption(f"Publié le {a[4] or '—'}")
             if a[2] and str(a[2]).startswith("http"):
                 try:
-                    st.image(a[2], use_container_width=True)
+                    st.image(a[2], width="stretch")
                 except Exception:
                     st.warning("Illustration momentanément indisponible.")
             if a[1]:
                 st.markdown(a[1].replace("\n", "  \n"))
             if a[3] and str(a[3]).startswith("http"):
                 try:
-                    st.video(a[3])
+                    st.video(a[3], width="stretch")
                 except Exception:
                     st.markdown(f"🎬 [Voir la vidéo]({a[3]})")
 
@@ -1180,7 +1180,7 @@ def _render_fil_actualites():
 
         if ligne[3] and str(ligne[3]).startswith("http"):
             try:
-                st.image(ligne[3], use_container_width=True)
+                st.image(ligne[3], width="stretch")
             except Exception:
                 st.warning("Illustration momentanément indisponible.")
 
@@ -1412,12 +1412,12 @@ def show_espace_membre(matloc_membre=None):
                         c1, c2 = st.columns(2)
                         with c1:
                             if st.button("🟢 Présent physiquement", key=f"rsp_p_{evt[0]}",
-                                         use_container_width=True,
+                                         width="stretch",
                                          type="primary" if statut != 'physique' else "secondary"):
                                 _enregistrer_presence(membre[0], evt[0], 'physique')
                         with c2:
                             if st.button("🟡 Présent spirituellement", key=f"rsp_s_{evt[0]}",
-                                         use_container_width=True,
+                                         width="stretch",
                                          type="primary" if statut != 'spirituel' else "secondary"):
                                 _enregistrer_presence(membre[0], evt[0], 'spirituel')
 
