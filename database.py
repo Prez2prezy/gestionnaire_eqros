@@ -184,6 +184,9 @@ def init_tables_and_migrations():
     safe_migrate("ALTER TABLE diocese ADD COLUMN whatsapp_responsable TEXT")
     # Base ancienne : colonne ajoutée rétroactivement
     safe_migrate("ALTER TABLE soumissions_comm ADD COLUMN paroisse_cible INTEGER")
+    # Affiches du thème pastoral et des sous-thèmes mensuels
+    safe_migrate("ALTER TABLE themes_pastoraux ADD COLUMN affiche_url TEXT")
+    safe_migrate("ALTER TABLE sous_themes ADD COLUMN affiche_url TEXT")
 
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
     try:
