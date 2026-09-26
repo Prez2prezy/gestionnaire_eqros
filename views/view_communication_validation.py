@@ -98,6 +98,11 @@ def show_validation_communication():
                     _an = None
                 st.info("🕯️ Thème de l'année pastorale " + (f"{_an} - {_an + 1}" if _an else "à préciser")
                         + f" — Mystère porteur N°{s[8] or '?'}")
+                if s[4]:
+                    try:
+                        st.image(s[4], width=300)
+                    except Exception:
+                        pass
             _nom_c = _nom_paroisse(s[10]) if len(s) > 10 else None
             st.info("🎯 Cible : " + (_nom_c if _nom_c else "🌍 Diocèse (tous)"))
 
@@ -149,12 +154,13 @@ def show_validation_communication():
                             _ex = c.execute("SELECT id FROM themes_pastoraux WHERE annee_debut=?", (_an,)).fetchone()
                             if _ex:
                                 c.execute("""UPDATE themes_pastoraux
-                                             SET texte_theme=?, mystere_principal=?, actif=1 WHERE id=?""",
-                                          (s[3], _mys, _ex[0]))
+                                             SET texte_theme=?, mystere_principal=?, actif=1,
+                                                 affiche_url=COALESCE(?, affiche_url) WHERE id=?""",
+                                          (s[3], _mys, s[4], _ex[0]))
                             else:
                                 c.execute("""INSERT INTO themes_pastoraux
-                                             (annee_debut, texte_theme, mystere_principal, actif)
-                                             VALUES (?, ?, ?, 1)""", (_an, s[3], _mys))
+                                             (annee_debut, texte_theme, mystere_principal, actif, affiche_url)
+                                             VALUES (?, ?, ?, 1, ?)""", (_an, s[3], _mys, s[4]))
                         else:
                             st.error("Année pastorale illisible : utilisez « ❌ Refuser ».")
                             _ok = False
