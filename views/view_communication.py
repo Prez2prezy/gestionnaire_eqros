@@ -183,6 +183,9 @@ def _onglet_theme():
                 st.error("Le texte du thème est obligatoire.")
             else:
                 img_url = sauvegarder_illustration(affiche_t) if affiche_t else None
+                if affiche_t and not img_url:
+                    st.warning("⚠️ L'envoi de l'affiche a échoué (service d'hébergement d'images indisponible). "
+                               "La soumission partira SANS affiche ; le diocèse pourra la resoumettre plus tard.")
                 _soumettre({"type_contenu": "theme_pastoral",
                             "titre": f"Thème {int(annee_t)} - {int(annee_t) + 1}",
                             "contenu_texte": texte_t.strip(),
