@@ -1115,6 +1115,35 @@ def _depliant_mouvement(paroisse_id=None):
         '<div style="color:#e8eaf6 !important; font-size:clamp(0.7rem, 3vw, 0.82rem); font-weight:normal; margin-top:2px;">'
         'cliquez pour ouvrir ▾</div></summary>' + _corps + '</details>', unsafe_allow_html=True)
 
+def _render_actualites(pid=None):
+    """📰 Actualités du diocèse (publications simples : affiche +/ou BA).
+    5 dernières, les plus récentes d'abord. (Ciblage paroissiel : lot C5.)"""
+    try:
+        lignes = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url, date_publication
+                              FROM espace_spirituel
+                              WHERE type_contenu='actualite'
+                              ORDER BY date_publication DESC, id DESC LIMIT 5""").fetchall()
+    except Exception:
+        return
+    if not lignes:
+        return
+    st.markdown("### 📰 Actualités")
+    for a in lignes:
+        with st.expander("📰 " + (a[0] or "(sans titre)")):
+            st.caption(f"Publié le {a[4] or '—'}")
+            if a[2] and str(a[2]).startswith("http"):
+                try:
+                    st.image(a[2], use_container_width=True)
+                except Exception:
+                    st.warning("Illustration momentanément indisponible.")
+            if a[1]:
+                st.markdown(a[1].replace("\n", "  \n"))
+            if a[3] and str(a[3]).startswith("http"):
+                try:
+                    st.video(a[3])
+                except Exception:
+                    st.markdown(f"🎬 [Voir la vidéo]({a[3]})")
+
 
 def _render_fil_actualites():
     """v7.6 — fil du jour BLINDÉ : la ligne est complétée à 5 cases avant
@@ -1270,6 +1299,7 @@ def show_espace_membre(matloc_membre=None):
             if st.session_state.get("diz_ouvert"):
                 return
             _render_fil_actualites()
+            _render_actualites()
         return
 
     # ================= ÉTAT 2 : VUE MEMBRE =================
@@ -1403,3 +1433,4 @@ def show_espace_membre(matloc_membre=None):
         if st.session_state.get("diz_ouvert"):
             return
         _render_fil_actualites()
+        _render_actualites()
