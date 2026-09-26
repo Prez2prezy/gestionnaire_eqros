@@ -126,7 +126,7 @@ def afficher_logo():
     logo_path = os.path.join("images", "logo.png")
     if os.path.exists(logo_path):
         try:
-            st.sidebar.image(logo_path, use_container_width=True)
+            st.sidebar.image(logo_path, width="stretch")
         except Exception:
             st.sidebar.caption("⚡ Erreur de chargement du logo")
     
