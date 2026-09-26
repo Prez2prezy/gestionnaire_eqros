@@ -372,13 +372,20 @@ def _rendre_intro_eyquem(titre_carte="INTRODUCTION"):
 # PAGES DES RUBRIQUES
 # ====================================================================
 def _render_page_theme_ensemble():
-    """🕯️ Thème → Vue d'ensemble."""
+    """🕯️ Thème → Vue d'ensemble (avec affiches du thème et du sous-thème)."""
     theme = get_theme_actif()
     if not theme:
         st.info("🕯️ Aucun thème pastoral n'est actuellement actif. "
                 "Il sera publié par le diocèse.")
         return
     texte_theme, mystere_principal, annee_debut = theme
+    # Affiche du thème (optionnelle)
+    try:
+        _row_aff = c.execute("SELECT affiche_url FROM themes_pastoraux WHERE annee_debut=?",
+                             (annee_debut,)).fetchone()
+        affiche_theme = _row_aff[0] if _row_aff else None
+    except Exception:
+        affiche_theme = None
     ligne_mystere = ""
     try:
         mm = get_mystere(int(mystere_principal)) if mystere_principal else None
@@ -398,15 +405,25 @@ def _render_page_theme_ensemble():
         '<div style="color:#FFD700 !important; font-size:1.25rem; font-weight:bold; margin-top:8px; line-height:1.5;">« '
         + html.escape(texte_theme or "") + ' »</div>'
         + ligne_mystere + "</div>", unsafe_allow_html=True)
+    if affiche_theme:
+        try:
+            st.image(affiche_theme, use_container_width=True)
+        except Exception:
+            pass
 
     mois_courant = date.today().month
     sous = get_sous_theme_du_mois(annee_debut, mois_courant)
     if sous:
-        titre_st, contenu_st, feuillet = sous
+        titre_st, contenu_st, feuillet, affiche_st = sous
         contenu_html = html.escape(contenu_st or "").replace("\n", "<br>")
+        img_html = (f'<img src="{affiche_st}" alt="Affiche du mois" '
+                    'style="width:100%; max-width:640px; display:block; margin:12px auto 0 auto; '
+                    'border-radius:10px; border:1px solid #27306b;">'
+                    if affiche_st else "")
         bloc = ('<div style="background:#121a45; border-radius:15px; margin:10px; padding:20px; border:1px solid #27306b;">'
                 '<div style="color:#ffe082 !important; font-weight:bold; font-size:1.05rem; text-align:center;">📅 Sous-thème de '
                 + MOIS_FR[mois_courant - 1] + " : " + html.escape(titre_st or "") + "</div>"
+                + img_html
                 + ('<div style="color:#e8eaf6 !important; font-size:0.95rem; line-height:1.7; margin-top:12px; text-align:left;">'
                    + contenu_html + "</div>" if contenu_html else "")
                 + "</div>")
