@@ -25,8 +25,7 @@ from services import (hash_password, generer_mot_de_passe, safe_date, afficher_s
                       afficher_messages_flash, lien_whatsapp, URL_ESPACE_SPIRITUEL)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel,
                         afficher_whatsapp_tabs, afficher_historique_paroisse,
-                        afficher_etat_presences_paroisse, gerer_affiches_bande_annonces,
-                        gerer_theme_pastoral, _qrcode_png_bytes)
+                        afficher_etat_presences_paroisse, _qrcode_png_bytes)
 
 
 def show_diocese():
@@ -385,79 +384,63 @@ def show_diocese():
                    "Ce qui est validé rejoint l'Espace de Prière : évangélisation élargie, membres et visiteurs.")
         afficher_messages_flash()
 
-        tab_theme, tab_com, tab_defil, tab_visuels, tab_manage = st.tabs(
-            ["🕯️ Thème pastoral", "📡 Communication", "📺 Bandes défilantes", "🖼️ Affiches & Bandes-annonces", "📋 Contenu existant"])
-
-        with tab_theme:
-            gerer_theme_pastoral()
+        tab_com, tab_manage = st.tabs(["📡 Communication", "📋 Contenu existant"])
 
         with tab_com:
+            st.caption("🕯️ Le SAS : la cellule Communication prépare et soumet — VOUS seul validez et publiez. "
+                       "Chaque contenu validé rejoint sa zone dédiée de l'Espace de Prière. "
+                       "En bas du SAS : vos outils de gestion du thème (activation, sous-thèmes, liens).")
             from views.view_communication_validation import show_validation_communication
             show_validation_communication()
 
-        with tab_defil:
-            st.caption("Le texte défile en continu dans l'entête des espaces. Maximum 3 bandes actives — les plus récentes.")
-            with st.form("form_defilante_dio"):
-                texte_def = st.text_area("Texte de la bande défilante", max_chars=300)
-                cible = st.radio("Où afficher ?", ["🌐 Partout (public + membres)", "👤 Membres uniquement"], horizontal=True)
-                if st.form_submit_button("📺 Publier la bande défilante", width="stretch"):
-                    if not texte_def.strip():
-                        st.error("Le texte est obligatoire.")
-                    else:
-                        cible_val = "defaut" if cible.startswith("🌐") else "membre"
-                        c.execute("""INSERT INTO espace_spirituel (type_contenu, titre, contenu_texte, fichier_url, image_url, date_publication, auteur_nom)
-                                     VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                                  ("annonce_defilante", "Bande défilante", texte_def.strip(), cible_val, None,
-                                   date.today().isoformat(), st.session_state.get('username')))
-                        commit_and_sync()
-                        st.session_state["flash_success"] = "Bande défilante publiée ! ✅"
-                        st.rerun()
-            st.markdown("---")
-            st.markdown("**📋 Bandes actuellement actives**")
-            bandes_actives = c.execute("""SELECT id, contenu_texte, fichier_url, date_publication FROM espace_spirituel
-                                          WHERE type_contenu='annonce_defilante'
-                                          ORDER BY date_publication DESC, id DESC""").fetchall()
-            if not bandes_actives:
-                st.info("Aucune bande défilante active.")
-            else:
-                if len(bandes_actives) >= 3:
-                    st.warning(f"⚠️ {len(bandes_actives)} bandes actives : seules les 3 plus récentes s'affichent dans l'entête. Supprimez les anciennes.")
-                for b in bandes_actives:
-                    etiquette = "🌐 Partout" if b[2] != 'membre' else "👤 Membres seuls"
-                    c_txt, c_infos, c_btn = st.columns([4, 2, 1])
-                    with c_txt:
-                        st.write(f"📺 {b[1]}")
-                    with c_infos:
-                        st.caption(f"{etiquette} • {b[3]}")
-                    with c_btn:
-                        if st.button("🗑️", key=f"del_defil_{b[0]}"):
-                            c.execute("DELETE FROM espace_spirituel WHERE id=?", (b[0],))
-                            commit_and_sync()
-                            st.rerun()
-
-        with tab_visuels:
-            gerer_affiches_bande_annonces()
-
         with tab_manage:
-            contenus = c.execute("""SELECT id, type_contenu, titre, date_publication, image_url, fichier_url
-                                    FROM espace_spirituel WHERE type_contenu != 'annonce_defilante'
-                                    ORDER BY date_publication DESC, id DESC""").fetchall()
-            if not contenus:
-                st.info("Aucun contenu publié pour le moment.")
-            else:
-                for cont in contenus:
-                    icone = {"priere": "🙏", "meditation": "📖", "audio": "🎵"}.get(cont[1], "📌")
-                    c1, c2 = st.columns([4, 1])
-                    with c1:
-                        st.write(f"{icone} **{cont[2]}** - *{cont[3]}*")
-                    with c2:
-                        if st.button("🗑️", key=f"del_espace_{cont[0]}"):
-                            for url in (cont[4], cont[5]):
-                                if url and url.startswith("http"):
-                                    supprimer_photo(url)
-                            c.execute("DELETE FROM espace_spirituel WHERE id=?", (cont[0],))
-                            commit_and_sync()
-                            st.rerun()
+            t_bandes, t_autres = st.tabs(["📺 Bandes défilantes actives", "📦 Autres contenus"])
+
+            with t_bandes:
+                st.caption("Maximum 3 bandes actives — seules les plus récentes s'affichent dans l'entête des espaces. "
+                           "Les bandes sont soumises par le Service Communication puis validées au SAS (📡).")
+                bandes_actives = c.execute("""SELECT id, contenu_texte, fichier_url, date_publication FROM espace_spirituel
+                                              WHERE type_contenu='annonce_defilante'
+                                              ORDER BY date_publication DESC, id DESC""").fetchall()
+                if not bandes_actives:
+                    st.info("Aucune bande défilante active.")
+                else:
+                    if len(bandes_actives) >= 3:
+                        st.warning(f"⚠️ {len(bandes_actives)} bandes actives : seules les 3 plus récentes s'affichent dans l'entête. Supprimez les anciennes.")
+                    for b in bandes_actives:
+                        etiquette = "🌐 Partout" if b[2] != 'membre' else "👤 Membres seuls"
+                        c_txt, c_infos, c_btn = st.columns([4, 2, 1])
+                        with c_txt:
+                            st.write(f"📺 {b[1]}")
+                        with c_infos:
+                            st.caption(f"{etiquette} • {b[3]}")
+                        with c_btn:
+                            if st.button("🗑️", key=f"del_defil_{b[0]}"):
+                                c.execute("DELETE FROM espace_spirituel WHERE id=?", (b[0],))
+                                commit_and_sync()
+                                st.rerun()
+
+            with t_autres:
+                contenus = c.execute("""SELECT id, type_contenu, titre, date_publication, image_url, fichier_url
+                                        FROM espace_spirituel WHERE type_contenu != 'annonce_defilante'
+                                        ORDER BY date_publication DESC, id DESC""").fetchall()
+                if not contenus:
+                    st.info("Aucun contenu publié pour le moment.")
+                else:
+                    for cont in contenus:
+                        icone = {"priere": "🙏", "meditation": "📖", "audio": "🎵",
+                                 "actualite": "📰"}.get(cont[1], "📌")
+                        c1, c2 = st.columns([4, 1])
+                        with c1:
+                            st.write(f"{icone} **{cont[2]}** - *{cont[3]}*")
+                        with c2:
+                            if st.button("🗑️", key=f"del_espace_{cont[0]}"):
+                                for url in (cont[4], cont[5]):
+                                    if url and url.startswith("http"):
+                                        supprimer_photo(url)
+                                c.execute("DELETE FROM espace_spirituel WHERE id=?", (cont[0],))
+                                commit_and_sync()
+                                st.rerun()
 
     elif menu == "💬 WhatsApp":
         st.markdown(f'<h2 style="color:#1A237E;">💬 Messages WhatsApp - {nom_dio}</h2>', unsafe_allow_html=True)
