@@ -158,7 +158,7 @@ def show_diocese():
                     st.image(_png, width=200)
                     st.download_button("📥 Télécharger le QR (PNG)", data=_png,
                                        file_name=f"qr_paroisse_{pid}.png",
-                                       key=f"qr_dl_{pid}", use_container_width=True)
+                                       key=f"qr_dl_{pid}", width="stretch")
                     st.caption("Imprimez ce QR sur les affiches de la paroisse : chaque scan est compté à son origine (fidèle anonyme).")
 
                 # 📱 WhatsApp du responsable (édition — le responsable peut changer)
