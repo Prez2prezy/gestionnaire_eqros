@@ -169,7 +169,7 @@ def _onglet_actualites():
 
 # ---------------- 🕯️ THÈME PASTORAL ----------------
 def _onglet_theme():
-    st.caption("🕯️ Préparez le thème pastoral de l'année (texte + mystère porteur). Après validation, le diocèse "
+    st.caption("🕯️ Préparez le thème pastoral de l'année (texte + mystère porteur + affiche facultative). Après validation, le diocèse "
                "l'activera : il s'affichera dans l'Espace de Prière (🕯️ Thème → Vue d'ensemble). "
                "Les sous-thèmes mensuels restent gérés directement par le diocèse (SAS).")
     with st.form("form_theme_soum", clear_on_submit=True):
@@ -177,13 +177,16 @@ def _onglet_theme():
                                   get_periode_pastorale()[0], step=1)
         texte_t = st.text_area("Texte du thème", placeholder="Ex. : IL POSAIT DES QUESTIONS. FORCE DE LA FOI !")
         myst_t = st.number_input("Mystère porteur (1-20)", 1, 20, 5, step=1)
+        affiche_t = st.file_uploader("Affiche du thème (photo — facultatif)", type=["jpg", "jpeg", "png", "webp"])
         if st.form_submit_button("📨 Soumettre le thème au diocèse", type="primary"):
             if not texte_t.strip():
                 st.error("Le texte du thème est obligatoire.")
             else:
+                img_url = sauvegarder_illustration(affiche_t) if affiche_t else None
                 _soumettre({"type_contenu": "theme_pastoral",
                             "titre": f"Thème {int(annee_t)} - {int(annee_t) + 1}",
                             "contenu_texte": texte_t.strip(),
+                            "image_url": img_url,
                             # Convention : date_evenement = année, lieu = mystère porteur
                             "date_evenement": str(int(annee_t)),
                             "lieu": str(int(myst_t))})
