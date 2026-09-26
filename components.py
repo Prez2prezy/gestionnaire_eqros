@@ -1212,29 +1212,9 @@ def gerer_theme_pastoral():
                     commit_and_sync()
                     st.rerun()
 
-    with st.form("form_theme_annuel"):
-        st.markdown("**Créer / mettre à jour le thème d'une année pastorale**")
-        annee_t = st.number_input("Année de début", min_value=2020, max_value=2060,
-                                  value=get_periode_pastorale()[0], step=1, key="tp_annee")
-        texte_t = st.text_area("Texte du thème", key="tp_texte",
-                               placeholder="Ex. : IL POSAIT DES QUESTIONS. FORCE DE LA FOI !")
-        myst_t = st.number_input("Mystère porteur (1-20)", min_value=1, max_value=20,
-                                 value=5, step=1, key="tp_myst")
-        if st.form_submit_button("🕯️ Enregistrer le thème", width="stretch"):
-            if not texte_t.strip():
-                st.error("Le texte du thème est obligatoire.")
-            else:
-                existant = c.execute("SELECT id FROM themes_pastoraux WHERE annee_debut=?", (annee_t,)).fetchone()
-                if existant:
-                    c.execute("""UPDATE themes_pastoraux SET texte_theme=?, mystere_principal=? WHERE id=?""",
-                              (texte_t.strip(), myst_t, existant[0]))
-                else:
-                    c.execute("UPDATE themes_pastoraux SET actif=0")
-                    c.execute("""INSERT INTO themes_pastoraux (annee_debut, texte_theme, mystere_principal, actif)
-                                 VALUES (?, ?, ?, 1)""", (annee_t, texte_t.strip(), myst_t))
-                commit_and_sync()
-                st.session_state["flash_success"] = "Thème pastoral enregistré ! ✅"
-                st.rerun()
+    st.info("🕯️ Le thème de l'année est désormais SOUMIS via le canal Communication "
+            "(Service Communication → 🕯️ Thème pastoral) puis activé ici, à la validation du SAS. "
+            "La liste ci-dessus permet de réactiver un thème déjà enregistré.")
 
     st.markdown("---")
 
