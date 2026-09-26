@@ -37,6 +37,16 @@ def _assurer_colonnes_cible():
                 commit_and_sync()
             except Exception:
                 pass
+    # Affiches du thème et des sous-thèmes (auto-réparation)
+    for _t in ("themes_pastoraux", "sous_themes"):
+        try:
+            c.execute(f"SELECT affiche_url FROM {_t} LIMIT 1")
+        except Exception:
+            try:
+                c.execute(f"ALTER TABLE {_t} ADD COLUMN affiche_url TEXT")
+                commit_and_sync()
+            except Exception:
+                pass
 
 
 def _nom_paroisse(pid):
