@@ -1,15 +1,18 @@
 # ====================================================================
-# views/view_communication.py — VERSION 1.2
-# Vue cloisonnée du Service Communication (R4 : la cellule ne publie
-# JAMAIS seule — elle SOUMET ; le diocèse valide dans 🕊️ Espace spirituel
-# → onglet 📡 Communication).
-# Marqueurs : Ctrl+F → "VERSION 1.2", "show_communication".
+# views/view_communication.py — VERSION 2.0 (soumission pure)
+# La cellule prépare et SOUMET ; le diocèse valide au SAS et publie.
+# 6 onglets : 🙏 Prière/Méditation · 📺 Bandes défilantes · 🖼️ Affiches & B-A
+# (publication simple : actualités) · 🕯️ Thème pastoral · 🎵 Musique · 📔 Journal
+# Les évènements avec Réponse de Communion relèvent EXCLUSIVEMENT de l'agenda
+# (canal des responsables d'équipe) — jamais de ce canal.
+# Marqueurs : Ctrl+F → "VERSION 2.0", "_onglet_actualites".
 # ====================================================================
 import streamlit as st
 from datetime import date
 from database import c, commit_and_sync
-from services import (sauvegarder_illustration, sauvegarder_audio,
-                      envoyer_notification_telegram)
+from services import (sauvegarder_illustration, sauvegarder_audio, sauvegarder_video,
+                      envoyer_notification_telegram, get_periode_pastorale)
+
 
 def _liste_paroisses():
     """Liste des paroisses pour le choix de cible (id, nom)."""
@@ -35,12 +38,11 @@ def _assurer_table():
     commit_and_sync()
 
 
-TYPES_EVENEMENT = ["Prière mensuelle", "Prière commune", "Prière spéciale",
-                   "Pèlerinage", "Réunion"]
-
 LIBELLES = {"priere": "🙏 Prière", "meditation": "📖 Méditation",
-            "audio": "🎵 Musique", "annonce_defilante": "📻 Bande défilante",
-            "evenement": "📅 Évènement"}
+            "audio": "🎵 Musique", "annonce_defilante": "📺 Bande défilante",
+            "actualite": "📰 Actualité (affiche/BA)",
+            "theme_pastoral": "🕯️ Thème pastoral",
+            "evenement": "📅 Évènement (historique)"}
 
 STATUTS = {"attente": "🟡 En attente de validation du diocèse",
            "publie": "✅ Publiée par le diocèse",
@@ -48,11 +50,8 @@ STATUTS = {"attente": "🟡 En attente de validation du diocèse",
 
 
 def _soumettre(d):
-    """v3 — RÈGLE MÉTIER DÉFINITIVE : la cellule ne publie JAMAIS d'elle-même.
-    L'accord du diocèse est obligatoire et nécessaire (sas de validation).
-    La finalité des contenus validés reste l'évangélisation élargie (espace
-    communautaire public, QR, affiches). La table porte le flux :
-    attente → publie / refuse."""
+    """RÈGLE MÉTIER DÉFINITIVE : la cellule ne publie JAMAIS d'elle-même.
+    L'accord du diocèse est obligatoire (sas de validation)."""
     c.execute("""INSERT INTO soumissions_comm
                  (auteur_id, type_contenu, titre, contenu_texte, image_url,
                   fichier_url, video_url, date_evenement, lieu, statut,
@@ -73,6 +72,15 @@ def _soumettre(d):
     st.success("📨 Soumission transmise au diocèse. Rien ne sera publié sans sa validation.")
 
 
+def _choisir_cible():
+    """Selectbox commun « 🎯 Cible de publication » → id paroisse ou None."""
+    _paroisses = _liste_paroisses()
+    _opts = ["🌍 Diocèse (tous)"] + [f"🏘️ Paroisse : {p[1]}" for p in _paroisses]
+    _cible_lbl = st.selectbox("🎯 Cible de publication", _opts)
+    _cible = None if _cible_lbl.startswith("🌍") else _paroisses[[i for i, o in enumerate(_opts) if o == _cible_lbl][0] - 1][0]
+    return _cible
+
+
 def _bandeau():
     st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                 ' padding:18px; border-radius:15px; text-align:center; margin-bottom:15px;">'
@@ -83,113 +91,157 @@ def _bandeau():
                 unsafe_allow_html=True)
 
 
+# ---------------- 🙏 PRIÈRE / MÉDITATION ----------------
+def _onglet_priere_meditation():
+    with st.form("form_pm", clear_on_submit=True):
+        type_pm = st.selectbox("Type de contenu", ["Prière", "Méditation"])
+        titre = st.text_input("Titre")
+        contenu = st.text_area("Contenu du texte")
+        img = st.file_uploader("Illustration (photo — facultatif)", type=["jpg", "jpeg", "png"])
+        pdf_url = st.text_input("Lien PDF (facultatif — https://...)")
+        _cible = _choisir_cible()
+        if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
+            if not titre.strip() or not contenu.strip():
+                st.error("Le titre et le contenu sont obligatoires.")
+            else:
+                img_url = sauvegarder_illustration(img) if img else None
+                _soumettre({
+                    "type_contenu": "priere" if type_pm == "Prière" else "meditation",
+                    "titre": titre.strip(), "contenu_texte": contenu.strip(),
+                    "image_url": img_url, "fichier_url": pdf_url.strip() or None,
+                    "paroisse_cible": _cible})
+
+
+# ---------------- 📺 BANDES DÉFILANTES ----------------
+def _onglet_bandes():
+    with st.form("form_bd", clear_on_submit=True):
+        st.caption("📻 Après validation, la bande défilera dans l'entête des espaces (3 dernières actives).")
+        texte_bd = st.text_area("Texte de l'annonce défilante (court et percutant)", max_chars=250)
+        _portee = st.selectbox("Portée", ["🌍 Public (tous)", "👤 Membres uniquement"])
+        _cible = _choisir_cible()
+        if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
+            if not texte_bd.strip():
+                st.error("Le texte est obligatoire.")
+            else:
+                _soumettre({"type_contenu": "annonce_defilante",
+                            "titre": "Bande défilante",
+                            "contenu_texte": texte_bd.strip(),
+                            "fichier_url": ("membre" if _portee.startswith("👤") else "defaut"),
+                            "paroisse_cible": _cible})
+
+
+# ---------------- 🖼️ AFFICHES & BANDES-ANNONCES (publication simple) ----------------
+def _onglet_actualites():
+    st.caption("📰 Préparez une actualité pour informer la communauté : jubilé, ordination, grande fête de paroisse… "
+               "Après validation, elle rejoindra la zone « 📰 Actualités » de l'Espace de Prière. "
+               "ℹ️ Si l'évènement nécessite une Réponse de Communion, il relève de l'agenda du responsable d'équipe — pas de ce canal.")
+    with st.form("form_act_soum", clear_on_submit=True):
+        titre_a = st.text_input("Titre (ex. : 25 ans de sacerdoce du Père X)")
+        texte_a = st.text_area("Texte / informations", height=120)
+        affiche_a = st.file_uploader("Affiche (photo — facultatif)", type=["jpg", "jpeg", "png"])
+        lien_v = st.text_input("Bande-annonce — lien vidéo (https://..., facultatif)")
+        fichier_v = st.file_uploader("…ou fichier vidéo (MP4 — facultatif, max ~150 Mo)", type=["mp4", "mov"])
+        c1, c2 = st.columns(2)
+        with c1:
+            date_a = st.date_input("Date de l'évènement (facultative)", value=None)
+        with c2:
+            lieu_a = st.text_input("Lieu (facultatif)")
+        _cible = _choisir_cible()
+        if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
+            if not titre_a.strip():
+                st.error("Le titre est obligatoire.")
+            elif not affiche_a and not lien_v.strip() and not fichier_v:
+                st.error("Chargez une affiche OU une vidéo (au moins un visuel).")
+            else:
+                _vid = lien_v.strip() or (sauvegarder_video(fichier_v) if fichier_v else None)
+                if fichier_v and not _vid:
+                    st.error("L'envoi du fichier vidéo a échoué. Réessayez ou utilisez un lien.")
+                else:
+                    _img = sauvegarder_illustration(affiche_a) if affiche_a else None
+                    _soumettre({"type_contenu": "actualite",
+                                "titre": titre_a.strip(),
+                                "contenu_texte": texte_a.strip() or None,
+                                "image_url": _img, "video_url": _vid,
+                                "date_evenement": date_a.isoformat() if date_a else None,
+                                "lieu": lieu_a.strip() or None,
+                                "paroisse_cible": _cible})
+
+
+# ---------------- 🕯️ THÈME PASTORAL ----------------
+def _onglet_theme():
+    st.caption("🕯️ Préparez le thème pastoral de l'année (texte + mystère porteur). Après validation, le diocèse "
+               "l'activera : il s'affichera dans l'Espace de Prière (🕯️ Thème → Vue d'ensemble). "
+               "Les sous-thèmes mensuels restent gérés directement par le diocèse (SAS).")
+    with st.form("form_theme_soum", clear_on_submit=True):
+        annee_t = st.number_input("Année de début de la période pastorale", 2020, 2060,
+                                  get_periode_pastorale()[0], step=1)
+        texte_t = st.text_area("Texte du thème", placeholder="Ex. : IL POSAIT DES QUESTIONS. FORCE DE LA FOI !")
+        myst_t = st.number_input("Mystère porteur (1-20)", 1, 20, 5, step=1)
+        if st.form_submit_button("📨 Soumettre le thème au diocèse", type="primary"):
+            if not texte_t.strip():
+                st.error("Le texte du thème est obligatoire.")
+            else:
+                _soumettre({"type_contenu": "theme_pastoral",
+                            "titre": f"Thème {int(annee_t)} - {int(annee_t) + 1}",
+                            "contenu_texte": texte_t.strip(),
+                            # Convention : date_evenement = année, lieu = mystère porteur
+                            "date_evenement": str(int(annee_t)),
+                            "lieu": str(int(myst_t))})
+
+
+# ---------------- 🎵 MUSIQUE ----------------
+def _onglet_musique():
+    with st.form("form_mu", clear_on_submit=True):
+        titre_mu = st.text_input("Titre du morceau")
+        audio = st.file_uploader("Fichier audio (MP3)", type=["mp3", "wav", "m4a"])
+        _cible = _choisir_cible()
+        if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
+            if not titre_mu.strip() or audio is None:
+                st.error("Le titre et le fichier audio sont obligatoires.")
+            else:
+                url_mu = sauvegarder_audio(audio)
+                if url_mu:
+                    _soumettre({"type_contenu": "audio", "titre": titre_mu.strip(),
+                                "fichier_url": url_mu, "paroisse_cible": _cible})
+                else:
+                    st.error("L'envoi du fichier a échoué. Réessayez.")
+
+
+# ---------------- 📔 JOURNAL ----------------
+def _onglet_journal():
+    lignes = c.execute("""SELECT id, type_contenu, titre, statut, motif_refus,
+                                 date_soumission FROM soumissions_comm
+                          ORDER BY id DESC LIMIT 30""").fetchall()
+    if not lignes:
+        st.info("Aucune soumission pour le moment.")
+    for s in lignes:
+        libelle = LIBELLES.get(s[1], s[1])
+        entete = f"{libelle} — {s[2] or '(sans titre)'} ({s[5]})"
+        with st.expander(entete):
+            st.write(STATUTS.get(s[3], s[3]))
+            if s[3] == "refuse" and s[4]:
+                st.error("Motif du refus : " + s[4])
+
+
+# ====================================================================
+# PAGE PRINCIPALE
+# ====================================================================
 def show_communication():
     _assurer_table()
     _bandeau()
-
-    t_pm, t_mu, t_bd, t_ev, t_hist = st.tabs(
-        ["🙏 Prière / Méditation", "🎵 Musique", "📻 Bande défilante",
-         "📅 Évènement", "📔 Journal des publications"])
-
-    # ---------------- PRIÈRE / MÉDITATION ----------------
-    with t_pm:
-        with st.form("form_pm", clear_on_submit=True):
-            type_pm = st.selectbox("Type de contenu", ["Prière", "Méditation"])
-            titre = st.text_input("Titre")
-            contenu = st.text_area("Contenu du texte")
-            img = st.file_uploader("Illustration (photo — facultatif)", type=["jpg", "jpeg", "png"])
-            pdf_url = st.text_input("Lien PDF (facultatif — https://...)")
-            _paroisses = _liste_paroisses()
-            _opts = ["🌍 Diocèse (tous)"] + [f"🏘️ Paroisse : {p[1]}" for p in _paroisses]
-            cible_pm = st.selectbox("🎯 Cible de publication", _opts)
-            if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
-                if not titre.strip() or not contenu.strip():
-                    st.error("Le titre et le contenu sont obligatoires.")
-                else:
-                    img_url = sauvegarder_illustration(img) if img else None
-                    _cible = None if cible_pm.startswith("🌍") else _paroisses[[i for i, o in enumerate(_opts) if o == cible_pm][0] - 1][0]
-                    _soumettre({
-                        "type_contenu": "priere" if type_pm == "Prière" else "meditation",
-                        "titre": titre.strip(), "contenu_texte": contenu.strip(),
-                        "image_url": img_url, "fichier_url": pdf_url.strip() or None,
-                        "paroisse_cible": _cible})
-
-    # ---------------- MUSIQUE ----------------
-    with t_mu:
-        with st.form("form_mu", clear_on_submit=True):
-            titre_mu = st.text_input("Titre du morceau")
-            audio = st.file_uploader("Fichier audio (MP3)", type=["mp3", "wav", "m4a"])
-            _paroisses = _liste_paroisses()
-            _opts = ["🌍 Diocèse (tous)"] + [f"🏘️ Paroisse : {p[1]}" for p in _paroisses]
-            cible_mu = st.selectbox("🎯 Cible de publication", _opts)
-            if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
-                if not titre_mu.strip() or audio is None:
-                    st.error("Le titre et le fichier audio sont obligatoires.")
-                else:
-                    url_mu = sauvegarder_audio(audio)
-                    if url_mu:
-                        _cible = None if cible_mu.startswith("🌍") else _paroisses[[i for i, o in enumerate(_opts) if o == cible_mu][0] - 1][0]
-                        _soumettre({"type_contenu": "audio", "titre": titre_mu.strip(),
-                                    "fichier_url": url_mu, "paroisse_cible": _cible})
-                    else:
-                        st.error("L'envoi du fichier a échoué. Réessayez.")
-
-    # ---------------- BANDE DÉFILANTE ----------------
-    with t_bd:
-        with st.form("form_bd", clear_on_submit=True):
-            texte_bd = st.text_area("Texte de l'annonce défilante (court et percutant)",
-                                    max_chars=250)
-            _portee = st.selectbox("Portée", ["🌍 Public (tous)", "👤 Membres uniquement"])
-            _paroisses = _liste_paroisses()
-            _opts = ["🌍 Diocèse (tous)"] + [f"🏘️ Paroisse : {p[1]}" for p in _paroisses]
-            cible_bd = st.selectbox("🎯 Cible de publication", _opts)
-            if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
-                if not texte_bd.strip():
-                    st.error("Le texte est obligatoire.")
-                else:
-                    _cible = None if cible_bd.startswith("🌍") else _paroisses[[i for i, o in enumerate(_opts) if o == cible_bd][0] - 1][0]
-                    _soumettre({"type_contenu": "annonce_defilante",
-                                "titre": "Bande défilante",
-                                "contenu_texte": texte_bd.strip(),
-                                "fichier_url": ("membre" if _portee.startswith("👤") else "defaut"),
-                                "paroisse_cible": _cible})
-
-    # ---------------- ÉVÈNEMENT ----------------
-    with t_ev:
-        with st.form("form_ev", clear_on_submit=True):
-            st.caption("ℹ️ Rappel : un évènement ciblé apparaît au Coin Affiche — il n'entre jamais dans les agendas ni ne déclenche de Réponse de Communion (chaîne normale des transmissions).")
-            type_ev = st.selectbox("Type d'évènement", TYPES_EVENEMENT)
-            c1, c2 = st.columns(2)
-            with c1:
-                d_ev = st.date_input("Date de l'évènement")
-            with c2:
-                lieu_ev = st.text_input("Lieu")
-            affiche = st.file_uploader("Affiche (photo — facultatif)", type=["jpg", "jpeg", "png"])
-            video_url = st.text_input("Lien vidéo (facultatif — https://...)")
-            _paroisses = _liste_paroisses()
-            _opts = ["🌍 Diocèse (tous)"] + [f"🏘️ Paroisse : {p[1]}" for p in _paroisses]
-            cible_ev = st.selectbox("🎯 Cible de publication", _opts)
-            if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
-                img_ev = sauvegarder_illustration(affiche) if affiche else None
-                _cible = None if cible_ev.startswith("🌍") else _paroisses[[i for i, o in enumerate(_opts) if o == cible_ev][0] - 1][0]
-                _soumettre({"type_contenu": "evenement", "titre": type_ev,
-                            "date_evenement": d_ev.isoformat(),
-                            "lieu": lieu_ev.strip() or None,
-                            "image_url": img_ev,
-                            "video_url": video_url.strip() or None,
-                            "paroisse_cible": _cible})
-
-    # ---------------- JOURNAL DES PUBLICATIONS ----------------
-    with t_hist:
-        lignes = c.execute("""SELECT id, type_contenu, titre, statut, motif_refus,
-                                     date_soumission FROM soumissions_comm
-                              ORDER BY id DESC LIMIT 30""").fetchall()
-        if not lignes:
-            st.info("Aucune soumission pour le moment.")
-        for s in lignes:
-            libelle = LIBELLES.get(s[1], s[1])
-            entete = f"{libelle} — {s[2] or '(sans titre)'} ({s[5]})"
-            with st.expander(entete):
-                st.write(STATUTS.get(s[3], s[3]))
-                if s[3] == "refuse" and s[4]:
-                    st.error("Motif du refus : " + s[4])
+    st.caption("📡 Tout contenu de ce canal est SOUMIS puis validé par le responsable diocésain avant publication. "
+               "Les évènements avec Réponse de Communion passent exclusivement par l'agenda (canal des responsables d'équipe).")
+    onglets = st.tabs(["🙏 Prière / Méditation", "📺 Bandes défilantes", "🖼️ Affiches & Bandes-annonces",
+                       "🕯️ Thème pastoral", "🎵 Musique", "📔 Journal des publications"])
+    with onglets[0]:
+        _onglet_priere_meditation()
+    with onglets[1]:
+        _onglet_bandes()
+    with onglets[2]:
+        _onglet_actualites()
+    with onglets[3]:
+        _onglet_theme()
+    with onglets[4]:
+        _onglet_musique()
+    with onglets[5]:
+        _onglet_journal()
