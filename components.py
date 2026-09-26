@@ -1231,12 +1231,15 @@ def gerer_theme_pastoral():
         mois_st = st.selectbox("Mois pastoral", MOIS_NOMS, key="tp_mois")
         titre_st = st.text_input("Titre du sous-thème", key="tp_st_titre")
         contenu_st = st.text_area("Contenu / développement", height=120, key="tp_st_contenu")
+        img_st = st.file_uploader("Affiche / illustration du mois (photo, optionnel)",
+                                  type=["jpg", "jpeg", "png", "webp"], key="tp_st_img")
         pdf_st = st.file_uploader("Feuillet du mois (PDF, optionnel)", type=["pdf"], key="tp_st_pdf")
         if st.form_submit_button("📅 Enregistrer le sous-thème", width="stretch"):
             if not titre_st.strip():
                 st.error("Le titre du sous-thème est obligatoire.")
             else:
                 url_pdf = sauvegarder_pdf(pdf_st) if pdf_st else None
+                url_img = sauvegarder_illustration(img_st) if img_st else None
                 mois_num = MOIS_NOMS.index(mois_st) + 1
                 existant = c.execute("SELECT id, feuillet_pdf FROM sous_themes WHERE annee_debut=? AND mois=?",
                                      (annee_st, mois_num)).fetchone()
@@ -1244,22 +1247,24 @@ def gerer_theme_pastoral():
                     feuillet = url_pdf if url_pdf else existant[1]
                     c.execute("""UPDATE sous_themes SET titre=?, contenu=?, feuillet_pdf=? WHERE id=?""",
                               (titre_st.strip(), contenu_st.strip(), feuillet, existant[0]))
+                    if url_img:
+                        c.execute("UPDATE sous_themes SET affiche_url=? WHERE id=?", (url_img, existant[0]))
                 else:
-                    c.execute("""INSERT INTO sous_themes (annee_debut, mois, titre, contenu, feuillet_pdf)
-                                 VALUES (?, ?, ?, ?, ?)""",
-                              (annee_st, mois_num, titre_st.strip(), contenu_st.strip(), url_pdf))
+                    c.execute("""INSERT INTO sous_themes (annee_debut, mois, titre, contenu, feuillet_pdf, affiche_url)
+                                 VALUES (?, ?, ?, ?, ?, ?)""",
+                              (annee_st, mois_num, titre_st.strip(), contenu_st.strip(), url_pdf, url_img))
                 commit_and_sync()
                 st.session_state["flash_success"] = f"Sous-thème de {mois_st} enregistré ! ✅"
                 st.rerun()
 
-    existants_st = c.execute("""SELECT mois, titre, feuillet_pdf FROM sous_themes
+    existants_st = c.execute("""SELECT mois, titre, feuillet_pdf, affiche_url FROM sous_themes
                                 WHERE annee_debut=? ORDER BY mois""", (annee_st,)).fetchall()
     if existants_st:
         st.caption("Sous-thèmes enregistrés :")
         for s in existants_st:
             c_m, c_t, c_p, c_d = st.columns([1, 5, 1, 1])
             with c_m: st.write(f"**{MOIS_NOMS[s[0]-1]}**")
-            with c_t: st.write(s[1] + (" 📄" if s[2] else ""))
+            with c_t: st.write(s[1] + (" 🖼️" if s[3] else "") + (" 📄" if s[2] else ""))
             with c_p:
                 if s[2]:
                     st.markdown(f'<a href="{s[2]}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">📄 Voir</a>', unsafe_allow_html=True)
