@@ -7,10 +7,13 @@ import streamlit as st
 from datetime import date
 from database import c, commit_and_sync
 from services import envoyer_notification_telegram
+from components import gerer_theme_pastoral
 
 LIBELLES = {"priere": "🙏 Prière", "meditation": "📖 Méditation",
-            "audio": "🎵 Musique", "annonce_defilante": "📻 Bande défilante",
-            "evenement": "📅 Évènement"}
+            "audio": "🎵 Musique", "annonce_defilante": "📺 Bande défilante",
+            "actualite": "📰 Actualité (affiche/BA)",
+            "theme_pastoral": "🕯️ Thème pastoral",
+            "evenement": "📅 Évènement (historique)"}
 
 
 def _assurer_colonnes_cible():
@@ -21,6 +24,16 @@ def _assurer_colonnes_cible():
         except Exception:
             try:
                 c.execute(f"ALTER TABLE {_t} ADD COLUMN paroisse_cible INTEGER")
+                commit_and_sync()
+            except Exception:
+                pass
+    # Colonnes de l'actualité validée (date et lieu informatifs)
+    for _col in ("date_evenement", "lieu"):
+        try:
+            c.execute(f"SELECT {_col} FROM espace_spirituel LIMIT 1")
+        except Exception:
+            try:
+                c.execute(f"ALTER TABLE espace_spirituel ADD COLUMN {_col} TEXT")
                 commit_and_sync()
             except Exception:
                 pass
@@ -76,12 +89,22 @@ def show_validation_communication():
                 st.markdown(f"🎬 [Vidéo jointe]({s[6]})")
             if s[1] == "evenement":
                 st.write(f"📅 **Date :** {s[7] or 'à définir'} — 📍 **Lieu :** {s[8] or 'à définir'}")
+            if s[1] == "actualite":
+                st.write(f"📅 **Date informative :** {s[7] or '—'} — 📍 **Lieu :** {s[8] or '—'}")
+            if s[1] == "theme_pastoral":
+                try:
+                    _an = int(s[7]) if s[7] else None
+                except (ValueError, TypeError):
+                    _an = None
+                st.info("🕯️ Thème de l'année pastorale " + (f"{_an} - {_an + 1}" if _an else "à préciser")
+                        + f" — Mystère porteur N°{s[8] or '?'}")
             _nom_c = _nom_paroisse(s[10]) if len(s) > 10 else None
             st.info("🎯 Cible : " + (_nom_c if _nom_c else "🌍 Diocèse (tous)"))
 
             c_pub, c_ref = st.columns(2)
             with c_pub:
                 if st.button("✅ Publier", key=f"pub_{s[0]}", type="primary", use_container_width=True):
+                    _ok = True
                     if s[1] in ("priere", "meditation"):
                         c.execute("""INSERT INTO espace_spirituel
                                      (type_contenu, titre, contenu_texte, image_url,
@@ -104,17 +127,49 @@ def show_validation_communication():
                                   ("annonce_defilante", s[2] or "Bande défilante", s[3], cible,
                                    date.today().isoformat(), "Service Communication",
                                    s[10] if len(s) > 10 else None))
-                    elif s[1] == "evenement":
+                    elif s[1] == "actualite":
+                        c.execute("""INSERT INTO espace_spirituel
+                                     (type_contenu, titre, contenu_texte, image_url, fichier_url,
+                                      date_publication, auteur_nom, paroisse_cible, date_evenement, lieu)
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  ("actualite", s[2], s[3], s[4], s[6],
+                                   date.today().isoformat(), "Service Communication",
+                                   s[10] if len(s) > 10 else None, s[7], s[8]))
+                    elif s[1] == "theme_pastoral":
+                        try:
+                            _an = int(s[7]) if s[7] else None
+                        except (ValueError, TypeError):
+                            _an = None
+                        try:
+                            _mys = int(s[8]) if s[8] else 5
+                        except (ValueError, TypeError):
+                            _mys = 5
+                        if _an:
+                            c.execute("UPDATE themes_pastoraux SET actif=0")
+                            _ex = c.execute("SELECT id FROM themes_pastoraux WHERE annee_debut=?", (_an,)).fetchone()
+                            if _ex:
+                                c.execute("""UPDATE themes_pastoraux
+                                             SET texte_theme=?, mystere_principal=?, actif=1 WHERE id=?""",
+                                          (s[3], _mys, _ex[0]))
+                            else:
+                                c.execute("""INSERT INTO themes_pastoraux
+                                             (annee_debut, texte_theme, mystere_principal, actif)
+                                             VALUES (?, ?, ?, 1)""", (_an, s[3], _mys))
+                        else:
+                            st.error("Année pastorale illisible : utilisez « ❌ Refuser ».")
+                            _ok = False
+                    elif s[1] == "evenement":  # ancien type (onglet supprimé), gardé pour l'historique
                         c.execute("""INSERT INTO evenements
                                      (type_evenement, date_evenement, lieu, affiche_url, video_url, auteur_nom, paroisse_cible)
                                      VALUES (?, ?, ?, ?, ?, ?, ?)""",
                                   (s[2], s[7], s[8], s[4], s[6], "Service Communication",
                                    s[10] if len(s) > 10 else None))
-                    c.execute("UPDATE soumissions_comm SET statut='publie' WHERE id=?", (s[0],))
-                    commit_and_sync()
-                    _notifier(s, "publie")
-                    st.session_state["flash_success"] = "Contenu publié ! La communauté en profite dès maintenant. ✅"
-                    st.rerun()
+                    if _ok:
+                        c.execute("UPDATE soumissions_comm SET statut='publie' WHERE id=?", (s[0],))
+                        commit_and_sync()
+                        _notifier(s, "publie")
+                        st.session_state["flash_success"] = "Contenu publié ! La communauté en profite dès maintenant. ✅"
+                        st.rerun()
             with c_ref:
                 if st.button("❌ Refuser", key=f"ref_{s[0]}", use_container_width=True):
                     st.session_state[f"refus_encours_{s[0]}"] = True
@@ -150,3 +205,11 @@ def show_validation_communication():
             st.write("Décision : **publiée**" if h[3] == "publie" else "Décision : **refusée**")
             if h[3] == "refuse" and h[4]:
                 st.error("Motif : " + h[4])
+
+    # --- OUTILS DE GESTION DIOCÈSE (pas des soumissions) ---
+    st.markdown("---")
+    with st.expander("🕯️ Gestion du thème (activation, sous-thèmes mensuels, liens des mystères)"):
+        st.caption("Le thème annuel est SOUMIS via le canal Communication puis activé ici à la validation. "
+                   "Les sous-thèmes mensuels et les liens avec les 20 mystères sont des outils de gestion du diocèse : "
+                   "saisie directe ci-dessous.")
+        gerer_theme_pastoral()
