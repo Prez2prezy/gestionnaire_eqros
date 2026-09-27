@@ -1068,8 +1068,8 @@ def _depliant_mouvement(paroisse_id=None):
         '<div style="display:flex; justify-content:flex-start; margin-bottom:4px;">' + _logo_html + '</div>'
         '<div><b><font color="#FFD000" face="Georgia, serif">'
         'LES ÉQUIPES DU ROSAIRE</font></b></div>'
-        '<div style="color:#e8eaf6 !important; font-size:clamp(0.7rem, 3.7vw, 0.88rem); margin-top:7px; line-height:1.7;">'
-        '• Un Mouvement d’Église    &nbsp;• Une École de Prière    &nbsp;• Un Esprit Missionnaire <br>— depuis 1955 —</div>'
+        '<div><small><font color="#FFD700" face="Georgia, serif">'
+        '• Un Mouvement d’Église    &nbsp;• Une École de Prière    &nbsp;• Un Esprit Missionnaire <br>— depuis 1955 —</font></small></div>'
         + _chapelet + '</div>')
     
     _blocs = ['<div style="padding:12px;">', _bandeau]
@@ -1090,7 +1090,7 @@ def _depliant_mouvement(paroisse_id=None):
         PHOTO_COMMENT))
     _blocs.append(_section("🙏", "<b><font color='#FFD000'>Deux temps de prière</font></b>",
         "<b style='color:#FFD700 !important;'>• La prière personnelle quotidienne</b> : méditer un mystère du Rosaire, l’Évangile, "
-        " dans l'Esprit du <b><i><font color='#FFD700'>Père Joseph EYQUEM,</font></i></b>, en communion avec toute la chaîne de prière.<br>"
+        " dans l'Esprit du <b><i><font color='#FFD700'>Père Joseph EYQUEM</font></i></b>, en communion avec toute la chaîne de prière.<br>"
         "<b style='color:#FFD700 !important;'>• La rencontre mensuelle</b> : prière commune chez un membre, méditation "
         "de la Parole de Dieu, partage d’intentions et de la vie quotidienne, guidée par le feuillet mensuel "
         "« Le Rosaire en Équipe ».", PHOTO_PRIERES))
