@@ -206,7 +206,7 @@ def _render_theme(compact=False):
         .mob-lien { display:block; background:#1a2150; color:#e8eaf6; border:1px solid #2a3160; border-radius:14px; padding:8px 12px; font-weight:600; font-size:0.9rem; text-decoration:none; }
         .mob-lien.actif { background:#4527a0; border-color:#5e35b1; color:#ffffff; }
         .mob-sous { display:block; color:#c7cdf5; padding:4px 10px 4px 22px; font-size:0.85rem; text-decoration:none; }
-        .mob-sous.actif { color:#ffe082; font-weight:700; }
+        .mob-sous.actif { color:#ffd000; font-weight:700; }
     }
     .sticky-header { position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
         background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px 0 16px; }
@@ -218,7 +218,7 @@ def _render_theme(compact=False):
         background: linear-gradient(90deg, #1a2150, #27306b);
         border-top: 1px solid #27306b; }
     .bande-defilante-inner { display: inline-block; padding: 8px 0; white-space: nowrap;
-        color: #ffe082 !important; font-weight: 600; font-size: 0.9rem;
+        color: #ffd000 !important; font-weight: 600; font-size: 0.9rem;
         animation: defilement 30s linear infinite; }
     .bande-defilante:hover .bande-defilante-inner { animation-play-state: paused; }
     @keyframes defilement { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
