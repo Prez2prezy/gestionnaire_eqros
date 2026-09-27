@@ -1076,20 +1076,20 @@ def _depliant_mouvement(paroisse_id=None):
     if PHOTO_BANDEAU:
         _blocs.append(_img(PHOTO_BANDEAU, "dpl-photo-bandeau"))
     _blocs.append(_section("📜", "Qui sommes-nous ?",
-        "Un mouvement catholique de prière et d’apostolat des laïcs, fondé en 1955, reconnu par l’Église "
+        "Fondé en 1955 par le Révérend Père Joseph Eyquem (1917-1990), Prêtre dominicain à Toulouse, les ""Equipes du Rosaire"" est un mouvement catholique de prière et d’apostolat des laïcs, reconnu par l’Église "
         "et par l’Ordre des Prêcheurs (Dominicains) en 1972. En Côte d’Ivoire, "
         "<b style='color:#FFD700 !important;'>Dominique YOVAN</b> introduit le Mouvement en octobre 1980 — "
         "première équipe à l’Église Sainte Famille de la Riviera à Cocody — et en devient le 1er Responsable "
         "National, jusqu’à son rappel à Dieu le 10 juillet 2015 à Abidjan.", PHOTO_QUI))
     _blocs.append(_section("⛪", "Comment ça marche ?",
-        "Chaque équipe regroupe 4 à 12 personnes autour d’un responsable, ancrée dans un quartier, une rue, "
-        "un immeuble ou un village. Chacun reçoit un <b style='color:#FFD700 !important;'>numéro de méditation (1 à 20)</b> : "
-        "chaque jour, selon la date, il médite sa dizaine — et ensemble, sans se voir, les 20 mystères du Rosaire "
+        "Une équipe est le regroupement de 3 à 12 personnes, ancrée dans un quartier, une rue, un immeuble "
+        "ou un village autour de la Vierge Marie, Mère de Notre Seigneur Jésus-Christ, afin de méditer Son Rosaire et la vie fraternelle. Chaque membre reçoit un <b style='color:#FFD700 !important;'>numéro de méditation (01 à 20)</b> : "
+        "puis dans l'Esprit du [I]Frère Joseph EYQUEM[/I], selon la date, il médite ""SA DIZAINE"" — ainsi ensemble, sans se voir, les 20 mystères du Rosaire "
         "sont couverts chaque jour. C’est la chaîne de prière universelle. Les équipes et paroisses sont coordonnées "
-        "par un responsable paroissial, un responsable diocésain et un aumônier, sous l’autorité du bureau national.",
+        "par des responsables d'équipe, paroissiaux, diocésains encadrés en tout cela par des aumôniers.",
         PHOTO_COMMENT))
     _blocs.append(_section("🙏", "Deux temps de prière",
-        "<b style='color:#FFD700 !important;'>• La prière personnelle quotidienne</b> : méditer un mystère du Rosaire, "
+        "<b style='color:#FFD700 !important;'>• La prière personnelle quotidienne</b> : méditer un mystère du Rosaire, dans l'Esprit du [I]Frère Joseph EYQUEM, (o.p.,Fondateur des Équipes du Rosaire[/I]), l’Évangile,"
         "en communion avec toute la chaîne.<br>"
         "<b style='color:#FFD700 !important;'>• La rencontre mensuelle</b> : prière commune chez un membre, méditation "
         "de la Parole de Dieu, partage d’intentions et de la vie quotidienne, guidée par le feuillet mensuel "
@@ -1099,7 +1099,7 @@ def _depliant_mouvement(paroisse_id=None):
         "aider amis et voisins à vivre l’Évangile avec Marie, même ceux qui n’ont pas l’habitude d’aller à l’église. "
         "Les équipes favorisent un climat fraternel, convivial et accessible à tous.", PHOTO_MISSION))
     _blocs.append(_section("📖", "Ressources",
-        "Chaque mois, le feuillet de 16 pages « Le Rosaire en Équipe » propose la prière du mois, des enseignements "
+        "Chaque année, un thème. Chaque mois, un sous-thème : contenu dans un feuillet « Le Rosaire en Équipe » propose la prière du mois, des enseignements "
         "théologiques accessibles et des réflexions pour la vie quotidienne — des outils qui structurent la prière "
         "et renforcent la cohésion de l’équipe.", PHOTO_RESSOURCES))
     _blocs.append(
