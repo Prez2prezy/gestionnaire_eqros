@@ -1076,7 +1076,7 @@ def _depliant_mouvement(paroisse_id=None):
     if PHOTO_BANDEAU:
         _blocs.append(_img(PHOTO_BANDEAU, "dpl-photo-bandeau"))
     _blocs.append(_section("📜", "Qui sommes-nous ?",
-        "Fondé en 1955 par le Révérend Père Joseph Eyquem (1917-1990), Prêtre dominicain à Toulouse, les \"Equipes du Rosaire\" est un mouvement catholique de prière et d’apostolat des laïcs, reconnu par l’Église "
+        "Fondé en 1955 par le Révérend Père Joseph Eyquem (1917-1990), Prêtre dominicain à Toulouse, les Equipes du Rosaire est un mouvement catholique de prière et d’apostolat des laïcs, reconnu par l’Église "
         "et par l’Ordre des Prêcheurs (Dominicains) en 1972. En Côte d’Ivoire, "
         "<b style='color:#FFD700 !important;'>Dominique YOVAN</b> introduit le Mouvement en octobre 1980 — "
         "première équipe à l’Église Sainte Famille de la Riviera à Cocody — et en devient le 1er Responsable "
@@ -1084,7 +1084,7 @@ def _depliant_mouvement(paroisse_id=None):
     _blocs.append(_section("⛪", "Comment ça marche ?",
         "Une équipe est le regroupement de 3 à 12 personnes, ancrée dans un quartier, une rue, un immeuble "
         "ou un village autour de la Vierge Marie, Mère de Notre Seigneur Jésus-Christ, afin de méditer Son Rosaire et la vie fraternelle. Chaque membre reçoit un <b style='color:#FFD700 !important;'>numéro de méditation (01 à 20)</b> : "
-        "puis dans l'Esprit du [I]Frère Joseph EYQUEM[/I], selon la date, <p>Il médite "SA DIZAINE" </p> il médite \"SA DIZAINE\" — ainsi ensemble, sans se voir, les 20 mystères du Rosaire "
+        "puis dans l'Esprit du [I]Frère Joseph EYQUEM[/I], selon la date, il médite « SA DIZAINE » — ainsi ensemble, sans se voir, les 20 mystères du Rosaire "
         "sont couverts chaque jour. C’est la chaîne de prière universelle. Les équipes et paroisses sont coordonnées "
         "par des responsables d'équipe, paroissiaux, diocésains encadrés en tout cela par des aumôniers.",
         PHOTO_COMMENT))
