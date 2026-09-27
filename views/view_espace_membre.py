@@ -742,7 +742,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
             st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                         ' padding:16px; border-radius:15px; text-align:center; margin:0 10px 6px 10px;'
                         ' border:2px solid #FFD700;">'
-                        '<div <b><font color="#FFD000; font-size:1.1rem; font-weight:bold;">🕯️ Un jour, une dizaine</font></b></div>'
+                        '<div style="color:#FFD700;">🕯️ Un jour, une dizaine</div>'
                         '<div style="color:#ffffff; font-size:0.85rem; margin-top:4px;">'
                         'Entrez ici votre jour de naissance (1 - 31) et rejoignez la chaîne de prière</div></div>',
                         unsafe_allow_html=True)
