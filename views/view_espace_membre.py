@@ -1084,7 +1084,7 @@ def _depliant_mouvement(paroisse_id=None):
     _blocs.append(_section("⛪", "Comment ça marche ?",
         "Une équipe est le regroupement de 3 à 12 personnes, ancrée dans un quartier, une rue, un immeuble "
         "ou un village autour de la Vierge Marie, Mère de Notre Seigneur Jésus-Christ, afin de méditer Son Rosaire et la vie fraternelle. Chaque membre reçoit un <b style='color:#FFD700 !important;'>numéro de méditation (01 à 20)</b> : "
-        "puis dans l'Esprit du [I]Frère Joseph EYQUEM[/I], selon la date, il médite \"SA DIZAINE\" — ainsi ensemble, sans se voir, les 20 mystères du Rosaire "
+        "puis dans l'Esprit du [I]Frère Joseph EYQUEM[/I], selon la date, <p>Il médite "SA DIZAINE" </p> il médite \"SA DIZAINE\" — ainsi ensemble, sans se voir, les 20 mystères du Rosaire "
         "sont couverts chaque jour. C’est la chaîne de prière universelle. Les équipes et paroisses sont coordonnées "
         "par des responsables d'équipe, paroissiaux, diocésains encadrés en tout cela par des aumôniers.",
         PHOTO_COMMENT))
