@@ -742,7 +742,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
             st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                         ' padding:16px; border-radius:15px; text-align:center; margin:0 10px 6px 10px;'
                         ' border:2px solid #FFD700;">'
-                        '<div style="color:#FFD700; font-size:1.1rem; font-weight:bold;">🕯️ Un jour, une dizaine</div>'
+                        '<div <b><font color="#FFD000; font-size:1.1rem; font-weight:bold;">🕯️ Un jour, une dizaine</font></b></div>'
                         '<div style="color:#ffffff; font-size:0.85rem; margin-top:4px;">'
                         'Entrez ici votre jour de naissance (1 - 31) et rejoignez la chaîne de prière</div></div>',
                         unsafe_allow_html=True)
@@ -1126,9 +1126,9 @@ def _depliant_mouvement(paroisse_id=None):
         '<details class="depliant-eq76" style="background:#121a45 !important; border:1px solid #FFD700; '
         'border-radius:15px; margin:12px 10px; overflow:hidden;">'
         '<summary style="cursor:pointer; padding:12px 14px; background:linear-gradient(135deg,#1A237E,#4527a0); text-align:center;">'
-        '<div style="color:#FFFFFF !important; font-weight:bold; font-family:Georgia, serif; '
+        '<div <b><font color="#FFD000" face="Georgia, serif"> '
         'font-size:clamp(0.95rem, 4.3vw, 1.25rem); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">'
-        '📿 Découvrez les Équipes du Rosaire !</div>'
+        '📿 Découvrez les Équipes du Rosaire !</font></b></div>'
         '<div style="color:#e8eaf6 !important; font-size:clamp(0.7rem, 3vw, 0.82rem); font-weight:normal; margin-top:2px;">'
         'cliquez pour ouvrir ▾</div></summary>' + _corps + '</details>', unsafe_allow_html=True)
 
