@@ -1090,8 +1090,8 @@ def _depliant_mouvement(paroisse_id=None):
         "par des responsables d'équipe, paroissiaux, diocésains, nationaux. Les équipiers sont encadrés par des aumôniers sectoriels, diocésains et nationaux pour le suivi spirituel.",
         PHOTO_COMMENT))
     _blocs.append(_section("🙏", "<b><font color='#FFD000'>Deux temps de prière</font></b>",
-        "<b style='color:#FFD700 !important;'>• La prière personnelle quotidienne</b> : méditer un mystère du Rosaire, dans l'Esprit du [I]Frère Joseph EYQUEM, (o.p.,Fondateur des Équipes du Rosaire[/I]), l’Évangile,"
-        "en communion avec toute la chaîne.<br>"
+        "<b style='color:#FFD700 !important;'>• La prière personnelle quotidienne</b> : méditer un mystère du Rosaire, l’Évangile, "
+        " dans l'Esprit du <b><i><font color='#FFD700'>Frère Joseph EYQUEM, (o.p.,Fondateur des Équipes du Rosaire</font></i></b>), en communion avec toute la chaîne.<br>"
         "<b style='color:#FFD700 !important;'>• La rencontre mensuelle</b> : prière commune chez un membre, méditation "
         "de la Parole de Dieu, partage d’intentions et de la vie quotidienne, guidée par le feuillet mensuel "
         "« Le Rosaire en Équipe ».", PHOTO_PRIERES))
