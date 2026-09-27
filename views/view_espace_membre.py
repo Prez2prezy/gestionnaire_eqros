@@ -1008,9 +1008,9 @@ def _depliant_mouvement(paroisse_id=None):
     PHOTO_RESSOURCES = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 📖 Ressources
     # =====================================================================
 
-    _resp, _wa, _etiquette = None, None, "le responsable diocésain"
+    _resp, _wa, _etiquette = None, None, "responsable diocésain"
     if paroisse_id:
-        _etiquette = "le responsable paroissial"
+        _etiquette = "responsable paroissial"
         try:
             _r = c.execute("SELECT responsable, whatsapp_responsable FROM paroisses WHERE id=?", (paroisse_id,)).fetchone()
             if _r and _r[0]:
@@ -1105,9 +1105,9 @@ def _depliant_mouvement(paroisse_id=None):
     _blocs.append(
         '<div style="background:#FFF9C4 !important; border:2px solid #FFD700; border-radius:12px; padding:14px; '
         'margin-top:12px; text-align:center;">'
-        '<div style="color:#1A237E !important; font-weight:bold; font-size:1.05rem; font-family:Georgia, serif;">'
-        'Vous voulez rejoindre une équipe ?</div>'
-        '<div style="color:#4527a0 !important; font-size:0.92rem; line-height:1.6; margin-top:6px;">Adressez-vous à '
+        '<div><b><font color="#1A237E" face="Georgia, serif">'
+        'Vous voulez rejoindre une équipe ?</font></b></div>'
+        '<div style="color:#4527a0 !important; font-size:0.92rem; line-height:1.6; margin-top:6px;">Adressez-vous au '
         + _etiquette + ' <b style="color:#1A237E !important;">' + html.escape((_resp or "").strip() or "du Mouvement")
         + '</b>.<br>La dizaine du jour vous attend juste en dessous de ce dépliant : entrez votre jour de naissance '
         'et priez avec nous. 🕊️</div>' + _bouton + '</div>')
