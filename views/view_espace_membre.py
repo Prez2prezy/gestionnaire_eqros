@@ -1076,18 +1076,17 @@ def _depliant_mouvement(paroisse_id=None):
     if PHOTO_BANDEAU:
         _blocs.append(_img(PHOTO_BANDEAU, "dpl-photo-bandeau"))
     _blocs.append(_section("📜", "Qui sommes-nous ?",
-        "Fondé en 1955 par le Révérend Père Joseph Eyquem (1917-1990), Prêtre dominicain à Toulouse, les Equipes du Rosaire est un mouvement catholique de prière et d’apostolat des laïcs, reconnu par l’Église "
+        "Fondé en 1955 par <b><font color='#FFD700'>le Révérend Père Joseph Eyquem (1917-1990)</font></b>, Prêtre dominicain à Toulouse, les Equipes du Rosaire est un mouvement catholique de prière et d’apostolat des laïcs, reconnu par l’Église "
         "et par l’Ordre des Prêcheurs (Dominicains) en 1972. En Côte d’Ivoire, "
-        "<b style='color:#FFD700 !important;'>Dominique YOVAN</b> introduit le Mouvement en octobre 1980 — "
+        "<b><font color='#FFD700'>Dominique YOVAN</font></b> introduit le Mouvement en octobre 1980 — "
         "première équipe à l’Église Sainte Famille de la Riviera à Cocody — et en devient le 1er Responsable "
         "National, jusqu’à son rappel à Dieu le 10 juillet 2015 à Abidjan.", PHOTO_QUI))
     _blocs.append(_section("⛪", "Comment ça marche ?",
         "Une équipe est le regroupement de 3 à 12 personnes, ancrée dans un quartier, une rue, un immeuble "
-        "ou un village autour de la Vierge Marie, Mère de Notre Seigneur Jésus-Christ, afin de méditer \"Son Rosaire\" et d'avoir une vie de fraternité. Chaque membre reçoit un <b style='color:#FFD700 !important;'>numéro de méditation (01 à 20)</b> : "
-        "puis dans l'Esprit du <i><font color='#FF0000'>Frère Joseph EYQUEM</font></i>, selon la date, il médite « SA DIZAINE » — ainsi ensemble, sans se voir, les 20 mystères du Rosaire "
-        "puis dans l'Esprit du [I]Frère Joseph EYQUEM[/I], selon la date, il médite \"SA DIZAINE\" — ainsi ensemble, sans se voir, les 20 mystères du Rosaire "
+        "ou un village autour de la Vierge Marie, Mère de Notre Seigneur Jésus-Christ, afin de méditer \"Son Rosaire\" et d'avoir une vie de fraternité. Chaque membre reçoit <b><font color='#FFD000'> un numéro de méditation compris entre 01 et 20 (Numéro dans l'équipe) </font></b> : "
+        "qui lui permet de méditer \"sa dizaine quotidienne\" dans l'Esprit du Frère fondateur; — ainsi ensemble, sans se voir, les 20 mystères du Rosaire "
         "sont couverts chaque jour. C’est la chaîne de prière universelle. Les équipes et paroisses sont coordonnées "
-        "par des responsables d'équipe, paroissiaux, diocésains encadrés en tout cela par des aumôniers.",
+        "par des responsables d'équipe, paroissiaux, diocésains, nationaux sont encadrés par des aumôniers pour le suivi spirituel.",
         PHOTO_COMMENT))
     _blocs.append(_section("🙏", "Deux temps de prière",
         "<b style='color:#FFD700 !important;'>• La prière personnelle quotidienne</b> : méditer un mystère du Rosaire, dans l'Esprit du [I]Frère Joseph EYQUEM, (o.p.,Fondateur des Équipes du Rosaire[/I]), l’Évangile,"
