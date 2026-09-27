@@ -1086,7 +1086,7 @@ def _depliant_mouvement(paroisse_id=None):
         "ou un village autour de la Vierge Marie, Mère de Notre Seigneur Jésus-Christ, afin de méditer \"Son Rosaire\" et d'avoir une vie de fraternité. Chaque membre reçoit <b><font color='#FFD000'> un numéro de méditation compris entre 01 et 20 (Numéro dans l'équipe) </font></b> : "
         "qui lui permet de méditer \"sa dizaine quotidienne\" dans l'Esprit du Frère fondateur; — ainsi ensemble, sans se voir, les 20 mystères du Rosaire "
         "sont couverts chaque jour. C’est la chaîne de prière universelle. Les équipes et paroisses sont coordonnées "
-        "par des responsables d'équipe, paroissiaux, diocésains, nationaux sont encadrés par des aumôniers pour le suivi spirituel.",
+        "par des responsables d'équipe, paroissiaux, diocésains, nationaux. Les équipiers sont encadrés par des aumôniers sectoriels, diocésains et nationaux pour le suivi spirituel.",
         PHOTO_COMMENT))
     _blocs.append(_section("🙏", "Deux temps de prière",
         "<b style='color:#FFD700 !important;'>• La prière personnelle quotidienne</b> : méditer un mystère du Rosaire, dans l'Esprit du [I]Frère Joseph EYQUEM, (o.p.,Fondateur des Équipes du Rosaire[/I]), l’Évangile,"
