@@ -1107,7 +1107,7 @@ def _depliant_mouvement(paroisse_id=None):
         '<div style="background:#FFF9C4 !important; border:2px solid #FFD700; border-radius:12px; padding:14px; '
         'margin-top:12px; text-align:center;">'
         '<div><b><font color="#FFD000" face="Georgia, serif">'
-        'Vous voulez rejoindre une équipe ?</font></b></div>'
+        'Voulez-vous rejoindre une équipe ?</font></b></div>'
         '<div style="color:#4527a0 !important; font-size:0.92rem; line-height:1.6; margin-top:6px;">Adressez-vous au '
         + _etiquette + ' <b style="color:#1A237E !important;">' + html.escape((_resp or "").strip() or "du Mouvement")
         + '</b>.<br>La dizaine du jour vous attend juste en dessous de ce dépliant : entrez votre jour de naissance '
