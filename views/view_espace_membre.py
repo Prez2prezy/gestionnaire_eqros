@@ -1060,7 +1060,7 @@ def _depliant_mouvement(paroisse_id=None):
                        '<a href="' + _lien + '" target="_blank" '
                        'style="display:inline-block; background:#25D366 !important; color:#ffffff !important; '
                        'padding:11px 24px; border-radius:30px; font-weight:bold; text-decoration:none; '
-                       'font-size:0.95rem;">📱 Écrire à ' + _etiquette + '</a></div>')
+                       'font-size:0.95rem;">📱 Écrire au ' + _etiquette + '</a></div>')
 
     _bandeau = (
         '<div style="background:linear-gradient(135deg,#1A237E,#4527a0); border-radius:12px; padding:14px 12px 12px 12px; text-align:center;">'
@@ -1105,7 +1105,7 @@ def _depliant_mouvement(paroisse_id=None):
     _blocs.append(
         '<div style="background:#FFF9C4 !important; border:2px solid #FFD700; border-radius:12px; padding:14px; '
         'margin-top:12px; text-align:center;">'
-        '<div><b><font color="#1A237E" face="Georgia, serif">'
+        '<div><b><font color="#FFD000" face="Georgia, serif">'
         'Vous voulez rejoindre une équipe ?</font></b></div>'
         '<div style="color:#4527a0 !important; font-size:0.92rem; line-height:1.6; margin-top:6px;">Adressez-vous au '
         + _etiquette + ' <b style="color:#1A237E !important;">' + html.escape((_resp or "").strip() or "du Mouvement")
