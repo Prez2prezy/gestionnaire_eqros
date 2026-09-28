@@ -147,6 +147,13 @@ if 'logged_in' not in st.session_state:
                 'role': _user[3], 'diocese_id': _user[4], 'paroisse_id': _user[5],
                 'equipe_id': _user[6]
             })
+            # Restaurer la rubrique où l'utilisateur se trouvait avant le F5
+            if _user[7]:
+                _cle_menu = {"diocese": "nav_dio", "paroisse": "nav_par",
+                             "equipe": "nav_eq"}.get(_user[3])
+                if _cle_menu:
+                    st.session_state[_cle_menu] = _user[7]
+                st.session_state["_menu_sync"] = _user[7]
         else:
             # Jeton inconnu ou expiré : on le retire de l'URL
             try:
@@ -236,7 +243,9 @@ if 'logged_in' not in st.session_state:
                 st.session_state[_cle] = _val
             # Session persistante : jeton dans l'URL → le rafraîchissement
             # ne déconnecte plus (30 jours, révoqué à la déconnexion)
-            st.query_params["t"] = creer_token_session(row[0])
+            _menu_premier = st.session_state.get({"diocese": "nav_dio", "paroisse": "nav_par",
+                                                  "equipe": "nav_eq"}.get(row[3]))
+            st.query_params["t"] = creer_token_session(row[0], _menu_premier)
             st.rerun()
         else:
             st.sidebar.error("Identifiants incorrects.")
