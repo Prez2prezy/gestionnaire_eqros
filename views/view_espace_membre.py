@@ -551,15 +551,6 @@ def _render_page_archives_textes(type_contenu, message_vide):
                 _render_pdf_inline(url_pdf)
 
 
-
-
-
-
-
-
-
-
-
 def _render_page_archives_audios():
     """Archives Musiques — LECTEUR COMPLET (playlist, ⏮️⏭️, 🔀, 🔁, sélection)."""
     audios = c.execute("""SELECT titre, fichier_url FROM espace_spirituel
@@ -1075,7 +1066,7 @@ def _depliant_mouvement(paroisse_id=None):
     _bandeau = (
         '<div style="background:linear-gradient(135deg,#1A237E,#4527a0); border-radius:12px; padding:14px 12px 12px 12px; text-align:center;">'
         '<div style="display:flex; justify-content:flex-start; margin-bottom:4px;">' + _logo_html + '</div>'
-        '<div style="font-family:Georgia, serif; font color="#FFD000" !important; font-weight:bold; font-size:clamp(1.0rem, 5.2vw, 1.45rem); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">'
+        '<div><b><font color="#FFD000" face="Georgia, serif">'
         'LES ÉQUIPES DU ROSAIRE</font></b></div>'
         '<div><small><font color="#FFD700" face="Georgia, serif">'
         '• Un Mouvement d’Église    &nbsp;• Une École de Prière    &nbsp;• Un Esprit Missionnaire <br>— depuis 1955 —</font></small></div>'
@@ -1098,9 +1089,9 @@ def _depliant_mouvement(paroisse_id=None):
         "par des responsables d'équipe, paroissiaux, diocésains, nationaux. Les équipiers sont encadrés par des aumôniers sectoriels, diocésains et nationaux pour le suivi spirituel.",
         PHOTO_COMMENT))
     _blocs.append(_section("🙏", "<b><font color='#FFD000'>Deux temps de prière</font></b>",
-        "<b><font color='#FFFFFF'>• La prière personnelle quotidienne</font></b> : méditer un mystère du Rosaire, l’Évangile, "
+        "<b style='color:#FFD700 !important;'>• La prière personnelle quotidienne</b> : méditer un mystère du Rosaire, l’Évangile, "
         " dans l'Esprit du <b><i><font color='#FFD700'>Père Joseph EYQUEM</font></i></b>, en communion avec toute la chaîne de prière.<br>"
-        "<b><font color='#FFFFFF'>• La rencontre mensuelle</font></b> : prière commune chez un membre, méditation "
+        "<b style='color:#FFD700 !important;'>• La rencontre mensuelle</b> : prière commune chez un membre, méditation "
         "de la Parole de Dieu, partage d’intentions et de la vie quotidienne, guidée par le feuillet mensuel "
         "« Le Rosaire en Équipe ».", PHOTO_PRIERES))
     _blocs.append(_section("❤️", "<b><font color='#FFD000'>Notre mission</font></b>",
@@ -1135,9 +1126,8 @@ def _depliant_mouvement(paroisse_id=None):
         '<details class="depliant-eq76" style="background:#121a45 !important; border:1px solid #FFD700; '
         'border-radius:15px; margin:12px 10px; overflow:hidden;">'
         '<summary style="cursor:pointer; padding:12px 14px; background:linear-gradient(135deg,#1A237E,#4527a0); text-align:center;">'
-        '<div style="font-family:Georgia, serif; color:#FFD000 !important; font-weight:bold; '
-        'font-size:clamp(0.95rem, 4.3vw, 1.25rem); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">'
-        '📿 Découvrez les Équipes du Rosaire !</div>'
+        '<div><b><font color="#FFD000" face="Georgia, serif">'
+        '📿 Découvrez les Équipes du Rosaire !</font></b></div>'
         '<div style="color:#e8eaf6 !important; font-size:clamp(0.7rem, 3vw, 0.82rem); font-weight:normal; margin-top:2px;">'
         'cliquez pour ouvrir ▾</div></summary>' + _corps + '</details>', unsafe_allow_html=True)
 
