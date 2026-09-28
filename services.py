@@ -295,6 +295,60 @@ def cloturer_periode(entite_type, entite_id, annee_debut, auteur_nom):
 
 
 # ============================================================
+# SESSIONS PERSISTANTES (rester connecté malgré le refresh)
+# ============================================================
+DUREE_JOURS_TOKEN = 30
+
+def creer_token_session(user_id):
+    """Fabrique un jeton de session lié au compte (valide 30 jours)
+    et purge les jetons trop anciens."""
+    from datetime import timedelta
+    token = secrets.token_hex(32)
+    c.execute("INSERT INTO sessions_persistantes (token, user_id, date_creation) VALUES (?, ?, ?)",
+              (token, user_id, date.today().isoformat()))
+    try:
+        limite = (date.today() - timedelta(days=DUREE_JOURS_TOKEN)).isoformat()
+        c.execute("DELETE FROM sessions_persistantes WHERE date_creation < ?", (limite,))
+    except Exception:
+        pass
+    commit_and_sync()
+    return token
+
+def verifier_token_session(token):
+    """Retourne la ligne utilisateur (id, username, password, role, diocese_id,
+    paroisse_id, equipe_id) si le jeton est valide, sinon None."""
+    if not token:
+        return None
+    try:
+        ligne = c.execute("""SELECT u.id, u.username, u.password, u.role, u.diocese_id,
+                                    u.paroisse_id, u.equipe_id, s.date_creation
+                             FROM sessions_persistantes s
+                             JOIN utilisateurs u ON s.user_id = u.id
+                             WHERE s.token=?""", (token,)).fetchone()
+    except Exception:
+        return None
+    if not ligne:
+        return None
+    from datetime import timedelta
+    d_creation = safe_date(ligne[7])
+    if not d_creation or (date.today() - d_creation).days > DUREE_JOURS_TOKEN:
+        try:
+            c.execute("DELETE FROM sessions_persistantes WHERE token=?", (token,))
+            commit_and_sync()
+        except Exception:
+            pass
+        return None
+    return ligne[:7]
+
+def supprimer_token_session(token):
+    """Révoque un jeton (appelé à la déconnexion)."""
+    try:
+        c.execute("DELETE FROM sessions_persistantes WHERE token=?", (token,))
+        commit_and_sync()
+    except Exception:
+        pass
+
+# ============================================================
 # EXPORT EXCEL DIOCÈSE
 # ============================================================
 def exporter_excel_diocese():
