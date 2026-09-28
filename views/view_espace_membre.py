@@ -1075,7 +1075,7 @@ def _depliant_mouvement(paroisse_id=None):
     _bandeau = (
         '<div style="background:linear-gradient(135deg,#1A237E,#4527a0); border-radius:12px; padding:14px 12px 12px 12px; text-align:center;">'
         '<div style="display:flex; justify-content:flex-start; margin-bottom:4px;">' + _logo_html + '</div>'
-        '<div style="font-family:Georgia, serif; color:#FFD000 !important; font-weight:bold; font-size:clamp(1.0rem, 5.2vw, 1.45rem); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">'
+        '<div style="font-family:Georgia, serif; font color="#FFD000" !important; font-weight:bold; font-size:clamp(1.0rem, 5.2vw, 1.45rem); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">'
         'LES ÉQUIPES DU ROSAIRE</font></b></div>'
         '<div><small><font color="#FFD700" face="Georgia, serif">'
         '• Un Mouvement d’Église    &nbsp;• Une École de Prière    &nbsp;• Un Esprit Missionnaire <br>— depuis 1955 —</font></small></div>'
