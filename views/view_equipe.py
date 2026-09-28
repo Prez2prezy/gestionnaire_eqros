@@ -6,7 +6,7 @@ from database import c, commit_and_sync
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
-                      get_max_membres)
+                      get_max_membres, synchroniser_menu_session)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, 
                         afficher_historique_suivi, afficher_whatsapp_tabs, widget_type_abonnement, 
                         enregistrer_presence_equipe, afficher_etat_presences_globales)
@@ -24,6 +24,7 @@ def show_equipe():
     max_membres = get_max_membres(eid)
 
     menu = st.sidebar.radio("Navigation", ["👥 Mon équipe", "👤 Mes membres", "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "📦 Archives"], key="nav_eq")
+    synchroniser_menu_session(menu)
 
     # CORRECTION MÉMOIRE : Ajout de 'modif_abo_id' au nettoyage pour éviter les formulaires fantômes
     if st.session_state.get('last_menu') != menu:
