@@ -293,15 +293,14 @@ def cloturer_periode(entite_type, entite_id, annee_debut, auteur_nom):
         return True
     return False
 
-
 # ============================================================
 # SESSIONS PERSISTANTES (rester connecté malgré le refresh)
 # ============================================================
 DUREE_JOURS_TOKEN = 30
 
 def creer_token_session(user_id, menu_initial=None):
-    """Fabrique un jeton de session lié au compte (valide 30 jours)
-    et purge les jetons trop anciens. menu_initial = rubrique de départ."""
+    """Fabrique un jeton de session lié au compte (valide 30 jours),
+    purge les jetons trop anciens, mémorise la rubrique de départ."""
     from datetime import timedelta
     token = secrets.token_hex(32)
     c.execute("INSERT INTO sessions_persistantes (token, user_id, date_creation, menu_courant) VALUES (?, ?, ?, ?)",
@@ -315,8 +314,8 @@ def creer_token_session(user_id, menu_initial=None):
     return token
 
 def verifier_token_session(token):
-    """Retourne la ligne utilisateur (id, username, password, role, diocese_id,
-    paroisse_id, equipe_id) si le jeton est valide, sinon None."""
+    """Retourne (id, username, password, role, diocese_id, paroisse_id,
+    equipe_id, menu_courant) si le jeton est valide, sinon None."""
     if not token:
         return None
     try:
@@ -338,7 +337,47 @@ def verifier_token_session(token):
         except Exception:
             pass
         return None
-    return ligne[:8]
+    return (ligne[0], ligne[1], ligne[2], ligne[3], ligne[4], ligne[5], ligne[6], ligne[8])
+
+def supprimer_token_session(token):
+    """Révoque un jeton (appelé à la déconnexion)."""
+    try:
+        c.execute("DELETE FROM sessions_persistantes WHERE token=?", (token,))
+        commit_and_sync()
+    except Exception:
+        pass
+
+def synchroniser_menu_session(menu):
+    """Mémorise la rubrique courante dans le jeton (s'il existe) — écrit en base
+    UNIQUEMENT au changement de rubrique, pas à chaque affichage."""
+    if not menu:
+        return
+    tok = st.query_params.get("t")
+    if isinstance(tok, list):
+        tok = tok[0] if tok else None
+    if not tok:
+        return
+    if st.session_state.get("_menu_sync") == menu:
+        return
+    st.session_state["_menu_sync"] = menu
+    try:
+        c.execute("UPDATE sessions_persistantes SET menu_courant=? WHERE token=?", (menu, tok))
+        commit_and_sync()
+    except Exception:
+        pass
+
+def lire_menu_session():
+    """Lit la rubrique mémorisée pour le jeton courant (None sinon)."""
+    tok = st.query_params.get("t")
+    if isinstance(tok, list):
+        tok = tok[0] if tok else None
+    if not tok:
+        return None
+    try:
+        r = c.execute("SELECT menu_courant FROM sessions_persistantes WHERE token=?", (tok,)).fetchone()
+        return r[0] if r and r[0] else None
+    except Exception:
+        return None
 
 def supprimer_token_session(token):
     """Révoque un jeton (appelé à la déconnexion)."""
