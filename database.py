@@ -143,7 +143,8 @@ def init_tables_and_migrations():
     c.execute("""CREATE TABLE IF NOT EXISTS stats_visites (id INTEGER PRIMARY KEY AUTOINCREMENT, page TEXT, date_visite DATE)""")
     # Sessions persistantes (rester connecté malgré le rafraîchissement)
     c.execute("""CREATE TABLE IF NOT EXISTS sessions_persistantes (
-                    token TEXT PRIMARY KEY, user_id INTEGER, date_creation DATE)""")
+                    token TEXT PRIMARY KEY, user_id INTEGER, date_creation DATE,
+                    menu_courant TEXT)""")
     # Thème pastoral (3 tables requises par mysteres.py + components.py)
     c.execute("""CREATE TABLE IF NOT EXISTS themes_pastoraux (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -190,6 +191,8 @@ def init_tables_and_migrations():
     # Affiches du thème pastoral et des sous-thèmes mensuels
     safe_migrate("ALTER TABLE themes_pastoraux ADD COLUMN affiche_url TEXT")
     safe_migrate("ALTER TABLE sous_themes ADD COLUMN affiche_url TEXT")
+    # Rubrique courante mémorisée dans le jeton de session
+    safe_migrate("ALTER TABLE sessions_persistantes ADD COLUMN menu_courant TEXT")
 
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
     try:
