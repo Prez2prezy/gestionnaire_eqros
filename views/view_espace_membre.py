@@ -1101,23 +1101,23 @@ def _depliant_mouvement(paroisse_id=None):
         "National, jusqu’à son rappel à Dieu le 10 juillet 2015 à Abidjan.", PHOTO_QUI))
     _blocs.append(_section("⛪", "Comment ça marche ?",
         "Une équipe est le regroupement de 3 à 12 personnes, ancrée dans un quartier, une rue, un immeuble "
-        "ou un village autour de la Vierge Marie, Mère de Notre Seigneur Jésus-Christ, afin de méditer \"Son Rosaire\" et d'avoir une vie de fraternité. Chaque membre reçoit <b><font color='#FFD000'> un numéro de méditation compris entre 01 et 20 (Numéro dans l'équipe) </font></b> : "
+        "ou un village autour de la Vierge Marie, Mère de Notre Seigneur Jésus-Christ, afin de méditer \"Son Rosaire\" et d'avoir une vie de fraternité. Chaque membre reçoit <b><font color='#FFD000'> un numéro de méditation compris entre 01 et 20 (Numéro dans l'équipe) </font></b> "
         "qui lui permet de méditer \"sa dizaine quotidienne\" dans l'Esprit du Frère fondateur; — ainsi ensemble, sans se voir, les 20 mystères du Rosaire "
         "sont couverts chaque jour. C’est la chaîne de prière universelle. Les équipes et paroisses sont coordonnées "
         "par des responsables d'équipe, paroissiaux, diocésains, nationaux. Les équipiers sont encadrés par des aumôniers sectoriels, diocésains et nationaux pour le suivi spirituel.",
         PHOTO_COMMENT))
     _blocs.append(_section("🙏", "Deux temps de prière",
         "<b style='color:#FFD700 !important;'>• La prière personnelle quotidienne</b> : méditer un mystère du Rosaire, l’Évangile, "
-        " dans l'Esprit du <b><i><font color='#FFD700'>Père Joseph EYQUEM</font></i></b>, en communion avec toute la chaîne de prière.<br>"
+        " dans l'Esprit du <b><i><font color='#FFD700'>Père Joseph EYQUEM,</font></i></b> en communion avec toute la chaîne de prière.<br>"
         "<b style='color:#FFD700 !important;'>• La rencontre mensuelle</b> : prière commune chez un membre, méditation "
         "de la Parole de Dieu, partage d’intentions et de la vie quotidienne, guidée par le feuillet mensuel "
-        "« Le Rosaire en Équipe ».", PHOTO_PRIERES))
+        " \"Le Rosaire en Équipe\".", PHOTO_PRIERES))
     _blocs.append(_section("❤️", "Notre mission",
         "Animés par la passion de l’Évangile et le salut des hommes, nous avons un objectif missionnaire local : "
         "aider amis et voisins à vivre l’Évangile avec Marie, même ceux qui n’ont pas l’habitude d’aller à l’église. "
         "Les équipes favorisent un climat fraternel, convivial et accessible à tous.", PHOTO_MISSION))
     _blocs.append(_section("📖", "Ressources",
-        "Chaque année, un thème. Chaque mois, un sous-thème : contenu dans un feuillet « Le Rosaire en Équipe » propose la prière du mois, des enseignements "
+        "Chaque année, un thème. Chaque mois, un sous-thème : contenu dans un feuillet \"Le Rosaire en Équipe\" propose la prière du mois, des enseignements "
         "théologiques accessibles et des réflexions pour la vie quotidienne — des outils qui structurent la prière "
         "et renforcent la cohésion de l’équipe.", PHOTO_RESSOURCES))
     _blocs.append(
