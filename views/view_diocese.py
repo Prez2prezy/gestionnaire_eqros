@@ -23,7 +23,7 @@ from services import (hash_password, generer_mot_de_passe, safe_date, afficher_s
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale,
                       sauvegarder_audio, sauvegarder_illustration, sauvegarder_pdf, supprimer_photo,
                       afficher_messages_flash, lien_whatsapp, URL_ESPACE_SPIRITUEL,
-                      synchroniser_menu_session)
+                      synchroniser_menu_session, lire_menu_session)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel,
                         afficher_whatsapp_tabs, afficher_historique_paroisse,
                         afficher_etat_presences_paroisse, _qrcode_png_bytes)
@@ -51,12 +51,22 @@ def show_diocese():
         except Exception:
             pass
 
-    menu = st.sidebar.radio("Navigation", [
+    _rubriques_dio = [
         "🏛️ Voir diocèse", "🏘️ Créer paroisses", "📋 Gérer paroisses",
         "📅 Abonnements", "📌 Suivi", "🕊️ Espace spirituel", "💬 WhatsApp",
         "🔍 Rechercher matricule", "🔐 Gérer les accès", "📊 Statistiques", "📥 Export Excel",
         "📦 Archives", "🗑️ Réinitialiser"
-    ], key="nav_dio")
+    ]
+    # Session neuve (F5) : restituer la rubrique mémorisée AVANT de dessiner
+    # le menu — sinon il retombe sur la 1ʳᵉ entrée et efface la mémoire.
+    if "nav_dio" in st.session_state and st.session_state["nav_dio"] not in _rubriques_dio:
+        del st.session_state["nav_dio"]
+    if "nav_dio" not in st.session_state:
+        _rub = lire_menu_session()
+        if _rub and _rub in _rubriques_dio:
+            st.session_state["nav_dio"] = _rub
+            st.session_state["_menu_sync"] = _rub
+    menu = st.sidebar.radio("Navigation", _rubriques_dio, key="nav_dio")
     synchroniser_menu_session(menu)
 
     if menu == "🏛️ Voir diocèse":
