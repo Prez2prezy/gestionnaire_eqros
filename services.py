@@ -367,6 +367,19 @@ def synchroniser_menu_session(menu):
     except Exception:
         pass
 
+def lire_menu_session():
+    """Lit la rubrique mémorisée pour le jeton courant (None sinon)."""
+    tok = st.query_params.get("t")
+    if isinstance(tok, list):
+        tok = tok[0] if tok else None
+    if not tok:
+        return None
+    try:
+        r = c.execute("SELECT menu_courant FROM sessions_persistantes WHERE token=?", (tok,)).fetchone()
+        return r[0] if r and r[0] else None
+    except Exception:
+        return None
+
 
 # ============================================================
 # EXPORT EXCEL DIOCÈSE
