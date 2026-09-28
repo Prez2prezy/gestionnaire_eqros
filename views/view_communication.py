@@ -197,20 +197,34 @@ def _onglet_theme():
 
 # ---------------- 🎵 MUSIQUE ----------------
 def _onglet_musique():
+    st.caption("🎵 Deux façons de soumettre un morceau : fichier MP3 (hébergement diocèse) OU lien "
+               "(MP3 direct https://… ou vidéo YouTube https://youtu.be/…). Le lien est recommandé : "
+               "aucune limite d'usage. Rappel YouTube : vidéo « non répertoriée ».")
     with st.form("form_mu", clear_on_submit=True):
         titre_mu = st.text_input("Titre du morceau")
-        audio = st.file_uploader("Fichier audio (MP3)", type=["mp3", "wav", "m4a"])
+        audio = st.file_uploader("Fichier audio (MP3 — facultatif si un lien est fourni)",
+                                 type=["mp3", "wav", "m4a"])
+        lien_mu = st.text_input("…ou lien audio / YouTube (https://...)")
         _cible = _choisir_cible()
         if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
-            if not titre_mu.strip() or audio is None:
-                st.error("Le titre et le fichier audio sont obligatoires.")
+            _url = None
+            if not titre_mu.strip():
+                st.error("Le titre est obligatoire.")
+            elif audio is None and not lien_mu.strip():
+                st.error("Chargez un fichier audio OU collez un lien (au moins un des deux).")
+            elif lien_mu.strip() and not lien_mu.strip().startswith("http"):
+                st.error("Le lien doit commencer par https://")
             else:
-                url_mu = sauvegarder_audio(audio)
-                if url_mu:
-                    _soumettre({"type_contenu": "audio", "titre": titre_mu.strip(),
-                                "fichier_url": url_mu, "paroisse_cible": _cible})
+                if lien_mu.strip():
+                    _url = lien_mu.strip()
                 else:
-                    st.error("L'envoi du fichier a échoué. Réessayez.")
+                    _url = sauvegarder_audio(audio)
+                    if not _url:
+                        st.error("L'envoi du fichier a échoué (service d'hébergement momentanément indisponible). "
+                                 "Collez un lien audio ou YouTube à la place.")
+                if _url:
+                    _soumettre({"type_contenu": "audio", "titre": titre_mu.strip(),
+                                "fichier_url": _url, "paroisse_cible": _cible})
 
 
 # ---------------- 📔 JOURNAL ----------------
