@@ -3,7 +3,9 @@ import streamlit as st
 from streamlit.components.v1 import html as _comp_html
 from database import c, commit_and_sync
 from services import (hash_password, verifier_mot_de_passe,
-                      migrer_hash_si_legacy, definir_mot_de_passe)
+                      migrer_hash_si_legacy, definir_mot_de_passe,
+                      creer_token_session, verifier_token_session,
+                      supprimer_token_session)
 
 # --- Configuration de la page ---
 st.set_page_config(page_title="Gestionnaire des Équipes du Rosaire - Diocèse de Grand-Bassam", layout="wide")
@@ -132,6 +134,26 @@ def afficher_logo():
     
     st.sidebar.markdown("---\n#### 🏛️ DIOCÈSE DE GRAND-BASSAM\n---")
 
+# --- SESSION PERSISTANTE : rester connecté malgré le rafraîchissement ---
+if 'logged_in' not in st.session_state:
+    _tok = st.query_params.get("t")
+    if isinstance(_tok, list):
+        _tok = _tok[0] if _tok else None
+    if _tok:
+        _user = verifier_token_session(_tok)
+        if _user:
+            st.session_state.update({
+                'logged_in': True, 'user_id': _user[0], 'username': _user[1],
+                'role': _user[3], 'diocese_id': _user[4], 'paroisse_id': _user[5],
+                'equipe_id': _user[6]
+            })
+        else:
+            # Jeton inconnu ou expiré : on le retire de l'URL
+            try:
+                del st.query_params["t"]
+            except Exception:
+                pass
+
 # --- AUTH ---
 if 'logged_in' not in st.session_state:
     afficher_logo()
@@ -212,6 +234,9 @@ if 'logged_in' not in st.session_state:
             if row[3] in _entrees:
                 _cle, _val = _entrees[row[3]]
                 st.session_state[_cle] = _val
+            # Session persistante : jeton dans l'URL → le rafraîchissement
+            # ne déconnecte plus (30 jours, révoqué à la déconnexion)
+            st.query_params["t"] = creer_token_session(row[0])
             st.rerun()
         else:
             st.sidebar.error("Identifiants incorrects.")
@@ -243,7 +268,16 @@ if 'logged_in' not in st.session_state:
 afficher_logo()
 st.sidebar.success(f"Connecté : {st.session_state['username']}")
 if st.sidebar.button("Déconnexion"):
+    _tok = st.query_params.get("t")
+    if isinstance(_tok, list):
+        _tok = _tok[0] if _tok else None
+    if _tok:
+        supprimer_token_session(_tok)
     for k in list(st.session_state.keys()): del st.session_state[k]
+    try:
+        del st.query_params["t"]   # retire le jeton de l'URL
+    except Exception:
+        pass
     st.rerun()
 
 st.markdown('<a href="#" style="text-decoration: none; color: inherit;"><h1 style="color:#1A237E; cursor: pointer;">📿 GESTIONNAIRE DES ÉQUIPES DU ROSAIRE</h1></a>', unsafe_allow_html=True)
