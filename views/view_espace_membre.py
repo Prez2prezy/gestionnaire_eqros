@@ -253,6 +253,17 @@ def _render_theme(compact=False):
         color: #1A237E !important;
         font-weight: bold !important;
     }
+    .stApp .stMarkdown .dpl-p-blanc,
+    .stApp .stMarkdown .dpl-p-blanc * {
+        color: #ffffff !important;
+        font-weight: bold !important;
+    }
+    .stApp .stMarkdown .dpl-titre-or,
+    .stApp .stMarkdown .dpl-titre-or * {
+        font-family: Georgia, serif !important;
+        color: #B8860B !important;
+        font-weight: bold !important;
+    }
     </style>""", unsafe_allow_html=True)
 
 
@@ -1107,11 +1118,11 @@ def _depliant_mouvement(paroisse_id=None):
         "par des responsables d'équipe, paroissiaux, diocésains, nationaux. Les équipiers sont encadrés par des aumôniers sectoriels, diocésains et nationaux pour le suivi spirituel.",
         PHOTO_COMMENT))
     _blocs.append(_section("🙏", "Deux temps de prière",
-        "<b style='color:#FFD700 !important;'>• La prière personnelle quotidienne</b> : méditer un mystère du Rosaire, l’Évangile, "
-        " dans l'Esprit du <b><i><font color='#FFD700'>Père Joseph EYQUEM,</font></i></b> en communion avec toute la chaîne de prière.<br>"
-        "<b style='color:#FFD700 !important;'>• La rencontre mensuelle</b> : prière commune chez un membre, méditation "
+        "<b class='dpl-p-blanc'>• La prière personnelle quotidienne</b> : méditer un mystère du Rosaire, l’Évangile, "
+        " dans l'Esprit du <b><i><font color='#FFD700'>Père Joseph EYQUEM</font></i></b>, en communion avec toute la chaîne de prière.<br>"
+        "<b class='dpl-p-blanc'>• La rencontre mensuelle</b> : prière commune chez un membre, méditation "
         "de la Parole de Dieu, partage d’intentions et de la vie quotidienne, guidée par le feuillet mensuel "
-        " \"Le Rosaire en Équipe\".", PHOTO_PRIERES))
+        "« Le Rosaire en Équipe ».", PHOTO_PRIERES))
     _blocs.append(_section("❤️", "Notre mission",
         "Animés par la passion de l’Évangile et le salut des hommes, nous avons un objectif missionnaire local : "
         "aider amis et voisins à vivre l’Évangile avec Marie, même ceux qui n’ont pas l’habitude d’aller à l’église. "
@@ -1123,7 +1134,7 @@ def _depliant_mouvement(paroisse_id=None):
     _blocs.append(
         '<div style="background:#FFF9C4 !important; border:2px solid #FFD700; border-radius:12px; padding:14px; '
         'margin-top:12px; text-align:center;">'
-        '<div class="dpl-titre-b" style="font-size:clamp(1.0rem, 4.2vw, 1.15rem);">'
+        '<div class="dpl-titre-g" style="font-size:clamp(1.0rem, 4.2vw, 1.15rem);">'
         'Voulez-vous rejoindre une équipe ?</div>'
         '<div style="color:#4527a0 !important; font-size:0.92rem; line-height:1.6; margin-top:6px;">Adressez-vous au '
         + _etiquette + ' <b style="color:#1A237E !important;">' + html.escape((_resp or "").strip() or "du Mouvement")
