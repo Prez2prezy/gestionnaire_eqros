@@ -8,7 +8,7 @@ from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, su
                       archiver_membre, safe_date, afficher_situation, sans_accents, 
                       enregistrer_abonnement, verifier_abonnement, periode_affichage, 
                       generer_matricule_unique, get_periode_pastorale, lien_whatsapp, URL_ESPACE_SPIRITUEL,
-                      synchroniser_menu_session)
+                      synchroniser_menu_session, lire_menu_session)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, afficher_historique_suivi, 
                         afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales)
 
@@ -71,7 +71,16 @@ def show_paroisse():
         return
     nom_p = p_info[0]
     
-    menu = st.sidebar.radio("Navigation", ["🏘️ Ma paroisse", "👥 Mes équipes", "👤 Membres", "📊 Statistiques", "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "📥 Export Excel", "📦 Archives"], key="nav_par")
+    _rubriques_par = ["🏘️ Ma paroisse", "👥 Mes équipes", "👤 Membres", "📊 Statistiques",
+                      "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "📥 Export Excel", "📦 Archives"]
+    if "nav_par" in st.session_state and st.session_state["nav_par"] not in _rubriques_par:
+        del st.session_state["nav_par"]
+    if "nav_par" not in st.session_state:
+        _rub = lire_menu_session()
+        if _rub and _rub in _rubriques_par:
+            st.session_state["nav_par"] = _rub
+            st.session_state["_menu_sync"] = _rub
+    menu = st.sidebar.radio("Navigation", _rubriques_par, key="nav_par")
     synchroniser_menu_session(menu)
 
     if menu == "🏘️ Ma paroisse":
