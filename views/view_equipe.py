@@ -6,7 +6,7 @@ from database import c, commit_and_sync
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
-                      get_max_membres, synchroniser_menu_session)
+                      get_max_membres, synchroniser_menu_session, lire_menu_session)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, 
                         afficher_historique_suivi, afficher_whatsapp_tabs, widget_type_abonnement, 
                         enregistrer_presence_equipe, afficher_etat_presences_globales)
@@ -23,7 +23,15 @@ def show_equipe():
     pid = pid_result[0]
     max_membres = get_max_membres(eid)
 
-    menu = st.sidebar.radio("Navigation", ["👥 Mon équipe", "👤 Mes membres", "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "📦 Archives"], key="nav_eq")
+    _rubriques_eq = ["👥 Mon équipe", "👤 Mes membres", "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "📦 Archives"]
+    if "nav_eq" in st.session_state and st.session_state["nav_eq"] not in _rubriques_eq:
+        del st.session_state["nav_eq"]
+    if "nav_eq" not in st.session_state:
+        _rub = lire_menu_session()
+        if _rub and _rub in _rubriques_eq:
+            st.session_state["nav_eq"] = _rub
+            st.session_state["_menu_sync"] = _rub
+    menu = st.sidebar.radio("Navigation", _rubriques_eq, key="nav_eq")
     synchroniser_menu_session(menu)
 
     # CORRECTION MÉMOIRE : Ajout de 'modif_abo_id' au nettoyage pour éviter les formulaires fantômes
