@@ -141,6 +141,9 @@ def init_tables_and_migrations():
     # Statistiques & traçabilité
     c.execute("""CREATE TABLE IF NOT EXISTS visites_paroisse (id INTEGER PRIMARY KEY AUTOINCREMENT, paroisse_id INTEGER, date_visite TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS stats_visites (id INTEGER PRIMARY KEY AUTOINCREMENT, page TEXT, date_visite DATE)""")
+    # Sessions persistantes (rester connecté malgré le rafraîchissement)
+    c.execute("""CREATE TABLE IF NOT EXISTS sessions_persistantes (
+                    token TEXT PRIMARY KEY, user_id INTEGER, date_creation DATE)""")
     # Thème pastoral (3 tables requises par mysteres.py + components.py)
     c.execute("""CREATE TABLE IF NOT EXISTS themes_pastoraux (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
