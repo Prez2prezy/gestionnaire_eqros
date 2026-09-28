@@ -22,7 +22,8 @@ from database import c, commit_and_sync
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation,
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale,
                       sauvegarder_audio, sauvegarder_illustration, sauvegarder_pdf, supprimer_photo,
-                      afficher_messages_flash, lien_whatsapp, URL_ESPACE_SPIRITUEL)
+                      afficher_messages_flash, lien_whatsapp, URL_ESPACE_SPIRITUEL,
+                      synchroniser_menu_session)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel,
                         afficher_whatsapp_tabs, afficher_historique_paroisse,
                         afficher_etat_presences_paroisse, _qrcode_png_bytes)
@@ -56,6 +57,7 @@ def show_diocese():
         "🔍 Rechercher matricule", "🔐 Gérer les accès", "📊 Statistiques", "📥 Export Excel",
         "📦 Archives", "🗑️ Réinitialiser"
     ], key="nav_dio")
+    synchroniser_menu_session(menu)
 
     if menu == "🏛️ Voir diocèse":
         st.markdown(f'<h2 style="color:#1A237E; font-size: 1.4rem;">🏛️ {html.escape(nom_dio).upper()}</h2>', unsafe_allow_html=True)
