@@ -110,13 +110,16 @@ def _liens_meme_onglet(cle):
         pass
 
 
-def _compter_bandes(membre=False):
+def _compter_bandes(membre=False, pid=None):
     """Compte les bandes RÉELLEMENT affichées. v7.6 : accès par INDEX
-    (jamais d'unpack) — blindé contre tout décalage de colonnes."""
+    (jamais d'unpack) — blindé contre tout décalage de colonnes.
+    LOT C5 : compte selon le même filtre que l'affichage."""
+    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
+        else ("AND paroisse_cible IS NULL", [])
     try:
-        bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
-                              WHERE type_contenu='annonce_defilante'
-                              ORDER BY date_publication DESC, id DESC LIMIT 3""").fetchall()
+        bandes = c.execute(f"""SELECT contenu_texte, fichier_url FROM espace_spirituel
+                              WHERE type_contenu='annonce_defilante' {cond}
+                              ORDER BY date_publication DESC, id DESC LIMIT 3""", prm).fetchall()
     except Exception:
         return 0
     n = 0
@@ -267,12 +270,15 @@ def _render_theme(compact=False):
     </style>""", unsafe_allow_html=True)
 
 
-def _bandes_defilantes_html(membre=False):
-    """HTML des bandes défilantes. v7.6 : accès par INDEX (blindé)."""
+def _bandes_defilantes_html(membre=False, pid=None):
+    """HTML des bandes défilantes. v7.6 : accès par INDEX (blindé).
+    LOT C5 : filtre par contexte paroissial (bandes diocèse + paroisse du contexte)."""
+    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
+        else ("AND paroisse_cible IS NULL", [])
     try:
-        bandes = c.execute("""SELECT contenu_texte, fichier_url FROM espace_spirituel
-                              WHERE type_contenu='annonce_defilante'
-                              ORDER BY date_publication DESC, id DESC LIMIT 3""").fetchall()
+        bandes = c.execute(f"""SELECT contenu_texte, fichier_url FROM espace_spirituel
+                              WHERE type_contenu='annonce_defilante' {cond}
+                              ORDER BY date_publication DESC, id DESC LIMIT 3""", prm).fetchall()
     except Exception:
         return ""
     morceaux = []
@@ -294,7 +300,7 @@ def _bandes_defilantes_html(membre=False):
 
 
 def _render_header(membre=None, matloc=None, masquer_bandes=False,
-                   rubriques=None, rub_act=None, sub_act=None):
+                   rubriques=None, rub_act=None, sub_act=None, pid=None):
     """Entête FIGÉE — v7.6 : menu en liens HTML avec target="_self"
     (navigation DANS l'onglet courant ; l'intercepteur _liens_meme_onglet
     garantit le résultat). PC : ruban au survol. Mobile : ☰ en <details>."""
@@ -556,11 +562,24 @@ def _render_page_rosaire_theme():
         st.caption(f"🔗 {manquants} lien(s) thématique(s) restent à saisir dans l'interface diocèse.")
 
 
-def _render_page_archives_textes(type_contenu, message_vide):
-    """Archives Prières / Méditations. Photo en WIDGET NATIF st.image."""
-    lignes = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
-                          WHERE type_contenu=? ORDER BY date_publication DESC, id DESC""",
-                       (type_contenu,)).fetchall()
+def _pid_contexte(membre_paroisse_id=None):
+    """Contexte paroissial du visiteur (LOT C5) :
+    - membre connecté → paroisse de son équipe ;
+    - visiteur via QR signé → paroisse du QR ;
+    - sinon None (diocèse uniquement)."""
+    if membre_paroisse_id:
+        return membre_paroisse_id
+    return st.session_state.get("paroisse_origine")
+
+
+def _render_page_archives_textes(type_contenu, message_vide, pid=None):
+    """Archives Prières / Méditations. Photo en WIDGET NATIF st.image.
+    LOT C5 : ne montre que le diocèse (paroisse_cible NULL) + la paroisse du contexte."""
+    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
+        else ("AND paroisse_cible IS NULL", [])
+    lignes = c.execute(f"""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
+                          WHERE type_contenu=? {cond} ORDER BY date_publication DESC, id DESC""",
+                       [type_contenu] + prm).fetchall()
     if not lignes:
         st.info(message_vide)
         return
@@ -580,12 +599,15 @@ def _render_page_archives_textes(type_contenu, message_vide):
                 _render_pdf_inline(url_pdf)
 
 
-def _render_page_archives_audios():
+def _render_page_archives_audios(pid=None):
     """Archives Musiques — LECTEUR COMPLET (playlist, ⏮️⏭️, 🔀, 🔁, sélection).
     Les MP3 en lien direct alimentent la playlist ; les liens YouTube
-    s'affichent séparément dans leur propre lecteur."""
-    audios = c.execute("""SELECT titre, fichier_url FROM espace_spirituel
-                          WHERE type_contenu='audio' ORDER BY date_publication DESC, id DESC""").fetchall()
+    s'affichent séparément. LOT C5 : filtre par contexte paroissial."""
+    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
+        else ("AND paroisse_cible IS NULL", [])
+    audios = c.execute(f"""SELECT titre, fichier_url FROM espace_spirituel
+                          WHERE type_contenu='audio' {cond} ORDER BY date_publication DESC, id DESC""",
+                       prm).fetchall()
     if not audios:
         st.info("Aucun fichier audio.")
         return
@@ -1182,12 +1204,15 @@ def _depliant_mouvement(paroisse_id=None):
 
 def _render_actualites(pid=None):
     """📰 Actualités du diocèse (publications simples : affiche +/ou BA).
-    5 dernières, les plus récentes d'abord. (Ciblage paroissiel : lot C5.)"""
+    5 dernières, les plus récentes d'abord.
+    LOT C5 : ne montre que le diocèse (cible NULL) + la paroisse du contexte."""
+    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
+        else ("AND paroisse_cible IS NULL", [])
     try:
-        lignes = c.execute("""SELECT titre, contenu_texte, image_url, fichier_url, date_publication
+        lignes = c.execute(f"""SELECT titre, contenu_texte, image_url, fichier_url, date_publication
                               FROM espace_spirituel
-                              WHERE type_contenu='actualite'
-                              ORDER BY date_publication DESC, id DESC LIMIT 5""").fetchall()
+                              WHERE type_contenu='actualite' {cond}
+                              ORDER BY date_publication DESC, id DESC LIMIT 5""", prm).fetchall()
     except Exception:
         return
     if not lignes:
@@ -1210,13 +1235,15 @@ def _render_actualites(pid=None):
                     st.markdown(f"🎬 [Voir la vidéo]({a[3]})")
 
 
-def _render_fil_actualites():
+def _render_fil_actualites(pid=None):
     """v7.6 — fil du jour BLINDÉ : la ligne est complétée à 5 cases avant
-    tout accès par index (fini l'IndexError, quelle que soit la donnée)."""
-    dernier = c.execute("""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
+    tout accès par index. LOT C5 : dernière publication VISIBLE du contexte."""
+    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
+        else ("AND paroisse_cible IS NULL", [])
+    dernier = c.execute(f"""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
                            FROM espace_spirituel
-                           WHERE type_contenu IN ('priere', 'meditation')
-                           ORDER BY date_publication DESC, id DESC LIMIT 1""").fetchone()
+                           WHERE type_contenu IN ('priere', 'meditation') {cond}
+                           ORDER BY date_publication DESC, id DESC LIMIT 1""", prm).fetchone()
 
     if dernier:
         ligne = list(dernier) + [None] * max(0, 5 - len(dernier))
@@ -1318,9 +1345,10 @@ def show_espace_membre(matloc_membre=None):
                         pass
 
         rub, sub = _lire_nav(RUBRIQUES_PUBLIC)
+        pid_pub = _pid_contexte()
         _render_header(masquer_bandes=livre_ouvert,
                        rubriques=(None if livre_ouvert else RUBRIQUES_PUBLIC),
-                       rub_act=rub, sub_act=sub)
+                       rub_act=rub, sub_act=sub, pid=pid_pub)
         # Accueil personnalisé si arrivée par QR paroissial signé
         _origine = st.session_state.get("paroisse_origine")
         if _origine:
@@ -1344,11 +1372,11 @@ def show_espace_membre(matloc_membre=None):
                 _render_page_rosaire_eyquem()
         elif rub == "📖 Archives":
             if sub == "📖 Méditations":
-                _render_page_archives_textes("meditation", "Aucune méditation disponible.")
+                _render_page_archives_textes("meditation", "Aucune méditation disponible.", pid=pid_pub)
             elif sub == "🎵 Musiques":
-                _render_page_archives_audios()
+                _render_page_archives_audios(pid=pid_pub)
             else:
-                _render_page_archives_textes("priere", "Aucune prière publiée.")
+                _render_page_archives_textes("priere", "Aucune prière publiée.", pid=pid_pub)
         elif rub == "🕯️ Thème":
             if sub == "🎓 Enseignements":
                 _render_page_en_preparation("🎓", "Enseignements",
@@ -1363,8 +1391,8 @@ def show_espace_membre(matloc_membre=None):
             _render_dizaine_du_jour(est_membre=False)
             if st.session_state.get("diz_ouvert"):
                 return
-            _render_fil_actualites()
-            _render_actualites()
+            _render_fil_actualites(pid=pid_pub)
+            _render_actualites(pid=pid_pub)
         return
 
     # ================= ÉTAT 2 : VUE MEMBRE =================
@@ -1392,9 +1420,10 @@ def show_espace_membre(matloc_membre=None):
         compter_visite("membre")
 
     rub, sub = _lire_nav(RUBRIQUES_MEMBRE)
+    pid_m = _pid_contexte(membre[11])
     _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert,
                    rubriques=(None if livre_ouvert else RUBRIQUES_MEMBRE),
-                   rub_act=rub, sub_act=sub)
+                   rub_act=rub, sub_act=sub, pid=pid_m)
 
     if livre_ouvert:
         _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
@@ -1477,11 +1506,11 @@ def show_espace_membre(matloc_membre=None):
 
     elif rub == "📖 Archives":
         if sub == "📖 Méditations":
-            _render_page_archives_textes("meditation", "Aucune méditation disponible.")
+            _render_page_archives_textes("meditation", "Aucune méditation disponible.", pid=pid_m)
         elif sub == "🎵 Musiques":
-            _render_page_archives_audios()
+            _render_page_archives_audios(pid=pid_m)
         else:
-            _render_page_archives_textes("priere", "Aucune prière publiée.")
+            _render_page_archives_textes("priere", "Aucune prière publiée.", pid=pid_m)
 
     elif rub == "🕯️ Thème":
         if sub == "🎓 Enseignements":
@@ -1497,5 +1526,5 @@ def show_espace_membre(matloc_membre=None):
         _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
         if st.session_state.get("diz_ouvert"):
             return
-        _render_fil_actualites()
-        _render_actualites()
+        _render_fil_actualites(pid=pid_m)
+        _render_actualites(pid=pid_m)
