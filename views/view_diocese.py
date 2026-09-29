@@ -411,7 +411,7 @@ def show_diocese():
             with t_bandes:
                 st.caption("Maximum 3 bandes actives — seules les plus récentes s'affichent dans l'entête des espaces. "
                            "Les bandes sont soumises par le Service Communication puis validées au SAS (📡).")
-                bandes_actives = c.execute("""SELECT id, contenu_texte, fichier_url, date_publication FROM espace_spirituel
+                bandes_actives = c.execute("""SELECT id, contenu_texte, fichier_url, date_publication, paroisse_cible FROM espace_spirituel
                                               WHERE type_contenu='annonce_defilante'
                                               ORDER BY date_publication DESC, id DESC""").fetchall()
                 if not bandes_actives:
@@ -419,13 +419,15 @@ def show_diocese():
                 else:
                     if len(bandes_actives) >= 3:
                         st.warning(f"⚠️ {len(bandes_actives)} bandes actives : seules les 3 plus récentes s'affichent dans l'entête. Supprimez les anciennes.")
+                    _paroisses_map = {p[0]: p[1] for p in c.execute("SELECT id, nom FROM paroisses").fetchall()}
                     for b in bandes_actives:
                         etiquette = "🌐 Partout" if b[2] != 'membre' else "👤 Membres seuls"
+                        _cible_lbl = f" • 🏘️ {_paroisses_map[b[4]]}" if b[4] and b[4] in _paroisses_map else ""
                         c_txt, c_infos, c_btn = st.columns([4, 2, 1])
                         with c_txt:
                             st.write(f"📺 {b[1]}")
                         with c_infos:
-                            st.caption(f"{etiquette} • {b[3]}")
+                            st.caption(f"{etiquette}{_cible_lbl} • {b[3]}")
                         with c_btn:
                             if st.button("🗑️", key=f"del_defil_{b[0]}"):
                                 c.execute("DELETE FROM espace_spirituel WHERE id=?", (b[0],))
