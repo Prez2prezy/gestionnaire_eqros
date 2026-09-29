@@ -1,1530 +1,596 @@
 # ====================================================================
-# view_espace_membre.py — VERSION 7.6 (réécriture une pièce)
-# v7.6 : ① liens du menu naviguent DANS l'onglet courant (fini les 10
-# onglets) ; ② fil du mjour blindé ; ③ compteur fusionné « 1 visite =
-# 1 arrivée » ; ④ fonctions bandes blindées (accès par index).
-# Hérite de v7.5 : menu liens HTML purs + ruban hover + ☰ mobile,
-# navigation ?r=&s=, mesure autocorrigée, QR paroissial, lecteur complet.
-# Marqueurs : Ctrl+F → "VERSION 7.6", "_liens_meme_onglet", "· v7.6".
+# views/view_diocese.py — VERSION 4.0 (reconstruction une pièce)
+# Base : la version riche validée (messages flash, clés composites,
+# re-SELECT Turso, PDF Cloudinary, nettoyage Cloudinary, bandes défilantes,
+# graphe Fréquentation) + les acquis de session (WhatsApp responsables +
+# expédition, QR paroissial dans Gérer paroisses, sceau Communication en
+# onglet, migrations douces, Voir diocèse enrichi).
+# RECADRAGE UTILISATEUR : « ➕ Publier du contenu » SUPPRIMÉ — tout contenu
+# spirituel passe par la cellule Communication (prépare) et le sceau du
+# diocèse (valide). Bandes défilantes = onglet dédié du diocèse.
+# Marqueurs : Ctrl+F → "VERSION 4.0", "gerer_qr_paroissiaux" absent,
+# "show_validation_communication" présent.
 # ====================================================================
 import os
-import re
+import shutil
 import html
-import base64
-import json
 import streamlit as st
+import pandas as pd
+import io
 from datetime import date
-from streamlit.components.v1 import html as _comp_html
 from database import c, commit_and_sync
-from services import safe_date, compter_visite, lien_whatsapp
-from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
+from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation,
+                      exporter_excel_diocese, periode_affichage, get_periode_pastorale,
+                      sauvegarder_audio, sauvegarder_illustration, sauvegarder_pdf, supprimer_photo,
+                      afficher_messages_flash, lien_whatsapp, URL_ESPACE_SPIRITUEL,
+                      synchroniser_menu_session, lire_menu_session)
+from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel,
+                        afficher_whatsapp_tabs, afficher_historique_paroisse,
+                        afficher_etat_presences_paroisse, _qrcode_png_bytes)
 
 
-# ====================================================================
-# NAVIGATION
-# ====================================================================
-RUBRIQUES_MEMBRE = ["🏠 Actualités", "🕯️ Thème", "📿 Rosaire", "📅 Mes évènements", "📖 Archives"]
-RUBRIQUES_PUBLIC = ["🏠 Actualités", "📿 Rosaire", "🕯️ Thème", "📖 Archives"]
-SOUS_RUBRIQUES = {
-    "🕯️ Thème": ["🔭 Vue d'ensemble", "🎓 Enseignements", "💬 Discussions"],
-    "📿 Rosaire": ["L'esprit du Père Eyquem", "Le thème de l'année"],
-    "📖 Archives": ["🙏 Prières", "📖 Méditations", "🎵 Musiques"],
-}
+def show_diocese():
+    d_info = c.execute("SELECT nom, responsable, bureau FROM diocese WHERE id=?", (1,)).fetchone()
+    nom_dio = d_info[0] if d_info else "Diocèse"
 
-def _lire_nav(rubriques):
-    """Rubrique/sous-rubrique lues dans l'URL (?r=..&s=..). Navigation par
-    LIENS HTML purs : aucun pont JS fragile."""
-    rub = rubriques[0]
+    # Migrations douces (idempotentes, silencieuses)
     try:
-        i = int(str(st.query_params.get("r", "")))
-        if 0 <= i < len(rubriques):
-            rub = rubriques[i]
-    except (ValueError, TypeError):
-        pass
-    sous = SOUS_RUBRIQUES.get(rub)
-    sub = None
-    if sous:
-        sub = sous[0]
+        c.execute("SELECT whatsapp_responsable FROM paroisses LIMIT 1")
+    except Exception:
         try:
-            j = int(str(st.query_params.get("s", "")))
-            if 0 <= j < len(sous):
-                sub = sous[j]
-        except (ValueError, TypeError):
+            c.execute("ALTER TABLE paroisses ADD COLUMN whatsapp_responsable TEXT")
+            commit_and_sync()
+        except Exception:
             pass
-    return rub, sub
-
-# ====================================================================
-# HELPERS
-# ====================================================================
-@st.cache_data
-def _logo_base64():
     try:
-        with open(os.path.join("images", "logo.png"), "rb") as f:
-            return base64.b64encode(f.read()).decode()
+        c.execute("SELECT whatsapp_responsable FROM diocese LIMIT 1")
     except Exception:
-        return None
-
-
-PDF_URL_RE = re.compile(r'href="(https://res\.cloudinary\.com/[^"]+\.pdf)"')
-DIV_PDF_RE = re.compile(r'<div[^>]*1px dashed #4527a0.*?</div>\s*', re.DOTALL)
-
-
-def _extraire_pdf_legacy(contenu):
-    if not contenu or ("cloudinary" not in contenu and "data:application/pdf" not in contenu):
-        return contenu, None
-    m = PDF_URL_RE.search(contenu)
-    url = m.group(1) if m else None
-    return DIV_PDF_RE.sub("", contenu).strip(), url
-
-
-def _scroll_top(cle):
-    """Remet la vue en haut (sous l'entête) à chaque page du livre."""
-    try:
-        _comp_html("<script>window.parent.scrollTo(0, 0);</script>", height=0, key=f"scroll_{cle}")
-    except Exception:
-        pass
-
-
-def _liens_meme_onglet(cle):
-    """v7.6 — LES LIENS DU MENU NAVIGUENT DANS L'ONGLET COURANT.
-    Constat terrain : Streamlit force certains liens vers un nouvel onglet
-    (10 clics = 10 onglets). Double parade : ① target="_self" écrit dans le
-    HTML des ancres ; ② intercepteur qui reprend le clic et navigue le
-    document parent. Ré-attaché à chaque run (le DOM est recréé)."""
-    script = (
-        "<script>(function(){var d=window.parent.document;var essais=0;"
-        "var t=setInterval(function(){essais++;"
-        "var as=d.querySelectorAll('.menu-ligne a,.mob-panneau a');var n=0;"
-        "for(var i=0;i<as.length;i++){"
-        "if(!as[i].getAttribute('data-self76')){"
-        "as[i].setAttribute('data-self76','1');as[i].setAttribute('target','_self');"
-        "(function(a){a.addEventListener('click',function(e){e.preventDefault();"
-        "window.top.location.href=a.href;});})(as[i]);}"
-        "n++;}"
-        "if(n>0&&essais>2){clearInterval(t);}"
-        "else if(essais>20){clearInterval(t);}"
-        "},300);})();</script>")
-    try:
-        _comp_html(script, height=0, key=f"self76_{cle}")
-    except Exception:
-        pass
-
-
-def _compter_bandes(membre=False, pid=None):
-    """Compte les bandes RÉELLEMENT affichées. v7.6 : accès par INDEX
-    (jamais d'unpack) — blindé contre tout décalage de colonnes.
-    LOT C5 : compte selon le même filtre que l'affichage."""
-    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
-        else ("AND paroisse_cible IS NULL", [])
-    try:
-        bandes = c.execute(f"""SELECT contenu_texte, fichier_url FROM espace_spirituel
-                              WHERE type_contenu='annonce_defilante' {cond}
-                              ORDER BY date_publication DESC, id DESC LIMIT 3""", prm).fetchall()
-    except Exception:
-        return 0
-    n = 0
-    for ligne in bandes:
-        if len(ligne) < 1:
-            continue
-        texte = ligne[0]
-        cible = ligne[1] if len(ligne) > 1 else None
-        if cible == "membre" and not membre:
-            continue
-        if not texte:
-            continue
-        n += 1
-    return n
-
-
-def _mesure_entete(cle):
-    """Mesure AUTOCORRIGÉE : revérifie toutes les 400 ms, n'écrit que si la
-    hauteur a changé (l'entête se dessine en plusieurs fois)."""
-    script = (
-        "<script>(function(){var d0=-1;var a=function(){try{"
-        "var d=window.parent.document;var h=d.querySelector('.sticky-header');"
-        "var b=d.querySelector('.block-container');"
-        "if(h&&b){var n=h.offsetHeight;if(n!==d0){d0=n;"
-        "b.style.setProperty('padding-top',n+'px','important');}}}catch(e){}};"
-        "a();setInterval(a,400);window.parent.addEventListener('resize',a);})();</script>")
-    try:
-        _comp_html(script, height=0, key=f"mesure_{cle}")
-    except Exception:
-        pass
-
-def _render_theme(compact=False):
-    """CSS de l'espace. CONCATÉNATION (jamais de f-string avec du CSS)."""
-    if compact:
-        secours_1, secours_2, secours_3 = 260, 240, 230
-    else:
-        secours_1, secours_2, secours_3 = 380, 330, 310
-    regle_contenu = (
-        ".block-container { padding-top: " + str(secours_1)
-        + "px !important; padding-bottom: 4rem !important; max-width: 1050px !important; }"
-    )
-    st.markdown(
-        '<style>'
-        + regle_contenu +
-        """
-    [data-testid="stHeader"] { display: none !important; }
-    .stApp, [data-testid="stAppViewContainer"] { background-color: #0a0f2c !important; }
-    .stApp .stMarkdown, .stApp .stMarkdown p, .stApp .stMarkdown li, .stApp .stMarkdown span,
-    .stApp .stMarkdown h1, .stApp .stMarkdown h2, .stApp .stMarkdown h3, .stApp .stMarkdown h4,
-    .stApp .stMarkdown strong, .stApp .stMarkdown em { color: #e8eaf6 !important; }
-    .stApp .stMarkdown a { color: #b39ddb !important; }
-    [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: #9fa6d8 !important; }
-    [data-testid="stExpander"] { background-color: #121a45 !important; border: 1px solid #27306b !important; border-radius: 12px !important; }
-    details, [data-testid="stExpanderDetails"] { background-color: transparent !important; }
-    summary, [data-testid="stExpander"] p { color: #e8eaf6 !important; }
-    [data-baseweb="tab-list"] { border-bottom-color: #27306b !important; }
-    [data-baseweb="tab"] p { color: #e8eaf6 !important; font-weight: 600 !important; }
-    [data-baseweb="tab"][aria-selected="true"] p { color: #ffffff !important; }
-    [data-baseweb="tab-highlight"] { background-color: #7b1fa2 !important; }
-    .stButton > button { background-color: #1a2150 !important; color: #e8eaf6 !important; border: 1px solid #2a3160 !important; }
-    .stButton > button[kind="primary"] { background-color: #4527a0 !important; border-color: #5e35b1 !important; color: #ffffff !important; }
-    [data-testid="stAlert"] { background-color: #151b3d !important; }
-    [data-testid="stAlert"] p { color: #e8eaf6 !important; }
-    [data-testid="stPopover"] { width: fit-content !important; max-width: 260px !important; margin-left: 0 !important; }
-    [data-testid="stPopover"] button { background-color: #4527a0 !important; color: #ffffff !important; border: 1px solid #5e35b1 !important; border-radius: 20px !important; font-weight: 600 !important; }
-    [data-testid="stPopover"] button:hover { background-color: #5e35b1 !important; }
-    [data-testid="stNumberInput"] { max-width: 220px !important; margin-left: auto !important; margin-right: auto !important; }
-    [data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] { display: none !important; }
-    .menu-ligne { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin:8px auto 0 auto; max-width:1200px; }
-    .menu-item { position:relative; }
-    .menu-lien { display:block; background-color:#1a2150; color:#e8eaf6; border:1px solid #2a3160; border-radius:20px; padding:6px 14px; font-weight:600; font-size:0.85rem; text-decoration:none; white-space:nowrap; cursor:pointer; }
-    .menu-item.actif .menu-lien { background-color:#4527a0; border-color:#5e35b1; color:#ffffff; }
-    .menu-item:hover .menu-lien { background-color:#5e35b1; color:#ffffff; }
-    .sous-ruban { display:none; position:absolute; top:100%; left:50%; transform:translateX(-50%); z-index:10001; background:#121a45; border:1px solid #27306b; border-radius:10px; padding:6px; min-width:210px; box-shadow:0 6px 18px rgba(0,0,0,0.5); }
-    .menu-item:hover .sous-ruban { display:flex; flex-direction:column; gap:4px; }
-    .menu-sub { display:block; background:#1a2150; color:#e8eaf6; border:1px solid #2a3160; border-radius:14px; padding:6px 12px; font-size:0.82rem; font-weight:600; text-decoration:none; white-space:nowrap; }
-    .menu-sub.actif { background:#4527a0; border-color:#5e35b1; color:#ffffff; }
-    .menu-sub:hover { background:#5e35b1; color:#ffffff; }
-    .menu-mobile { display:none; }
-    @media (max-width:640px) {
-        .menu-ligne { display:none; }
-        .menu-mobile { display:block; position:relative; margin:6px auto 0 auto; width:fit-content; }
-        .menu-mobile summary { list-style:none; background:#4527a0; color:#ffffff; border:1px solid #5e35b1; border-radius:20px; padding:6px 22px; font-size:1.1rem; font-weight:bold; cursor:pointer; }
-        .menu-mobile summary::-webkit-details-marker { display:none; }
-        .menu-mobile[open] summary { background:#5e35b1; }
-        .mob-panneau { position:absolute; top:calc(100% + 6px); left:50%; transform:translateX(-50%); width:250px; max-height:60vh; overflow-y:auto; background:#121a45; border:1px solid #27306b; border-radius:12px; padding:8px; z-index:10001; box-shadow:0 6px 18px rgba(0,0,0,0.5); display:flex; flex-direction:column; gap:4px; }
-        .mob-lien { display:block; background:#1a2150; color:#e8eaf6; border:1px solid #2a3160; border-radius:14px; padding:8px 12px; font-weight:600; font-size:0.9rem; text-decoration:none; }
-        .mob-lien.actif { background:#4527a0; border-color:#5e35b1; color:#ffffff; }
-        .mob-sous { display:block; color:#c7cdf5; padding:4px 10px 4px 22px; font-size:0.85rem; text-decoration:none; }
-        .mob-sous.actif { color:#ffd000; font-weight:700; }
-    }
-    .sticky-header { position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
-        background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px 0 16px; }
-    .header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; }
-    .logo-bloc { width: 190px; text-align: center; }
-    .logo-bloc img { width: 100%; height: auto; border-radius: 10px; display: block; margin: 0 auto; }
-    .logo-titre-svg { display: block; width: 100%; margin-top: 6px; }
-    .bande-defilante { overflow: hidden; white-space: nowrap;
-        background: linear-gradient(90deg, #1a2150, #27306b);
-        border-top: 1px solid #27306b; }
-    .bande-defilante-inner { display: inline-block; padding: 8px 0; white-space: nowrap;
-        color: #ffd000 !important; font-weight: 600; font-size: 0.9rem;
-        animation: defilement 30s linear infinite; }
-    .bande-defilante:hover .bande-defilante-inner { animation-play-state: paused; }
-    @keyframes defilement { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
-    @media (prefers-reduced-motion: reduce) {
-        .bande-defilante-inner { animation: none; padding: 8px 15px; }
-    }
-    @media (max-width: 640px) {
-        .logo-bloc { width: 150px; }
-        .block-container { padding-top: """ + str(secours_2) + """px !important; }
-        [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
-        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { min-width: 0 !important; }
-    }
-    @media (max-width: 360px) {
-        .logo-bloc { width: 138px; }
-        .block-container { padding-top: """ + str(secours_3) + """px !important; }
-    }
-    /* === TITRES DORÉS/BLEUS GEORGIA — classes haute spécificité (battent le thème) === */
-    .stApp .stMarkdown .dpl-titre-g,
-    .stApp .stMarkdown .dpl-titre-g * {
-        font-family: Georgia, serif !important;
-        color: #FFD000 !important;
-        font-weight: bold !important;
-    }
-    .stApp .stMarkdown .dpl-txt-g,
-    .stApp .stMarkdown .dpl-txt-g * {
-        font-family: Georgia, serif !important;
-        color: #FFD000 !important;
-    }
-    .stApp .stMarkdown .dpl-titre-b,
-    .stApp .stMarkdown .dpl-titre-b * {
-        font-family: Georgia, serif !important;
-        color: #1A237E !important;
-        font-weight: bold !important;
-    }
-    .stApp .stMarkdown .dpl-p-blanc,
-    .stApp .stMarkdown .dpl-p-blanc * {
-        color: #ffffff !important;
-        font-weight: bold !important;
-    }
-    .stApp .stMarkdown .dpl-titre-or,
-    .stApp .stMarkdown .dpl-titre-or * {
-        font-family: Georgia, serif !important;
-        color: #B8860B !important;
-        font-weight: bold !important;
-    }
-    </style>""", unsafe_allow_html=True)
-
-
-def _bandes_defilantes_html(membre=False, pid=None):
-    """HTML des bandes défilantes. v7.6 : accès par INDEX (blindé).
-    LOT C5 : filtre par contexte paroissial (bandes diocèse + paroisse du contexte)."""
-    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
-        else ("AND paroisse_cible IS NULL", [])
-    try:
-        bandes = c.execute(f"""SELECT contenu_texte, fichier_url FROM espace_spirituel
-                              WHERE type_contenu='annonce_defilante' {cond}
-                              ORDER BY date_publication DESC, id DESC LIMIT 3""", prm).fetchall()
-    except Exception:
-        return ""
-    morceaux = []
-    for ligne in bandes:
-        if len(ligne) < 1:
-            continue
-        texte = ligne[0]
-        cible = ligne[1] if len(ligne) > 1 else None
-        if cible == "membre" and not membre:
-            continue
-        if not texte:
-            continue
-        duree = max(15, min(60, len(texte) // 2))
-        texte_html = html.escape(texte)
-        morceaux.append(
-            f'<div class="bande-defilante"><div class="bande-defilante-inner" style="animation-duration:{duree}s;">'
-            f"📻 {texte_html} &nbsp;&nbsp;📻 {texte_html}</div></div>")
-    return "".join(morceaux)
-
-
-def _render_header(membre=None, matloc=None, masquer_bandes=False,
-                   rubriques=None, rub_act=None, sub_act=None, pid=None):
-    """Entête FIGÉE — v7.6 : menu en liens HTML avec target="_self"
-    (navigation DANS l'onglet courant ; l'intercepteur _liens_meme_onglet
-    garantit le résultat). PC : ruban au survol. Mobile : ☰ en <details>."""
-    logo_b64 = _logo_base64()
-    logo_html = (f'<img src="data:image/png;base64,{logo_b64}" alt="Logo">'
-                 if logo_b64 else '<div style="font-size:4rem;">📿</div>')
-
-    titre_svg = ('<svg class="logo-titre-svg" viewBox="0 0 190 22" width="100%" height="22" '
-                 'preserveAspectRatio="none" role="img" aria-label="Diocèse de Grand-Bassam">'
-                 '<text x="95" y="17" text-anchor="middle" textLength="188" lengthAdjust="spacingAndGlyphs" '
-                 'style="fill:#e8eaf6; font-weight:600; font-size:14px;">Diocèse de Grand-Bassam</text></svg>')
-
-    badge_txt = "Espace Membre" if (membre and matloc) else "Espace communautaire"
-    droite = ('<div style="padding-top:14px;">'
-              '<div style="background-color:#4527a0; color:#ffffff;'
-              ' padding:10px 18px; border-radius:30px; font-weight:bold;'
-              ' font-size:0.9rem; display:inline-block; white-space:nowrap;">'
-              + badge_txt + '</div></div>')
-
-    menu_html = ""
-    if rubriques:
-        base = "?espace=1"
-        if matloc:
-            base += "&matloc=" + str(matloc)
-        items = []
-        for i, r in enumerate(rubriques):
-            href_r = base + "&nav=1&r=" + str(i)
-            sous = SOUS_RUBRIQUES.get(r)
-            ruban = ""
-            if sous:
-                sitems = ""
-                for k, s in enumerate(sous):
-                    href_s = href_r + "&s=" + str(k)
-                    cls = "menu-sub" + (" actif" if (r == rub_act and s == sub_act) else "")
-                    sitems += '<a class="' + cls + '" href="' + href_s + '" target="_self">' + s + "</a>"
-                ruban = '<div class="sous-ruban">' + sitems + "</div>"
-            cls_item = "menu-item" + (" actif" if r == rub_act else "")
-            items.append('<div class="' + cls_item + '"><a class="menu-lien" href="' + href_r + '" target="_self">' + r + "</a>" + ruban + "</div>")
-        menu_html = '<div class="menu-ligne">' + "".join(items) + "</div>"
-        mitems = []
-        for i, r in enumerate(rubriques):
-            href_r = base + "&nav=1&r=" + str(i)
-            mitems.append('<a class="mob-lien' + (" actif" if r == rub_act else "") + '" href="' + href_r + '" target="_self">' + r + "</a>")
-            sous = SOUS_RUBRIQUES.get(r)
-            if sous:
-                for k, s in enumerate(sous):
-                    href_s = href_r + "&s=" + str(k)
-                    cls = "mob-sous" + (" actif" if (r == rub_act and s == sub_act) else "")
-                    mitems.append('<a class="' + cls + '" href="' + href_s + '" target="_self">· ' + s + "</a>")
-        menu_html += ('<details class="menu-mobile"><summary>☰</summary>'
-                      '<div class="mob-panneau">' + "".join(mitems) + "</div></details>")
-
-    bandes_html = "" if masquer_bandes else _bandes_defilantes_html(membre=bool(membre))
-
-    st.markdown(
-        '<div class="sticky-header"><div class="header-inner">'
-        '<div class="logo-bloc">' + logo_html + titre_svg + "</div>"
-        + droite + "</div>"
-        + menu_html + bandes_html + "</div>", unsafe_allow_html=True)
-
-
-# ====================================================================
-# MA DIZAINE AU QUOTIDIEN — portage web de l'application Android
-# © MOTIAN TOFFÉ Ahua Innocent — intégrée avec son autorisation
-# ====================================================================
-DIZ_INTRO1 = "Au Nom du Père, et du Fils et du Saint-Esprit! Amen!\n\nPRIÈRE D’ENTRÉE\n\nSeigneur Jésus, nous nous disposons à prier\nce Rosaire en communion avec la Vierge Marie.\nViens, Esprit Saint, remplis les cœurs de tes fidèles et allume en eux le feu de ton amour.\nDonne-nous la grâce de méditer profondément les mystères de ta vie, pour que, en les imitant, nous obtenions les promesses qu’ils renferment.\nPar le Christ, notre Seigneur. Amen.\n\nJE CROIS EN DIEU\n\nJe crois en Dieu, le Père Tout-Puissant, Créateur du ciel et de la terre.\nEt en Jésus-Christ, son Fils unique, Notre Seigneur, qui a été conçu du Saint-Esprit, est né de la Vierge Marie, a souffert sous Ponce Pilate, a été crucifié, est mort et a été enseveli, est descendu aux enfers, le troisième jour est ressuscité des morts, est monté aux cieux, est assis à la droite de Dieu le Père Tout-Puissant, d’où il viendra juger les vivants et les morts.\nJe crois en l’Esprit-Saint, à la Sainte Église catholique, à la communion des Saints, à la rémission des péchés, à la résurrection de la chair, à la vie éternelle.\nAmen."
-DIZ_INTRO2 = "NOTRE PÈRE\n\nNotre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\nque ta volonté soit faite\nsur la terre comme au ciel.\n\nDonne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, mais délivre-nous du Mal. Amen!\n\n3 JE VOUS SALUE MARIE\n\nJe vous salue Marie, pleine de grâce,\nle Seigneur est avec vous. Vous êtes bénie entre toutes les femmes, et Jésus, le fruit de vos entrailles, est béni.\n\nSainte Marie, Mère de Dieu, priez pour nous pauvres pécheurs, maintenant et à l’heure de notre mort. Amen!\n\nGLORIA PATRI\n\nGloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, et in saecula saeculorum. Amen!"
-DIZ_INTRO3 = "PRIÈRE À LA VIERGE DU PÈRE EYQUEM\n\n[R]Vers Toi je lève les yeux,\nSainte Mère de Dieu;[/R]\n\ncar je voudrais faire de ma maison,\nune maison où Jésus vienne, selon sa promesse,\nquand plusieurs se réunissent en son nom.\nTu as accueilli le message de l’ange comme\nun message venant de Dieu, et Tu as reçu,\nen raison de ta foi,\nl’incomparable grâce d’accueillir\nen Toi Dieu Lui-même.\nTu as ouvert aux bergers puis aux mages\nla porte de ta maison, sans que\nnul ne se sente gêné\npar sa pauvreté ou sa richesse.\n\n[R]Sois Celle qui chez moi reçoit.[/R]\n\nAfin que ceux qui ont besoin\nd’être réconfortés le soient;\nceux qui ont le désir de\nrendre grâce puissent le faire ;\nceux qui cherchent la paix la trouvent.\nEt que chacun reparte vers sa propre maison\navec la joie d’avoir rencontré Jésus lui-même,\nLui, le Chemin, la Vérité, la Vie.\nAmen!\n\n[I]Frère Joseph EYQUEM, o.p.,\nFondateur des Équipes du Rosaire[/I]"
-DIZ_OUTRO = "SALVE REGINA\n\nSalve Regina, Mater misericordiae;\nvita, dulcedo, et spes nostra salve.\nAd te clamamus, exsules filii Hevae.\nAd te suspiramus, gementes et flentes\nin hac lacrimarum valle.\nEia ergo, advocata nostra,\nillos tuos misericordes oculos ad nos converte;\nEt Iesum, benedictum fructum ventris tui,\nnobis, post hoc exsilium ostende.\nO Clemens, O pia, O dulcis, Virgo Maria.\n\nOra pro nobis, Sancta Dei Genitrix.\nUt digni efficiamur promissionibus Christi.\n\nPRIÈRE FINALE\n\nÔ Dieu, dont le Fils unique nous a acquis\npar sa vie, sa mort et sa résurrection\nles récompenses du salut éternel,\nnous vous supplions : faites que,\nméditant les mystères du très\nSaint Rosaire de\nla Bienheureuse Vierge Marie,\nnous imitions ce qu’ils contiennent\net obtenons ce qu’ils promettent.\nPar le Christ, notre Seigneur. Amen!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nAu Nom du Père, et du Fils et du Saint-Esprit! Amen!"
-
-
-def _diz_txt(texte, couleur="#333333", taille="0.95rem", gras=False, centre=False):
-    txt_html = html.escape(texte).replace("\n", "<br>")
-    poids = "bold" if gras else "normal"
-    align = "center" if centre else "left"
-    return (f'<div style="color:{couleur}; font-size:{taille}; font-weight:{poids};'
-            f' text-align:{align}; line-height:1.7; margin:8px 0;">{txt_html}</div>')
-
-
-MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
-           "août", "septembre", "octobre", "novembre", "décembre"]
-
-COULEURS_CLAIRES = {"joyeux": "#FF80AB", "lumineux": "#9FA8DA",
-                    "douloureux": "#F48FB1", "glorieux": "#A5D6A7"}
-
-
-def _rendre_intro_eyquem(titre_carte="INTRODUCTION"):
-    """Carte de la prière du Père Eyquem. Couleurs critiques en !important."""
-    texte = DIZ_INTRO3
-    t_esc = html.escape(texte)
-    t_esc = t_esc.replace("[R]", '</div><div style="color:#D32F2F !important; font-size:0.98rem; font-weight:bold; text-align:center; line-height:1.7; margin:8px 0;">')
-    t_esc = t_esc.replace("[/R]", '</div><div style="color:#1a1a1a !important; font-size:0.95rem; line-height:1.7; margin:8px 0;">')
-    t_esc = t_esc.replace("[I]", '</div><div style="color:#1a1a1a !important; font-size:0.95rem; font-style:italic; text-align:center; line-height:1.7; margin:8px 0;">')
-    t_esc = t_esc.replace("[/I]", "</div>")
-    corps_intro = '<div style="color:#1a1a1a !important; font-size:0.95rem; line-height:1.7; margin:8px 0;">' + t_esc
-    return (
-        '<div style="background:#FFF9C4 !important; border-radius:12px; padding:18px; margin:6px;">'
-        '<div style="color:#1A237E !important; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">'
-        + html.escape(titre_carte) + "</div>"
-        + corps_intro + "</div>")
-
-
-# ====================================================================
-# PAGES DES RUBRIQUES
-# ====================================================================
-def _render_page_theme_ensemble():
-    """🕯️ Thème → Vue d'ensemble (avec affiches du thème et du sous-thème)."""
-    theme = get_theme_actif()
-    if not theme:
-        st.info("🕯️ Aucun thème pastoral n'est actuellement actif. "
-                "Il sera publié par le diocèse.")
-        return
-    texte_theme, mystere_principal, annee_debut = theme
-    # Affiche du thème (optionnelle)
-    try:
-        _row_aff = c.execute("SELECT affiche_url FROM themes_pastoraux WHERE annee_debut=?",
-                             (annee_debut,)).fetchone()
-        affiche_theme = _row_aff[0] if _row_aff else None
-    except Exception:
-        affiche_theme = None
-    ligne_mystere = ""
-    try:
-        mm = get_mystere(int(mystere_principal)) if mystere_principal else None
-    except (ValueError, TypeError):
-        mm = None
-    if mm:
-        ligne_mystere = ('<div style="color:#b39ddb !important; font-size:0.9rem; margin-top:8px;">'
-                         "📿 Mystère principal : N°" + str(mm["id"]) + " — "
-                         + html.escape(mm["titre"].title()) + " ("
-                         + html.escape(mm["reference"]) + ")</div>")
-    st.markdown(
-        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-        ' padding:24px; border-radius:15px; text-align:center; margin:10px;'
-        ' border:2px solid #FFD700;">'
-        '<div style="color:#9fa6d8 !important; font-size:0.85rem;">🕯️ THÈME PASTORAL '
-        + str(annee_debut) + " - " + str(annee_debut + 1) + " · v7.6</div>"
-        '<div style="color:#FFD700 !important; font-size:1.25rem; font-weight:bold; margin-top:8px; line-height:1.5;">« '
-        + html.escape(texte_theme or "") + ' »</div>'
-        + ligne_mystere + "</div>", unsafe_allow_html=True)
-    if affiche_theme:
         try:
-            st.image(affiche_theme, width="stretch")
+            c.execute("ALTER TABLE diocese ADD COLUMN whatsapp_responsable TEXT")
+            commit_and_sync()
         except Exception:
             pass
 
-    mois_courant = date.today().month
-    sous = get_sous_theme_du_mois(annee_debut, mois_courant)
-    if sous:
-        titre_st, contenu_st, feuillet, affiche_st = sous
-        contenu_html = html.escape(contenu_st or "").replace("\n", "<br>")
-        img_html = (f'<img src="{affiche_st}" alt="Affiche du mois" '
-                    'style="width:100%; max-width:640px; display:block; margin:12px auto 0 auto; '
-                    'border-radius:10px; border:1px solid #27306b;">'
-                    if affiche_st else "")
-        bloc = ('<div style="background:#121a45; border-radius:15px; margin:10px; padding:20px; border:1px solid #27306b;">'
-                '<div style="color:#ffe082 !important; font-weight:bold; font-size:1.05rem; text-align:center;">📅 Sous-thème de '
-                + MOIS_FR[mois_courant - 1] + " : " + html.escape(titre_st or "") + "</div>"
-                + img_html
-                + ('<div style="color:#e8eaf6 !important; font-size:0.95rem; line-height:1.7; margin-top:12px; text-align:left;">'
-                   + contenu_html + "</div>" if contenu_html else "")
-                + "</div>")
-        st.markdown(bloc, unsafe_allow_html=True)
-        if feuillet:
-            st.caption("📄 Feuillet du mois")
-            _render_pdf_inline(feuillet)
-    else:
-        st.info("📅 Le sous-thème de ce mois n'a pas encore été publié.")
+    _rubriques_dio = [
+        "🏛️ Voir diocèse", "🏘️ Créer paroisses", "📋 Gérer paroisses",
+        "📅 Abonnements", "📌 Suivi", "🕊️ Espace spirituel", "💬 WhatsApp",
+        "🔍 Rechercher matricule", "🔐 Gérer les accès", "📊 Statistiques", "📥 Export Excel",
+        "📦 Archives", "🗑️ Réinitialiser"
+    ]
+    # Session neuve (F5) : restituer la rubrique mémorisée AVANT de dessiner
+    # le menu — sinon il retombe sur la 1ʳᵉ entrée et efface la mémoire.
+    if "nav_dio" in st.session_state and st.session_state["nav_dio"] not in _rubriques_dio:
+        del st.session_state["nav_dio"]
+    if "nav_dio" not in st.session_state:
+        _rub = lire_menu_session()
+        if _rub and _rub in _rubriques_dio:
+            st.session_state["nav_dio"] = _rub
+            st.session_state["_menu_sync"] = _rub
+    menu = st.sidebar.radio("Navigation", _rubriques_dio, key="nav_dio")
+    synchroniser_menu_session(menu)
 
-
-def _render_page_en_preparation(emoji, titre, description):
-    """Page « en préparation » élégante."""
-    st.markdown(
-        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-        ' padding:28px; border-radius:15px; text-align:center; margin:10px;'
-        ' border:2px solid #FFD700;">'
-        '<div style="font-size:2.2rem;">🚧</div>'
-        '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold; margin-top:8px;">'
-        + emoji + " " + html.escape(titre) + "</div>"
-        '<div style="color:#e8eaf6 !important; font-size:0.95rem; margin-top:10px; line-height:1.7;">'
-        + html.escape(description) + "</div></div>", unsafe_allow_html=True)
-
-
-GROUPES_CHAPELETS = [
-    ("Joyeux", 1, 5, "Annoncé, né, présenté, retrouvé — la vie cachée et la lumière de l’enfance"),
-    ("Lumineux", 6, 10, "Le Baptême, Cana, l’annonce du Royaume, la Transfiguration, l’Eucharistie"),
-    ("Douloureux", 11, 15, "L’agonie, la flagellation, le couronnement d’épines, le portement de croix, la mort sur la croix"),
-    ("Glorieux", 16, 20, "La Résurrection, l’Ascension, la Pentecôte, l’Assomption, le Couronnement de Marie"),
-]
-
-
-def _render_page_rosaire_eyquem():
-    """📿 Rosaire → L'esprit du Père Eyquem : prière + 4 chapelets cliquables."""
-    st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-                ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
-                ' border:2px solid #FFD700;">'
-                '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold;">📿 Le Rosaire complet selon l’esprit du Père Eyquem</div>'
-                '<div style="color:#e8eaf6 !important; font-size:0.9rem; margin-top:6px;">Quatre chapelets, vingt mystères — la prière du fondateur des Équipes du Rosaire · v7.6</div></div>',
-                unsafe_allow_html=True)
-    st.markdown(_rendre_intro_eyquem("PRIÈRE À LA VIERGE — Frère Joseph EYQUEM, o.p."), unsafe_allow_html=True)
-
-    for nom_type, debut, fin, resume in GROUPES_CHAPELETS:
-        couleur_forte = COULEURS_TYPES.get(nom_type.lower(), "#9E9E9E")
-        couleur_claire = COULEURS_CLAIRES.get(nom_type.lower(), "#e8eaf6")
-        st.markdown(
-            '<div style="background:#121a45; border-radius:15px; margin:10px 10px 4px 10px; padding:14px 20px; border:1px solid #27306b; border-left:6px solid ' + couleur_forte + ';">'
-            '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:1.05rem;">✝️ Mystères ' + nom_type + "</div>"
-            '<div style="color:#c7cdf5 !important; font-size:0.85rem; margin-top:2px;">' + html.escape(resume) + "</div>"
-            '<div style="color:#ffe082 !important; font-size:0.8rem; font-style:italic; margin-top:4px;">👆 Touchez un mystère pour lire passage et méditation</div>'
-            "</div>", unsafe_allow_html=True)
-        for m in MYSTERES:
-            if not (debut <= m["id"] <= fin):
-                continue
-            with st.expander(f'{m["id"]:02d} — {m["titre"].title()}  ·  {m["reference"]}'):
-                passage_html = html.escape(m["passage"]).replace("\n", "<br>")
-                medit_html = html.escape(m["meditation"]).replace("\n", "<br>")
-                st.markdown(
-                    '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:0.95rem;">📖 PASSAGE</div>'
-                    '<div style="color:#ffffff !important; font-size:0.95rem; line-height:1.7; margin:6px 0 14px 0;">' + passage_html + "</div>"
-                    '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:0.95rem;">🕯️ MÉDITATION</div>'
-                    '<div style="color:#ffffff !important; font-size:0.95rem; line-height:1.7; margin-top:6px;">' + medit_html + "</div>",
-                    unsafe_allow_html=True)
-    st.info("📿 La dizaine du jour vous attend sur l'Accueil (🏠 Actualités) — "
-            "chaque membre fait avancer la chaîne selon son numéro.")
-
-
-def _render_page_rosaire_theme():
-    """📿 Rosaire → Le thème de l'année : les 20 mystères avec leur lien."""
-    theme = get_theme_actif()
-    if not theme:
-        st.info("🕯️ Aucun thème pastoral n'est actuellement actif.")
-        return
-    texte_theme, mystere_principal, annee_debut = theme
-    st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-                ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
-                ' border:2px solid #FFD700;">'
-                '<div style="color:#9fa6d8 !important; font-size:0.85rem;">📿 LE ROSAIRE SELON LE THÈME DE L’ANNÉE · v7.6</div>'
-                '<div style="color:#FFD700 !important; font-size:1.1rem; font-weight:bold; margin-top:6px;">« '
-                + html.escape(texte_theme or "") + " »</div></div>", unsafe_allow_html=True)
-    manquants = 0
-    for m in MYSTERES:
-        lien = get_lien_mystere(annee_debut, m["id"])
-        couleur = COULEURS_CLAIRES.get((m["type"] or "").lower(), "#e8eaf6")
-        if lien:
-            corps_lien = ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:10px 14px; margin-top:8px;">'
-                          '<div style="color:#1A237E !important; font-weight:bold; font-size:0.85rem;">🔗 Lien thématique</div>'
-                          '<div style="color:#1a1a1a !important; font-size:0.9rem; line-height:1.7; margin-top:4px;">'
-                          + html.escape(lien).replace("\n", "<br>") + "</div></div>")
-        else:
-            manquants += 1
-            corps_lien = ('<div style="color:#c7cdf5 !important; font-size:0.85rem; font-style:italic; margin-top:8px;">'
-                          "— lien thématique à préciser par le diocèse —</div>")
-        st.markdown(
-            '<div style="background:#121a45; border-radius:15px; margin:10px; padding:16px; border-left:6px solid ' + couleur + ';">'
-            '<div style="color:' + couleur + ' !important; font-weight:bold; font-size:1rem;">' + str(m["id"]).zfill(2) + " — "
-            + html.escape(m["titre"].title()) + "</div>"
-            '<div style="color:#c7cdf5 !important; font-size:0.82rem;">📖 ' + html.escape(m["reference"]) + "</div>"
-            + corps_lien + "</div>", unsafe_allow_html=True)
-    if manquants:
-        st.caption(f"🔗 {manquants} lien(s) thématique(s) restent à saisir dans l'interface diocèse.")
-
-
-def _pid_contexte(membre_paroisse_id=None):
-    """Contexte paroissial du visiteur (LOT C5) :
-    - membre connecté → paroisse de son équipe ;
-    - visiteur via QR signé → paroisse du QR ;
-    - sinon None (diocèse uniquement)."""
-    if membre_paroisse_id:
-        return membre_paroisse_id
-    return st.session_state.get("paroisse_origine")
-
-
-def _render_page_archives_textes(type_contenu, message_vide, pid=None):
-    """Archives Prières / Méditations. Photo en WIDGET NATIF st.image.
-    LOT C5 : ne montre que le diocèse (paroisse_cible NULL) + la paroisse du contexte."""
-    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
-        else ("AND paroisse_cible IS NULL", [])
-    lignes = c.execute(f"""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
-                          WHERE type_contenu=? {cond} ORDER BY date_publication DESC, id DESC""",
-                       [type_contenu] + prm).fetchall()
-    if not lignes:
-        st.info(message_vide)
-        return
-    for p in lignes:
-        with st.expander(f"📖 {p[0]}"):
-            texte, url_pdf = (p[1] or ""), p[3]
-            if not url_pdf:
-                texte, url_pdf = _extraire_pdf_legacy(texte)
-            if p[2] and p[2].startswith("http"):
-                try:
-                    st.image(p[2], width="stretch")
-                except Exception:
-                    st.warning("Illustration momentanément indisponible.")
-            if texte:
-                st.markdown(texte, unsafe_allow_html=True)
-            if url_pdf:
-                _render_pdf_inline(url_pdf)
-
-
-def _render_page_archives_audios(pid=None):
-    """Archives Musiques — LECTEUR COMPLET (playlist, ⏮️⏭️, 🔀, 🔁, sélection).
-    Les MP3 en lien direct alimentent la playlist ; les liens YouTube
-    s'affichent séparément. LOT C5 : filtre par contexte paroissial."""
-    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
-        else ("AND paroisse_cible IS NULL", [])
-    audios = c.execute(f"""SELECT titre, fichier_url FROM espace_spirituel
-                          WHERE type_contenu='audio' {cond} ORDER BY date_publication DESC, id DESC""",
-                       prm).fetchall()
-    if not audios:
-        st.info("Aucun fichier audio.")
-        return
-    pistes, videos_yt = [], []
-    for a in audios:
-        u = str(a[1]) if a[1] is not None else ""
-        if not u.startswith("http"):
-            continue
-        if ("youtube.com/" in u) or ("youtu.be/" in u):
-            videos_yt.append({"title": a[0], "url": u})
-        else:
-            pistes.append({"title": a[0], "url": u})
-
-    if pistes:
-        player_html = """
-        <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 15px; border: 1px solid #27306b; border-radius: 15px; background: #121a45;">
-            <h3 style="text-align:center; color:#ffe082; margin-top:0;">🎵 Lecteur Spirituel</h3>
-            <div id="now-playing" style="text-align:center; font-weight:bold; font-size:1.1rem; margin-bottom:15px; min-height: 30px; color:#e8eaf6;">
-                Cliquez sur une piste
-            </div>
-            <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
-                <button id="btn-prev" style="background:none; border:none; font-size:20px; cursor:pointer; padding:5px;">⏮️</button>
-                <button id="btn-shuffle" style="background:none; border:none; font-size:20px; cursor:pointer; opacity:0.5; padding:5px;">🔀</button>
-                <button id="btn-loop" style="background:none; border:none; font-size:20px; cursor:pointer; opacity:0.5; padding:5px;">🔁</button>
-                <button id="btn-next" style="background:none; border:none; font-size:20px; cursor:pointer; padding:5px;">⏭️</button>
-                <button id="btn-play-selection" style="background:#4527a0; color:white; border:none; font-size:14px; cursor:pointer; opacity:0.5; padding:5px 10px; border-radius:15px;">▶️ Sélection</button>
-            </div>
-            <video id="audio-player" controls controlsList="nodownload" style="width: 100%; outline:none; max-height: 150px; background:black; border-radius:8px;"></video>
-            <ul id="playlist" style="list-style: none; padding: 0; margin-top: 15px; max-height: 350px; overflow-y: auto; border-top: 1px solid #27306b; padding-top: 10px;"></ul>
-        </div>
-        <script>
-            const tracks = TRACKS_DATA;
-            let currentTrackIndex = 0;
-            let isShuffled = false;
-            let loopMode = 0;
-            let playbackOrder = tracks.map((_, i) => i);
-            let selectedTracks = new Set();
-            const audio = document.getElementById('audio-player');
-            const nowPlaying = document.getElementById('now-playing');
-            const playlistEl = document.getElementById('playlist');
-            const btnShuffle = document.getElementById('btn-shuffle');
-            const btnLoop = document.getElementById('btn-loop');
-            const btnPlaySel = document.getElementById('btn-play-selection');
-            function renderPlaylist() {
-                playlistEl.innerHTML = '';
-                playbackOrder.forEach((origIndex) => {
-                    const li = document.createElement('li');
-                    li.style.padding = '8px';
-                    li.style.margin = '4px 0';
-                    li.style.background = origIndex === currentTrackIndex ? '#4527a0' : '#1a2150';
-                    li.style.borderRadius = '8px';
-                    li.style.cursor = 'pointer';
-                    li.style.borderLeft = origIndex === currentTrackIndex ? '5px solid #FFD700' : '5px solid transparent';
-                    li.style.color = '#e8eaf6';
-                    const checkbox = document.createElement('input');
-                    checkbox.type = 'checkbox';
-                    checkbox.checked = selectedTracks.has(origIndex);
-                    checkbox.style.marginRight = '10px';
-                    checkbox.style.transform = 'scale(1.3)';
-                    checkbox.style.cursor = 'pointer';
-                    checkbox.onclick = (e) => {
-                        e.stopPropagation();
-                        if (selectedTracks.has(origIndex)) selectedTracks.delete(origIndex);
-                        else selectedTracks.add(origIndex);
-                        updateSelectionButton();
-                    };
-                    li.prepend(checkbox);
-                    const textSpan = document.createElement('span');
-                    textSpan.innerHTML = '<span style="color:#FFD700">🎵</span> ' + tracks[origIndex].title;
-                    li.appendChild(textSpan);
-                    li.onclick = () => playTrack(origIndex);
-                    playlistEl.appendChild(li);
-                });
-                updateSelectionButton();
-            }
-            function updateSelectionButton() {
-                if (selectedTracks.size > 0) {
-                    btnPlaySel.style.opacity = '1';
-                    btnPlaySel.innerText = '▶️ Lecture (' + selectedTracks.size + ')';
-                } else {
-                    btnPlaySel.style.opacity = '0.5';
-                    btnPlaySel.innerText = '▶️ Sélection';
-                }
-            }
-            function playSelection() {
-                if (selectedTracks.size === 0) return;
-                playbackOrder = Array.from(selectedTracks);
-                playTrack(playbackOrder[0]);
-            }
-            function playTrack(index) {
-                currentTrackIndex = index;
-                audio.src = tracks[index].url;
-                nowPlaying.innerText = tracks[index].title;
-                audio.play().catch(e => console.error("Erreur de lecture:", e));
-                renderPlaylist();
-            }
-            function nextTrack() {
-                let currentDisplayIndex = playbackOrder.indexOf(currentTrackIndex);
-                if (currentDisplayIndex < playbackOrder.length - 1) {
-                    playTrack(playbackOrder[currentDisplayIndex + 1]);
-                } else if (loopMode === 1) {
-                    playTrack(playbackOrder[0]);
-                }
-            }
-            function prevTrack() {
-                if (audio.currentTime > 3) {
-                    audio.currentTime = 0;
-                } else {
-                    let currentDisplayIndex = playbackOrder.indexOf(currentTrackIndex);
-                    if (currentDisplayIndex > 0) {
-                        playTrack(playbackOrder[currentDisplayIndex - 1]);
-                    } else if (loopMode === 1) {
-                        playTrack(playbackOrder[playbackOrder.length - 1]);
-                    }
-                }
-            }
-            function toggleShuffle() {
-                isShuffled = !isShuffled;
-                btnShuffle.style.opacity = isShuffled ? '1' : '0.5';
-                if (isShuffled) {
-                    for (let i = playbackOrder.length - 1; i > 0; i--) {
-                        const j = Math.floor(Math.random() * (i + 1));
-                        [playbackOrder[i], playbackOrder[j]] = [playbackOrder[j], playbackOrder[i]];
-                    }
-                } else {
-                    playbackOrder = tracks.map((_, i) => i);
-                }
-                renderPlaylist();
-            }
-            function toggleLoop() {
-                loopMode = (loopMode + 1) % 3;
-                if (loopMode === 0) {
-                    audio.loop = false;
-                    btnLoop.style.opacity = '0.5';
-                    btnLoop.innerText = '🔁';
-                }
-                else if (loopMode === 1) {
-                    audio.loop = false;
-                    btnLoop.style.opacity = '1';
-                    btnLoop.innerText = '🔁';
-                }
-                else {
-                    audio.loop = true;
-                    btnLoop.style.opacity = '1';
-                    btnLoop.innerText = '🔂';
-                }
-            }
-            audio.addEventListener('ended', () => {
-                if (!audio.loop) {
-                    nextTrack();
-                }
-            });
-            document.getElementById('btn-prev').addEventListener('click', prevTrack);
-            document.getElementById('btn-next').addEventListener('click', nextTrack);
-            document.getElementById('btn-shuffle').addEventListener('click', toggleShuffle);
-            document.getElementById('btn-loop').addEventListener('click', toggleLoop);
-            document.getElementById('btn-play-selection').addEventListener('click', playSelection);
-            renderPlaylist();
-        </script>
-        """.replace("TRACKS_DATA", json.dumps(pistes))
-
-        _comp_html(player_html, height=750)
-
-    if videos_yt:
-        st.markdown("### 🎬 Morceaux en vidéo")
-        for v in videos_yt:
-            with st.expander("🎵 " + (v["title"] or "(sans titre)")):
-                try:
-                    st.video(v["url"])
-                except Exception:
-                    st.markdown(f"🎬 [Écouter la vidéo]({v['url']})")
-
-    if not pistes and not videos_yt:
-        st.warning("Les URL des fichiers doivent commencer par http:// ou https://")
-
-
-def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
-    """La dizaine du jour — UNIQUEMENT sur l'Accueil. Livre = page autonome."""
-    st.markdown("---")
-
-    st.session_state.pop("nettoyage_diz", None)
-    st.session_state.pop("diz_saisie", None)
-
-    num = None
-    if est_membre:
-        try:
-            num = int(numero_meditation) if numero_meditation else None
-        except (ValueError, TypeError):
-            num = None
-        if not num or not (1 <= num <= 20):
-            st.info("📿 Votre numéro de méditation (1-20) n’est pas encore renseigné. "
-                    "Demandez-le à votre responsable d’équipe pour recevoir votre dizaine du jour.")
-            return
-    else:
-        if st.session_state.get("diz_ouvert"):
-            jrnais = st.session_state.get("diz_jrnais", 0)
-            if not jrnais:
-                st.session_state["diz_ouvert"] = False
-                return
-            num = jrnais - 20 if jrnais > 20 else jrnais
-        else:
-            st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-                        ' padding:16px; border-radius:15px; text-align:center; margin:0 10px 6px 10px;'
-                        ' border:2px solid #FFD700;">'
-                        '<div class="dpl-titre-g" style="font-size:clamp(1.05rem, 4.5vw, 1.2rem);">'
-                        '🕯️ Un jour, une dizaine</div>'
-                        '<div style="color:#ffffff; font-size:0.85rem; margin-top:4px;">'
-                        'Entrez ici votre jour de naissance (1 - 31) et rejoignez la chaîne de prière</div></div>',
-                        unsafe_allow_html=True)
-
-            _, c_saisie, c_btn, _ = st.columns([0.07, 4.5, 1.2, 0.07],
-                                               gap="small", vertical_alignment="bottom")
-            with c_saisie:
-                saisie = st.number_input("Jour de naissance",
-                                         min_value=1, max_value=31, value=None, step=1,
-                                         label_visibility="collapsed", key="diz_jour")
-            with c_btn:
-                if st.button("✅", key="diz_valider", width="stretch", type="primary",
-                             help="Valider votre jour de naissance"):
-                    if saisie is not None and 1 <= int(saisie) <= 31:
-                        st.session_state["diz_jrnais"] = int(saisie)
-                        st.session_state.pop("diz_erreur", None)
-                    else:
-                        st.session_state["diz_erreur"] = "Entrez d'abord votre jour de naissance (chiffre entre 1 et 31)."
-            if st.session_state.get("diz_erreur"):
-                st.warning(st.session_state.pop("diz_erreur"))
-
-            if "diz_jrnais" not in st.session_state:
-                return
-            jrnais = st.session_state["diz_jrnais"]
-            num = jrnais - 20 if jrnais > 20 else jrnais
-
-    mysteres_jour = get_mysteres_du_jour(num)
-    if not mysteres_jour:
-        return
-
-    if st.session_state.get("diz_num") != num:
-        st.session_state["diz_num"] = num
-        st.session_state["diz_ouvert"] = False
-        st.session_state["diz_page"] = 0
-
-    # ---------- COUVERTURE ----------
-    if not st.session_state.get("diz_ouvert"):
-        pastilles = "".join(
-            f'<div style="width:52px; height:52px; border-radius:50%; background:#FFD700;'
-            f' color:#1A237E; font-weight:bold; font-size:1.2rem; display:flex;'
-            f' align-items:center; justify-content:center;">{m["id"]:02d}</div>'
-            for m in mysteres_jour)
-        titres = " • ".join(m["titre"].title() for m in mysteres_jour)
-        st.markdown(
-            f'<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-            f' padding:24px; border-radius:15px; text-align:center; margin:10px;'
-            f' border:2px solid #FFD700;">'
-            f'<div style="color:#FFD700; font-size:1.3rem; font-weight:bold;">📿 Ta dizaine du jour</div>'
-            f'<div style="display:flex; justify-content:center; gap:10px; margin:18px 0;">{pastilles}</div>'
-            f'<div style="color:#ffffff; font-size:1rem;">{html.escape(titres)}</div>'
-            f'<div style="color:#9fa6d8; font-size:0.85rem; margin-top:8px;">'
-            f'N° méd. {num} — {date.today().strftime("%d/%m/%Y")} · v7.6</div>'
-            f'</div>', unsafe_allow_html=True)
-        _scroll_top("cov")
-        if st.button("📿 Égrener la dizaine", key="diz_commencer", width="stretch", type="primary"):
-            st.session_state["diz_ouvert"] = True
-            st.session_state["diz_page"] = 0
-            st.rerun()
-        return
-
-    # ---------- LE LIVRE ----------
-    pages = []
-    for m in mysteres_jour:
-        if m["id"] == 1:
-            pages.append({"t": "intro1"})
-            pages.append({"t": "intro2"})
-            pages.append({"t": "intro3"})
-        pages.append({"t": "contenu", "m": m})
-        pages.append({"t": "intentions", "m": m})
-        pages.append({"t": "notrepere", "m": m})
-        for g in range(1, 11):
-            pages.append({"t": "grain", "m": m, "g": g})
-        pages.append({"t": "gloria", "m": m})
-        if m["id"] == 20:
-            pages.append({"t": "outro"})
-
-    if "diz_page" not in st.session_state or st.session_state["diz_page"] >= len(pages):
-        st.session_state["diz_page"] = 0
-    idx = st.session_state["diz_page"]
-    page = pages[idx]
-
-    m = page.get("m")
-    couleur = COULEURS_TYPES.get((m["type"] or "").lower(), "#9E9E9E") if m else "#1A237E"
-
-    if page["t"] in ("intro1", "intro2", "intro3"):
-        texte = {"intro1": DIZ_INTRO1, "intro2": DIZ_INTRO2, "intro3": DIZ_INTRO3}[page["t"]]
-        if "[R]" in texte:
-            html_page = _rendre_intro_eyquem("INTRODUCTION")
-        else:
-            html_page = (
-                f'<div style="background:#FFF9C4; border-radius:12px; padding:18px; margin:6px;">'
-                f'<div style="color:#1A237E; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">INTRODUCTION</div>'
-                f'{_diz_txt(texte, "#1a1a1a")}</div>')
-
-    elif page["t"] == "outro":
-        html_page = (
-            f'<div style="background:#FFF9C4; border-radius:12px; padding:18px; margin:6px;">'
-            f'<div style="color:#1A237E; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">FIN DU ROSAIRE</div>'
-            f'{_diz_txt(DIZ_OUTRO, "#1a1a1a")}</div>')
-
-    else:
-        tete = (
-            f'<div style="background:{couleur}; border-radius:12px 12px 0 0; padding:12px 16px; margin:6px 6px 0 6px;">'
-            f'<div style="color:#ffffff; font-weight:bold; font-size:1.05rem;">{m["id"]} — {html.escape(m["titre"])}</div>'
-            f'<div style="color:#ffffff; font-size:0.85rem;">📖 {html.escape(m["reference"])}</div></div>'
-            f'<div style="background:#FFF9C4; border-radius:0 0 12px 12px; padding:18px; margin:0 6px 6px 6px;">')
-
-        if page["t"] == "contenu":
-            corps = (_diz_txt("PASSAGE", couleur, "1rem", gras=True)
-                     + _diz_txt(m["passage"], "#1a1a1a")
-                     + _diz_txt("MÉDITATION", couleur, "1rem", gras=True)
-                     + _diz_txt(m["meditation"], "#1a1a1a"))
-            t_actif = get_theme_actif()
-            if t_actif:
-                lien_txt = get_lien_mystere(t_actif[2], m["id"])
-                if lien_txt:
-                    corps += ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:12px 14px; margin:14px 0 2px 0;">'
-                              '<div style="color:#1A237E !important; font-weight:bold; font-size:0.9rem;">🔗 Lien thématique — '
-                              + html.escape(t_actif[0] or "") + "</div>"
-                              '<div style="color:#1a1a1a !important; font-size:0.92rem; line-height:1.7; margin-top:6px;">'
-                              + html.escape(lien_txt).replace("\n", "<br>") + "</div></div>")
-
-        elif page["t"] == "intentions":
-            intentions_html = ""
-            for ligne in m["intentions"].split("\n"):
-                l = ligne.strip().lstrip("*").strip()
-                if not l:
-                    continue
-                intentions_html += _diz_txt("🕯️ Vierge Marie, mère de Dieu, intercède : " + l, "#1a1a1a")
-            fruits_html = "".join(
-                _diz_txt("✨ " + ligne.strip(), "#1a1a1a")
-                for ligne in m["fruits"].split("\n") if ligne.strip())
-            corps = (_diz_txt("INTENTIONS", couleur, "1rem", gras=True)
-                     + intentions_html
-                     + _diz_txt("FRUITS DU MYSTÈRE", couleur, "1rem", gras=True)
-                     + fruits_html)
-
-        elif page["t"] == "notrepere":
-            corps = (_diz_txt("NOTRE PÈRE", couleur, "1rem", gras=True)
-                     + _diz_txt("Notre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\nque ta volonté soit faite\nsur la terre comme au ciel.\n\nDonne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, mais délivre-nous du Mal. Amen!", "#1a1a1a"))
-
-        elif page["t"] == "grain":
-            g = page["g"]
-            clausule = m["clausules"][g - 1] if g <= len(m["clausules"]) else ""
-            carrés = "".join(
-                f'<div style="width:22px; height:22px; border-radius:4px; display:flex; align-items:center;'
-                f' justify-content:center; font-size:0.7rem; font-weight:bold;'
-                f' background:{"#1A237E" if i <= g else "#cccccc"}; color:{"#ffffff" if i == g else "#888888"};">{i}</div>'
-                for i in range(1, 11))
-            corps = (
-                f'<div style="display:flex; gap:5px; margin:6px 0;">{carrés}</div>'
-                + _diz_txt("Je vous salue Marie, pleine de grâce,\nle Seigneur est avec vous.\nVous êtes bénie entre toutes les femmes,", "#1a1a1a")
-                + _diz_txt("et Jésus, " + clausule, couleur, "1.1rem", gras=True)
-                + _diz_txt("le fruit de vos entrailles, est béni.", "#1a1a1a")
-                + _diz_txt("Sainte Marie, Mère de Dieu,\npriez pour nous pauvres pécheurs,\nmaintenant et à l’heure de notre mort.\nAmen!", "#1a1a1a"))
-
-        else:  # gloria
-            corps = (_diz_txt("GLORIA PATRI", couleur, "1rem", gras=True)
-                     + _diz_txt("Gloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, et in saecula saeculorum. Amen!\n\nÔ mon Jésus, pardonne-nous nos péchés; préserve-nous du feu de l’Enfer, attire au Ciel toutes les âmes, principalement celles qui ont le plus besoin de ta miséricorde. Amen!\n\nNotre Dame du très Saint Rosaire!\nPriez pour nous!", "#1a1a1a"))
-
-        html_page = tete + corps + '</div>'
-
-    st.markdown(html_page, unsafe_allow_html=True)
-    _scroll_top(f"p{idx}")
-
-    # --- Navigation : ON NE RECULE PAS quand on égrène une dizaine ☺️ ---
-    c_av, c_term = st.columns(2)
-    with c_av:
-        if idx < len(pages) - 1:
-            if st.button("Suivant ▶", key=f"diz_next_{idx}", width="stretch", type="primary"):
-                st.session_state["diz_page"] = idx + 1
-                st.rerun()
-        else:
-            if st.button("✕ Terminer", key=f"diz_end_{idx}", width="stretch"):
-                st.session_state["diz_ouvert"] = False
-                st.session_state["diz_page"] = 0
-                st.rerun()
-
-
-def _render_pdf_inline(url_pdf):
-    """PDF en iframe directe Cloudinary + lien de secours."""
-    lien_txt = "📄 Si le document ne s'affiche pas, ouvrez-le ici"
-    st.markdown(
-        f'<div style="margin:12px 10px 18px 10px; border-radius:12px; overflow:hidden; border:1px solid #27306b;">'
-        f'<iframe src="{url_pdf}" width="100%" height="700" style="border:none;" title="Document"></iframe>'
-        f'<div style="text-align:center; padding:8px; background:#121a45;">'
-        f'<a href="{url_pdf}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">{lien_txt}</a>'
-        f'</div></div>', unsafe_allow_html=True)
-
-
-def _render_coin_affiche():
-    lignes = []
-    erreur_sql = None
-    try:
-        lignes = c.execute("""SELECT type_evenement, date_evenement, lieu, affiche_url, video_url FROM evenements
-                              WHERE (affiche_url IS NOT NULL OR video_url IS NOT NULL) AND date_evenement >= ?
-                              ORDER BY date_evenement ASC LIMIT 5""",
-                          (date.today().isoformat(),)).fetchall()
-    except Exception as e:
-        erreur_sql = str(e)
-        lignes = []
-
-    if st.query_params.get("debug") == "1":
-        with st.expander("🔎 DEBUG Coin Affiche"):
-            st.write("Aujourd'hui :", date.today().isoformat())
-            if erreur_sql:
-                st.error(f"REQUÊTE PRINCIPALE EN ÉCHEC : {erreur_sql}")
+    if menu == "🏛️ Voir diocèse":
+        st.markdown(f'<h2 style="color:#1A237E; font-size: 1.4rem;">🏛️ {html.escape(nom_dio).upper()}</h2>', unsafe_allow_html=True)
+        afficher_messages_flash()
+        if d_info:
+            _wa_dio_actuel = ""
             try:
-                st.write("Évènements avec visuel (tous) :",
-                         c.execute("SELECT id, type_evenement, date_evenement, affiche_url, video_url FROM evenements WHERE affiche_url IS NOT NULL OR video_url IS NOT NULL").fetchall())
-            except Exception as e:
-                st.write("ERREUR SQL :", e)
-
-    visuel = None
-    for a in lignes:
-        if safe_date(a[1]):
-            visuel = a
-            break
-
-    if visuel:
-        d_v = safe_date(visuel[1])
-        date_txt = d_v.strftime("%d/%m/%Y") if d_v else "Date à définir"
-        img_part = (f'<img src="{visuel[3]}" alt="Affiche" style="width:100%; height:auto; display:block; border-bottom:3px solid #7b1fa2;">'
-                    if visuel[3] else "")
-        st.markdown(
-            f'<div style="background:#121a45; border-radius:15px; overflow:hidden; border:1px solid #27306b; margin:0 10px 15px 10px; box-shadow:0 2px 8px rgba(0,0,0,0.4);">'
-            f'{img_part}'
-            f'<div style="padding:15px; text-align:center;">'
-            f'<h4 style="margin:0 0 5px 0; color:#e8eaf6; font-size:1.1rem;">📣 {html.escape(visuel[0])}</h4>'
-            f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(visuel[2] or "Lieu à définir")}</p>'
-            f'</div></div>', unsafe_allow_html=True)
-        if visuel[4]:
-            st.video(visuel[4])
-    else:
-        try:
-            prochain = c.execute("""SELECT type_evenement, date_evenement, lieu FROM evenements
-                                    WHERE date_evenement >= ? ORDER BY date_evenement ASC LIMIT 1""",
-                                 (date.today().isoformat(),)).fetchone()
-        except Exception:
-            prochain = None
-        if prochain:
-            d = safe_date(prochain[1])
-            date_txt = d.strftime("%d/%m/%Y") if d else "Date à définir"
-            icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
-                     "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(prochain[0], "📅")
-            st.markdown(
-                f'<div style="background:linear-gradient(135deg,#1a2150 0%,#121a45 100%); border-radius:15px; margin:0 10px 15px 10px; border:1px solid #27306b;">'
-                f'<div style="padding:15px; text-align:center;">'
-                f'<h4 style="margin:0 0 5px 0; color:#e8eaf6; font-size:1.1rem;">{icone} {html.escape(prochain[0])}</h4>'
-                f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p>'
-                f'</div></div>', unsafe_allow_html=True)
-
-
-def _depliant_mouvement(paroisse_id=None):
-    """📿 Dépliant « vivant » du Mouvement — Espace COMMUNAUTAIRE uniquement.
-    Toutes les images se configurent dans le bloc PHOTOS ci-dessous."""
-    # ============ 📷 IMAGES DU DÉPLIANT — collez vos URLs ici ============
-    PHOTO_BANDEAU    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # grande photo sous le bandeau (facultatif)
-    PHOTO_QUI        = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 📜 Qui sommes-nous ?
-    PHOTO_COMMENT    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section ⛪ Comment ça marche ?
-    PHOTO_PRIERES    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 🙏 Deux temps de prière
-    PHOTO_MISSION    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section ❤️ Notre mission
-    PHOTO_RESSOURCES = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 📖 Ressources
-    # =====================================================================
-
-    _resp, _wa, _etiquette = None, None, "responsable diocésain"
-    if paroisse_id:
-        _etiquette = "responsable paroissial"
-        try:
-            _r = c.execute("SELECT responsable, whatsapp_responsable FROM paroisses WHERE id=?", (paroisse_id,)).fetchone()
-            if _r and _r[0]:
-                _resp = _r[0]
-            if _r and len(_r) > 1 and _r[1]:
-                _wa = _r[1]
-        except Exception:
-            pass
-    else:
-        try:
-            _d = c.execute("SELECT responsable, whatsapp_responsable FROM diocese WHERE id=?", (1,)).fetchone()
-            if _d and _d[0]:
-                _resp = _d[0]
-            if _d and len(_d) > 1 and _d[1]:
-                _wa = _d[1]
-        except Exception:
-            pass
-
-    _logo_b64 = _logo_base64()
-    _logo_html = (f'<img src="data:image/png;base64,{_logo_b64}" alt="Logo" '
-                  'style="width:56px; border-radius:10px; border:2px solid #FFD700; display:block;">'
-                  if _logo_b64 else '<div style="font-size:2.4rem; line-height:1;">📿</div>')
-
-    def _img(url, classe="dpl-photo"):
-        return f'<img src="{url}" alt="" class="{classe}">' if url else ""
-
-    _perles = "".join('<div style="width:12px; height:12px; border-radius:50%; background:#FFD700; '
-                      'box-shadow:0 0 5px rgba(255,215,0,0.8);"></div>' for _ in range(10))
-    _chapelet = ('<div style="display:flex; align-items:center; justify-content:center; gap:6px; margin-top:10px;">'
-                 + _perles + '<div style="font-size:1.3rem; margin-left:6px;">✝️</div></div>')
-
-    def _section(emoji, titre, corps, photo=None):
-        return ('<div style="background:#1a2150 !important; border:1px solid #27306b; '
-                'border-left:5px solid #FFD700; border-radius:10px; padding:12px 14px; margin:10px 0;">'
-                + _img(photo) +
-                '<div class="dpl-titre-g" style="font-size:clamp(0.95rem, 4vw, 1.02rem); margin-bottom:6px;">' + emoji + ' ' + titre + '</div>'
-                '<div style="color:#e8eaf6 !important; font-size:0.92rem; line-height:1.75;">' + corps + '</div></div>')
-
-    _bouton = ""
-    if _wa:
-        _msg = ("Bonjour, je souhaite rejoindre une Équipe du Rosaire. " if not paroisse_id
-                else "Bonjour, je souhaite rejoindre une Équipe du Rosaire dans notre paroisse. ")
-        _lien = lien_whatsapp(_wa, _msg + "Merci de me renseigner. 📿")
-        if _lien:
-            _bouton = ('<div style="text-align:center; margin-top:12px;">'
-                       '<a href="' + _lien + '" target="_blank" '
-                       'style="display:inline-block; background:#25D366 !important; color:#ffffff !important; '
-                       'padding:11px 24px; border-radius:30px; font-weight:bold; text-decoration:none; '
-                       'font-size:0.95rem;">📱 Écrire au ' + _etiquette + '</a></div>')
-
-    _bandeau = (
-        '<div style="background:linear-gradient(135deg,#1A237E,#4527a0); border-radius:12px; padding:14px 12px 12px 12px; text-align:center;">'
-        '<div style="display:flex; justify-content:flex-start; margin-bottom:4px;">' + _logo_html + '</div>'
-        '<div class="dpl-titre-g" style="font-size:clamp(1.0rem, 5.2vw, 1.45rem); '
-        'white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:0.5px;">'
-        'LES ÉQUIPES DU ROSAIRE</div>'
-        '<div class="dpl-txt-g" style="font-size:clamp(0.7rem, 3.1vw, 0.88rem); margin-top:7px; line-height:1.7;">'
-        '• Un Mouvement d’Église &nbsp;• Une École de Prière &nbsp;• Un Esprit Missionnaire<br>— depuis 1955 —</div>'
-        + _chapelet + '</div>')
-    
-    _blocs = ['<div style="padding:12px;">', _bandeau]
-    if PHOTO_BANDEAU:
-        _blocs.append(_img(PHOTO_BANDEAU, "dpl-photo-bandeau"))
-    _blocs.append(_section("📜", "Qui sommes-nous ?",
-        "Fondé en 1955 par <b><font color='#FFD700'>le Révérend Père Joseph Eyquem (1917-1990)</font></b>, Prêtre dominicain, les \"Équipes du Rosaire\" est un mouvement catholique de prière et d’apostolat des laïcs, reconnu par l’Église "
-        "et par l’Ordre des Prêcheurs (Dominicains) en 1972. En Côte d’Ivoire, "
-        "<b><font color='#FFD700'>Dominique YOVAN</font></b> introduit le Mouvement en octobre 1980 — "
-        "première équipe à l’Église Sainte Famille de la Riviera à Cocody — et en devient le 1er Responsable "
-        "National, jusqu’à son rappel à Dieu le 10 juillet 2015 à Abidjan.", PHOTO_QUI))
-    _blocs.append(_section("⛪", "Comment ça marche ?",
-        "Une équipe est le regroupement de 3 à 12 personnes, ancrée dans un quartier, une rue, un immeuble "
-        "ou un village autour de la Vierge Marie, Mère de Notre Seigneur Jésus-Christ, afin de méditer \"Son Rosaire\" et d'avoir une vie de fraternité. Chaque membre reçoit <b><font color='#FFD000'> un numéro de méditation compris entre 01 et 20 (Numéro dans l'équipe) </font></b> "
-        "qui lui permet de méditer \"sa dizaine quotidienne\" dans l'Esprit du Frère fondateur; — ainsi ensemble, sans se voir, les 20 mystères du Rosaire "
-        "sont couverts chaque jour. C’est la chaîne de prière universelle. Les équipes et paroisses sont coordonnées "
-        "par des responsables d'équipe, paroissiaux, diocésains, nationaux. Les équipiers sont encadrés par des aumôniers sectoriels, diocésains et nationaux pour le suivi spirituel.",
-        PHOTO_COMMENT))
-    _blocs.append(_section("🙏", "Deux temps de prière",
-        "<b class='dpl-p-blanc'>• La prière personnelle quotidienne</b> : méditer un mystère du Rosaire, l’Évangile, "
-        " dans l'Esprit du <b><i><font color='#FFD700'>Père Joseph EYQUEM</font></i></b>, en communion avec toute la chaîne de prière.<br>"
-        "<b class='dpl-p-blanc'>• La rencontre mensuelle</b> : prière commune chez un membre, méditation "
-        "de la Parole de Dieu, partage d’intentions et de la vie quotidienne, guidée par le feuillet mensuel "
-        "« Le Rosaire en Équipe ».", PHOTO_PRIERES))
-    _blocs.append(_section("❤️", "Notre mission",
-        "Animés par la passion de l’Évangile et le salut des hommes, nous avons un objectif missionnaire local : "
-        "aider amis et voisins à vivre l’Évangile avec Marie, même ceux qui n’ont pas l’habitude d’aller à l’église. "
-        "Les équipes favorisent un climat fraternel, convivial et accessible à tous.", PHOTO_MISSION))
-    _blocs.append(_section("📖", "Ressources",
-        "Chaque année, un thème. Chaque mois, un sous-thème : contenu dans un feuillet \"Le Rosaire en Équipe\" propose la prière du mois, des enseignements "
-        "théologiques accessibles et des réflexions pour la vie quotidienne — des outils qui structurent la prière "
-        "et renforcent la cohésion de l’équipe.", PHOTO_RESSOURCES))
-    _blocs.append(
-        '<div style="background:#FFF9C4 !important; border:2px solid #FFD700; border-radius:12px; padding:14px; '
-        'margin-top:12px; text-align:center;">'
-        '<div class="dpl-titre-g" style="font-size:clamp(1.0rem, 4.2vw, 1.15rem);">'
-        'Voulez-vous rejoindre une équipe ?</div>'
-        '<div style="color:#4527a0 !important; font-size:0.92rem; line-height:1.6; margin-top:6px;">Adressez-vous au '
-        + _etiquette + ' <b style="color:#1A237E !important;">' + html.escape((_resp or "").strip() or "du Mouvement")
-        + '</b>.<br>La dizaine du jour vous attend juste en dessous de ce dépliant : entrez votre jour de naissance '
-        'et priez avec nous. 🕊️</div>' + _bouton + '</div>')
-    _blocs.append('</div>')
-    _corps = "".join(_blocs)
-
-    st.markdown('<style>'
-                '.depliant-eq76 summary::-webkit-details-marker{display:none;}'
-                '.depliant-eq76 summary{list-style:none;}'
-                '.dpl-photo { width:100%; max-width:860px; height:150px; object-fit:cover; '
-                'border-radius:8px; display:block; margin:0 auto 10px auto; }'
-                '.dpl-photo-bandeau { width:100%; border-radius:12px; display:block; margin-top:12px; }'
-                '@media (min-width:769px) { .dpl-photo { height:230px; } }'
-                '</style>', unsafe_allow_html=True)
-    st.markdown(
-        '<details class="depliant-eq76" style="background:#121a45 !important; border:1px solid #FFD700; '
-        'border-radius:15px; margin:12px 10px; overflow:hidden;">'
-        '<summary style="cursor:pointer; padding:12px 14px; background:linear-gradient(135deg,#1A237E,#4527a0); text-align:center;">'
-        '<div class="dpl-titre-g" style="font-size:clamp(0.95rem, 4.3vw, 1.25rem); '
-        'white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">'
-        '📿 Découvrez les Équipes du Rosaire !</div>'
-        '<div style="color:#e8eaf6 !important; font-size:clamp(0.7rem, 3vw, 0.82rem); font-weight:normal; margin-top:2px;">'
-        'cliquez pour ouvrir ▾</div></summary>' + _corps + '</details>', unsafe_allow_html=True)
-
-def _render_actualites(pid=None):
-    """📰 Actualités du diocèse (publications simples : affiche +/ou BA).
-    5 dernières, les plus récentes d'abord.
-    LOT C5 : ne montre que le diocèse (cible NULL) + la paroisse du contexte."""
-    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
-        else ("AND paroisse_cible IS NULL", [])
-    try:
-        lignes = c.execute(f"""SELECT titre, contenu_texte, image_url, fichier_url, date_publication
-                              FROM espace_spirituel
-                              WHERE type_contenu='actualite' {cond}
-                              ORDER BY date_publication DESC, id DESC LIMIT 5""", prm).fetchall()
-    except Exception:
-        return
-    if not lignes:
-        return
-    st.markdown("### 📰 Actualités")
-    for a in lignes:
-        with st.expander("📰 " + (a[0] or "(sans titre)")):
-            st.caption(f"Publié le {a[4] or '—'}")
-            if a[2] and str(a[2]).startswith("http"):
-                try:
-                    st.image(a[2], width="stretch")
-                except Exception:
-                    st.warning("Illustration momentanément indisponible.")
-            if a[1]:
-                st.markdown(a[1].replace("\n", "  \n"))
-            if a[3] and str(a[3]).startswith("http"):
-                try:
-                    st.video(a[3], width="stretch")
-                except Exception:
-                    st.markdown(f"🎬 [Voir la vidéo]({a[3]})")
-
-
-def _render_fil_actualites(pid=None):
-    """v7.6 — fil du jour BLINDÉ : la ligne est complétée à 5 cases avant
-    tout accès par index. LOT C5 : dernière publication VISIBLE du contexte."""
-    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
-        else ("AND paroisse_cible IS NULL", [])
-    dernier = c.execute(f"""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
-                           FROM espace_spirituel
-                           WHERE type_contenu IN ('priere', 'meditation') {cond}
-                           ORDER BY date_publication DESC, id DESC LIMIT 1""", prm).fetchone()
-
-    if dernier:
-        ligne = list(dernier) + [None] * max(0, 5 - len(dernier))
-        etiquette = {"priere": "🙏 Prière du jour", "meditation": "📖 Méditation du jour"}.get(ligne[0], "📿 Du jour")
-        texte = ligne[2] or ""
-        url_pdf = ligne[4]
-        if not url_pdf:
-            texte, url_pdf = _extraire_pdf_legacy(texte)
-
-        if ligne[3] and str(ligne[3]).startswith("http"):
-            try:
-                st.image(ligne[3], width="stretch")
+                _row_dio = c.execute("SELECT whatsapp_responsable FROM diocese WHERE id=?", (1,)).fetchone()
+                if _row_dio and _row_dio[0]:
+                    _wa_dio_actuel = _row_dio[0]
             except Exception:
-                st.warning("Illustration momentanément indisponible.")
-
-        texte_html = texte.replace("\n", "<br>")
-        st.markdown(
-            f'<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35);">'
-            f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{etiquette} — {html.escape(ligne[1] or "")}</div>'
-            f'<div style="color:#4527a0; font-size:0.98rem; line-height:1.6; text-align:left;">{texte_html}</div>'
-            f'</div>', unsafe_allow_html=True)
-
-        if url_pdf:
-            _render_pdf_inline(url_pdf)
-    else:
-        st.info("Aucun contenu spirituel n'a encore été publié.")
-
-    _render_coin_affiche()
-
-
-def _enregistrer_presence(membre_id, evt_id, choix):
-    deja = c.execute("SELECT id FROM suivi_presences WHERE membre_id=? AND evenement_id=?",
-                     (membre_id, evt_id)).fetchone()
-    if deja:
-        c.execute("UPDATE suivi_presences SET statut=? WHERE id=?", (choix, deja[0]))
-    else:
-        c.execute("INSERT INTO suivi_presences (membre_id, evenement_id, statut) VALUES (?, ?, ?)",
-                  (membre_id, evt_id, choix))
-    commit_and_sync()
-    st.session_state["flash_success"] = "Merci pour votre engagement ! 🙏"
-    st.rerun()
-
-
-# ====================================================================
-# PAGE PRINCIPALE
-# ====================================================================
-def show_espace_membre(matloc_membre=None):
-    livre_ouvert = st.session_state.get("diz_ouvert", False)
-
-    _render_theme(compact=livre_ouvert)
-    nb_bandes = 0 if livre_ouvert else _compter_bandes(membre=bool(matloc_membre))
-    _mesure_entete(nb_bandes)
-    # v7.6 : les liens du menu naviguent dans l'onglet courant
-    _liens_meme_onglet("nav")
-
-    # QR signé ?p=ID : capture de l'ORIGINE paroissiale (fidèle anonyme)
-    if "paroisse_origine" not in st.session_state:
-        p_raw = st.query_params.get("p")
-        if isinstance(p_raw, list):
-            p_raw = p_raw[0] if p_raw else None
-        if p_raw:
-            try:
-                p_int = int(p_raw)
-                if c.execute("SELECT id FROM paroisses WHERE id=?", (p_int,)).fetchone():
-                    st.session_state["paroisse_origine"] = p_int
-            except (ValueError, TypeError):
                 pass
-
-    msg_ok = st.session_state.pop("flash_success", None)
-    if msg_ok:
-        st.success(msg_ok)
-    msg_warn = st.session_state.pop("flash_warning", None)
-    if msg_warn:
-        st.warning(msg_warn)
-
-    # ================= ÉTAT 1 : VUE PUBLIQUE =================
-    if not matloc_membre:
-        # v7.6 : compteur fusionné — 1 visite = 1 ARRIVÉE (les navigations
-        # internes portent &nav=1). Journal missionnaire si QR signé.
-        if "nav" not in st.query_params and "visite_communaute" not in st.session_state:
-            st.session_state["visite_communaute"] = True
-            compter_visite("communautaire")
-            _origine = st.session_state.get("paroisse_origine")
-            if _origine:
-                try:
-                    c.execute("INSERT INTO visites_paroisse (paroisse_id, date_visite) VALUES (?, ?)",
-                              (_origine, date.today().isoformat()))
-                    commit_and_sync()
-                except Exception:
-                    try:
-                        c.execute("""CREATE TABLE IF NOT EXISTS visites_paroisse (
-                                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                        paroisse_id INTEGER,
-                                        date_visite TEXT)""")
-                        c.execute("INSERT INTO visites_paroisse (paroisse_id, date_visite) VALUES (?, ?)",
-                                  (_origine, date.today().isoformat()))
+            st.markdown(f'<div class="custom-info-box"><b>Responsable diocésain :</b> {html.escape(d_info[1] or "")}<br><b>Bureau diocésain :</b> {html.escape(d_info[2] or "")}<br><b>📱 WhatsApp :</b> {_wa_dio_actuel or "Non renseigné"}</div>', unsafe_allow_html=True)
+            with st.expander("✏️ Modifier les informations"):
+                with st.form("form_edit_dio"):
+                    c_ed1, c_ed2 = st.columns(2)
+                    with c_ed1:
+                        nr = st.text_input("Nouveau responsable", value=d_info[1] or "")
+                        _wa_dio = st.text_input("📱 WhatsApp du responsable diocésain", value=_wa_dio_actuel)
+                    with c_ed2:
+                        nb = st.text_area("Nouveau bureau", value=d_info[2] or "")
+                    if st.form_submit_button("💾 Enregistrer", width="stretch"):
+                        c.execute("UPDATE diocese SET responsable=?, bureau=? WHERE id=?", (nr, nb, 1))
+                        c.execute("UPDATE diocese SET whatsapp_responsable=? WHERE id=?", (_wa_dio.strip() or None, 1))
                         commit_and_sync()
-                    except Exception:
-                        pass
+                        st.session_state["flash_success"] = "Mis à jour ! ✅"
+                        st.rerun()
 
-        rub, sub = _lire_nav(RUBRIQUES_PUBLIC)
-        pid_pub = _pid_contexte()
-        _render_header(masquer_bandes=livre_ouvert,
-                       rubriques=(None if livre_ouvert else RUBRIQUES_PUBLIC),
-                       rub_act=rub, sub_act=sub, pid=pid_pub)
-        # Accueil personnalisé si arrivée par QR paroissial signé
-        _origine = st.session_state.get("paroisse_origine")
-        if _origine:
-            _nom_par = c.execute("SELECT nom FROM paroisses WHERE id=?", (_origine,)).fetchone()
-            if _nom_par:
-                st.caption("🕊️ Bienvenue ! Vous découvrez cet espace via la communauté **"
-                           + _nom_par[0] + "** — toute la chaîne de prière du diocèse vous accompagne.")
+    elif menu == "🏘️ Créer paroisses":
+        st.markdown('<h2 style="color:#1A237E;">🏘️ Créer une paroisse</h2>', unsafe_allow_html=True)
+        afficher_messages_flash()
 
-        if livre_ouvert:
-            _render_dizaine_du_jour(est_membre=False)
-            return
+        with st.form("creer_paroisse"):
+            c1, c2 = st.columns(2)
+            with c1:
+                nom = st.text_input("Nom de la paroisse")
+                commune = st.text_input("Commune")
+                responsable = st.text_input("Responsable")
+                wa_resp = st.text_input("📱 WhatsApp du responsable (ex. 0700000000)")
+            with c2:
+                ville = st.text_input("Ville")
+                bureau = st.text_area("Bureau")
+            if st.form_submit_button("🏘️ Créer", width="stretch"):
+                if nom and commune and ville and responsable:
+                    if c.execute("SELECT id FROM paroisses WHERE nom=? AND commune=? AND ville=?", (nom.strip(), commune.strip(), ville.strip())).fetchone():
+                        st.error("❌ Cette paroisse existe déjà !")
+                    else:
+                        c.execute("INSERT INTO paroisses (nom, commune, ville, responsable, bureau, whatsapp_responsable, diocese_id) VALUES (?,?,?,?,?,?,?)",
+                                  (nom.strip(), commune.strip(), ville.strip(), responsable.strip(), bureau, wa_resp.strip() or None, 1))
+                        # re-SELECT plutôt que lastrowid (invalide si reconnexion Turso)
+                        pid = c.execute("SELECT id FROM paroisses WHERE nom=? AND commune=? AND ville=?",
+                                        (nom.strip(), commune.strip(), ville.strip())).fetchone()[0]
+                        username = f"paroisse_{pid}"
+                        mdp = generer_mot_de_passe()
+                        c.execute("INSERT INTO utilisateurs (username, password, role, diocese_id, paroisse_id) VALUES (?,?,?,?,?)",
+                                  (username, hash_password(mdp), "paroisse", 1, pid))
+                        commit_and_sync()
+                        st.success(f"✅ Paroisse '{nom}' créée")
+                        st.markdown(f"<div style='background:#e8f5e9;padding:15px;border-radius:10px;border:1px solid #c8e6c9;'>🔑 Identifiant : <code style='color:#d84315;'>{username}</code><br>🔒 Mot de passe : <code style='color:#d84315;'>{mdp}</code></div>", unsafe_allow_html=True)
+                        if wa_resp.strip():
+                            _msg = ("🕊️ Bénédiction !\n\n"
+                                    + "La paroisse " + nom + " est enregistrée sur le Gestionnaire des Équipes du Rosaire (Diocèse de Grand-Bassam).\n\n"
+                                    + "🔐 Vos identifiants de connexion (portail gestionnaire) :\n"
+                                    + "👤 Utilisateur : " + username + "\n"
+                                    + "🔑 Mot de passe : " + mdp + "\n"
+                                    + "🌐 Le portail : " + URL_ESPACE_SPIRITUEL + "\n\n"
+                                    + "🔳 Lien signé de votre Espace communautaire (à mettre sur vos affiches — le QR correspondant se télécharge dans le gestionnaire, menu Gérer paroisses) :\n"
+                                    + URL_ESPACE_SPIRITUEL + "/?espace=1&p=" + str(pid) + "\n\n"
+                                    + "📿 Que le Rosaire unisse votre paroisse !")
+                            _wa_link = lien_whatsapp(wa_resp, _msg)
+                            st.markdown("#### 📨 Expédition des identifiants")
+                            st.caption("Un clic ouvre WhatsApp avec le message prêt — envoyez-le au responsable.")
+                            st.markdown(f'<a href="{_wa_link}" target="_blank" class="whatsapp-link">📱 Envoyer les identifiants au responsable</a>', unsafe_allow_html=True)
+                else:
+                    st.error("Tous les champs sont requis")
 
-        st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
-                    '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
-                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · v7.6</div></div>', unsafe_allow_html=True)
+    elif menu == "📋 Gérer paroisses":
+        st.markdown('<h2 style="color:#1A237E;">📋 Consultation des paroisses</h2>', unsafe_allow_html=True)
+        afficher_messages_flash()
 
-        if rub == "📿 Rosaire":
-            if sub == "Le thème de l'année":
-                _render_page_rosaire_theme()
+        for state in ['show_equipes', 'show_equipiers', 'show_membres_equipe']:
+            if state not in st.session_state: st.session_state[state] = None
+
+        paroisses = c.execute("SELECT id, nom, commune, ville, responsable, bureau, whatsapp_responsable FROM paroisses ORDER BY nom").fetchall()
+
+        for p in paroisses:
+            pid, nom, commune, ville, responsable, bureau, wa_resp_actuel = p
+            nb_equipes = c.execute("SELECT COUNT(*) FROM equipes WHERE paroisse_id=?", (pid,)).fetchone()[0]
+            nb_membres = c.execute("SELECT COUNT(*) FROM membres WHERE paroisse_id=? AND statut='actif'", (pid,)).fetchone()[0]
+
+            with st.expander(f"🏛️ {nom} ({commune} / {ville}) - {nb_equipes} équipe(s) - {nb_membres} membre(s)"):
+                st.write(f"**Responsable :** {responsable}")
+                st.write(f"**Bureau :** {bureau}")
+
+                # QR signé de CETTE paroisse (traçabilité missionnaire)
+                with st.expander("🔳 QR paroissial de cette paroisse"):
+                    _url_signee = f"{URL_ESPACE_SPIRITUEL}/?espace=1&p={pid}"
+                    st.code(_url_signee)
+                    _png = _qrcode_png_bytes(_url_signee)
+                    st.image(_png, width=200)
+                    st.download_button("📥 Télécharger le QR (PNG)", data=_png,
+                                       file_name=f"qr_paroisse_{pid}.png",
+                                       key=f"qr_dl_{pid}", width="stretch")
+                    st.caption("Imprimez ce QR sur les affiches de la paroisse : chaque scan est compté à son origine (fidèle anonyme).")
+
+                # 📱 WhatsApp du responsable (édition — le responsable peut changer)
+                with st.expander("📱 WhatsApp du responsable paroissial"):
+                    _wa_new = st.text_input("Numéro WhatsApp", value=wa_resp_actuel or "",
+                                            key=f"wa_edit_{pid}")
+                    if st.button("💾 Enregistrer le numéro", key=f"wa_save_{pid}"):
+                        c.execute("UPDATE paroisses SET whatsapp_responsable=? WHERE id=?",
+                                  (_wa_new.strip() or None, pid))
+                        commit_and_sync()
+                        st.success("Numéro WhatsApp enregistré ! ✅")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(f"👥 Voir les équipes", key=f"btn_equipes_{pid}"):
+                        st.session_state['show_equipes'] = pid if st.session_state.get('show_equipes') != pid else None
+                        st.session_state['show_equipiers'] = None
+                        st.session_state['show_membres_equipe'] = None
+                        st.rerun()
+                with col2:
+                    if st.button(f"👤 Voir tous les équipiers", key=f"btn_equipiers_{pid}"):
+                        st.session_state['show_equipiers'] = pid if st.session_state.get('show_equipiers') != pid else None
+                        st.session_state['show_equipes'] = None
+                        st.session_state['show_membres_equipe'] = None
+                        st.rerun()
+
+                if st.session_state.get('show_equipes') == pid:
+                    st.markdown("---")
+                    st.markdown(f"#### 👥 Équipes de {nom}")
+                    equipes = c.execute("SELECT id, nom_equipe, responsable, bureau FROM equipes WHERE paroisse_id=? ORDER BY nom_equipe", (pid,)).fetchall()
+                    if not equipes: st.info("Aucune équipe dans cette paroisse")
+                    else:
+                        for eq in equipes:
+                            eq_id, eq_nom, eq_resp, eq_bureau = eq
+                            nb_membres_eq = c.execute("SELECT COUNT(*) FROM membres WHERE equipe_id=? AND statut='actif'", (eq_id,)).fetchone()[0]
+                            with st.expander(f"📌 {eq_nom} - Respo: {eq_resp} ({nb_membres_eq} membres)"):
+                                st.write(f"**Bureau :** {eq_bureau}")
+                                if st.button(f"📋 Voir les membres de {eq_nom}", key=f"btn_membres_eq_{eq_id}"):
+                                    st.session_state['show_membres_equipe'] = eq_id if st.session_state.get('show_membres_equipe') != eq_id else None
+                                    st.rerun()
+
+                                if st.session_state.get('show_membres_equipe') == eq_id:
+                                    membres_eq = c.execute("""SELECT matloc, matricule, nom, prenom, whatsapp, numero_meditation, date_adhesion
+                                                            FROM membres WHERE equipe_id=? AND statut='actif' ORDER BY nom""", (eq_id,)).fetchall()
+                                    if not membres_eq: st.info("Aucun membre")
+                                    else:
+                                        df = pd.DataFrame(membres_eq, columns=["MatLoc", "Matricule", "Nom", "Prénom", "WhatsApp", "N° méditation", "Date adhésion"])
+                                        df.insert(0, "N°", range(1, len(df) + 1))
+                                        st.dataframe(df, hide_index=True, width="stretch")
+                                        out = io.BytesIO()
+                                        with pd.ExcelWriter(out, engine='openpyxl') as w: df.to_excel(w, index=False)
+                                        out.seek(0)
+                                        st.download_button(f"📥 Exporter {eq_nom}", data=out, file_name=f"membres_{eq_nom}_{date.today()}.xlsx", key=f"export_eq_{eq_id}")
+
+                if st.session_state.get('show_equipiers') == pid:
+                    st.markdown("---")
+                    st.markdown(f"#### 👤 Tous les équipiers de {nom}")
+                    membres_paroisse = c.execute("""SELECT m.matloc, m.matricule, m.nom, m.prenom, m.whatsapp, m.numero_meditation, m.date_adhesion, e.nom_equipe
+                                                    FROM membres m JOIN equipes e ON m.equipe_id = e.id
+                                                    WHERE m.paroisse_id=? AND m.statut='actif' ORDER BY e.nom_equipe, m.nom""", (pid,)).fetchall()
+                    if not membres_paroisse: st.info("Aucun membre actif")
+                    else:
+                        st.info(f"📊 Total : {len(membres_paroisse)} membre(s) actif(s)")
+                        df = pd.DataFrame(membres_paroisse, columns=["MatLoc", "Matricule", "Nom", "Prénom", "WhatsApp", "N° méditation", "Date adhésion", "Équipe"])
+                        df.insert(0, "N°", range(1, len(df) + 1))
+                        st.dataframe(df, hide_index=True, width="stretch")
+                        out = io.BytesIO()
+                        with pd.ExcelWriter(out, engine='openpyxl') as w: df.to_excel(w, index=False)
+                        out.seek(0)
+                        st.download_button(f"📥 Exporter les équipiers de {nom}", data=out, file_name=f"equipiers_{nom}_{date.today()}.xlsx", key=f"export_par_{pid}")
+
+    elif menu == "📅 Abonnements":
+        st.markdown('<h2 style="color:#1A237E;">📅 Suivi des abonnements (Diocèse)</h2>', unsafe_allow_html=True)
+
+        for state in ['show_paroisse_abos', 'show_equipe_abos', 'abos_view_type']:
+            if state not in st.session_state: st.session_state[state] = None
+
+        annee_pastorale_en_cours = get_periode_pastorale()[0]
+        annee_debut = st.number_input("Année de début de la période", min_value=2020, max_value=annee_pastorale_en_cours, value=annee_pastorale_en_cours, step=1)
+        st.write(f"**Période :** {periode_affichage(annee_debut)}")
+
+        total_membres = c.execute("SELECT COUNT(*) FROM membres WHERE statut='actif'").fetchone()[0]
+        payes = c.execute("SELECT COUNT(*) FROM abonnements WHERE annee_debut=? AND statut='paye'", (annee_debut,)).fetchone()[0]
+
+        c1, c2 = st.columns(2)
+        c1.metric("📊 Total membres actifs", total_membres)
+        c2.metric("✅ Abonnements enregistrés", payes)
+
+        taux = f"{payes/total_membres*100:.0f}%" if total_membres else "0%"
+        st.caption(f"📊 **Taux de recouvrement global :** {taux}")
+        st.markdown("---")
+
+        for p in c.execute("SELECT id, nom FROM paroisses ORDER BY nom").fetchall():
+            pid, nom_paroisse = p
+            stats = c.execute("""SELECT COUNT(m.id) as total, SUM(CASE WHEN a.annee_debut=? AND a.statut='paye' THEN 1 ELSE 0 END) as payes
+                                FROM membres m LEFT JOIN abonnements a ON m.id=a.membre_id AND a.annee_debut=?
+                                WHERE m.paroisse_id=? AND m.statut='actif'""", (annee_debut, annee_debut, pid)).fetchone()
+            total_par, payes_par = stats[0] or 0, stats[1] or 0
+            pourcent = f"{(payes_par/total_par*100):.0f}%" if total_par > 0 else "0%"
+
+            with st.expander(f"🏛️ {nom_paroisse} - {total_par} membre(s) - {payes_par} à jour ({pourcent})"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(f"👥 Voir les équipes", key=f"abos_btn_equipes_{pid}"):
+                        st.session_state['show_paroisse_abos'] = pid if not (st.session_state.get('show_paroisse_abos') == pid and st.session_state.get('abos_view_type') == 'equipes') else None
+                        st.session_state['abos_view_type'] = 'equipes'; st.session_state['show_equipe_abos'] = None; st.rerun()
+                with col2:
+                    if st.button(f"👤 Voir tous les équipiers", key=f"abos_btn_membres_{pid}"):
+                        st.session_state['show_paroisse_abos'] = pid if not (st.session_state.get('show_paroisse_abos') == pid and st.session_state.get('abos_view_type') == 'membres') else None
+                        st.session_state['abos_view_type'] = 'membres'; st.session_state['show_equipe_abos'] = None; st.rerun()
+
+                if st.session_state.get('show_paroisse_abos') == pid and st.session_state.get('abos_view_type') == 'equipes':
+                    st.markdown("---"); st.markdown(f"#### 👥 Équipes de {nom_paroisse}")
+                    for eq in c.execute("SELECT id, nom_equipe FROM equipes WHERE paroisse_id=? ORDER BY nom_equipe", (pid,)).fetchall():
+                        eid, eq_nom = eq
+                        stats_eq = c.execute("""SELECT COUNT(m.id) as total, SUM(CASE WHEN a.annee_debut=? AND a.statut='paye' THEN 1 ELSE 0 END) as payes
+                                              FROM membres m LEFT JOIN abonnements a ON m.id=a.membre_id AND a.annee_debut=?
+                                              WHERE m.equipe_id=? AND m.statut='actif'""", (annee_debut, annee_debut, eid)).fetchone()
+                        total_eq, payes_eq = stats_eq[0] or 0, stats_eq[1] or 0
+                        pourcent_eq = f"{(payes_eq/total_eq*100):.0f}%" if total_eq > 0 else "0%"
+                        with st.expander(f"📌 {eq_nom} - {total_eq} membre(s) - {payes_eq} à jour ({pourcent_eq})"):
+                            if st.button(f"📋 Voir les détails", key=f"abos_voir_eq_{eid}"):
+                                st.session_state['show_equipe_abos'] = eid if st.session_state.get('show_equipe_abos') != eid else None; st.rerun()
+                            if st.session_state.get('show_equipe_abos') == eid:
+                                membres_eq = c.execute("""SELECT m.id, m.nom, m.prenom, m.matricule, a.type_abonnement, a.date_paiement, a.montant
+                                                        FROM membres m LEFT JOIN abonnements a ON m.id=a.membre_id AND a.annee_debut=? AND a.statut='paye'
+                                                        WHERE m.equipe_id=? AND m.statut='actif' ORDER BY m.nom""", (annee_debut, eid)).fetchall()
+                                abonnes, reabonnes, non_inscrits = [], [], []
+                                for m in membres_eq:
+                                    if m[4] == 'abonnement': abonnes.append(m)
+                                    elif m[4] == 'reabonnement': reabonnes.append(m)
+                                    else: non_inscrits.append(m)
+
+                                t1, t2, t3 = st.tabs(["📝 Abonnés", "🔄 Réabonnés", "❌ Non enregistrés"])
+                                with t1:
+                                    if abonnes:
+                                        df = pd.DataFrame(abonnes, columns=["ID", "Nom", "Prénom", "Matricule", "Type", "Date", "Montant"])[["Nom", "Prénom", "Matricule", "Date", "Montant"]]
+                                        df["Montant"] = df["Montant"].apply(lambda x: f"{x or 0} FCFA")
+                                        st.dataframe(df, hide_index=True, width="stretch")
+                                    else: st.info("Aucun abonnement enregistré")
+                                with t2:
+                                    if reabonnes:
+                                        df = pd.DataFrame(reabonnes, columns=["ID", "Nom", "Prénom", "Matricule", "Type", "Date", "Montant"])[["Nom", "Prénom", "Matricule", "Date", "Montant"]]
+                                        df["Montant"] = df["Montant"].apply(lambda x: f"{x or 0} FCFA")
+                                        st.dataframe(df, hide_index=True, width="stretch")
+                                    else: st.info("Aucun réabonnement enregistré")
+                                with t3:
+                                    if non_inscrits:
+                                        for n in non_inscrits: st.write(f"- {n[1]} {n[2]} ({n[3] or '—'})")
+                                    else: st.success("✅ Tous les membres sont à jour")
+
+                if st.session_state.get('show_paroisse_abos') == pid and st.session_state.get('abos_view_type') == 'membres':
+                    st.markdown("---"); st.markdown(f"#### 👤 Tous les équipiers de {nom_paroisse}")
+                    membres_paroisse = c.execute("""SELECT m.id, m.nom, m.prenom, m.matricule, m.whatsapp, e.nom_equipe, a.type_abonnement, a.date_paiement, a.montant
+                                                    FROM membres m JOIN equipes e ON m.equipe_id = e.id
+                                                    LEFT JOIN abonnements a ON m.id=a.membre_id AND a.annee_debut=? AND a.statut='paye'
+                                                    WHERE m.paroisse_id=? AND m.statut='actif' ORDER BY e.nom_equipe, m.nom""", (annee_debut, pid)).fetchall()
+                    if not membres_paroisse: st.info("Aucun membre actif")
+                    else:
+                        abonnes_par, reabonnes_par, non_inscrits_par = [], [], []
+                        for m in membres_paroisse:
+                            if m[6] == 'abonnement': abonnes_par.append(m)
+                            elif m[6] == 'reabonnement': reabonnes_par.append(m)
+                            else: non_inscrits_par.append(m)
+                        st.info(f"📊 Total : {len(membres_paroisse)} - ✅ {len(abonnes_par)} abonnés - 🔄 {len(reabonnes_par)} réabonnés - ❌ {len(non_inscrits_par)} non enregistrés")
+                        t1, t2, t3 = st.tabs(["📝 Abonnés", "🔄 Réabonnés", "❌ Non enregistrés"])
+                        with t1:
+                            if abonnes_par:
+                                df = pd.DataFrame(abonnes_par, columns=["ID", "Nom", "Prénom", "Matricule", "WhatsApp", "Équipe", "Type", "Date", "Montant"])[["Nom", "Prénom", "Matricule", "WhatsApp", "Équipe", "Date", "Montant"]]
+                                df["Montant"] = df["Montant"].apply(lambda x: f"{x or 0} FCFA")
+                                st.dataframe(df, hide_index=True, width="stretch")
+                            else: st.info("Aucun abonnement")
+                        with t2:
+                            if reabonnes_par:
+                                df = pd.DataFrame(reabonnes_par, columns=["ID", "Nom", "Prénom", "Matricule", "WhatsApp", "Équipe", "Type", "Date", "Montant"])[["Nom", "Prénom", "Matricule", "WhatsApp", "Équipe", "Date", "Montant"]]
+                                df["Montant"] = df["Montant"].apply(lambda x: f"{x or 0} FCFA")
+                                st.dataframe(df, hide_index=True, width="stretch")
+                            else: st.info("Aucun réabonnement")
+                        with t3:
+                            if non_inscrits_par:
+                                for n in non_inscrits_par: st.write(f"- {n[1]} {n[2]} ({n[3] or '—'}) - {n[5]}")
+                            else: st.success("✅ Tous les membres sont à jour")
+
+    elif menu == "📌 Suivi":
+        st.markdown(f'<h2 style="color:#1A237E;">📌 Suivi et Agenda - {nom_dio}</h2>', unsafe_allow_html=True)
+
+        tab_avenir, tab_passe, tab_etat = st.tabs(["📅 Agenda", "📝 Vie de prière des paroisses", "📊 Engagement spirituel"])
+
+        with tab_avenir:
+            ajouter_evenement_agenda(diocese_id=1, auteur_nom=st.session_state.get('username'))
+            st.markdown("---")
+            afficher_agenda_complet_universel(diocese_id=1)
+
+        with tab_passe:
+            paroisses = c.execute("SELECT id, nom, commune FROM paroisses").fetchall()
+            if paroisses:
+                par_dict = {f"{p[1]} ({p[2]})": p[0] for p in paroisses}
+                choix_par = st.selectbox("Sélectionnez la paroisse", list(par_dict.keys()), key="suivi_hist_dio_par")
+                pid_select = par_dict[choix_par]
+
+                from services import TYPES_EVENEMENTS
+                filtre_type = st.selectbox("Filtrer par type d'évènement", ["Tous"] + TYPES_EVENEMENTS, key="filtre_hist_dio")
+
+                afficher_historique_paroisse(paroisse_id=pid_select, filtre_type=filtre_type)
             else:
-                _render_page_rosaire_eyquem()
-        elif rub == "📖 Archives":
-            if sub == "📖 Méditations":
-                _render_page_archives_textes("meditation", "Aucune méditation disponible.", pid=pid_pub)
-            elif sub == "🎵 Musiques":
-                _render_page_archives_audios(pid=pid_pub)
+                st.info("Aucune paroisse créée.")
+
+        with tab_etat:
+            paroisses2 = c.execute("SELECT id, nom, commune FROM paroisses").fetchall()
+            if paroisses2:
+                par_dict2 = {f"{p[1]} ({p[2]})": p[0] for p in paroisses2}
+                choix_par2 = st.selectbox("Sélectionnez la paroisse pour le bilan", list(par_dict2.keys()), key="etat_hist_dio_par")
+                pid_select2 = par_dict2[choix_par2]
+
+                afficher_etat_presences_paroisse(paroisse_id=pid_select2)
             else:
-                _render_page_archives_textes("priere", "Aucune prière publiée.", pid=pid_pub)
-        elif rub == "🕯️ Thème":
-            if sub == "🎓 Enseignements":
-                _render_page_en_preparation("🎓", "Enseignements",
-                                            "Cet espace accueillera les résumés des enseignements reçus, publiés par le diocèse. Il est en préparation.")
-            elif sub == "💬 Discussions":
-                _render_page_en_preparation("💬", "Discussions",
-                                            "Cet espace accueillera les cadres de discussions thématiques. Il est en préparation.")
-            else:
-                _render_page_theme_ensemble()
-        else:
-            _depliant_mouvement(st.session_state.get("paroisse_origine"))
-            _render_dizaine_du_jour(est_membre=False)
-            if st.session_state.get("diz_ouvert"):
-                return
-            _render_fil_actualites(pid=pid_pub)
-            _render_actualites(pid=pid_pub)
-        return
+                st.info("Aucune paroisse créée.")
 
-    # ================= ÉTAT 2 : VUE MEMBRE =================
-    matloc_membre = str(matloc_membre).upper().strip()
+    elif menu == "🕊️ Espace spirituel":
+        st.markdown('<h2 style="color:#1A237E;">🕊️ Gestion de l\'Espace Spirituel</h2>', unsafe_allow_html=True)
+        st.caption("Le Service Communication prépare les contenus — VOUS seul publiez (onglet 📡). "
+                   "Le thème pastoral et les bandes défilantes se gèrent ici. "
+                   "Ce qui est validé rejoint l'Espace de Prière : évangélisation élargie, membres et visiteurs.")
+        afficher_messages_flash()
 
-    membre = c.execute("""
-        SELECT m.id, m.nom, m.prenom, m.matloc, m.whatsapp, m.date_adhesion, m.photo_path,
-               m.numero_meditation, e.nom_equipe, p.nom, m.equipe_id, m.paroisse_id
-        FROM membres m
-        LEFT JOIN equipes e ON m.equipe_id = e.id
-        LEFT JOIN paroisses p ON m.paroisse_id = p.id
-        WHERE m.matloc=? AND m.statut='actif'
-    """, (matloc_membre,)).fetchone()
+        tab_com, tab_manage = st.tabs(["📡 Communication", "📋 Contenu existant"])
 
-    if not membre:
-        st.error("Identifiant inconnu ou membre inactif.")
-        st.info("💡 Vous pouvez consulter l'espace public ci-dessous.")
-        _render_header()
-        _render_fil_actualites()
-        return
+        with tab_com:
+            st.caption("🕯️ Le SAS : la cellule Communication prépare et soumet — VOUS seul validez et publiez. "
+                       "Chaque contenu validé rejoint sa zone dédiée de l'Espace de Prière. "
+                       "En bas du SAS : vos outils de gestion du thème (activation, sous-thèmes, liens).")
+            from views.view_communication_validation import show_validation_communication
+            show_validation_communication()
 
-    # v7.6 : compteur membre — 1 visite = 1 ARRIVÉE (même sémantique)
-    if "nav" not in st.query_params and "visite_membre" not in st.session_state:
-        st.session_state["visite_membre"] = True
-        compter_visite("membre")
+        with tab_manage:
+            t_bandes, t_autres = st.tabs(["📺 Bandes défilantes actives", "📦 Autres contenus"])
 
-    rub, sub = _lire_nav(RUBRIQUES_MEMBRE)
-    pid_m = _pid_contexte(membre[11])
-    _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert,
-                   rubriques=(None if livre_ouvert else RUBRIQUES_MEMBRE),
-                   rub_act=rub, sub_act=sub, pid=pid_m)
+            with t_bandes:
+                st.caption("Maximum 3 bandes actives — seules les plus récentes s'affichent dans l'entête des espaces. "
+                           "Les bandes sont soumises par le Service Communication puis validées au SAS (📡).")
+                bandes_actives = c.execute("""SELECT id, contenu_texte, fichier_url, date_publication FROM espace_spirituel
+                                              WHERE type_contenu='annonce_defilante'
+                                              ORDER BY date_publication DESC, id DESC""").fetchall()
+                if not bandes_actives:
+                    st.info("Aucune bande défilante active.")
+                else:
+                    if len(bandes_actives) >= 3:
+                        st.warning(f"⚠️ {len(bandes_actives)} bandes actives : seules les 3 plus récentes s'affichent dans l'entête. Supprimez les anciennes.")
+                    for b in bandes_actives:
+                        etiquette = "🌐 Partout" if b[2] != 'membre' else "👤 Membres seuls"
+                        c_txt, c_infos, c_btn = st.columns([4, 2, 1])
+                        with c_txt:
+                            st.write(f"📺 {b[1]}")
+                        with c_infos:
+                            st.caption(f"{etiquette} • {b[3]}")
+                        with c_btn:
+                            if st.button("🗑️", key=f"del_defil_{b[0]}"):
+                                c.execute("DELETE FROM espace_spirituel WHERE id=?", (b[0],))
+                                commit_and_sync()
+                                st.rerun()
 
-    if livre_ouvert:
-        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
-        return
-
-    with st.popover("👤 Mon profil"):
-        if membre[6]:
-            try: st.image(membre[6], width=130)
-            except Exception: pass
-        st.markdown(f"**{membre[1]} {membre[2]}**")
-        st.caption(f"MatLoc : `{membre[3]}`")
-        st.write(f"👥 Équipe : **{membre[8] or '—'}**")
-        st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
-        st.write(f"💬 WhatsApp : {membre[4] or '—'}")
-        st.write(f"📿 N° méditation : {membre[7] or '—'}")
-        d_adh = safe_date(membre[5])
-        st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
-
-    st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
-                '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
-                '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · v7.6</div></div>', unsafe_allow_html=True)
-
-    if rub == "📅 Mes évènements":
-        if membre[10] is None:
-            st.info("Vous n'êtes rattaché(e) à aucune équipe pour le moment.")
-        else:
-            st.markdown("### 📅 Mes prochains évènements")
-            evts = c.execute('''
-                SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
-                       (SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=e.id)
-                FROM evenements e
-                JOIN evenement_equipes ee ON e.id = ee.evenement_id
-                WHERE ee.equipe_id = ? AND e.date_evenement >= ?
-                ORDER BY e.date_evenement ASC
-            ''', (membre[0], membre[10], date.today().isoformat())).fetchall()
-
-            if not evts:
-                st.success("✅ Aucun événement à venir. Profitez de ce temps de repos !")
-            else:
-                for evt in evts:
-                    d = safe_date(evt[1])
-                    if not d:
-                        continue
-                    delta = (d - date.today()).days
-                    delai = "🔴 Aujourd'hui !" if delta == 0 else "🟠 Demain" if delta == 1 else f"📅 Dans {delta} jours"
-                    icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
-                             "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(evt[2], "📅")
-
-                    statut = evt[4]
-                    marqueur = "✅ " if statut in ('physique', 'spirituel') else ""
-
-                    with st.expander(f"{marqueur}{icone} {evt[2]} — {d.strftime('%d/%m/%Y')} ({delai})",
-                                     expanded=(delta <= 1)):
-                        st.write(f"📍 {evt[3] or 'Lieu à définir'}")
-
-                        if statut == 'physique':
-                            st.success("✅ Votre réponse de communion : Présent(e) physiquement")
-                        elif statut == 'spirituel':
-                            st.success("🟡 Votre réponse de communion : Présent(e) spirituellement")
-                        else:
-                            st.caption("📿 Réponse de Communion — indiquez comment vous vous joignez à nous :")
-
-                        c1, c2 = st.columns(2)
+            with t_autres:
+                contenus = c.execute("""SELECT id, type_contenu, titre, date_publication, image_url, fichier_url, paroisse_cible
+                                        FROM espace_spirituel WHERE type_contenu != 'annonce_defilante'
+                                        ORDER BY date_publication DESC, id DESC""").fetchall()
+                if not contenus:
+                    st.info("Aucun contenu publié pour le moment.")
+                else:
+                    # Q3-A : le diocèse voit TOUT, avec la paroisse cible affichée
+                    _paroisses_map = {p[0]: p[1] for p in c.execute("SELECT id, nom FROM paroisses").fetchall()}
+                    for cont in contenus:
+                        icone = {"priere": "🙏", "meditation": "📖", "audio": "🎵",
+                                 "actualite": "📰"}.get(cont[1], "📌")
+                        _cible_lbl = f" 🏘️ {_paroisses_map[cont[6]]}" if cont[6] and cont[6] in _paroisses_map else ""
+                        c1, c2 = st.columns([4, 1])
                         with c1:
-                            if st.button("🟢 Présent physiquement", key=f"rsp_p_{evt[0]}",
-                                         width="stretch",
-                                         type="primary" if statut != 'physique' else "secondary"):
-                                _enregistrer_presence(membre[0], evt[0], 'physique')
+                            st.write(f"{icone} **{cont[2]}** - *{cont[3]}*{_cible_lbl}")
                         with c2:
-                            if st.button("🟡 Présent spirituellement", key=f"rsp_s_{evt[0]}",
-                                         width="stretch",
-                                         type="primary" if statut != 'spirituel' else "secondary"):
-                                _enregistrer_presence(membre[0], evt[0], 'spirituel')
+                            if st.button("🗑️", key=f"del_espace_{cont[0]}"):
+                                for url in (cont[4], cont[5]):
+                                    if url and url.startswith("http"):
+                                        supprimer_photo(url)
+                                c.execute("DELETE FROM espace_spirituel WHERE id=?", (cont[0],))
+                                commit_and_sync()
+                                st.rerun()
 
-    elif rub == "📿 Rosaire":
-        if sub == "Le thème de l'année":
-            _render_page_rosaire_theme()
+    elif menu == "💬 WhatsApp":
+        st.markdown(f'<h2 style="color:#1A237E;">💬 Messages WhatsApp - {nom_dio}</h2>', unsafe_allow_html=True)
+        afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None)
+
+    elif menu == "🔍 Rechercher matricule":
+        st.markdown('<h2 style="color:#1A237E;">🔍 Recherche par matricule</h2>', unsafe_allow_html=True)
+        matricule = st.text_input("Matricule (MatLoc ou Matricule)")
+        if matricule.strip():
+            m = c.execute('''SELECT m.matloc, m.matricule, m.nom, m.prenom, m.whatsapp, p.nom, e.nom_equipe, m.photo_path
+                             FROM membres m
+                             LEFT JOIN paroisses p ON m.paroisse_id = p.id
+                             LEFT JOIN equipes e ON m.equipe_id = e.id
+                             WHERE (m.matloc = ? OR m.matricule = ?) AND m.statut = 'actif' ''',
+                          (matricule.upper().strip(), matricule.upper().strip())).fetchone()
+            if m:
+                st.success("Membre trouvé")
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.write(f"**{m[2]} {m[3]}** - MatLoc: {m[0]} | Matricule: {m[1] or '—'}")
+                    st.write(f"💬 WhatsApp: {m[4] or 'Non renseigné'}")
+                    st.markdown(f"🏘️ **Paroisse :** {m[5] or 'Non assignée'}  \n👥 **Équipe :** {m[6] or 'Non assignée'}")
+                with col2:
+                    if m[7]:
+                        try: st.image(m[7], width=100)
+                        except Exception: pass
+            else:
+                st.error("Non trouvé ou membre archivé")
+
+    elif menu == "🔐 Gérer les accès":
+        st.markdown('<h2 style="color:#1A237E;">🔐 Gestion des accès</h2>', unsafe_allow_html=True)
+        afficher_messages_flash()
+        st.markdown("### 🏘️ Paroisses")
+        for p in c.execute("SELECT id, nom, responsable FROM paroisses").fetchall():
+            user = c.execute("SELECT id, username FROM utilisateurs WHERE paroisse_id=? AND role='paroisse'", (p[0],)).fetchone()
+            if user:
+                with st.expander(f"🏛️ {p[1]} - {p[2]}"):
+                    st.write(f"**Identifiant :** `{user[1]}`")
+                    if st.button(f"🔄 Réinitialiser le mot de passe", key=f"reset_par_{p[0]}"):
+                        nouveau = generer_mot_de_passe()
+                        c.execute("UPDATE utilisateurs SET password=? WHERE id=?", (hash_password(nouveau), user[0]))
+                        commit_and_sync()
+                        st.session_state['new_pwd_par'] = {'user': user[1], 'pwd': nouveau}
+
+                    if st.session_state.get('new_pwd_par') and st.session_state['new_pwd_par']['user'] == user[1]:
+                        st.markdown(f"<div style='background:#e8f5e9;padding:15px;border-radius:10px;border:1px solid #c8e6c9;'>🔑 Nouveau mot de passe pour <code>{st.session_state['new_pwd_par']['user']}</code> : <code style='color:#d84315;font-size:1.2rem;'>{st.session_state['new_pwd_par']['pwd']}</code></div>", unsafe_allow_html=True)
+                        if st.button("OK, j'ai noté le mot de passe", key=f"ok_pwd_par_{p[0]}"):
+                            del st.session_state['new_pwd_par']
+                            st.rerun()
+
+    elif menu == "📊 Statistiques":
+        st.markdown('<h2 style="color:#1A237E;">📊 Statistiques générales</h2>', unsafe_allow_html=True)
+        tab_gen, tab_freq = st.tabs(["📌 Général", "📈 Fréquentation"])
+        with tab_gen:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("🏘️ Paroisses", c.execute("SELECT COUNT(*) FROM paroisses").fetchone()[0])
+            c2.metric("👥 Équipes", c.execute("SELECT COUNT(*) FROM equipes").fetchone()[0])
+            c3.metric("👤 Membres actifs", c.execute("SELECT COUNT(*) FROM membres WHERE statut='actif'").fetchone()[0])
+        with tab_freq:
+            st.caption("Visites des 30 derniers jours (une visite = une ouverture de session).")
+            from services import stats_visites_pivot
+            pivot = stats_visites_pivot(30)
+            if pivot.empty:
+                st.info("Aucune visite enregistrée sur la période.")
+            else:
+                pivot = pivot.rename(columns={"communautaire": "🏘️ Communautaire", "membre": "👤 Membre"})
+                st.bar_chart(pivot)
+            totaux = c.execute("SELECT page, COUNT(*) FROM stats_visites GROUP BY page").fetchall()
+            d1, d2 = st.columns(2)
+            for nom_page, nb in totaux:
+                if nom_page == "communautaire":
+                    d1.metric("🌐 Total Espace communautaire", nb)
+                elif nom_page == "membre":
+                    d2.metric("👤 Total Espace Membre", nb)
+
+    elif menu == "📥 Export Excel":
+        st.markdown('<h2 style="color:#1A237E;">📥 Export des données</h2>', unsafe_allow_html=True)
+        if c.execute("SELECT COUNT(*) FROM membres").fetchone()[0] == 0: st.warning("Aucune donnée à exporter.")
         else:
-            _render_page_rosaire_eyquem()
+            excel_file = exporter_excel_diocese()
+            st.download_button("📥 Télécharger l'export global", data=excel_file, file_name=f"export_diocese_{date.today()}.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch")
 
-    elif rub == "📖 Archives":
-        if sub == "📖 Méditations":
-            _render_page_archives_textes("meditation", "Aucune méditation disponible.", pid=pid_m)
-        elif sub == "🎵 Musiques":
-            _render_page_archives_audios(pid=pid_m)
+    elif menu == "📦 Archives":
+        st.markdown('<h2 style="color:#1A237E; font-size: 1.4rem;">📦 Archives du diocèse</h2>', unsafe_allow_html=True)
+        archives = c.execute('''SELECT m.matloc, m.matricule, m.nom, m.prenom, a.situation, a.date_debut, a.date_fin, a.commentaire, a.equipe_id, a.paroisse_id, a.auteur_nom
+                                FROM archives a JOIN membres m ON a.membre_id = m.id ORDER BY a.date_fin DESC''').fetchall()
+        if not archives: st.info("Aucune archive.")
         else:
-            _render_page_archives_textes("priere", "Aucune prière publiée.", pid=pid_m)
+            for a in archives:
+                d1, d2 = safe_date(a[5]), safe_date(a[6])
+                duree = (d2 - d1).days // 365 if d1 and d2 else 0
+                eq_nom, par_nom = "N/A", "N/A"
+                if a[8]:
+                    eq_info = c.execute("SELECT e.nom_equipe, p.nom FROM equipes e JOIN paroisses p ON e.paroisse_id = p.id WHERE e.id=?", (a[8],)).fetchone()
+                    if eq_info: eq_nom, par_nom = eq_info[0], eq_info[1]
+                elif a[9]:
+                    par_info = c.execute("SELECT nom FROM paroisses WHERE id=?", (a[9],)).fetchone()
+                    if par_info: par_nom = par_info[0]
 
-    elif rub == "🕯️ Thème":
-        if sub == "🎓 Enseignements":
-            _render_page_en_preparation("🎓", "Enseignements",
-                                        "Cet espace accueillera les résumés des enseignements reçus, publiés par le diocèse. Il est en préparation.")
-        elif sub == "💬 Discussions":
-            _render_page_en_preparation("💬", "Discussions",
-                                        "Cet espace accueillera les cadres de discussions thématiques. Il est en préparation.")
-        else:
-            _render_page_theme_ensemble()
+                header = f"📌 {a[2]} {a[3]} ({a[0]} / {a[1] or '—'}) – {afficher_situation(a[4])} – {duree} an(s)"
+                with st.expander(header):
+                    st.write(f"**Paroisse :** {par_nom} | {eq_nom}")
+                    st.write(f"**Ajouté par :** {a[10] or 'Inconnu'}")
+                    if a[7]: st.write(f"**Commentaire :** {a[7]}")
 
-    else:
-        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
-        if st.session_state.get("diz_ouvert"):
-            return
-        _render_fil_actualites(pid=pid_m)
-        _render_actualites(pid=pid_m)
+    elif menu == "🗑️ Réinitialiser":
+        st.markdown('<h2 style="color:#1A237E;">🗑️ RÉINITIALISATION COMPLÈTE</h2>', unsafe_allow_html=True)
+        st.error("⚠️ ACTION IRRÉVERSIBLE ! Tout sera détruit : paroisses, équipes, membres, présences, abonnements, archives, agenda ET contenu de l'Espace Spirituel.")
+        with st.expander("🔴 Cliquez pour réinitialiser"):
+            confirmation = st.text_input("Tapez 'SUPPRIMER' pour confirmer")
+            if confirmation == "SUPPRIMER":
+                # Fichiers Cloudinary supprimés AVANT la purge SQL
+                for (photo,) in c.execute("SELECT photo_path FROM membres WHERE photo_path IS NOT NULL").fetchall():
+                    supprimer_photo(photo)
+                for (affiche,) in c.execute("SELECT affiche_url FROM evenements WHERE affiche_url IS NOT NULL").fetchall():
+                    supprimer_photo(affiche)
+                for img_url, fic_url in c.execute("SELECT image_url, fichier_url FROM espace_spirituel").fetchall():
+                    if img_url: supprimer_photo(img_url)
+                    if fic_url: supprimer_photo(fic_url)
+
+                if os.path.exists("photos"): shutil.rmtree("photos")
+
+                c.execute("DELETE FROM suivi_presences")
+                c.execute("DELETE FROM evenement_equipes")
+                c.execute("DELETE FROM evenements")
+                c.execute("DELETE FROM agenda")
+                c.execute("DELETE FROM periodes_cloturees")
+                c.execute("DELETE FROM abonnements")
+                c.execute("DELETE FROM archives")
+                c.execute("DELETE FROM espace_spirituel")
+                c.execute("DELETE FROM membres")
+                c.execute("DELETE FROM equipes")
+                c.execute("DELETE FROM paroisses")
+                c.execute("DELETE FROM utilisateurs WHERE role != 'diocese'")
+                commit_and_sync()
+                st.session_state["flash_success"] = "Toutes les données ont été supprimées. 🗑️"
+                st.rerun()
