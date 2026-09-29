@@ -250,14 +250,16 @@ def _onglet_musique():
 
 # ---------------- 📔 JOURNAL ----------------
 def _onglet_journal():
+    _paroisses_map = {p[0]: p[1] for p in c.execute("SELECT id, nom FROM paroisses").fetchall()}
     lignes = c.execute("""SELECT id, type_contenu, titre, statut, motif_refus,
-                                 date_soumission FROM soumissions_comm
+                                 date_soumission, paroisse_cible FROM soumissions_comm
                           ORDER BY id DESC LIMIT 30""").fetchall()
     if not lignes:
         st.info("Aucune soumission pour le moment.")
     for s in lignes:
         libelle = LIBELLES.get(s[1], s[1])
-        entete = f"{libelle} — {s[2] or '(sans titre)'} ({s[5]})"
+        _cible_lbl = f" 🏘️ {_paroisses_map[s[6]]}" if s[6] and s[6] in _paroisses_map else ""
+        entete = f"{libelle} — {s[2] or '(sans titre)'} ({s[5]}){_cible_lbl}"
         with st.expander(entete):
             st.write(STATUTS.get(s[3], s[3]))
             if s[3] == "refuse" and s[4]:
