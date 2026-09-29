@@ -75,7 +75,7 @@ def show_equipe():
                         with c1: nom, prenom = st.text_input("Nom"), st.text_input("Prénom")
                         naissance = st.date_input("Date de naissance", min_value=date(1950,1,1), max_value=date.today())
                         with c2: whatsapp, numero_meditation = st.text_input("WhatsApp"), st.text_input("N° méditation", max_chars=2)
-                        photo = st.file_uploader("Photo", type=['jpg','png','jpeg'])
+                        photo = st.file_uploader("Photo", type=['jpg','png','jpeg','webp'])
                         col_date, col_mle = st.columns(2)
                         with col_date: date_adhesion = st.date_input("Date d'adhésion", min_value=date(1950,1,1), max_value=date.today(), value=date.today())
                         with col_mle: matricule_nat = st.text_input("Matricule")
@@ -132,7 +132,7 @@ def show_equipe():
                             with col_mle: 
                                 new_matricule = st.text_input("Matricule", value=m_data[7] or "")
                             
-                            new_photo = st.file_uploader("Nouvelle photo", type=['jpg','png','jpeg'])
+                            new_photo = st.file_uploader("Nouvelle photo", type=['jpg','png','jpeg','webp'])
                             col1, col2 = st.columns(2)
                             with col1:
                                 if st.form_submit_button("❌ Annuler"): st.session_state['open_form_eq'] = None; st.rerun()
