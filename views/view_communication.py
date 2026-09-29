@@ -97,14 +97,24 @@ def _onglet_priere_meditation():
         type_pm = st.selectbox("Type de contenu", ["Prière", "Méditation"])
         titre = st.text_input("Titre")
         contenu = st.text_area("Contenu du texte")
-        img = st.file_uploader("Illustration (photo — facultatif)", type=["jpg", "jpeg", "png", "webp"])
+        img = st.file_uploader("Illustration (photo — facultatif, hébergement diocèse)",
+                               type=["jpg", "jpeg", "png", "webp"])
+        img_lien = st.text_input("…ou lien d'image (https://... — ex. imgbb : i.ibb.co/…)")
         pdf_url = st.text_input("Lien PDF (facultatif — https://...)")
         _cible = _choisir_cible()
         if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
             if not titre.strip() or not contenu.strip():
                 st.error("Le titre et le contenu sont obligatoires.")
+            elif img_lien.strip() and not img_lien.strip().startswith("http"):
+                st.error("Le lien d'image doit commencer par https://")
             else:
-                img_url = sauvegarder_illustration(img) if img else None
+                if img_lien.strip():
+                    img_url = img_lien.strip()
+                else:
+                    img_url = sauvegarder_illustration(img) if img else None
+                    if img and not img_url:
+                        st.warning("⚠️ L'envoi du fichier a échoué (service d'hébergement momentanément indisponible). "
+                                   "La soumission partira SANS image ; utilisez un lien imgbb pour en inclure une.")
                 _soumettre({
                     "type_contenu": "priere" if type_pm == "Prière" else "meditation",
                     "titre": titre.strip(), "contenu_texte": contenu.strip(),
@@ -138,7 +148,9 @@ def _onglet_actualites():
     with st.form("form_act_soum", clear_on_submit=True):
         titre_a = st.text_input("Titre (ex. : 25 ans de sacerdoce du Père X)")
         texte_a = st.text_area("Texte / informations", height=120)
-        affiche_a = st.file_uploader("Affiche (photo — facultatif)", type=["jpg", "jpeg", "png", "webp"])
+        affiche_a = st.file_uploader("Affiche (photo — facultatif, hébergement diocèse)",
+                                     type=["jpg", "jpeg", "png", "webp"])
+        img_a_lien = st.text_input("…ou lien d'affiche (https://... — ex. imgbb : i.ibb.co/…)")
         lien_v = st.text_input("Bande-annonce — lien vidéo (https://..., facultatif)")
         fichier_v = st.file_uploader("…ou fichier vidéo (MP4 — facultatif, max ~150 Mo)", type=["mp4", "mov"])
         c1, c2 = st.columns(2)
@@ -157,7 +169,12 @@ def _onglet_actualites():
                 if fichier_v and not _vid:
                     st.error("L'envoi du fichier vidéo a échoué. Réessayez ou utilisez un lien.")
                 else:
-                    _img = sauvegarder_illustration(affiche_a) if affiche_a else None
+                    if img_a_lien.strip():
+                        if not img_a_lien.strip().startswith("http"):
+                            st.error("Le lien d'image doit commencer par https://")
+                        _img = img_a_lien.strip()
+                    else:
+                        _img = sauvegarder_illustration(affiche_a) if affiche_a else None
                     _soumettre({"type_contenu": "actualite",
                                 "titre": titre_a.strip(),
                                 "contenu_texte": texte_a.strip() or None,
@@ -177,15 +194,19 @@ def _onglet_theme():
                                   get_periode_pastorale()[0], step=1)
         texte_t = st.text_area("Texte du thème", placeholder="Ex. : IL POSAIT DES QUESTIONS. FORCE DE LA FOI !")
         myst_t = st.number_input("Mystère porteur (1-20)", 1, 20, 5, step=1)
-        affiche_t = st.file_uploader("Affiche du thème (photo — facultatif)", type=["jpg", "jpeg", "png", "webp"])
+        affiche_t = st.file_uploader("Affiche du thème (photo — facultatif, hébergement diocèse)",
+                                     type=["jpg", "jpeg", "png", "webp"])
+        affiche_t_lien = st.text_input("…ou lien d'affiche (https://... — ex. imgbb : i.ibb.co/…)")
         if st.form_submit_button("📨 Soumettre le thème au diocèse", type="primary"):
             if not texte_t.strip():
                 st.error("Le texte du thème est obligatoire.")
+            elif affiche_t_lien.strip() and not affiche_t_lien.strip().startswith("http"):
+                st.error("Le lien d'image doit commencer par https://")
             else:
-                img_url = sauvegarder_illustration(affiche_t) if affiche_t else None
-                if affiche_t and not img_url:
-                    st.warning("⚠️ L'envoi de l'affiche a échoué (service d'hébergement d'images indisponible). "
-                               "La soumission partira SANS affiche ; le diocèse pourra la resoumettre plus tard.")
+                if affiche_t_lien.strip():
+                    img_url = affiche_t_lien.strip()
+                else:
+                    img_url = sauvegarder_illustration(affiche_t) if affiche_t else None
                 _soumettre({"type_contenu": "theme_pastoral",
                             "titre": f"Thème {int(annee_t)} - {int(annee_t) + 1}",
                             "contenu_texte": texte_t.strip(),
