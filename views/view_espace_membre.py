@@ -1247,7 +1247,7 @@ def _render_fil_actualites(pid=None):
 
     if dernier:
         ligne = list(dernier) + [None] * max(0, 5 - len(dernier))
-        etiquette = {"priere": "🙏 Prière du jour", "meditation": "📖 Méditation du jour"}.get(ligne[0], "📿 Du jour")
+        etiquette = {"priere": "🙏 ", "meditation": "📖 "}.get(ligne[0], "📿 Du jour")
         texte = ligne[2] or ""
         url_pdf = ligne[4]
         if not url_pdf:
@@ -1262,7 +1262,7 @@ def _render_fil_actualites(pid=None):
         texte_html = texte.replace("\n", "<br>")
         st.markdown(
             f'<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35);">'
-            f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{etiquette} — {html.escape(ligne[1] or "")}</div>'
+            f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{html.escape(ligne[1] or "")}</div>'
             f'<div style="color:#4527a0; font-size:0.98rem; line-height:1.6; text-align:left;">{texte_html}</div>'
             f'</div>', unsafe_allow_html=True)
 
