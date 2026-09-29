@@ -1071,12 +1071,12 @@ def _depliant_mouvement(paroisse_id=None):
     """📿 Dépliant « vivant » du Mouvement — Espace COMMUNAUTAIRE uniquement.
     Toutes les images se configurent dans le bloc PHOTOS ci-dessous."""
     # ============ 📷 IMAGES DU DÉPLIANT — collez vos URLs ici ============
-    PHOTO_BANDEAU    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # grande photo sous le bandeau (facultatif)
-    PHOTO_QUI        = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 📜 Qui sommes-nous ?
-    PHOTO_COMMENT    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section ⛪ Comment ça marche ?
-    PHOTO_PRIERES    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 🙏 Deux temps de prière
-    PHOTO_MISSION    = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section ❤️ Notre mission
-    PHOTO_RESSOURCES = "https://i.ibb.co/JWw3QdGk/t-l-charger.webp"   # section 📖 Ressources
+    PHOTO_BANDEAU    = "https://i.ibb.co/wZxs04Pn/Ekip0.jpg"   # grande photo sous le bandeau https://i.ibb.co/LdM54KB3/Ekip1.jpg(facultatif)
+    PHOTO_QUI        = "https://i.ibb.co/PZPF16qV/Ekip2.jpg"   # section 📜 Qui sommes-nous ?
+    PHOTO_COMMENT    = "https://i.ibb.co/tw62DQC8/Ekip4.jpg"   # section ⛪ Comment ça marche ?
+    PHOTO_PRIERES    = "https://i.ibb.co/1fdZKksR/Ekip5.jpg"   # section 🙏 Deux temps de prière
+    PHOTO_MISSION    = "https://i.ibb.co/0R1JQKTD/Ekip3.jpg"   # section ❤️ Notre mission
+    PHOTO_RESSOURCES = "https://i.ibb.co/y2SvKp5/Ekip6.jpg"   # section 📖 Ressources
     # =====================================================================
 
     _resp, _wa, _etiquette = None, None, "responsable diocésain"
