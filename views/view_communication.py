@@ -97,7 +97,7 @@ def _onglet_priere_meditation():
         type_pm = st.selectbox("Type de contenu", ["Prière", "Méditation"])
         titre = st.text_input("Titre")
         contenu = st.text_area("Contenu du texte")
-        img = st.file_uploader("Illustration (photo — facultatif)", type=["jpg", "jpeg", "png", "webp"]
+        img = st.file_uploader("Illustration (photo — facultatif)", type=["jpg", "jpeg", "png", "webp"])
         pdf_url = st.text_input("Lien PDF (facultatif — https://...)")
         _cible = _choisir_cible()
         if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
@@ -138,7 +138,7 @@ def _onglet_actualites():
     with st.form("form_act_soum", clear_on_submit=True):
         titre_a = st.text_input("Titre (ex. : 25 ans de sacerdoce du Père X)")
         texte_a = st.text_area("Texte / informations", height=120)
-        affiche_a = st.file_uploader("Affiche (photo — facultatif)", type=["jpg", "jpeg", "png", "webp"]
+        affiche_a = st.file_uploader("Affiche (photo — facultatif)", type=["jpg", "jpeg", "png", "webp"])
         lien_v = st.text_input("Bande-annonce — lien vidéo (https://..., facultatif)")
         fichier_v = st.file_uploader("…ou fichier vidéo (MP4 — facultatif, max ~150 Mo)", type=["mp4", "mov"])
         c1, c2 = st.columns(2)
