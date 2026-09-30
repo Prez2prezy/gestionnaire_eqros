@@ -267,6 +267,29 @@ def _render_theme(compact=False):
         color: #B8860B !important;
         font-weight: bold !important;
     }
+    /* === STYLE RUBRIQUES (langage du dépliant) === */
+    .stApp .stMarkdown .rub-carte {
+        background: #121a45 !important;
+        border: 1px solid #27306b !important;
+        border-left: 5px solid #FFD700 !important;
+        border-radius: 12px !important;
+    }
+    .stApp .stMarkdown .rub-carte-titre,
+    .stApp .stMarkdown .rub-carte-titre * {
+        font-family: Georgia, serif !important;
+        color: #FFD000 !important;
+        font-weight: bold !important;
+    }
+    .stApp .stMarkdown .rub-carte-txt,
+    .stApp .stMarkdown .rub-carte-txt * {
+        color: #e8eaf6 !important;
+    }
+    /* Expander à liseré doré (Archives, Actualités, Rosaire) */
+    .stApp div[data-testid="stExpander"] {
+        border-left: 5px solid #FFD700 !important;
+        border-radius: 4px 12px 12px 4px !important;
+    }
+    .stApp .stMarkdown h3 { color: #FFD000 !important; }
     </style>""", unsafe_allow_html=True)
 
 
@@ -1217,7 +1240,7 @@ def _render_actualites(pid=None):
         return
     if not lignes:
         return
-    st.markdown("### 📰 Actualités")
+    st.markdown('<h3 style="font-family:Georgia, serif;">📰 Actualités du diocèse</h3>', unsafe_allow_html=True)
     for a in lignes:
         with st.expander("📰 " + (a[0] or "(sans titre)")):
             st.caption(f"Publié le {a[4] or '—'}")
@@ -1261,9 +1284,9 @@ def _render_fil_actualites(pid=None):
 
         texte_html = texte.replace("\n", "<br>")
         st.markdown(
-            f'<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35);">'
-            f'<div style="color:#4A148C; font-size:1.15rem; font-weight:bold; border-bottom:1px solid #d1c4e9; padding-bottom:8px; margin-bottom:12px;">{html.escape(ligne[1] or "")}</div>'
-            f'<div style="color:#4527a0; font-size:0.98rem; line-height:1.6; text-align:left;">{texte_html}</div>'
+            f'<div class="rub-carte" style="padding:20px; text-align:center; margin:15px 10px;">'
+            f'<div class="rub-carte-titre" style="font-size:1.15rem; border-bottom:1px solid #27306b; padding-bottom:8px; margin-bottom:12px;">{etiquette} — {html.escape(ligne[1] or "")}</div>'
+            f'<div class="rub-carte-txt" style="font-size:0.98rem; line-height:1.7; text-align:left;">{texte_html}</div>'
             f'</div>', unsafe_allow_html=True)
 
         if url_pdf:
