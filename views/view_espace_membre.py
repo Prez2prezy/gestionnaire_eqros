@@ -125,7 +125,7 @@ def _compter_bandes(membre=False, pid=None):
     # 🔎 Diagnostic (s'affiche avec &debug=1)
     if st.query_params.get("debug") == "1":
         st.caption(f"🔎 DEBUG bandes — pid={pid} | {len(bandes)} ligne(s) : "
-                   + " || ".join(f"«{b[0][:25]}» cible_stockée={b[1]}" for b in bandes))
+                   + " || ".join(f"«{(b[0] or '')[:25]}» cible_stockée={b[1]}" for b in bandes))
     n = 0
     for ligne in bandes:
         if len(ligne) < 1:
@@ -324,7 +324,7 @@ def _bandes_defilantes_html(membre=False, pid=None):
         st.caption(f"🔎 DEBUG bandes — pid={pid} | URL p={_p_raw} | "
                    f"session.paroisse_origine={st.session_state.get('paroisse_origine')} | "
                    f"{len(bandes)} bande(s) vue(s) ici : "
-                   + " || ".join(f"«{b[0][:25]}…» portée={b[1]}" for b in bandes))
+                   + " || ".join(f"«{(b[0] or '')[:25]}…» portée={b[1]}" for b in bandes))
     morceaux = []
     for ligne in bandes:
         if len(ligne) < 1:
@@ -402,7 +402,7 @@ def _render_header(membre=None, matloc=None, masquer_bandes=False,
         menu_html += ('<details class="menu-mobile"><summary>☰</summary>'
                       '<div class="mob-panneau">' + "".join(mitems) + "</div></details>")
 
-    bandes_html = "" if masquer_bandes else _bandes_defilantes_html(membre=bool(membre))
+    bandes_html = "" if masquer_bandes else _bandes_defilantes_html(membre=bool(membre), pid=pid)
 
     st.markdown(
         '<div class="sticky-header"><div class="header-inner">'
@@ -422,7 +422,7 @@ DIZ_OUTRO = "SALVE REGINA\n\nSalve Regina, Mater misericordiae;\nvita, dulcedo, 
 
 
 def _diz_txt(texte, couleur="#333333", taille="0.95rem", gras=False, centre=False):
-    txt_html = html.escape(texte).replace("\n", "<br>")
+    txt_html = html.escape(str(texte)).replace("\n", "<br>")
     poids = "bold" if gras else "normal"
     align = "center" if centre else "left"
     return (f'<div style="color:{couleur}; font-size:{taille}; font-weight:{poids};'
@@ -477,9 +477,9 @@ def _render_page_theme_ensemble():
         mm = None
     if mm:
         ligne_mystere = ('<div style="color:#b39ddb !important; font-size:0.9rem; margin-top:8px;">'
-                         "📿 Mystère principal : N°" + str(mm["id"]) + " — "
-                         + html.escape(mm["titre"].title()) + " ("
-                         + html.escape(mm["reference"]) + ")</div>")
+                         "📿 Mystère principal : N°" + str(mm.get("id", "?")) + " — "
+                         + html.escape((mm.get("titre") or "").title()) + " ("
+                         + html.escape(mm.get("reference") or "") + ")</div>")
     st.markdown(
         '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
         ' padding:24px; border-radius:15px; text-align:center; margin:10px;'
@@ -498,7 +498,8 @@ def _render_page_theme_ensemble():
     mois_courant = date.today().month
     sous = get_sous_theme_du_mois(annee_debut, mois_courant)
     if sous:
-        titre_st, contenu_st, feuillet, affiche_st = sous
+        _v = list(sous) + [None] * 4
+        titre_st, contenu_st, feuillet, affiche_st = _v[0], _v[1], _v[2], _v[3]
         contenu_html = html.escape(contenu_st or "").replace("\n", "<br>")
         img_html = (f'<img src="{affiche_st}" alt="Affiche du mois" '
                     'style="width:100%; max-width:640px; display:block; margin:12px auto 0 auto; '
@@ -560,11 +561,11 @@ def _render_page_rosaire_eyquem():
             '<div style="color:#ffe082 !important; font-size:0.8rem; font-style:italic; margin-top:4px;">👆 Touchez un mystère pour lire passage et méditation</div>'
             "</div>", unsafe_allow_html=True)
         for m in MYSTERES:
-            if not (debut <= m["id"] <= fin):
+            if not (debut <= m.get("id", 0) <= fin):
                 continue
-            with st.expander(f'{m["id"]:02d} — {m["titre"].title()}  ·  {m["reference"]}'):
-                passage_html = html.escape(m["passage"]).replace("\n", "<br>")
-                medit_html = html.escape(m["meditation"]).replace("\n", "<br>")
+            with st.expander(f'{m.get("id", 0):02d} — {(m.get("titre") or "").title()}  ·  {m.get("reference") or ""}'):
+                passage_html = html.escape(m.get("passage") or "").replace("\n", "<br>")
+                medit_html = html.escape(m.get("meditation") or "").replace("\n", "<br>")
                 st.markdown(
                     '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:0.95rem;">📖 PASSAGE</div>'
                     '<div style="color:#ffffff !important; font-size:0.95rem; line-height:1.7; margin:6px 0 14px 0;">' + passage_html + "</div>"
@@ -590,8 +591,8 @@ def _render_page_rosaire_theme():
                 + html.escape(texte_theme or "") + " »</div></div>", unsafe_allow_html=True)
     manquants = 0
     for m in MYSTERES:
-        lien = get_lien_mystere(annee_debut, m["id"])
-        couleur = COULEURS_CLAIRES.get((m["type"] or "").lower(), "#e8eaf6")
+        lien = get_lien_mystere(annee_debut, m.get("id", 0))
+        couleur = COULEURS_CLAIRES.get((m.get("type") or "").lower(), "#e8eaf6")
         if lien:
             corps_lien = ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:10px 14px; margin-top:8px;">'
                           '<div style="color:#1A237E !important; font-weight:bold; font-size:0.85rem;">🔗 Lien thématique</div>'
@@ -603,9 +604,9 @@ def _render_page_rosaire_theme():
                           "— lien thématique à préciser par le diocèse —</div>")
         st.markdown(
             '<div style="background:#121a45; border-radius:15px; margin:10px; padding:16px; border-left:6px solid ' + couleur + ';">'
-            '<div style="color:' + couleur + ' !important; font-weight:bold; font-size:1rem;">' + str(m["id"]).zfill(2) + " — "
-            + html.escape(m["titre"].title()) + "</div>"
-            '<div style="color:#c7cdf5 !important; font-size:0.82rem;">📖 ' + html.escape(m["reference"]) + "</div>"
+            '<div style="color:' + couleur + ' !important; font-weight:bold; font-size:1rem;">' + str(m.get("id", 0)).zfill(2) + " — "
+            + html.escape((m.get("titre") or "").title()) + "</div>"
+            '<div style="color:#c7cdf5 !important; font-size:0.82rem;">📖 ' + html.escape(m.get("reference") or "") + "</div>"
             + corps_lien + "</div>", unsafe_allow_html=True)
     if manquants:
         st.caption(f"🔗 {manquants} lien(s) thématique(s) restent à saisir dans l'interface diocèse.")
@@ -662,10 +663,12 @@ def _render_page_archives_audios(pid=None):
         u = str(a[1]) if a[1] is not None else ""
         if not u.startswith("http"):
             continue
+        # Titre blindé : jamais None, jamais de HTML/JS injecté dans le lecteur
+        titre_sur = str(a[0]) if a[0] is not None else "(sans titre)"
         if ("youtube.com/" in u) or ("youtu.be/" in u):
-            videos_yt.append({"title": a[0], "url": u})
+            videos_yt.append({"title": titre_sur, "url": u})
         else:
-            pistes.append({"title": a[0], "url": u})
+            pistes.append({"title": html.escape(titre_sur), "url": u})
 
     if pistes:
         player_html = """
@@ -813,9 +816,9 @@ def _render_page_archives_audios(pid=None):
             document.getElementById('btn-play-selection').addEventListener('click', playSelection);
             renderPlaylist();
         </script>
-        """.replace("TRACKS_DATA", json.dumps(pistes))
+        """.replace("TRACKS_DATA", json.dumps(pistes).replace("</", "<\\/"))
 
-        _comp_html(player_html, height=750)
+        _comp_html(player_html, height=750, key="lecteur_audio")
 
     if videos_yt:
         st.markdown("### 🎬 Morceaux en vidéo")
@@ -902,7 +905,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
             f' color:#1A237E; font-weight:bold; font-size:1.2rem; display:flex;'
             f' align-items:center; justify-content:center;">{m["id"]:02d}</div>'
             for m in mysteres_jour)
-        titres = " • ".join(m["titre"].title() for m in mysteres_jour)
+        titres = " • ".join((m.get("titre") or "").title() for m in mysteres_jour)
         st.markdown(
             f'<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
             f' padding:24px; border-radius:15px; text-align:center; margin:10px;'
@@ -942,7 +945,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
     page = pages[idx]
 
     m = page.get("m")
-    couleur = COULEURS_TYPES.get((m["type"] or "").lower(), "#9E9E9E") if m else "#1A237E"
+    couleur = COULEURS_TYPES.get((m.get("type") or "").lower(), "#9E9E9E") if m else "#1A237E"
 
     if page["t"] in ("intro1", "intro2", "intro3"):
         texte = {"intro1": DIZ_INTRO1, "intro2": DIZ_INTRO2, "intro3": DIZ_INTRO3}[page["t"]]
@@ -963,15 +966,15 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
     else:
         tete = (
             f'<div style="background:{couleur}; border-radius:12px 12px 0 0; padding:12px 16px; margin:6px 6px 0 6px;">'
-            f'<div style="color:#ffffff; font-weight:bold; font-size:1.05rem;">{m["id"]} — {html.escape(m["titre"])}</div>'
-            f'<div style="color:#ffffff; font-size:0.85rem;">📖 {html.escape(m["reference"])}</div></div>'
+            f'<div style="color:#ffffff; font-weight:bold; font-size:1.05rem;">{m.get("id", "?")} — {html.escape(m.get("titre") or "")}</div>'
+            f'<div style="color:#ffffff; font-size:0.85rem;">📖 {html.escape(m.get("reference") or "")}</div></div>'
             f'<div style="background:#FFF9C4; border-radius:0 0 12px 12px; padding:18px; margin:0 6px 6px 6px;">')
 
         if page["t"] == "contenu":
             corps = (_diz_txt("PASSAGE", couleur, "1rem", gras=True)
-                     + _diz_txt(m["passage"], "#1a1a1a")
+                     + _diz_txt(m.get("passage") or "", "#1a1a1a")
                      + _diz_txt("MÉDITATION", couleur, "1rem", gras=True)
-                     + _diz_txt(m["meditation"], "#1a1a1a"))
+                     + _diz_txt(m.get("meditation") or "", "#1a1a1a"))
             t_actif = get_theme_actif()
             if t_actif:
                 lien_txt = get_lien_mystere(t_actif[2], m["id"])
@@ -984,14 +987,14 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
 
         elif page["t"] == "intentions":
             intentions_html = ""
-            for ligne in m["intentions"].split("\n"):
+            for ligne in (m.get("intentions") or "").split("\n"):
                 l = ligne.strip().lstrip("*").strip()
                 if not l:
                     continue
                 intentions_html += _diz_txt("🕯️ Vierge Marie, mère de Dieu, intercède : " + l, "#1a1a1a")
             fruits_html = "".join(
                 _diz_txt("✨ " + ligne.strip(), "#1a1a1a")
-                for ligne in m["fruits"].split("\n") if ligne.strip())
+                for ligne in (m.get("fruits") or "").split("\n") if ligne.strip())
             corps = (_diz_txt("INTENTIONS", couleur, "1rem", gras=True)
                      + intentions_html
                      + _diz_txt("FRUITS DU MYSTÈRE", couleur, "1rem", gras=True)
@@ -1003,7 +1006,9 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
 
         elif page["t"] == "grain":
             g = page["g"]
-            clausule = m["clausules"][g - 1] if g <= len(m["clausules"]) else ""
+            _cla = m.get("clausules") or []
+            clausule = _cla[g - 1] if g <= len(_cla) else ""
+            clausule = "" if clausule is None else str(clausule)
             carrés = "".join(
                 f'<div style="width:22px; height:22px; border-radius:4px; display:flex; align-items:center;'
                 f' justify-content:center; font-size:0.7rem; font-weight:bold;'
@@ -1088,11 +1093,14 @@ def _render_coin_affiche():
             f'<div style="background:#121a45; border-radius:15px; overflow:hidden; border:1px solid #27306b; margin:0 10px 15px 10px; box-shadow:0 2px 8px rgba(0,0,0,0.4);">'
             f'{img_part}'
             f'<div style="padding:15px; text-align:center;">'
-            f'<h4 style="margin:0 0 5px 0; color:#e8eaf6; font-size:1.1rem;">📣 {html.escape(visuel[0])}</h4>'
+            f'<h4 style="margin:0 0 5px 0; color:#e8eaf6; font-size:1.1rem;">📣 {html.escape(visuel[0] or "")}</h4>'
             f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(visuel[2] or "Lieu à définir")}</p>'
             f'</div></div>', unsafe_allow_html=True)
         if visuel[4]:
-            st.video(visuel[4])
+            try:
+                st.video(visuel[4])
+            except Exception:
+                st.markdown(f"🎬 [Voir la vidéo]({visuel[4]})")
     else:
         try:
             prochain = c.execute("""SELECT type_evenement, date_evenement, lieu FROM evenements
@@ -1108,7 +1116,7 @@ def _render_coin_affiche():
             st.markdown(
                 f'<div style="background:linear-gradient(135deg,#1a2150 0%,#121a45 100%); border-radius:15px; margin:0 10px 15px 10px; border:1px solid #27306b;">'
                 f'<div style="padding:15px; text-align:center;">'
-                f'<h4 style="margin:0 0 5px 0; color:#e8eaf6; font-size:1.1rem;">{icone} {html.escape(prochain[0])}</h4>'
+                f'<h4 style="margin:0 0 5px 0; color:#e8eaf6; font-size:1.1rem;">{icone} {html.escape(prochain[0] or "")}</h4>'
                 f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p>'
                 f'</div></div>', unsafe_allow_html=True)
 
@@ -1270,7 +1278,7 @@ def _render_actualites(pid=None):
             if a[2] and str(a[2]).startswith("http"):
                 st.markdown(f'<img src="{a[2]}" alt="" class="rub-photo">', unsafe_allow_html=True)
             if a[1]:
-                st.markdown(a[1].replace("\n", "  \n"))
+                st.markdown(a[1].replace("\n", "  \n"), unsafe_allow_html=True)
             if a[3] and str(a[3]).startswith("http"):
                 try:
                     st.video(a[3], width="stretch")
@@ -1315,14 +1323,19 @@ def _render_fil_actualites(pid=None):
 
 
 def _enregistrer_presence(membre_id, evt_id, choix):
-    deja = c.execute("SELECT id FROM suivi_presences WHERE membre_id=? AND evenement_id=?",
-                     (membre_id, evt_id)).fetchone()
-    if deja:
-        c.execute("UPDATE suivi_presences SET statut=? WHERE id=?", (choix, deja[0]))
-    else:
-        c.execute("INSERT INTO suivi_presences (membre_id, evenement_id, statut) VALUES (?, ?, ?)",
-                  (membre_id, evt_id, choix))
-    commit_and_sync()
+    try:
+        deja = c.execute("SELECT id FROM suivi_presences WHERE membre_id=? AND evenement_id=?",
+                         (membre_id, evt_id)).fetchone()
+        if deja:
+            c.execute("UPDATE suivi_presences SET statut=? WHERE id=?", (choix, deja[0]))
+        else:
+            c.execute("INSERT INTO suivi_presences (membre_id, evenement_id, statut) VALUES (?, ?, ?)",
+                      (membre_id, evt_id, choix))
+        commit_and_sync()
+    except Exception:
+        st.session_state["flash_warning"] = "⚠️ Impossible d'enregistrer votre réponse pour le moment. Réessayez."
+        st.rerun()
+        return
     st.session_state["flash_success"] = "Merci pour votre engagement ! 🙏"
     st.rerun()
 
@@ -1334,12 +1347,9 @@ def show_espace_membre(matloc_membre=None):
     livre_ouvert = st.session_state.get("diz_ouvert", False)
 
     _render_theme(compact=livre_ouvert)
-    nb_bandes = 0 if livre_ouvert else _compter_bandes(membre=bool(matloc_membre))
-    _mesure_entete(nb_bandes)
-    # v7.6 : les liens du menu naviguent dans l'onglet courant
-    _liens_meme_onglet("nav")
 
-    # QR signé ?p=ID : capture de l'ORIGINE paroissiale (fidèle anonyme)
+    # QR signé ?p=ID — AVANCÉ en tête : le contexte paroissial doit être
+    # connu AVANT le comptage des bandes et l'entête.
     if "paroisse_origine" not in st.session_state:
         p_raw = st.query_params.get("p")
         if isinstance(p_raw, list):
@@ -1351,6 +1361,17 @@ def show_espace_membre(matloc_membre=None):
                     st.session_state["paroisse_origine"] = p_int
             except (ValueError, TypeError):
                 pass
+
+    # v7.6.1 — le dimensionnement est assuré par _mesure_entete (mesure
+    # autocorrigée). L'ancien comptage n'est conservé QUE pour le
+    # diagnostic (&debug=1), désormais avec le BON contexte paroissial.
+    if st.query_params.get("debug") == "1":
+        _compter_bandes(membre=bool(matloc_membre),
+                        pid=st.session_state.get("paroisse_origine"))
+    _mesure_entete("entete")
+
+    # v7.6 : les liens du menu naviguent dans l'onglet courant
+    _liens_meme_onglet("nav")
 
     msg_ok = st.session_state.pop("flash_success", None)
     if msg_ok:
@@ -1450,8 +1471,10 @@ def show_espace_membre(matloc_membre=None):
     if not membre:
         st.error("Identifiant inconnu ou membre inactif.")
         st.info("💡 Vous pouvez consulter l'espace public ci-dessous.")
-        _render_header()
-        _render_fil_actualites()
+        rub_pub, sub_pub = _lire_nav(RUBRIQUES_PUBLIC)
+        _render_header(rubriques=RUBRIQUES_PUBLIC, rub_act=rub_pub, sub_act=sub_pub,
+                       pid=st.session_state.get("paroisse_origine"))
+        _render_fil_actualites(pid=st.session_state.get("paroisse_origine"))
         return
 
     # v7.6 : compteur membre — 1 visite = 1 ARRIVÉE (même sémantique)
@@ -1491,14 +1514,18 @@ def show_espace_membre(matloc_membre=None):
             st.info("Vous n'êtes rattaché(e) à aucune équipe pour le moment.")
         else:
             st.markdown("### 📅 Mes prochains évènements")
-            evts = c.execute('''
-                SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
-                       (SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=e.id)
-                FROM evenements e
-                JOIN evenement_equipes ee ON e.id = ee.evenement_id
-                WHERE ee.equipe_id = ? AND e.date_evenement >= ?
-                ORDER BY e.date_evenement ASC
-            ''', (membre[0], membre[10], date.today().isoformat())).fetchall()
+            try:
+                evts = c.execute('''
+                    SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
+                           (SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=e.id)
+                    FROM evenements e
+                    JOIN evenement_equipes ee ON e.id = ee.evenement_id
+                    WHERE ee.equipe_id = ? AND e.date_evenement >= ?
+                    ORDER BY e.date_evenement ASC
+                ''', (membre[0], membre[10], date.today().isoformat())).fetchall()
+            except Exception:
+                evts = []
+                st.warning("📅 La liste des évènements n'est pas disponible pour le moment.")
 
             if not evts:
                 st.success("✅ Aucun événement à venir. Profitez de ce temps de repos !")
