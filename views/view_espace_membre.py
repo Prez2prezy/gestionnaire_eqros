@@ -318,8 +318,13 @@ def _bandes_defilantes_html(membre=False, pid=None):
         return ""
     # 🔎 Diagnostic (s'affiche avec &debug=1)
     if st.query_params.get("debug") == "1":
-        st.caption(f"🔎 DEBUG bandes — pid={pid} | {len(bandes)} bande(s) vue(s) ici : "
-                   + " || ".join(f"«{b[0][:25]}…» portée_stockée={b[1]}" for b in bandes))
+        _p_raw = st.query_params.get("p")
+        if isinstance(_p_raw, list):
+            _p_raw = _p_raw[0] if _p_raw else None
+        st.caption(f"🔎 DEBUG bandes — pid={pid} | URL p={_p_raw} | "
+                   f"session.paroisse_origine={st.session_state.get('paroisse_origine')} | "
+                   f"{len(bandes)} bande(s) vue(s) ici : "
+                   + " || ".join(f"«{b[0][:25]}…» portée={b[1]}" for b in bandes))
     morceaux = []
     for ligne in bandes:
         if len(ligne) < 1:
@@ -364,6 +369,11 @@ def _render_header(membre=None, matloc=None, masquer_bandes=False,
         base = "?espace=1"
         if matloc:
             base += "&matloc=" + str(matloc)
+        # LOT C5 : le contexte paroissiel voyage avec la navigation interne
+        # (chaque clic de menu recharge la page → session neuve → sans p=,
+        # paroisse_origine serait perdu)
+        if pid:
+            base += "&p=" + str(pid)
         items = []
         for i, r in enumerate(rubriques):
             href_r = base + "&nav=1&r=" + str(i)
