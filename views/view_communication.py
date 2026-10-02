@@ -93,7 +93,7 @@ def _bandeau():
 
 # ---------------- 🙏 PRIÈRE / MÉDITATION ----------------
 def _onglet_priere_meditation():
-    with st.form("form_pm", clear_on_submit=True):
+    with st.form("form_pm", clear_on_submit=False):
         type_pm = st.selectbox("Type de contenu", ["Prière", "Méditation"])
         titre = st.text_input("Titre")
         contenu = st.text_area("Contenu du texte")
@@ -124,7 +124,7 @@ def _onglet_priere_meditation():
 
 # ---------------- 📺 BANDES DÉFILANTES ----------------
 def _onglet_bandes():
-    with st.form("form_bd", clear_on_submit=True):
+    with st.form("form_bd", clear_on_submit=False):
         st.caption("📻 Après validation, la bande défilera dans l'entête des espaces (3 dernières actives).")
         texte_bd = st.text_area("Texte de l'annonce défilante (court et percutant)", max_chars=250)
         _portee = st.selectbox("Portée", ["🌍 Public (tous)", "👤 Membres uniquement"])
@@ -145,7 +145,7 @@ def _onglet_actualites():
     st.caption("📰 Préparez une actualité pour informer la communauté : jubilé, ordination, grande fête de paroisse… "
                "Après validation, elle rejoindra la zone « 📰 Actualités » de l'Espace de Prière. "
                "ℹ️ Si l'évènement nécessite une Réponse de Communion, il relève de l'agenda du responsable d'équipe — pas de ce canal.")
-    with st.form("form_act_soum", clear_on_submit=True):
+    with st.form("form_act_soum", clear_on_submit=False):
         titre_a = st.text_input("Titre (ex. : 25 ans de sacerdoce du Père X)")
         texte_a = st.text_area("Texte / informations", height=120)
         affiche_a = st.file_uploader("Affiche (photo — facultatif, hébergement diocèse)",
@@ -162,8 +162,8 @@ def _onglet_actualites():
         if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
             if not titre_a.strip():
                 st.error("Le titre est obligatoire.")
-            elif not affiche_a and not lien_v.strip() and not fichier_v:
-                st.error("Chargez une affiche OU une vidéo (au moins un visuel).")
+            elif not affiche_a and not img_a_lien.strip() and not lien_v.strip() and not fichier_v:
+                st.error("Chargez une affiche (fichier ou lien) OU une vidéo (au moins un visuel).")
             else:
                 _vid = lien_v.strip() or (sauvegarder_video(fichier_v) if fichier_v else None)
                 if fichier_v and not _vid:
@@ -189,7 +189,7 @@ def _onglet_theme():
     st.caption("🕯️ Préparez le thème pastoral de l'année (texte + mystère porteur + affiche facultative). Après validation, le diocèse "
                "l'activera : il s'affichera dans l'Espace de Prière (🕯️ Thème → Vue d'ensemble). "
                "Les sous-thèmes mensuels restent gérés directement par le diocèse (SAS).")
-    with st.form("form_theme_soum", clear_on_submit=True):
+    with st.form("form_theme_soum", clear_on_submit=False):
         annee_t = st.number_input("Année de début de la période pastorale", 2020, 2060,
                                   get_periode_pastorale()[0], step=1)
         texte_t = st.text_area("Texte du thème", placeholder="Ex. : IL POSAIT DES QUESTIONS. FORCE DE LA FOI !")
@@ -221,7 +221,7 @@ def _onglet_musique():
     st.caption("🎵 Deux façons de soumettre un morceau : fichier MP3 (hébergement diocèse) OU lien "
                "(MP3 direct https://… ou vidéo YouTube https://youtu.be/…). Le lien est recommandé : "
                "aucune limite d'usage. Rappel YouTube : vidéo « non répertoriée ».")
-    with st.form("form_mu", clear_on_submit=True):
+    with st.form("form_mu", clear_on_submit=False):
         titre_mu = st.text_input("Titre du morceau")
         audio = st.file_uploader("Fichier audio (MP3 — facultatif si un lien est fourni)",
                                  type=["mp3", "wav", "m4a"])
