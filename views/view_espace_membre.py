@@ -1285,7 +1285,7 @@ def _render_fil_actualites(pid=None):
         texte_html = texte.replace("\n", "<br>")
         st.markdown(
             f'<div class="rub-carte" style="padding:20px; text-align:center; margin:15px 10px;">'
-            f'<div class="rub-carte-titre" style="font-size:1.15rem; border-bottom:1px solid #27306b; padding-bottom:8px; margin-bottom:12px;">{etiquette} {html.escape(ligne[1] or "")}</div>'
+            f'<div class="rub-carte-titre" style="font-size:1.15rem; border-bottom:1px solid #27306b; padding-bottom:8px; margin-bottom:12px;">{etiquette} - {html.escape(ligne[1] or "")}</div>'
             f'<div class="rub-carte-txt" style="font-size:0.98rem; line-height:1.7; text-align:left;">{texte_html}</div>'
             f'</div>', unsafe_allow_html=True)
 
