@@ -289,7 +289,7 @@ def _render_theme(compact=False):
         border-left: 5px solid #FFD700 !important;
         border-radius: 4px 12px 12px 4px !important;
     }
-    .stApp .stMarkdown h3 { color: #FFD000 !important; }
+    .stApp .stMarkdown h3 { color: #FFD000 !important; font-size: clamp(0.95rem, 4.2vw, 1.25rem) !important; }
     </style>""", unsafe_allow_html=True)
 
 
@@ -612,10 +612,10 @@ def _render_page_archives_textes(type_contenu, message_vide, pid=None):
             if not url_pdf:
                 texte, url_pdf = _extraire_pdf_legacy(texte)
             if p[2] and p[2].startswith("http"):
-                try:
-                    st.image(p[2], width="stretch")
-                except Exception:
-                    st.warning("Illustration momentanément indisponible.")
+                st.markdown('<div style="text-align:center; margin:10px 0;">'
+                            f'<img src="{p[2]}" alt="" style="width:100%; max-width:640px; '
+                            'border-radius:10px; display:inline-block;"></div>',
+                            unsafe_allow_html=True)
             if texte:
                 st.markdown(texte, unsafe_allow_html=True)
             if url_pdf:
@@ -1245,10 +1245,10 @@ def _render_actualites(pid=None):
         with st.expander("📰 " + (a[0] or "(sans titre)")):
             st.caption(f"Publié le {a[4] or '—'}")
             if a[2] and str(a[2]).startswith("http"):
-                try:
-                    st.image(a[2], width="stretch")
-                except Exception:
-                    st.warning("Illustration momentanément indisponible.")
+                st.markdown('<div style="text-align:center; margin:10px 0;">'
+                            f'<img src="{a[2]}" alt="" style="width:100%; max-width:640px; '
+                            'border-radius:10px; display:inline-block;"></div>',
+                            unsafe_allow_html=True)
             if a[1]:
                 st.markdown(a[1].replace("\n", "  \n"))
             if a[3] and str(a[3]).startswith("http"):
@@ -1277,10 +1277,10 @@ def _render_fil_actualites(pid=None):
             texte, url_pdf = _extraire_pdf_legacy(texte)
 
         if ligne[3] and str(ligne[3]).startswith("http"):
-            try:
-                st.image(ligne[3], width="stretch")
-            except Exception:
-                st.warning("Illustration momentanément indisponible.")
+            st.markdown('<div style="text-align:center; margin:10px 0;">'
+                        f'<img src="{ligne[3]}" alt="" style="width:100%; max-width:640px; '
+                        'border-radius:10px; display:inline-block;"></div>',
+                        unsafe_allow_html=True)
 
         texte_html = texte.replace("\n", "<br>")
         st.markdown(
