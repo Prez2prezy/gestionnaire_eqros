@@ -838,7 +838,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                         '<div class="dpl-titre-g" style="font-size:clamp(1.05rem, 4.5vw, 1.2rem);">'
                         '🕯️ Un jour, une dizaine</div>'
                         '<div style="color:#ffffff; font-size:0.85rem; margin-top:4px;">'
-                        'Entrez dans la zone en blanc ci-bas votre jour de naissance (1 - 31), validez puis cliquez sur "📿 Égrener la dizaine" et rejoignez la chaîne de prière universelle</div></div>',
+                        'Entrez dans la zone en blanc ci-bas votre jour de naissance (1 - 31), "✅" "Validez votre jour de naissance" puis cliquez sur "📿 Égrener la dizaine" et rejoignez la chaîne de prière universelle</div></div>',
                         unsafe_allow_html=True)
 
             _, c_saisie, c_btn, _ = st.columns([0.07, 4.5, 1.2, 0.07],
