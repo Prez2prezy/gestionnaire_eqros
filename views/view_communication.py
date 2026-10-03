@@ -107,6 +107,8 @@ def _onglet_priere_meditation():
                 st.error("Le titre et le contenu sont obligatoires.")
             elif img_lien.strip() and not img_lien.strip().startswith("http"):
                 st.error("Le lien d'image doit commencer par https://")
+            elif pdf_url.strip() and not pdf_url.strip().startswith("http"):
+                st.error("Le lien PDF doit commencer par https://")
             else:
                 if img_lien.strip():
                     img_url = img_lien.strip()
@@ -164,17 +166,16 @@ def _onglet_actualites():
                 st.error("Le titre est obligatoire.")
             elif not affiche_a and not img_a_lien.strip() and not lien_v.strip() and not fichier_v:
                 st.error("Chargez une affiche (fichier ou lien) OU une vidéo (au moins un visuel).")
+            elif img_a_lien.strip() and not img_a_lien.strip().startswith("http"):
+                st.error("Le lien d'image doit commencer par https://")
+            elif lien_v.strip() and not lien_v.strip().startswith("http"):
+                st.error("Le lien vidéo doit commencer par https://")
             else:
                 _vid = lien_v.strip() or (sauvegarder_video(fichier_v) if fichier_v else None)
                 if fichier_v and not _vid:
                     st.error("L'envoi du fichier vidéo a échoué. Réessayez ou utilisez un lien.")
                 else:
-                    if img_a_lien.strip():
-                        if not img_a_lien.strip().startswith("http"):
-                            st.error("Le lien d'image doit commencer par https://")
-                        _img = img_a_lien.strip()
-                    else:
-                        _img = sauvegarder_illustration(affiche_a) if affiche_a else None
+                    _img = img_a_lien.strip() if img_a_lien.strip() else (sauvegarder_illustration(affiche_a) if affiche_a else None)
                     _soumettre({"type_contenu": "actualite",
                                 "titre": titre_a.strip(),
                                 "contenu_texte": texte_a.strip() or None,
