@@ -128,6 +128,11 @@ def ajouter_evenement_agenda(equipe_id=None, paroisse_id=None, diocese_id=None, 
             desc_ag = st.text_area("📝 Description", key=f"desc_ag_{prefix}")
             affiche = st.file_uploader("🖼️ Affiche de l'évènement (optionnel — visible dans l'Espace de Prière)",
                                        type=["jpg", "jpeg", "png", "webp"], key=f"affiche_{prefix}")
+            # v7.6.3 — COHABITATION : saisie d'un LIEN d'affiche (imgbb…) en
+            # complément de l'upload. Le lien, s'il est fourni, est prioritaire.
+            lien_affiche_ag = st.text_input("🔗 …ou collez un LIEN d'affiche (imgbb, etc.)",
+                                            key=f"lien_aff_{prefix}",
+                                            placeholder="https://i.ibb.co/...")
 
             equipes_invitees_ids = []
             faire_suivre_check = False
@@ -161,7 +166,16 @@ def ajouter_evenement_agenda(equipe_id=None, paroisse_id=None, diocese_id=None, 
                     faire_suivre_check = st.checkbox("📤 Demander à la Paroisse de faire suivre au Diocèse", value=False, key=f"faire_suivre_{prefix}")
 
             if st.form_submit_button("📅 Enregistrer", width="stretch"):
-                url_affiche = sauvegarder_illustration(affiche) if affiche else None
+                # COHABITATION : lien imgbb prioritaire, sinon upload Cloudinary
+                url_affiche = None
+                _lien = (lien_affiche_ag or "").strip()
+                if _lien:
+                    if _lien.startswith("http"):
+                        url_affiche = _lien
+                    else:
+                        st.session_state["flash_warning"] = "Lien d'affiche ignoré : il doit commencer par https://"
+                if not url_affiche and affiche:
+                    url_affiche = sauvegarder_illustration(affiche)
 
                 c.execute('''INSERT INTO evenements (equipe_id, paroisse_id, diocese_id, date_evenement, type_evenement, lieu, auteur_nom, affiche_url)
                              VALUES (?,?,?,?,?,?,?,?)''',
@@ -192,7 +206,7 @@ def ajouter_evenement_agenda(equipe_id=None, paroisse_id=None, diocese_id=None, 
                     f"📅 <b>Nouvel évènement !</b>\n🏢 {html.escape(source)}{nb_invites}\n⛪ {html.escape(type_ag)}\n"
                     f"🗓 {date_ag.strftime('%d/%m/%Y')}\n📍 {html.escape(lieu_ag or '')}\n👤 {html.escape(auteur_nom)}")
 
-                st.session_state["nettoyage_agenda"] = [f"l_ag_{prefix}", f"desc_ag_{prefix}", f"affiche_{prefix}"]
+                st.session_state["nettoyage_agenda"] = [f"l_ag_{prefix}", f"desc_ag_{prefix}", f"affiche_{prefix}", f"lien_aff_{prefix}"]
                 st.session_state["flash_success"] = f"Évènement enregistré ! {nb_invites} ✅"
                 st.rerun()
 
@@ -226,6 +240,8 @@ def _gerer_affiches_evenements(equipe_id, paroisse_id, diocese_id):
 
         options = {}
         for e in evts:
+            if len(e) < 2:
+                continue
             d = safe_date(e[1])
             label = f"{d.strftime('%d/%m/%Y') if d else '??/??/????'} - {e[2]} - {e[3] or 'lieu à définir'}" + (" 🖼️" if e[4] else " (sans affiche)")
             options[label] = e
@@ -239,21 +255,30 @@ def _gerer_affiches_evenements(equipe_id, paroisse_id, diocese_id):
 
         fichier = st.file_uploader("Nouvelle affiche (visible dans l'Espace de Prière)",
                                    type=["jpg", "jpeg", "png", "webp"], key=f"{cle}_up_{evt[0]}")
+        # COHABITATION : lien imgbb prioritaire, sinon upload Cloudinary
+        lien_affiche = st.text_input("🔗 …ou collez un LIEN d'affiche (imgbb, etc.)",
+                                     key=f"{cle}_lien_{evt[0]}",
+                                     placeholder="https://i.ibb.co/...")
         c1, c2, _ = st.columns([1, 1, 2])
         with c1:
             if st.button("📤 Publier l'affiche", key=f"{cle}_pub_{evt[0]}", type="primary", width="stretch"):
-                if not fichier:
-                    st.error("⚠️ Sélectionnez d'abord un fichier image ci-dessus.")
-                else:
-                    url = sauvegarder_illustration(fichier)
-                    if url:
-                        if evt[4]: supprimer_photo(evt[4])
-                        c.execute("UPDATE evenements SET affiche_url=? WHERE id=?", (url, evt[0]))
-                        commit_and_sync()
-                        st.session_state["flash_success"] = "Affiche publiée ! ✅"
-                        st.rerun()
+                url = None
+                _lien = (lien_affiche or "").strip()
+                if _lien:
+                    if _lien.startswith("http"):
+                        url = _lien
                     else:
-                        st.error("❌ Upload échoué. Vérifiez que : (1) 'cloudinary' figure dans requirements.txt ; (2) les secrets CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY et CLOUDINARY_API_SECRET sont définis.")
+                        st.error("❌ Le lien doit commencer par https:// (ex. https://i.ibb.co/…)")
+                if not url and fichier:
+                    url = sauvegarder_illustration(fichier)
+                if url:
+                    if evt[4] and "cloudinary" in str(evt[4]): supprimer_photo(evt[4])
+                    c.execute("UPDATE evenements SET affiche_url=? WHERE id=?", (url, evt[0]))
+                    commit_and_sync()
+                    st.session_state["flash_success"] = "Affiche publiée ! ✅"
+                    st.rerun()
+                elif not _lien and not fichier:
+                    st.error("⚠️ Collez un lien d'image OU sélectionnez un fichier ci-dessus.")
         with c2:
             if evt[4] and st.button("🗑️ Retirer l'affiche", key=f"{cle}_del_{evt[0]}", width="stretch"):
                 supprimer_photo(evt[4])
@@ -315,21 +340,29 @@ def gerer_affiches_bande_annonces():
     with col_a:
         st.markdown("**🖼️ Affiche (image)**")
         fichier = st.file_uploader("Nouvelle affiche", type=["jpg", "jpeg", "png", "webp"], key="dio_affiche_up")
+        # COHABITATION : lien imgbb prioritaire, sinon upload Cloudinary
+        lien_affiche_dio = st.text_input("🔗 …ou collez un LIEN d'affiche (imgbb, etc.)",
+                                         key="dio_affiche_lien", placeholder="https://i.ibb.co/...")
         b1, b2 = st.columns(2)
         with b1:
             if st.button("📤 Publier l'affiche", key="dio_affiche_pub", type="primary", width="stretch"):
-                if not fichier:
-                    st.error("⚠️ Sélectionnez d'abord une image.")
-                else:
-                    url = sauvegarder_illustration(fichier)
-                    if url:
-                        if evt[4]: supprimer_photo(evt[4])
-                        c.execute("UPDATE evenements SET affiche_url=? WHERE id=?", (url, evt[0]))
-                        commit_and_sync()
-                        st.session_state["flash_success"] = "Affiche publiée ! ✅"
-                        st.rerun()
+                url = None
+                _lien = (lien_affiche_dio or "").strip()
+                if _lien:
+                    if _lien.startswith("http"):
+                        url = _lien
                     else:
-                        st.error("❌ Upload échoué. Vérifiez : 'cloudinary' dans requirements.txt + secrets CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.")
+                        st.error("❌ Le lien doit commencer par https:// (ex. https://i.ibb.co/…)")
+                if not url and fichier:
+                    url = sauvegarder_illustration(fichier)
+                if url:
+                    if evt[4] and "cloudinary" in str(evt[4]): supprimer_photo(evt[4])
+                    c.execute("UPDATE evenements SET affiche_url=? WHERE id=?", (url, evt[0]))
+                    commit_and_sync()
+                    st.session_state["flash_success"] = "Affiche publiée ! ✅"
+                    st.rerun()
+                elif not _lien and not fichier:
+                    st.error("⚠️ Collez un lien d'image OU sélectionnez un fichier ci-dessus.")
         with b2:
             if evt[4] and st.button("🗑️ Retirer", key="dio_affiche_del", width="stretch"):
                 supprimer_photo(evt[4])
@@ -339,12 +372,14 @@ def gerer_affiches_bande_annonces():
                 st.rerun()
     with col_b:
         st.markdown("**🎬 Bande-annonce**")
-        url_yt = st.text_input("URL YouTube (optionnel)", key="dio_ba_url", placeholder="https://youtu.be/...")
+        url_yt = st.text_input("URL YouTube ou lien vidéo direct (optionnel)", key="dio_ba_url",
+                               placeholder="https://youtu.be/… ou https://…/video.mp4")
         fichier_video = st.file_uploader("…ou fichier vidéo (MP4)", type=["mp4", "mov"], key="dio_ba_up")
         b3, b4 = st.columns(2)
         with b3:
             if st.button("📤 Publier la bande-annonce", key="dio_ba_pub", type="primary", width="stretch"):
-                video = url_yt.strip() if url_yt.strip() else (sauvegarder_video(fichier_video) if fichier_video else None)
+                _cand = (url_yt or "").strip()
+                video = _cand if _cand.startswith("http") else (sauvegarder_video(fichier_video) if fichier_video else None)
                 if video:
                     if evt[5] and "cloudinary" in evt[5]: supprimer_photo(evt[5])
                     c.execute("UPDATE evenements SET video_url=? WHERE id=?", (video, evt[0]))
@@ -437,7 +472,7 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
                     if item[10]:
                         evt_id = item[10]
                         affiche_row = c.execute("SELECT affiche_url FROM evenements WHERE id=?", (evt_id,)).fetchone()
-                        if affiche_row and affiche_row[0]:
+                        if affiche_row and affiche_row[0] and "cloudinary" in str(affiche_row[0]):
                             supprimer_photo(affiche_row[0])
                         c.execute("DELETE FROM suivi_presences WHERE evenement_id=?", (evt_id,))
                         c.execute("DELETE FROM evenement_equipes WHERE evenement_id=?", (evt_id,))
@@ -988,7 +1023,7 @@ def afficher_etat_presences_paroisse(paroisse_id):
     if not presences:
         return st.info(f"Aucune présence enregistrée pour la période de Sept {choix_annee} à Août {choix_annee+1}.")
 
-    df = pd.DataFrame(presences, columns=["Equipe", "Type", "Statut"])
+    df = pd.DataFrame([p[:3] for p in presences], columns=["Equipe", "Type", "Statut"])
     df['Est_Engage'] = df['Statut'].isin(['physique', 'spirituel']).astype(int)
 
     stats = df.groupby(['Equipe', 'Type'])['Est_Engage'].agg(['sum', 'count']).reset_index()
@@ -1233,13 +1268,35 @@ def gerer_theme_pastoral():
         contenu_st = st.text_area("Contenu / développement", height=120, key="tp_st_contenu")
         img_st = st.file_uploader("Affiche / illustration du mois (photo, optionnel)",
                                   type=["jpg", "jpeg", "png", "webp"], key="tp_st_img")
+        # COHABITATION : lien imgbb prioritaire, sinon upload Cloudinary
+        lien_img_st = st.text_input("🔗 …ou collez un LIEN d'affiche du mois (imgbb, etc.)",
+                                    key="tp_st_img_lien", placeholder="https://i.ibb.co/...")
         pdf_st = st.file_uploader("Feuillet du mois (PDF, optionnel)", type=["pdf"], key="tp_st_pdf")
+        # COHABITATION PDF : lien direct (hébergeur au choix) ou upload Cloudinary
+        lien_pdf_st = st.text_input("🔗 …ou collez un LIEN direct du feuillet PDF",
+                                    key="tp_st_pdf_lien", placeholder="https://…/feuillet.pdf")
         if st.form_submit_button("📅 Enregistrer le sous-thème", width="stretch"):
             if not titre_st.strip():
                 st.error("Le titre du sous-thème est obligatoire.")
             else:
-                url_pdf = sauvegarder_pdf(pdf_st) if pdf_st else None
-                url_img = sauvegarder_illustration(img_st) if img_st else None
+                url_pdf = None
+                _lien_pdf = (lien_pdf_st or "").strip()
+                if _lien_pdf:
+                    if _lien_pdf.startswith("http"):
+                        url_pdf = _lien_pdf
+                    else:
+                        st.error("Lien PDF ignoré : il doit commencer par https://")
+                if not url_pdf and pdf_st:
+                    url_pdf = sauvegarder_pdf(pdf_st)
+                url_img = None
+                _lien_img = (lien_img_st or "").strip()
+                if _lien_img:
+                    if _lien_img.startswith("http"):
+                        url_img = _lien_img
+                    else:
+                        st.error("Lien d'affiche ignoré : il doit commencer par https://")
+                if not url_img and img_st:
+                    url_img = sauvegarder_illustration(img_st)
                 mois_num = MOIS_NOMS.index(mois_st) + 1
                 existant = c.execute("SELECT id, feuillet_pdf FROM sous_themes WHERE annee_debut=? AND mois=?",
                                      (annee_st, mois_num)).fetchone()
