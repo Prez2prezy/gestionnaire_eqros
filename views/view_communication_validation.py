@@ -5,7 +5,7 @@
 # ====================================================================
 import streamlit as st
 from datetime import date
-from database import c, commit_and_sync
+from database import c, commit_and_sync, safe_migrate
 from services import envoyer_notification_telegram
 from components import gerer_theme_pastoral
 
@@ -17,36 +17,27 @@ LIBELLES = {"priere": "🙏 Prière", "meditation": "📖 Méditation",
 
 
 def _assurer_colonnes_cible():
-    """Migration douce : paroisse_cible sur soumissions + tables publiques."""
+    """Migration douce : paroisse_cible sur soumissions + tables publiques.
+    v7.6.4 — même leçon que database.py (PATCH 26) : les ALTER passent par
+    safe_migrate (connexion JETABLE), jamais par le curseur partagé.
+    On ne tente l'ALTER que si la vérification rapide a échoué (base neuve)."""
     for _t in ("soumissions_comm", "espace_spirituel", "evenements"):
         try:
             c.execute(f"SELECT paroisse_cible FROM {_t} LIMIT 1")
         except Exception:
-            try:
-                c.execute(f"ALTER TABLE {_t} ADD COLUMN paroisse_cible INTEGER")
-                commit_and_sync()
-            except Exception:
-                pass
+            safe_migrate(f"ALTER TABLE {_t} ADD COLUMN paroisse_cible INTEGER")
     # Colonnes de l'actualité validée (date et lieu informatifs)
     for _col in ("date_evenement", "lieu"):
         try:
             c.execute(f"SELECT {_col} FROM espace_spirituel LIMIT 1")
         except Exception:
-            try:
-                c.execute(f"ALTER TABLE espace_spirituel ADD COLUMN {_col} TEXT")
-                commit_and_sync()
-            except Exception:
-                pass
+            safe_migrate(f"ALTER TABLE espace_spirituel ADD COLUMN {_col} TEXT")
     # Affiches du thème et des sous-thèmes (auto-réparation)
     for _t in ("themes_pastoraux", "sous_themes"):
         try:
             c.execute(f"SELECT affiche_url FROM {_t} LIMIT 1")
         except Exception:
-            try:
-                c.execute(f"ALTER TABLE {_t} ADD COLUMN affiche_url TEXT")
-                commit_and_sync()
-            except Exception:
-                pass
+            safe_migrate(f"ALTER TABLE {_t} ADD COLUMN affiche_url TEXT")
 
 
 def _nom_paroisse(pid):
@@ -108,11 +99,7 @@ def show_validation_communication():
                     _an = None
                 st.info("🕯️ Thème de l'année pastorale " + (f"{_an} - {_an + 1}" if _an else "à préciser")
                         + f" — Mystère porteur N°{s[8] or '?'}")
-                if s[4]:
-                    try:
-                        st.image(s[4], width=300)
-                    except Exception:
-                        pass
+
             _nom_c = _nom_paroisse(s[10]) if len(s) > 10 else None
             st.info("🎯 Cible : " + (_nom_c if _nom_c else "🌍 Diocèse (tous)"))
 
