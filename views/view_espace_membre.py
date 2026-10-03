@@ -818,7 +818,7 @@ def _render_page_archives_audios(pid=None):
         </script>
         """.replace("TRACKS_DATA", json.dumps(pistes).replace("</", "<\\/"))
 
-        _comp_html(player_html, height=750, key="lecteur_audio")
+        _comp_html(player_html, height=750)
 
     if videos_yt:
         st.markdown("### 🎬 Morceaux en vidéo")
@@ -1080,7 +1080,7 @@ def _render_coin_affiche():
 
     visuel = None
     for a in lignes:
-        if safe_date(a[1]):
+        if len(a) >= 5 and safe_date(a[1]):
             visuel = a
             break
 
@@ -1108,7 +1108,7 @@ def _render_coin_affiche():
                                  (date.today().isoformat(),)).fetchone()
         except Exception:
             prochain = None
-        if prochain:
+        if prochain and len(prochain) >= 3:
             d = safe_date(prochain[1])
             date_txt = d.strftime("%d/%m/%Y") if d else "Date à définir"
             icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
@@ -1232,7 +1232,7 @@ def _depliant_mouvement(paroisse_id=None):
         '<div class="dpl-titre-g" style="font-size:clamp(1.0rem, 4.2vw, 1.15rem);">'
         'Voulez-vous rejoindre une équipe ?</div>'
         '<div style="color:#4527a0 !important; font-size:0.92rem; line-height:1.6; margin-top:6px;">Adressez-vous au '
-        + _etiquette + ' <b style="color:#1A237E !important;">' + html.escape((_resp or "").strip() or "du Mouvement")
+        + _etiquette + ' <b style="color:#1A237E !important;">' + html.escape((str(_resp).strip() if _resp else "") or "du Mouvement")
         + '</b>.<br>La dizaine du jour vous attend juste en dessous de ce dépliant : entrez votre jour de naissance '
         'et priez avec nous. 🕊️</div>' + _bouton + '</div>')
     _blocs.append('</div>')
@@ -1468,7 +1468,7 @@ def show_espace_membre(matloc_membre=None):
         WHERE m.matloc=? AND m.statut='actif'
     """, (matloc_membre,)).fetchone()
 
-    if not membre:
+    if not membre or len(membre) < 12:
         st.error("Identifiant inconnu ou membre inactif.")
         st.info("💡 Vous pouvez consulter l'espace public ci-dessous.")
         rub_pub, sub_pub = _lire_nav(RUBRIQUES_PUBLIC)
