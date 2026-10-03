@@ -58,7 +58,8 @@ def show_equipe():
     elif menu == "👤 Mes membres":
         st.markdown(f'<h2 style="color:#1A237E;">👤 Membres - {nom_equipe}</h2>', unsafe_allow_html=True)
         if 'open_form_eq' not in st.session_state: st.session_state['open_form_eq'] = None
-        paroisse_nom = c.execute("SELECT p.nom FROM paroisses p JOIN equipes e ON p.id = e.paroisse_id WHERE e.id=?", (eid,)).fetchone()[0]
+        _par_row = c.execute("SELECT p.nom FROM paroisses p JOIN equipes e ON p.id = e.paroisse_id WHERE e.id=?", (eid,)).fetchone()
+        paroisse_nom = _par_row[0] if _par_row and _par_row[0] else "(paroisse non définie)"
         nb = c.execute("SELECT COUNT(*) FROM membres WHERE equipe_id=? AND statut=?", (eid, 'actif')).fetchone()[0]
         st.info(f"{nb}/{max_membres} membres")
         
@@ -76,6 +77,8 @@ def show_equipe():
                         naissance = st.date_input("Date de naissance", min_value=date(1950,1,1), max_value=date.today())
                         with c2: whatsapp, numero_meditation = st.text_input("WhatsApp"), st.text_input("N° méditation", max_chars=2)
                         photo = st.file_uploader("Photo", type=['jpg','png','jpeg','webp'])
+                        # COHABITATION : lien imgbb prioritaire, sinon fichier
+                        photo_lien = st.text_input("…ou lien de photo (https://... — ex. imgbb : i.ibb.co/…)")
                         col_date, col_mle = st.columns(2)
                         with col_date: date_adhesion = st.date_input("Date d'adhésion", min_value=date(1950,1,1), max_value=date.today(), value=date.today())
                         with col_mle: matricule_nat = st.text_input("Matricule")
@@ -88,11 +91,16 @@ def show_equipe():
                                     st.error("Le nom et le prénom sont requis.")
                                 elif c.execute("SELECT id FROM membres WHERE nom=? AND prenom=? AND date_naissance=? AND statut=?", (nom, prenom, naissance.isoformat(), 'actif')).fetchone():
                                     st.error("Membre déjà actif")
+                                elif photo_lien.strip() and not photo_lien.strip().startswith("http"):
+                                    st.error("Le lien de photo doit commencer par https://")
                                 else:
                                     matloc = generer_matricule_unique()
                                     c.execute("""INSERT INTO membres (matloc, nom, prenom, date_naissance, whatsapp, date_adhesion, paroisse_id, equipe_id, statut, numero_meditation, matricule) VALUES (?,?,?,?,?,?,?,?,?,?,?)""", (matloc, nom, prenom, naissance.isoformat(), whatsapp, date_adhesion.isoformat(), pid, eid, 'actif', numero_meditation, matricule_nat))
                                     mid = c.lastrowid
-                                    if photo: c.execute("UPDATE membres SET photo_path=? WHERE id=?", (sauvegarder_photo(photo, matloc), mid))
+                                    # COHABITATION : lien imgbb prioritaire, sinon upload Cloudinary/local
+                                    photo_finale = photo_lien.strip() if photo_lien.strip() else (sauvegarder_photo(photo, matloc) if photo else None)
+                                    if photo_finale:
+                                        c.execute("UPDATE membres SET photo_path=? WHERE id=?", (photo_finale, mid))
                                     commit_and_sync(); st.session_state['open_form_eq'] = None; st.success(f"Ajouté ! MatLoc: {matloc}"); st.rerun()
         
         st.markdown("---")
@@ -133,15 +141,30 @@ def show_equipe():
                                 new_matricule = st.text_input("Matricule", value=m_data[7] or "")
                             
                             new_photo = st.file_uploader("Nouvelle photo", type=['jpg','png','jpeg','webp'])
+                            # COHABITATION : lien imgbb prioritaire, sinon fichier
+                            new_photo_lien = st.text_input("…ou lien de photo (https://... — ex. imgbb : i.ibb.co/…)",
+                                                           placeholder="Laisser vide pour garder la photo actuelle")
                             col1, col2 = st.columns(2)
                             with col1:
                                 if st.form_submit_button("❌ Annuler"): st.session_state['open_form_eq'] = None; st.rerun()
                             with col2:
                                 if st.form_submit_button("💾 Enregistrer"):
+                                    _lien_ok = True
+                                    if new_photo_lien.strip() and not new_photo_lien.strip().startswith("http"):
+                                        st.error("Le lien de photo doit commencer par https:// — la photo n'a pas été modifiée.")
+                                        _lien_ok = False
                                     # 4. ON MET À JOUR LA BASE DE DONNÉES AVEC LES DATES
                                     c.execute("UPDATE membres SET nom=?, prenom=?, date_naissance=?, whatsapp=?, numero_meditation=?, date_adhesion=?, matricule=? WHERE id=?", 
                                               (new_nom, new_prenom, new_date_naissance.isoformat(), new_whatsapp, new_num_med, new_date_adhesion.isoformat(), new_matricule, id_m))
-                                    if new_photo: supprimer_photo(m_data[4]); c.execute("UPDATE membres SET photo_path=? WHERE id=?", (sauvegarder_photo(new_photo, matloc), id_m))
+                                    # COHABITATION : lien imgbb prioritaire, sinon fichier
+                                    photo_finale = None
+                                    if new_photo_lien.strip() and _lien_ok:
+                                        photo_finale = new_photo_lien.strip()
+                                    elif new_photo:
+                                        photo_finale = sauvegarder_photo(new_photo, matloc)
+                                    if photo_finale:
+                                        supprimer_photo(m_data[4])
+                                        c.execute("UPDATE membres SET photo_path=? WHERE id=?", (photo_finale, id_m))
                                     commit_and_sync(); st.session_state['open_form_eq'] = None; st.success("Membre modifié"); st.rerun()
                 
                 elif st.session_state.get('open_form_eq') == f"arch_{id_m}":
