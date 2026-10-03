@@ -231,15 +231,25 @@ def show_paroisse():
                     with c1: n, p = st.text_input("Nom"), st.text_input("Prénom")
                     dn = st.date_input("Naissance", min_value=date(1950, 1, 1), max_value=date.today())
                     with c2: w, nm = st.text_input("WhatsApp"), st.text_input("N° méd.", max_chars=2)
-                    ph = st.file_uploader("Photo", ['jpg','png'])
+                    ph = st.file_uploader("Photo", ['jpg','png','webp'])
+                    # COHABITATION : lien imgbb prioritaire, sinon fichier
+                    ph_lien = st.text_input("…ou lien de photo (https://... — ex. imgbb : i.ibb.co/…)")
                     da = st.date_input("Date d'adhésion", min_value=date(1950, 1, 1), max_value=date.today(), value=date.today())
 
-                    if st.form_submit_button("✅ Ajouter") and n and p:
-                        mat = generer_matricule_unique()
-                        c.execute("""INSERT INTO membres (matloc, nom, prenom, date_naissance, whatsapp, date_adhesion, paroisse_id, equipe_id, statut, numero_meditation, matricule) VALUES (?,?,?,?,?,?,?,?,?,?,?)""", (mat, n, p, dn.isoformat(), w, da.isoformat(), pid, eid, 'actif', nm, mat))
-                        mid = c.lastrowid
-                        if ph: c.execute("UPDATE membres SET photo_path=? WHERE id=?", (sauvegarder_photo(ph, mat), mid))
-                        commit_and_sync(); del st.session_state['form_mbr_par']; st.success(f"Ajouté ! {mat}"); st.rerun()
+                    if st.form_submit_button("✅ Ajouter"):
+                        if not (n and p):
+                            st.error("Le nom et le prénom sont requis.")
+                        elif ph_lien.strip() and not ph_lien.strip().startswith("http"):
+                            st.error("Le lien de photo doit commencer par https://")
+                        else:
+                            mat = generer_matricule_unique()
+                            c.execute("""INSERT INTO membres (matloc, nom, prenom, date_naissance, whatsapp, date_adhesion, paroisse_id, equipe_id, statut, numero_meditation, matricule) VALUES (?,?,?,?,?,?,?,?,?,?,?)""", (mat, n, p, dn.isoformat(), w, da.isoformat(), pid, eid, 'actif', nm, mat))
+                            mid = c.lastrowid
+                            # COHABITATION : lien imgbb prioritaire, sinon upload Cloudinary/local
+                            photo_finale = ph_lien.strip() if ph_lien.strip() else (sauvegarder_photo(ph, mat) if ph else None)
+                            if photo_finale:
+                                c.execute("UPDATE membres SET photo_path=? WHERE id=?", (photo_finale, mid))
+                            commit_and_sync(); del st.session_state['form_mbr_par']; st.success(f"Ajouté ! {mat}"); st.rerun()
             for m in c.execute("SELECT id, matloc, nom, prenom, whatsapp, photo_path, date_adhesion, numero_meditation, matricule FROM membres WHERE equipe_id=? AND statut='actif'", (eid,)).fetchall():
                 with st.expander(f"{m[2]} {m[3]} - {m[1]}"):
                     c1, c2 = st.columns([3,1])
