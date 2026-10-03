@@ -99,10 +99,18 @@ def commit_and_sync():
 
 # --- Fonction de migration sécurisée ---
 def safe_migrate(query, error_ignore_phrases=["duplicate column", "duplicate column name"]):
-    """Exécute une requête de migration en ignorant silencieusement les erreurs de doublon."""
+    """Exécute une requête de migration en ignorant silencieusement les erreurs de doublon.
+    v7.6.2 : s'exécute sur une CONNEXION JETABLE — une migration qui échoue
+    ne peut plus contaminer le curseur partagé utilisé par l'application."""
     try:
-        c.execute(query)
-        commit_and_sync()
+        conn_tmp, _ = create_connection()
+        cur_tmp = conn_tmp.cursor()
+        cur_tmp.execute(query)
+        conn_tmp.commit()
+        try:
+            conn_tmp.close()
+        except Exception:
+            pass
     except Exception as e:
         error_msg = str(e).lower()
         if not any(phrase in error_msg for phrase in error_ignore_phrases):
@@ -170,7 +178,10 @@ def init_tables_and_migrations():
 
     # --- 3. MIGRATIONS STRUCTURELLES (idempotentes) ---
     safe_migrate("ALTER TABLE membres RENAME COLUMN matricule TO matloc")
-    safe_migrate("ALTER TABLE membres RENAME COLUMN mle_sup TO matricule")
+    # v7.6.2 — migration « mle_sup » RETIRÉE : la colonne n'existe pas dans
+    # la base actuelle ; cette requête échouait à chaque démarrage et
+    # contaminait les requêtes suivantes (erreurs « tuple index out of range »).
+    # safe_migrate("ALTER TABLE membres RENAME COLUMN mle_sup TO matricule")
     safe_migrate("ALTER TABLE membres ADD COLUMN matricule TEXT")
     safe_migrate("ALTER TABLE agenda ADD COLUMN a_faire_suivre INTEGER DEFAULT 0")
     safe_migrate("ALTER TABLE evenements ADD COLUMN paroisse_id INTEGER")
