@@ -183,7 +183,7 @@ def sauvegarder_photo(fichier, matricule):
         return None
 
 def sauvegarder_pdf(fichier):
-    if fichier:
+    if fichier and USE_CLOUDINARY:
         try:
             res = cloudinary.uploader.upload(fichier, resource_type="raw",
                                              public_id=_public_id_unique("rosaire_pdfs", fichier.name),
@@ -194,7 +194,7 @@ def sauvegarder_pdf(fichier):
     return None
 
 def sauvegarder_audio(fichier):
-    if fichier:
+    if fichier and USE_CLOUDINARY:
         try:
             res = cloudinary.uploader.upload(fichier, resource_type="video",
                                              public_id=_public_id_unique("rosaire_audio", fichier.name),
@@ -205,7 +205,7 @@ def sauvegarder_audio(fichier):
     return None
 
 def sauvegarder_illustration(fichier):
-    if fichier:
+    if fichier and USE_CLOUDINARY:
         try:
             res = cloudinary.uploader.upload(fichier,
                                              public_id=_public_id_unique("rosaire_illustrations", fichier.name),
@@ -218,7 +218,7 @@ def sauvegarder_illustration(fichier):
 
 def sauvegarder_video(fichier):
     """Vidéo (MP4/MOV) pour les bandes-annonces d'évènements."""
-    if fichier:
+    if fichier and USE_CLOUDINARY:
         try:
             res = cloudinary.uploader.upload(fichier, resource_type="video",
                                              public_id=_public_id_unique("rosaire_videos", fichier.name),
@@ -230,7 +230,9 @@ def sauvegarder_video(fichier):
 
 def supprimer_photo(path):
     if not path: return
-    if USE_CLOUDINARY and path.startswith("http"):
+    # COHABITATION : seules les URLs Cloudinary sont détruites chez Cloudinary ;
+    # les liens externes (imgbb…) sont laissés intacts.
+    if USE_CLOUDINARY and path.startswith("http") and "cloudinary" in path:
         try:
             import cloudinary.uploader
             parts = path.split('/upload/')[-1]
@@ -379,47 +381,7 @@ def lire_menu_session():
     except Exception:
         return None
 
-def supprimer_token_session(token):
-    """Révoque un jeton (appelé à la déconnexion)."""
-    try:
-        c.execute("DELETE FROM sessions_persistantes WHERE token=?", (token,))
-        commit_and_sync()
-    except Exception:
-        pass
-
-def synchroniser_menu_session(menu):
-    """Mémorise la rubrique courante dans le jeton (s'il existe) — écrit en base
-    UNIQUEMENT au changement de rubrique, pas à chaque affichage."""
-    if not menu:
-        return
-    tok = st.query_params.get("t")
-    if isinstance(tok, list):
-        tok = tok[0] if tok else None
-    if not tok:
-        return
-    if st.session_state.get("_menu_sync") == menu:
-        return
-    st.session_state["_menu_sync"] = menu
-    try:
-        c.execute("UPDATE sessions_persistantes SET menu_courant=? WHERE token=?", (menu, tok))
-        commit_and_sync()
-    except Exception:
-        pass
-
-def lire_menu_session():
-    """Lit la rubrique mémorisée pour le jeton courant (None sinon)."""
-    tok = st.query_params.get("t")
-    if isinstance(tok, list):
-        tok = tok[0] if tok else None
-    if not tok:
-        return None
-    try:
-        r = c.execute("SELECT menu_courant FROM sessions_persistantes WHERE token=?", (tok,)).fetchone()
-        return r[0] if r and r[0] else None
-    except Exception:
-        return None
-
-
+# v7.6.3 — trio de fonctions dupliqué supprimé (identique au premier bloc plus haut).
 # ============================================================
 # EXPORT EXCEL DIOCÈSE
 # ============================================================
