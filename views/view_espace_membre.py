@@ -11,6 +11,7 @@ import os
 import re
 import html
 import base64
+import urllib.parse
 import json
 import streamlit as st
 from datetime import date
@@ -1045,13 +1046,25 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
 
 
 def _render_pdf_inline(url_pdf):
-    """PDF en iframe directe Cloudinary + lien de secours."""
-    lien_txt = "📄 Si le document ne s'affiche pas, ouvrez-le ici"
+    """PDF : iframe directe + visualiseur de secours Google (lève les blocages
+    d'iframe et les restrictions de navigateur) + ouverture directe.
+    v7.6.5 — quoi qu'il arrive, au moins une des 3 voies affiche le document."""
+    lien_txt = "📄 Ouvrir le document ici"
+    _viewer = None
+    try:
+        _viewer = ("https://docs.google.com/viewer?url="
+                   + urllib.parse.quote(url_pdf, safe="") + "&embedded=true")
+    except Exception:
+        _viewer = None
+    secours = (' &nbsp;·&nbsp; <a href="' + _viewer + '" target="_blank" '
+               'style="color:#ffd000; font-size:0.85rem; font-weight:bold;">'
+               '📖 Visualiseur de secours</a>') if _viewer else ""
     st.markdown(
         f'<div style="margin:12px 10px 18px 10px; border-radius:12px; overflow:hidden; border:1px solid #27306b;">'
         f'<iframe src="{url_pdf}" width="100%" height="700" style="border:none;" title="Document"></iframe>'
         f'<div style="text-align:center; padding:8px; background:#121a45;">'
         f'<a href="{url_pdf}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">{lien_txt}</a>'
+        + secours +
         f'</div></div>', unsafe_allow_html=True)
 
 
