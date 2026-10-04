@@ -12,6 +12,8 @@ from datetime import date
 from database import c, commit_and_sync
 from services import (sauvegarder_illustration, sauvegarder_audio, sauvegarder_video,
                       envoyer_notification_telegram, get_periode_pastorale)
+import html
+
 
 
 def _liste_paroisses():
@@ -66,7 +68,7 @@ def _soumettre(d):
     try:
         envoyer_notification_telegram(
             "📡 <b>Service Communication</b> — nouvelle soumission À VALIDER : "
-            + (d.get("titre") or "(sans titre)"))
+            + html.escape(d.get("titre") or "(sans titre)"))
     except Exception:
         pass
     st.success("📨 Soumission transmise au diocèse. Rien ne sera publié sans sa validation.")
