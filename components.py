@@ -1374,3 +1374,15 @@ def gerer_theme_pastoral():
                     c.execute("DELETE FROM theme_mystere WHERE annee_debut=? AND mystere_id=?", (annee_lien, lm[0]))
                     commit_and_sync()
                     st.rerun()
+
+    # --- 🧪 TEST DE NOTIFICATION TELEGRAM (v7.6.6) ---
+    st.markdown("---")
+    with st.expander("🧪 Test de notification Telegram"):
+        st.caption("Vérifie que les messages « soumission » et « publication » repartent bien.")
+        if st.button("📨 Envoyer un message de test", key="test_telegram"):
+            if envoyer_notification_telegram("🧪 Message de test — notifications des Équipes du Rosaire ✅"):
+                st.success("Message envoyé ! Regardez votre Telegram. 📲")
+            else:
+                st.error("Échec. Vérifiez (1) les secrets TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID "
+                         "(Streamlit Cloud → Manage app → Settings → Secrets) et (2) les logs "
+                         "(Manage app → Logs) : le motif exact de l'échec y est désormais écrit.")
