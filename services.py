@@ -140,13 +140,22 @@ def lien_whatsapp(num, msg):
     return f"https://wa.me/{num.lstrip('+')}?text={urllib.parse.quote(msg)}"
 
 def envoyer_notification_telegram(message):
+    """v7.6.6 — n'engloutit plus les échecs : journalise le motif (visible dans
+    les logs Streamlit Cloud) et retourne True/False pour le bouton de test."""
     try:
         token, chat_id = st.secrets.get("TELEGRAM_BOT_TOKEN"), st.secrets.get("TELEGRAM_CHAT_ID")
-        if token and chat_id:
-            requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
-                          json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"}, timeout=10)
-    except Exception:
-        pass
+        if not token or not chat_id:
+            print("Telegram : secret TELEGRAM_BOT_TOKEN ou TELEGRAM_CHAT_ID absent.")
+            return False
+        reponse = requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
+                                json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"}, timeout=10)
+        if reponse.status_code != 200:
+            print(f"Telegram : échec HTTP {reponse.status_code} — {reponse.text[:200]}")
+            return False
+        return True
+    except Exception as e:
+        print(f"Telegram : exception — {e}")
+        return False
 
 
 # ============================================================
