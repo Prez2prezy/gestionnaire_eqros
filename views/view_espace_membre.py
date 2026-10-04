@@ -497,7 +497,14 @@ def _render_page_theme_ensemble():
             pass
 
     mois_courant = date.today().month
-    sous = get_sous_theme_du_mois(annee_debut, mois_courant)
+    # v7.6.6 — ALIGNEMENT DES CONVENTIONS DE MOIS : le formulaire diocèse
+    # numérote en ordre PASTORAL (Septembre=1 … Août=12) ; l'affichage lisait
+    # le mois CIVIL (octobre=10) → sous-thème jamais retrouvé. Converti.
+    _mois_pastoral = ((mois_courant - 9) % 12) + 1
+    sous = get_sous_theme_du_mois(annee_debut, _mois_pastoral)
+    if st.query_params.get("debug") == "1":
+        st.caption(f"🔎 DEBUG sous-thème — mois civil={mois_courant} → pastoral={_mois_pastoral} | "
+                   f"sous-thème {'TROUVÉ' if sous else 'non trouvé'}")
     if sous:
         _v = list(sous) + [None] * 4
         titre_st, contenu_st, feuillet, affiche_st = _v[0], _v[1], _v[2], _v[3]
@@ -1046,25 +1053,20 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
 
 
 def _render_pdf_inline(url_pdf):
-    """PDF : iframe directe + visualiseur de secours Google (lève les blocages
-    d'iframe et les restrictions de navigateur) + ouverture directe.
-    v7.6.5 — quoi qu'il arrive, au moins une des 3 voies affiche le document."""
-    lien_txt = "📄 Ouvrir le document ici"
-    _viewer = None
+    """PDF — v7.6.6 : l'iframe embarque directement le VISUALISEUR GOOGLE.
+    Pourquoi : GitHub Raw (comme certains CDN) envoie des en-têtes qui
+    INTERDISENT l'affichage dans une iframe ; le lecteur Google les contourne,
+    fiable sur tous les navigateurs. Sous le cadre : ouverture directe."""
     try:
-        _viewer = ("https://docs.google.com/viewer?url="
-                   + urllib.parse.quote(url_pdf, safe="") + "&embedded=true")
+        _src = ("https://docs.google.com/viewer?url="
+                + urllib.parse.quote(url_pdf, safe="") + "&embedded=true")
     except Exception:
-        _viewer = None
-    secours = (' &nbsp;·&nbsp; <a href="' + _viewer + '" target="_blank" '
-               'style="color:#ffd000; font-size:0.85rem; font-weight:bold;">'
-               '📖 Visualiseur de secours</a>') if _viewer else ""
+        _src = url_pdf
     st.markdown(
         f'<div style="margin:12px 10px 18px 10px; border-radius:12px; overflow:hidden; border:1px solid #27306b;">'
-        f'<iframe src="{url_pdf}" width="100%" height="700" style="border:none;" title="Document"></iframe>'
+        f'<iframe src="{_src}" width="100%" height="700" style="border:none;" title="Document"></iframe>'
         f'<div style="text-align:center; padding:8px; background:#121a45;">'
-        f'<a href="{url_pdf}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">{lien_txt}</a>'
-        + secours +
+        f'<a href="{url_pdf}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">📄 Ouvrir le document ici</a>'
         f'</div></div>', unsafe_allow_html=True)
 
 
@@ -1133,7 +1135,9 @@ def _render_coin_affiche():
                 f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p>'
                 f'</div></div>', unsafe_allow_html=True)
 
-
+# 📿 Rentrée pastorale : le dépliant s'affiche DÉPLIÉ. Repassez à False
+# (et redémarrez l'application) quand la période de présentation sera finie.
+DEPLIANT_OUVERT = True
 def _depliant_mouvement(paroisse_id=None):
     """📿 Dépliant « vivant » du Mouvement — Espace COMMUNAUTAIRE uniquement.
     Toutes les images se configurent dans le bloc PHOTOS ci-dessous."""
@@ -1259,15 +1263,28 @@ def _depliant_mouvement(paroisse_id=None):
                 '.dpl-photo-bandeau { width:100%; border-radius:12px; display:block; margin-top:12px; }'
                 '@media (min-width:769px) { .dpl-photo { height:230px; } }'
                 '</style>', unsafe_allow_html=True)
+
+    _attr_ouvert = " open" if DEPLIANT_OUVERT else ""
+    _consigne = "cliquez pour replier ▴" if DEPLIANT_OUVERT else "cliquez pour ouvrir ▾"
     st.markdown(
-        '<details class="depliant-eq76" style="background:#121a45 !important; border:1px solid #FFD700; '
+        '<details class="depliant-eq76"' + _attr_ouvert + ' style="background:#121a45 !important; border:1px solid #FFD700; '
         'border-radius:15px; margin:12px 10px; overflow:hidden;">'
         '<summary style="cursor:pointer; padding:12px 14px; background:linear-gradient(135deg,#1A237E,#4527a0); text-align:center;">'
         '<div class="dpl-titre-g" style="font-size:clamp(0.95rem, 4.3vw, 1.25rem); '
         'white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">'
         '📿 Découvrez les Équipes du Rosaire !</div>'
         '<div style="color:#e8eaf6 !important; font-size:clamp(0.7rem, 3vw, 0.82rem); font-weight:normal; margin-top:2px;">'
-        'cliquez pour ouvrir ▾</div></summary>' + _corps + '</details>', unsafe_allow_html=True)
+        + _consigne + '</div></summary>' + _corps + '</details>', unsafe_allow_html=True)
+
+#     st.markdown(
+#         '<details class="depliant-eq76" style="background:#121a45 !important; border:1px solid #FFD700; '
+#         'border-radius:15px; margin:12px 10px; overflow:hidden;">'
+#         '<summary style="cursor:pointer; padding:12px 14px; background:linear-gradient(135deg,#1A237E,#4527a0); text-align:center;">'
+#         '<div class="dpl-titre-g" style="font-size:clamp(0.95rem, 4.3vw, 1.25rem); '
+#         'white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">'
+#         '📿 Découvrez les Équipes du Rosaire !</div>'
+#         '<div style="color:#e8eaf6 !important; font-size:clamp(0.7rem, 3vw, 0.82rem); font-weight:normal; margin-top:2px;">'
+#         'cliquez pour ouvrir ▾</div></summary>' + _corps + '</details>', unsafe_allow_html=True)
 
 def _render_actualites(pid=None):
     """📰 Actualités du diocèse (publications simples : affiche +/ou BA).
