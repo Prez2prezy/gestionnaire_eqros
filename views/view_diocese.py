@@ -456,7 +456,7 @@ def show_diocese():
             show_validation_communication()
 
         with tab_manage:
-            t_bandes, t_pm, t_mu, t_autres = st.tabs(["📺 Bandes défilantes actives", "Prières 🙏 / Méditations 📖", "Musiques 🎵", "📦 Autres contenus"])
+            t_bandes, t_pm, t_mu, t_autres = st.tabs(["📺 Bandes défilantes actives", "🙏 Prières / 📖 Méditations", "🎵 Musiques", "📦 Autres contenus"])
 
             with t_bandes:
                 st.caption("Maximum 3 bandes actives — seules les plus récentes s'affichent dans l'entête des espaces. "
