@@ -8,12 +8,11 @@
 # Marqueurs : Ctrl+F → "VERSION 2.0", "_onglet_actualites".
 # ====================================================================
 import streamlit as st
+import html
 from datetime import date
 from database import c, commit_and_sync
 from services import (sauvegarder_illustration, sauvegarder_audio, sauvegarder_video,
                       envoyer_notification_telegram, get_periode_pastorale)
-import html
-
 
 
 def _liste_paroisses():
