@@ -4,10 +4,12 @@
 # relue, puis PUBLIÉE (tables publiques) ou REFUSÉE avec motif.
 # ====================================================================
 import streamlit as st
+import html
 from datetime import date
 from database import c, commit_and_sync, safe_migrate
 from services import envoyer_notification_telegram
 from components import gerer_theme_pastoral
+
 
 LIBELLES = {"priere": "🙏 Prière", "meditation": "📖 Méditation",
             "audio": "🎵 Musique", "annonce_defilante": "📺 Bande défilante",
@@ -51,10 +53,10 @@ def _notifier(soumission, action):
     try:
         if action == "publie":
             envoyer_notification_telegram(
-                "🕊️ <b>Diocèse</b> — soumission PUBLIÉE : " + (soumission[2] or "(sans titre)"))
+                "🕊️ <b>Diocèse</b> — soumission PUBLIÉE : " + html.escape(soumission[2] or "(sans titre)"))
         else:
             envoyer_notification_telegram(
-                "🕊️ <b>Diocèse</b> — soumission REFUSÉE : " + (soumission[2] or "(sans titre)"))
+                "🕊️ <b>Diocèse</b> — soumission REFUSÉE : " + html.escape(soumission[2] or "(sans titre)"))
     except Exception:
         pass
 
