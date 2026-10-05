@@ -28,6 +28,64 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
                         afficher_etat_presences_paroisse, _qrcode_png_bytes)
 
 
+def _gestionnaire_archives_espace(texte_intro, types_contenus, prefixe):
+    """v7.6.7 — Gestionnaire à coches réutilisable : liste les contenus des
+    types donnés et permet une suppression MULTIPLE avec confirmation.
+    Utilisé par les onglets « Prières 🙏 / Méditations 📖 » et « Musiques 🎵 »."""
+    st.caption(texte_intro)
+    _ph = ",".join("?" * len(types_contenus))
+    _lignes = c.execute(f"""SELECT id, type_contenu, titre, date_publication, image_url, fichier_url, paroisse_cible
+                            FROM espace_spirituel
+                            WHERE type_contenu IN ({_ph})
+                            ORDER BY type_contenu, date_publication DESC, id DESC""", types_contenus).fetchall()
+    if not _lignes:
+        st.info("Aucun élément dans cette catégorie.")
+        return
+    st.caption(f"📋 {len(_lignes)} élément(s).")
+    _paroisses_map = {p[0]: p[1] for p in c.execute("SELECT id, nom FROM paroisses").fetchall()}
+    _icone = {"priere": "🙏", "meditation": "📖", "audio": "🎵", "actualite": "📰"}
+    _cochees = []
+    for cont in _lignes:
+        _cible_lbl = f" 🏘️ {_paroisses_map[cont[6]]}" if cont[6] and cont[6] in _paroisses_map else ""
+        c_chk, c_txt = st.columns([1, 12])
+        with c_chk:
+            _coche = st.checkbox("", key=f"chk_{prefixe}_{cont[0]}")
+        with c_txt:
+            st.write(f"{_icone.get(cont[1], '📌')} **{cont[2] or '(sans titre)'}** — *{cont[1]}* · {cont[3]}{_cible_lbl}")
+        if _coche:
+            _cochees.append(cont)
+    if not _cochees:
+        st.session_state.pop(f"confirm_sup_{prefixe}", None)
+    elif not st.session_state.get(f"confirm_sup_{prefixe}"):
+        st.warning(f"⚠️ {len(_cochees)} élément(s) sélectionné(s) pour suppression.")
+        if st.button("🗑️ Supprimer la sélection…", key=f"btn_sup_{prefixe}", type="primary"):
+            st.session_state[f"confirm_sup_{prefixe}"] = True
+            st.rerun()
+    else:
+        st.error("🔴 CONFIRMATION — les éléments cochés seront supprimés DÉFINITIVEMENT :")
+        for cont in _cochees:
+            st.write(f"• {_icone.get(cont[1], '📌')} {cont[2] or '(sans titre)'} ({cont[1]})")
+        c_ok, c_ann, _r = st.columns([1.6, 1, 3])
+        with c_ok:
+            if st.button("✅ Oui, supprimer définitivement", key=f"btn_sup_{prefixe}_ok", type="primary"):
+                for cont in _cochees:
+                    for url in (cont[4], cont[5]):
+                        if url and url.startswith("http"):
+                            supprimer_photo(url)
+                _ids = [x[0] for x in _cochees]
+                _ph_del = ",".join("?" * len(_ids))
+                c.execute(f"DELETE FROM espace_spirituel WHERE id IN ({_ph_del})", _ids)
+                commit_and_sync()
+                for cont in _cochees:
+                    st.session_state.pop(f"chk_{prefixe}_{cont[0]}", None)
+                st.session_state.pop(f"confirm_sup_{prefixe}", None)
+                st.session_state["flash_success"] = f"{len(_ids)} élément(s) supprimé(s). 🗑️"
+                st.rerun()
+        with c_ann:
+            if st.button("❌ Annuler", key=f"btn_sup_{prefixe}_non"):
+                st.session_state.pop(f"confirm_sup_{prefixe}", None)
+                st.rerun()
+
 def show_diocese():
     d_info = c.execute("SELECT nom, responsable, bureau FROM diocese WHERE id=?", (1,)).fetchone()
     nom_dio = d_info[0] if d_info else "Diocèse"
@@ -398,7 +456,7 @@ def show_diocese():
             show_validation_communication()
 
         with tab_manage:
-            t_bandes, t_archives, t_autres = st.tabs(["📺 Bandes défilantes actives", "📖 Archives", "📦 Autres contenus"])
+            t_bandes, t_pm, t_mu, t_autres = st.tabs(["📺 Bandes défilantes actives", "Prières 🙏 / Méditations 📖", "Musiques 🎵", "📦 Autres contenus"])
 
             with t_bandes:
                 st.caption("Maximum 3 bandes actives — seules les plus récentes s'affichent dans l'entête des espaces. "
@@ -426,65 +484,19 @@ def show_diocese():
                                 commit_and_sync()
                                 st.rerun()
 
-            with t_archives:
-                # v7.6.6 — DEMANDE 5 & 6 : gestionnaire DÉDIÉ des archives, avec
-                # coches de suppression multiple. Indépendant de « 📦 Autres contenus ».
-                st.caption("🗑️ Gestionnaire DÉDIÉ des archives de l'Espace de Prière — "
-                           "prières 🙏, méditations 📖, musiques 🎵 et actualités 📰. "
-                           "Cochez puis supprimez en un seul clic (avec confirmation).")
-                _types_arch = ("priere", "meditation", "audio", "actualite")
-                _ph_a = ",".join("?" * len(_types_arch))
-                _archives = c.execute(f"""SELECT id, type_contenu, titre, date_publication, image_url, fichier_url, paroisse_cible
-                                          FROM espace_spirituel
-                                          WHERE type_contenu IN ({_ph_a})
-                                          ORDER BY type_contenu, date_publication DESC, id DESC""", _types_arch).fetchall()
-                if not _archives:
-                    st.info("Aucune archive publiée pour le moment.")
-                else:
-                    st.caption(f"📋 {len(_archives)} élément(s) en archive.")
-                    _paroisses_map_a = {p[0]: p[1] for p in c.execute("SELECT id, nom FROM paroisses").fetchall()}
-                    _icone_a = {"priere": "🙏", "meditation": "📖", "audio": "🎵", "actualite": "📰"}
-                    _cochees_a = []
-                    for cont in _archives:
-                        _cible_lbl = f" 🏘️ {_paroisses_map_a[cont[6]]}" if cont[6] and cont[6] in _paroisses_map_a else ""
-                        c_chk, c_txt = st.columns([1, 12])
-                        with c_chk:
-                            _coche = st.checkbox("", key=f"chk_arch_{cont[0]}")
-                        with c_txt:
-                            st.write(f"{_icone_a.get(cont[1], '📌')} **{cont[2] or '(sans titre)'}** — *{cont[1]}* · {cont[3]}{_cible_lbl}")
-                        if _coche:
-                            _cochees_a.append(cont)
-                    if not _cochees_a:
-                        st.session_state.pop("confirm_sup_arch", None)
-                    elif not st.session_state.get("confirm_sup_arch"):
-                        st.warning(f"⚠️ {len(_cochees_a)} élément(s) sélectionné(s) pour suppression.")
-                        if st.button("🗑️ Supprimer la sélection…", key="btn_sup_arch", type="primary"):
-                            st.session_state["confirm_sup_arch"] = True
-                            st.rerun()
-                    else:
-                        st.error("🔴 CONFIRMATION — les éléments cochés seront supprimés DÉFINITIVEMENT :")
-                        for cont in _cochees_a:
-                            st.write(f"• {_icone_a.get(cont[1], '📌')} {cont[2] or '(sans titre)'} ({cont[1]})")
-                        c_ok, c_ann, _r = st.columns([1.6, 1, 3])
-                        with c_ok:
-                            if st.button("✅ Oui, supprimer définitivement", key="btn_sup_arch_ok", type="primary"):
-                                for cont in _cochees_a:
-                                    for url in (cont[4], cont[5]):
-                                        if url and url.startswith("http"):
-                                            supprimer_photo(url)
-                                _ids = [x[0] for x in _cochees_a]
-                                _ph_del = ",".join("?" * len(_ids))
-                                c.execute(f"DELETE FROM espace_spirituel WHERE id IN ({_ph_del})", _ids)
-                                commit_and_sync()
-                                for cont in _cochees_a:
-                                    st.session_state.pop(f"chk_arch_{cont[0]}", None)
-                                st.session_state.pop("confirm_sup_arch", None)
-                                st.session_state["flash_success"] = f"{len(_ids)} élément(s) supprimé(s) des archives. 🗑️"
-                                st.rerun()
-                        with c_ann:
-                            if st.button("❌ Annuler", key="btn_sup_arch_non"):
-                                st.session_state.pop("confirm_sup_arch", None)
-                                st.rerun()
+            with t_pm:
+                _gestionnaire_archives_espace(
+                    "Gestion DÉDIÉE des Prières 🙏 et Méditations 📖 — exactement ce que voit "
+                    "l'utilisateur dans sa rubrique 📖 Archives. Cochez puis supprimez en un "
+                    "seul clic (avec confirmation).",
+                    ("priere", "meditation"), "pm")
+
+            with t_mu:
+                _gestionnaire_archives_espace(
+                    "Gestion DÉDIÉE des Musiques 🎵 — fichiers audio ET vidéos YouTube "
+                    "publiés dans la sous-rubrique 🎵 Musiques. Cochez puis supprimez en un "
+                    "seul clic (avec confirmation).",
+                    ("audio",), "mu")
 
             with t_autres:
                 # v7.6.6 — DEMANDE 5 & 6 : les archives (prières, méditations,
