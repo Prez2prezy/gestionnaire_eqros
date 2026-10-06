@@ -15,7 +15,18 @@ import urllib.parse
 import json
 import streamlit as st
 from datetime import date
-from streamlit.components.v1 import html as _comp_html
+# v7.6.8 — Migration st.iframe : l'API st.components.v1.html est dépréciée
+# (suppression annoncée). On utilise st.iframe si disponible ; repli
+# automatique sur l'ancienne API sinon.
+# POUR REVENIR EN ARRIÈRE : remplacez tout ce bloc par la ligne commentée.
+# from streamlit.components.v1 import html as _comp_html
+try:
+    from streamlit import iframe as _st_iframe
+
+    def _comp_html(body, height=None):
+        return _st_iframe(body, height=height)
+except (ImportError, AttributeError):
+    from streamlit.components.v1 import html as _comp_html
 from database import c, commit_and_sync
 from services import safe_date, compter_visite, lien_whatsapp
 from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
@@ -81,7 +92,7 @@ def _extraire_pdf_legacy(contenu):
 def _scroll_top(cle):
     """Remet la vue en haut (sous l'entête) à chaque page du livre."""
     try:
-        _comp_html("<script>window.parent.scrollTo(0, 0);</script>", height=0, key=f"scroll_{cle}")
+        _comp_html("<script>window.parent.scrollTo(0, 0);</script>", height=0)
     except Exception:
         pass
 
@@ -106,7 +117,7 @@ def _liens_meme_onglet(cle):
         "else if(essais>20){clearInterval(t);}"
         "},300);})();</script>")
     try:
-        _comp_html(script, height=0, key=f"self76_{cle}")
+        _comp_html(script, height=0)
     except Exception:
         pass
 
@@ -152,7 +163,7 @@ def _mesure_entete(cle):
         "b.style.setProperty('padding-top',n+'px','important');}}}catch(e){}};"
         "a();setInterval(a,400);window.parent.addEventListener('resize',a);})();</script>")
     try:
-        _comp_html(script, height=0, key=f"mesure_{cle}")
+        _comp_html(script, height=0)
     except Exception:
         pass
 
