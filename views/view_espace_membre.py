@@ -307,8 +307,8 @@ def _render_theme(compact=False):
     }
     /* Images des rubriques : style dépliant (cadre, hauteur fixe) */
     .stApp .stMarkdown .rub-photo {
-        width:100%; max-width:860px; height:150px; object-fit:cover;
-        border-radius:8px; display:block; margin:10px auto;
+        width:100%; max-width:860px; height:150px; object-fit:contain;
+        background:#0a0f2c; border-radius:8px; display:block; margin:10px auto;
     }
     @media (min-width:769px) {
         .stApp .stMarkdown .rub-photo { height:230px; }
@@ -688,6 +688,16 @@ def _render_page_archives_audios(pid=None):
             videos_yt.append({"title": titre_sur, "url": u})
         else:
             pistes.append({"title": html.escape(titre_sur), "url": u})
+
+    # v7.6.9 — Ouverture de l'onglet d'écoute dédié (musique continue
+    # pendant que l'espace est parcouru dans un autre onglet).
+    _lien_ecoute = "?espace=1&musique=1" + (f"&p={pid}" if pid else "")
+    st.markdown('<div style="text-align:center; margin:0 0 14px 0;">'
+                '<a href="' + _lien_ecoute + '" target="_blank" '
+                'style="display:inline-block; background:#4527a0; color:#ffffff;'
+                ' padding:10px 22px; border-radius:30px; font-weight:bold; text-decoration:none;">'
+                '🎧 Ouvrir l’onglet d’écoute dédié</a></div>',
+                unsafe_allow_html=True)
 
     if pistes:
         player_html = """
@@ -1269,8 +1279,8 @@ def _depliant_mouvement(paroisse_id=None):
     st.markdown('<style>'
                 '.depliant-eq76 summary::-webkit-details-marker{display:none;}'
                 '.depliant-eq76 summary{list-style:none;}'
-                '.dpl-photo { width:100%; max-width:860px; height:150px; object-fit:cover; '
-                'border-radius:8px; display:block; margin:0 auto 10px auto; }'
+                '.dpl-photo { width:100%; max-width:860px; height:150px; object-fit:contain; '
+                'background:#0a0f2c; border-radius:8px; display:block; margin:0 auto 10px auto; }'
                 '.dpl-photo-bandeau { width:100%; border-radius:12px; display:block; margin-top:12px; }'
                 '@media (min-width:769px) { .dpl-photo { height:230px; } }'
                 '</style>', unsafe_allow_html=True)
@@ -1413,6 +1423,22 @@ def show_espace_membre(matloc_membre=None):
 
     # v7.6 : les liens du menu naviguent dans l'onglet courant
     _liens_meme_onglet("nav")
+
+    # v7.6.9 — MODE ÉCOUTE DÉDIÉ (?musique=1) : page-lecteur seule, pensée pour
+    # être ouverte dans un 2e onglet du navigateur. La musique y joue en continu
+    # pendant que l'espace est parcouru dans le premier onglet.
+    if st.query_params.get("musique") == "1":
+        _render_theme(compact=True)
+        st.markdown('<style>.block-container { padding-top: 2rem !important; }</style>', unsafe_allow_html=True)
+        st.markdown("<div style=\"background:linear-gradient(135deg,#1A237E 0%,#283593 100%);"
+                    " padding:14px; border-radius:15px; text-align:center; margin:10px;"
+                    " border:2px solid #FFD700;\">"
+                    "<div style=\"color:#FFD700 !important; font-weight:bold;\">🎧 Onglet d’écoute dédié</div>"
+                    "<div style=\"color:#e8eaf6 !important; font-size:0.85rem; margin-top:4px;\">"
+                    "Laissez cet onglet ouvert : la musique continue pendant que vous priez dans l’autre onglet. 📿</div></div>",
+                    unsafe_allow_html=True)
+        _render_page_archives_audios(pid=st.session_state.get("paroisse_origine"))
+        return
 
     msg_ok = st.session_state.pop("flash_success", None)
     if msg_ok:
