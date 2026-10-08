@@ -696,15 +696,16 @@ def _render_page_archives_audios(pid=None):
         else:
             pistes.append({"title": html.escape(titre_sur), "url": u})
 
-    # v7.6.9 — Ouverture de l'onglet d'écoute dédié (musique continue
-    # pendant que l'espace est parcouru dans un autre onglet).
-    _lien_ecoute = "?espace=1&musique=1" + (f"&p={pid}" if pid else "")
-    st.markdown('<div style="text-align:center; margin:0 0 14px 0;">'
-                '<a href="' + _lien_ecoute + '" target="_blank" '
-                'style="display:inline-block; background:#4527a0; color:#ffffff;'
-                ' padding:10px 22px; border-radius:30px; font-weight:bold; text-decoration:none;">'
-                '🎧 Ouvrir l’onglet d’écoute dédié</a></div>',
-                unsafe_allow_html=True)
+    # v7.7 — bouton masqué sur la page d'écoute elle-même (sinon il
+    # réapparaissait dans l'onglet d'écoute, ce qui est inutile).
+    if st.query_params.get("musique") != "1":
+        _lien_ecoute = "?espace=1&musique=1" + (f"&p={pid}" if pid else "")
+        st.markdown('<div style="text-align:center; margin:0 0 14px 0;">'
+                    '<a href="' + _lien_ecoute + '" target="_blank" '
+                    'style="display:inline-block; background:#4527a0; color:#ffffff;'
+                    ' padding:10px 22px; border-radius:30px; font-weight:bold; text-decoration:none;">'
+                    '🎧 Ouvrir l’onglet d’écoute dédié</a></div>',
+                    unsafe_allow_html=True)
 
     if pistes:
         player_html = """
