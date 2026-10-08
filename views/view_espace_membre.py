@@ -858,7 +858,32 @@ def _render_page_archives_audios(pid=None):
         _comp_html(player_html, height=750)
 
     if videos_yt:
+        # v7.7 — PLAYLIST CONTINUE : les vidéos s'enchaînent seules grâce au
+        # paramètre natif « playlist » du lecteur YouTube intégré. Elle est
+        # aussi présente dans l'onglet d'écoute 🎧 (musique ET vidéos en continu).
+        st.markdown("### 🎬 Playlist continue")
+        st.caption("Appuyez ▶️ une seule fois : les vidéos s'enchaînent toutes seules. "
+                   "Le bouton ⏭️ du lecteur passe à la suivante.")
+        _ids_yt = []
+        for v in videos_yt:
+            _m = re.search(r"(?:youtu\.be/|v=|shorts/|embed/)([A-Za-z0-9_-]{6,})", str(v["url"]))
+            if _m:
+                _ids_yt.append(_m.group(1))
+        if len(_ids_yt) >= 2:
+            _src_pl = ("https://www.youtube.com/embed/" + _ids_yt[0]
+                       + "?playlist=" + ",".join(_ids_yt[1:]) + "&rel=0")
+        elif len(_ids_yt) == 1:
+            _src_pl = "https://www.youtube.com/embed/" + _ids_yt[0] + "?rel=0"
+        else:
+            _src_pl = None
+        if _src_pl:
+            st.markdown(
+                '<div style="border-radius:12px; overflow:hidden; border:1px solid #27306b; margin:0 10px 15px 10px;">'
+                '<iframe src="' + _src_pl + '" width="100%" height="360" style="border:none;" '
+                'title="Playlist" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>',
+                unsafe_allow_html=True)
         st.markdown("### 🎬 Morceaux en vidéo")
+        
         for v in videos_yt:
             with st.expander("🎵 " + (v["title"] or "(sans titre)")):
                 try:
