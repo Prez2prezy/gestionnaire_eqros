@@ -508,15 +508,15 @@ def show_diocese():
                 # v7.6.6 — DEMANDE 5 & 6 : les archives (prières, méditations,
                 # musiques, actualités) NE PASSENT PLUS ICI (onglet 📖 Archives).
                 # Ce gestionnaire ne garde que les contenus divers, avec coches.
-                st.caption("Contenus DIVERS (hors archives, hors bandes défilantes). "
-                           "Prières, méditations, musiques et actualités : voir l'onglet 📖 Archives.")
+                st.caption("Contenus DIVERS : actualités 📰 et tout autre type futur "
+                           "(hors prières 🙏, méditations 📖, musiques 🎵 et bandes défilantes).")
                 contenus = c.execute("""SELECT id, type_contenu, titre, date_publication, image_url, fichier_url, paroisse_cible
                                         FROM espace_spirituel
-                                        WHERE type_contenu NOT IN ('annonce_defilante','priere','meditation','audio','actualite')
+                                        WHERE type_contenu NOT IN ('annonce_defilante','priere','meditation','audio')
                                         ORDER BY date_publication DESC, id DESC""").fetchall()
                 if not contenus:
-                    st.info("Aucun contenu divers. Les prières, méditations, musiques et actualités "
-                            "sont gérées dans l'onglet 📖 Archives.")
+                    st.info("Aucun contenu divers. Les prières 🙏, méditations 📖 et musiques 🎵 "
+                            "ont leurs onglets dédiés ci-dessus — les actualités 📰 apparaissent ici.")
                 else:
                     _paroisses_map = {p[0]: p[1] for p in c.execute("SELECT id, nom FROM paroisses").fetchall()}
                     _coches_autres = []
