@@ -446,19 +446,25 @@ def show_diocese():
                    "Ce qui est validé rejoint l'Espace de Prière : évangélisation élargie, membres et visiteurs.")
         afficher_messages_flash()
 
-        tab_com, tab_manage = st.tabs(["📡 Communication", "📋 Contenu existant"])
+        # v7.7 — navigation à MÉMOIRE : la sélection survit aux rechargements
+        # (coches, suppressions). Les onglets simples repartaient au 1er.
+        _vue_dio = st.radio("Section", ["📡 Communication", "📋 Contenu existant"],
+                            key="dio_esprit_vue", horizontal=True, label_visibility="collapsed")
 
-        with tab_com:
+        if _vue_dio == "📡 Communication":
             st.caption("🕯️ Le SAS : la cellule Communication prépare et soumet — VOUS seul validez et publiez. "
                        "Chaque contenu validé rejoint sa zone dédiée de l'Espace de Prière. "
                        "En bas du SAS : vos outils de gestion du thème (activation, sous-thèmes, liens).")
             from views.view_communication_validation import show_validation_communication
             show_validation_communication()
 
-        with tab_manage:
-            t_bandes, t_pm, t_mu, t_autres = st.tabs(["📺 Bandes défilantes actives", "🙏 Prières / 📖 Méditations", "🎵 Musiques", "📦 Autres contenus"])
+        else:
+            _vue_exist = st.radio("Catégorie",
+                                  ["📺 Bandes défilantes actives", "Prières 🙏 / Méditations 📖",
+                                   "Musiques 🎵", "📦 Autres contenus"],
+                                  key="dio_exist_vue", horizontal=True, label_visibility="collapsed")
 
-            with t_bandes:
+            if _vue_exist == "📺 Bandes défilantes actives":
                 st.caption("Maximum 3 bandes actives — seules les plus récentes s'affichent dans l'entête des espaces. "
                            "Les bandes sont soumises par le Service Communication puis validées au SAS (📡).")
                 bandes_actives = c.execute("""SELECT id, contenu_texte, fichier_url, date_publication, paroisse_cible FROM espace_spirituel
@@ -484,21 +490,21 @@ def show_diocese():
                                 commit_and_sync()
                                 st.rerun()
 
-            with t_pm:
+            elif _vue_exist == "🙏 Prières/📖 Méditations ":
                 _gestionnaire_archives_espace(
                     "Gestion DÉDIÉE des Prières 🙏 et Méditations 📖 — exactement ce que voit "
                     "l'utilisateur dans sa rubrique 📖 Archives. Cochez puis supprimez en un "
                     "seul clic (avec confirmation).",
                     ("priere", "meditation"), "pm")
 
-            with t_mu:
+            elif _vue_exist == "🎵 Musiques":
                 _gestionnaire_archives_espace(
                     "Gestion DÉDIÉE des Musiques 🎵 — fichiers audio ET vidéos YouTube "
                     "publiés dans la sous-rubrique 🎵 Musiques. Cochez puis supprimez en un "
                     "seul clic (avec confirmation).",
                     ("audio",), "mu")
 
-            with t_autres:
+            else:
                 # v7.6.6 — DEMANDE 5 & 6 : les archives (prières, méditations,
                 # musiques, actualités) NE PASSENT PLUS ICI (onglet 📖 Archives).
                 # Ce gestionnaire ne garde que les contenus divers, avec coches.
