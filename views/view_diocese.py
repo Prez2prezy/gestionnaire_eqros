@@ -459,12 +459,19 @@ def show_diocese():
             show_validation_communication()
 
         else:
+            # v7.7 — libellés déclarés UNE SEULE FOIS : le radio et les
+            # comparaisons utilisent ces variables (aucun risque de décalage
+            # icône/texte ou d'espace en trop).
+            _LBL_BANDES = "📺 Bandes défilantes actives"
+            _LBL_PM = "🙏 Prières / 📖 Méditations"
+            _LBL_MU = "🎵 Musiques"
+            _LBL_AUTRES = "📦 Autres contenus"
+            
             _vue_exist = st.radio("Catégorie",
-                                  ["📺 Bandes défilantes actives", "Prières 🙏 / Méditations 📖",
-                                   "Musiques 🎵", "📦 Autres contenus"],
+                                  [_LBL_BANDES, _LBL_PM, _LBL_MU, _LBL_AUTRES],
                                   key="dio_exist_vue", horizontal=True, label_visibility="collapsed")
 
-            if _vue_exist == "📺 Bandes défilantes actives":
+            if _vue_exist == _LBL_BANDES:
                 st.caption("Maximum 3 bandes actives — seules les plus récentes s'affichent dans l'entête des espaces. "
                            "Les bandes sont soumises par le Service Communication puis validées au SAS (📡).")
                 bandes_actives = c.execute("""SELECT id, contenu_texte, fichier_url, date_publication, paroisse_cible FROM espace_spirituel
@@ -490,14 +497,14 @@ def show_diocese():
                                 commit_and_sync()
                                 st.rerun()
 
-            elif _vue_exist == "🙏 Prières/📖 Méditations ":
+            elif _vue_exist == _LBL_PM:
                 _gestionnaire_archives_espace(
                     "Gestion DÉDIÉE des Prières 🙏 et Méditations 📖 — exactement ce que voit "
                     "l'utilisateur dans sa rubrique 📖 Archives. Cochez puis supprimez en un "
                     "seul clic (avec confirmation).",
                     ("priere", "meditation"), "pm")
 
-            elif _vue_exist == "🎵 Musiques":
+            elif _vue_exist == _LBL_MU:
                 _gestionnaire_archives_espace(
                     "Gestion DÉDIÉE des Musiques 🎵 — fichiers audio ET vidéos YouTube "
                     "publiés dans la sous-rubrique 🎵 Musiques. Cochez puis supprimez en un "
