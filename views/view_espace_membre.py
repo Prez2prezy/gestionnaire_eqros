@@ -512,7 +512,14 @@ def _render_page_theme_ensemble():
     # numérote en ordre PASTORAL (Septembre=1 … Août=12) ; l'affichage lisait
     # le mois CIVIL (octobre=10) → sous-thème jamais retrouvé. Converti.
     _mois_pastoral = ((mois_courant - 9) % 12) + 1
-    sous = get_sous_theme_du_mois(annee_debut, _mois_pastoral)
+    # v7.7 — lecture DIRECTE (avec affiche_url) : l'ancienne fonction datait
+    # d'avant la colonne affiche_url et ne renvoyait jamais l'image.
+    try:
+        sous = c.execute("""SELECT titre, contenu, feuillet_pdf, affiche_url FROM sous_themes
+                            WHERE annee_debut=? AND mois=?""",
+                         (annee_debut, _mois_pastoral)).fetchone()
+    except Exception:
+        sous = None
     if st.query_params.get("debug") == "1":
         st.caption(f"🔎 DEBUG sous-thème — mois civil={mois_courant} → pastoral={_mois_pastoral} | "
                    f"sous-thème {'TROUVÉ' if sous else 'non trouvé'}")
