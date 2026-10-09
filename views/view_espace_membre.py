@@ -575,16 +575,83 @@ GROUPES_CHAPELETS = [
 ]
 
 
+_DIZ_NOTREPERE = ("Notre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\n"
+                  "que ta volonté soit faite\nsur la terre comme au ciel.\n\n"
+                  "Donne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, "
+                  "comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas "
+                  "entrer en tentation, mais délivre-nous du Mal. Amen!")
+
+_DIZ_GLORIA = ("Gloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, "
+               "et semper, et in saecula saeculorum. Amen!\n\nÔ mon Jésus, pardonne-nous nos péchés; "
+               "préserve-nous du feu de l’Enfer, attire au Ciel toutes les âmes, principalement "
+               "celles qui ont le plus besoin de ta miséricorde. Amen!\n\n"
+               "Notre Dame du très Saint Rosaire!\nPriez pour nous!")
+
+
+def _rendre_texte_priere(texte):
+    """Ossature v7.7.2 — rendu d'un texte de prière : une ligne TOUT EN
+    MAJUSCULES devient un titre bleu marine ; les vers et paragraphes sont
+    respectés ; texte noir en serif, aligné à gauche (comme le dépliant)."""
+    _serif = "font-family:Georgia, serif !important; "
+    _sortie = ""
+    _paragraphe = []
+    for _ligne in str(texte).split("\n"):
+        _l = _ligne.strip()
+        _est_titre = (len(_l) >= 3 and _l == _l.upper() and any(ch.isalpha() for ch in _l))
+        if _est_titre:
+            if _paragraphe:
+                _sortie += ('<div style="' + _serif + 'color:#1a1a1a !important; font-size:0.95rem; text-align:left; line-height:1.7; margin:4px 0;">'
+                            + "<br>".join(_paragraphe) + "</div>")
+                _paragraphe = []
+            _sortie += ('<div style="' + _serif + 'color:#1A237E !important; font-weight:bold; font-size:1.05rem; margin:14px 0 6px 0;">'
+                        + html.escape(_l) + "</div>")
+        elif not _l:
+            if _paragraphe:
+                _sortie += ('<div style="' + _serif + 'color:#1a1a1a !important; font-size:0.95rem; text-align:left; line-height:1.7; margin:4px 0;">'
+                            + "<br>".join(_paragraphe) + "</div>")
+                _paragraphe = []
+        else:
+            _paragraphe.append(html.escape(_l))
+    if _paragraphe:
+        _sortie += ('<div style="' + _serif + 'color:#1a1a1a !important; font-size:0.95rem; text-align:left; line-height:1.7; margin:4px 0;">'
+                    + "<br>".join(_paragraphe) + "</div>")
+    return _sortie
+
+
+def _carte_priere(titre_carte, corps_html):
+    """Ossature v7.7.2 — carte jaune du dépliant : titre bleu + corps noir."""
+    return ('<div style="background:#FFF9C4 !important; border-radius:12px; padding:14px 16px; margin:8px 6px;">'
+            '<div style="font-family:Georgia, serif !important; color:#1A237E !important; font-weight:bold; font-size:1.02rem; border-bottom:2px solid #1A237E; padding-bottom:4px; margin-bottom:8px;">'
+            + html.escape(titre_carte) + "</div>" + corps_html + "</div>")
+
+
+def _carte_etape(libelle):
+    """Ossature v7.7.2 — badge d'étape : bleu foncé, texte doré (dépliant)."""
+    return ('<div style="background:#1A237E; border-radius:10px; padding:10px 18px; text-align:center; margin:12px 6px 8px 6px;">'
+            '<div style="color:#FFD000 !important; font-weight:bold; font-size:1.05rem;">' + libelle + "</div></div>")
+
+
 def _render_page_rosaire_eyquem():
-    """📿 Rosaire → L'esprit du Père Eyquem : prière + 4 chapelets cliquables."""
+    """📿 Rosaire → L'esprit du Père Eyquem : LE ROSAIRE COMPLET (ossature v7.7.2).
+    Les méditations du livre « Un jour, une dizaine » compilées les unes après
+    les autres : carte d'étape A (début), les 20 mystères, carte d'étape F (fin)."""
     st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                 ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
                 ' border:2px solid #FFD700;">'
                 '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold;">📿 Le Rosaire complet selon l’esprit du Père Eyquem</div>'
-                '<div style="color:#e8eaf6 !important; font-size:0.9rem; margin-top:6px;">Quatre chapelets, vingt mystères — la prière du fondateur des Équipes du Rosaire · v7.6</div></div>',
+                '<div style="color:#e8eaf6 !important; font-size:0.9rem; margin-top:6px;">Vingt mystères médités en chaîne universelle — l’Esprit du fondateur des Équipes du Rosaire · v7.7</div></div>',
                 unsafe_allow_html=True)
-    st.markdown(_rendre_intro_eyquem("INTRODUCTION"), unsafe_allow_html=True)
 
+    # ---------- A. DÉBUT DU ROSAIRE COMPLET ----------
+    st.markdown(_carte_etape("✝️ DÉBUT DU ROSAIRE COMPLET"), unsafe_allow_html=True)
+    with st.expander("🚩 Un début"):
+        st.markdown(_carte_priere("INTRODUCTION", _rendre_texte_priere(DIZ_INTRO1)), unsafe_allow_html=True)
+    with st.expander("📿 L’introduction de la prière"):
+        st.markdown(_carte_priere("INTRODUCTION (SUITE)", _rendre_texte_priere(DIZ_INTRO2)), unsafe_allow_html=True)
+    with st.expander("🙏 La prière à la Vierge du Père Eyquem"):
+        st.markdown(_rendre_intro_eyquem("INTRODUCTION"), unsafe_allow_html=True)
+
+    # ---------- B-E. LES 20 MYSTÈRES (compilés du livre) ----------
     for nom_type, debut, fin, resume in GROUPES_CHAPELETS:
         couleur_forte = COULEURS_TYPES.get(nom_type.lower(), "#9E9E9E")
         couleur_claire = COULEURS_CLAIRES.get(nom_type.lower(), "#e8eaf6")
@@ -592,20 +659,57 @@ def _render_page_rosaire_eyquem():
             '<div style="background:#121a45; border-radius:15px; margin:10px 10px 4px 10px; padding:14px 20px; border:1px solid #27306b; border-left:6px solid ' + couleur_forte + ';">'
             '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:1.05rem;">✝️ Mystères ' + nom_type + "</div>"
             '<div style="color:#c7cdf5 !important; font-size:0.85rem; margin-top:2px;">' + html.escape(resume) + "</div>"
-            '<div style="color:#ffe082 !important; font-size:0.8rem; font-style:italic; margin-top:4px;">👆 Touchez un mystère pour lire passage et méditation</div>'
             "</div>", unsafe_allow_html=True)
         for m in MYSTERES:
             if not (debut <= m.get("id", 0) <= fin):
                 continue
             with st.expander(f'{m.get("id", 0):02d} — {(m.get("titre") or "").title()}  ·  {m.get("reference") or ""}'):
-                passage_html = html.escape(m.get("passage") or "").replace("\n", "<br>")
-                medit_html = html.escape(m.get("meditation") or "").replace("\n", "<br>")
-                st.markdown(
-                    '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:0.95rem;">📖 PASSAGE</div>'
-                    '<div style="color:#ffffff !important; font-size:0.95rem; line-height:1.7; margin:6px 0 14px 0;">' + passage_html + "</div>"
-                    '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:0.95rem;">🕯️ MÉDITATION</div>'
-                    '<div style="color:#ffffff !important; font-size:0.95rem; line-height:1.7; margin-top:6px;">' + medit_html + "</div>",
-                    unsafe_allow_html=True)
+                # 1) PASSAGE + MÉDITATION (+ lien thématique)
+                _corps_1 = (_diz_txt("Passage", couleur_forte, "0.98rem", gras=True)
+                            + _diz_txt(m.get("passage") or "", "#1a1a1a")
+                            + _diz_txt("Méditation", couleur_forte, "0.98rem", gras=True)
+                            + _diz_txt(m.get("meditation") or "", "#1a1a1a"))
+                _t_actif = get_theme_actif()
+                if _t_actif:
+                    _lien_txt = get_lien_mystere(_t_actif[2], m.get("id", 0))
+                    if _lien_txt:
+                        _corps_1 += ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:10px 14px; margin:10px 0 2px 0;">'
+                                     '<div style="color:#1A237E !important; font-weight:bold; font-size:0.88rem;">🔗 Lien thématique — '
+                                     + html.escape(_t_actif[0] or "") + "</div>"
+                                     '<div style="color:#1a1a1a !important; font-size:0.92rem; line-height:1.7; margin-top:4px;">'
+                                     + html.escape(_lien_txt).replace("\n", "<br>") + "</div></div>")
+                st.markdown(_carte_priere("MYSTÈRE " + str(m.get("id", 0)).zfill(2), _corps_1), unsafe_allow_html=True)
+                # 2) INTENTIONS + FRUITS
+                _intentions = "".join(
+                    _diz_txt("🕯️ Vierge Marie, mère de Dieu, intercède : " + _l.strip().lstrip("*").strip(), "#1a1a1a")
+                    for _l in (m.get("intentions") or "").split("\n") if _l.strip())
+                _fruits = "".join(
+                    _diz_txt("✨ " + _l.strip(), "#1a1a1a")
+                    for _l in (m.get("fruits") or "").split("\n") if _l.strip())
+                st.markdown(_carte_priere("INTENTIONS ET FRUITS", _intentions + _fruits), unsafe_allow_html=True)
+                # 3) NOTRE PÈRE
+                st.markdown(_carte_priere("NOTRE PÈRE", _rendre_texte_priere(_DIZ_NOTREPERE)), unsafe_allow_html=True)
+                # 4) LES DIX « JE VOUS SALUE MARIE »
+                _cla = m.get("clausules") or []
+                _grains = ""
+                for _g in range(1, 11):
+                    _clausule = _cla[_g - 1] if _g <= len(_cla) else ""
+                    _clausule = "" if _clausule is None else str(_clausule)
+                    _grains += ('<div style="font-family:Georgia, serif !important; color:#1a1a1a !important; font-size:0.93rem; text-align:center; line-height:1.7; margin:12px 0;">'
+                                '<span style="display:inline-block; width:22px; height:22px; border-radius:4px; background:' + couleur_forte + '; color:#ffffff; font-weight:bold; font-size:0.72rem; line-height:22px;">' + str(_g) + "</span><br>"
+                                "Je vous salue Marie, pleine de grâce,<br>le Seigneur est avec vous.<br>Vous êtes bénie entre toutes les femmes,<br>"
+                                '<span style="color:' + couleur_forte + ' !important; font-weight:bold;">et Jésus, ' + html.escape(_clausule) + "</span><br>"
+                                "le fruit de vos entrailles, est béni.<br>"
+                                "Sainte Marie, Mère de Dieu,<br>priez pour nous pauvres pécheurs,<br>maintenant et à l’heure de notre mort. Amen!</div>")
+                st.markdown(_carte_priere("LES DIX « JE VOUS SALUE MARIE »", _grains), unsafe_allow_html=True)
+                # 5) GLORIA
+                st.markdown(_carte_priere("GLORIA", _rendre_texte_priere(_DIZ_GLORIA)), unsafe_allow_html=True)
+
+    # ---------- F. FIN DU ROSAIRE ----------
+    st.markdown(_carte_etape("🕯️ FIN DU ROSAIRE"), unsafe_allow_html=True)
+    with st.expander("🕊️ La prière finale"):
+        st.markdown(_carte_priere("PRIÈRE FINALE", _rendre_texte_priere(DIZ_OUTRO)), unsafe_allow_html=True)
+
     st.info("📿 La dizaine du jour vous attend sur l'Accueil (🏠 Actualités) — "
             "chaque membre fait avancer la chaîne selon son numéro.")
 
@@ -1530,9 +1634,11 @@ def show_espace_membre(matloc_membre=None):
             _render_dizaine_du_jour(est_membre=False)
             return
 
-        st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
-                    '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
-                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · v7.6</div></div>', unsafe_allow_html=True)
+        # v7.7.2 — le badge de bienvenue n'apparaît QUE sur l'accueil
+        if rub == "🏠 Actualités":
+            st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
+                        '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
+                        '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · v7.6</div></div>', unsafe_allow_html=True)
 
         if rub == "📿 Rosaire":
             if sub == "Le thème de l'année":
@@ -1613,9 +1719,11 @@ def show_espace_membre(matloc_membre=None):
         d_adh = safe_date(membre[5])
         st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
 
-    st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
-                '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
-                '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · v7.6</div></div>', unsafe_allow_html=True)
+    # v7.7.2 — le badge de bienvenue n'apparaît QUE sur l'accueil
+    if rub == "🏠 Actualités":
+        st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
+                    '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
+                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · v7.6</div></div>', unsafe_allow_html=True)
 
     if rub == "📅 Mes évènements":
         if membre[10] is None:
