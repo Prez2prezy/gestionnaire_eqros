@@ -449,18 +449,26 @@ COULEURS_CLAIRES = {"joyeux": "#FF80AB", "lumineux": "#9FA8DA",
 
 
 def _rendre_intro_eyquem(titre_carte="INTRODUCTION"):
-    """Carte de la prière du Père Eyquem. Couleurs critiques en !important."""
+    """Carte de la prière du Père Eyquem — rendu CONFORME AU DÉPLIANT (v7.7.1) :
+    texte centré en serif, retours à la ligne respectés, titre de la prière en
+    bleu marine, refrains en rouge gras, signature en italique centrée."""
     texte = DIZ_INTRO3
-    t_esc = html.escape(texte)
-    t_esc = t_esc.replace("[R]", '</div><div style="color:#D32F2F !important; font-size:0.98rem; font-weight:bold; text-align:center; line-height:1.7; margin:8px 0;">')
-    t_esc = t_esc.replace("[/R]", '</div><div style="color:#1a1a1a !important; font-size:0.95rem; line-height:1.7; margin:8px 0;">')
-    t_esc = t_esc.replace("[I]", '</div><div style="color:#1a1a1a !important; font-size:0.95rem; font-style:italic; text-align:center; line-height:1.7; margin:8px 0;">')
+    _morceaux = texte.split("\n", 1)
+    titre_priere = _morceaux[0].strip()
+    reste = _morceaux[1].strip() if len(_morceaux) > 1 else ""
+    _serif = "font-family:Georgia, serif !important; "
+    t_esc = html.escape(reste).replace("\n", "<br>")
+    t_esc = t_esc.replace("[R]", '</div><div style="' + _serif + 'color:#D32F2F !important; font-size:0.98rem; font-weight:bold; text-align:center; line-height:1.7; margin:8px 0;">')
+    t_esc = t_esc.replace("[/R]", '</div><div style="' + _serif + 'color:#1a1a1a !important; font-size:0.95rem; text-align:center; line-height:1.7; margin:8px 0;">')
+    t_esc = t_esc.replace("[I]", '</div><div style="' + _serif + 'color:#1a1a1a !important; font-size:0.95rem; font-style:italic; text-align:center; line-height:1.7; margin:8px 0;">')
     t_esc = t_esc.replace("[/I]", "</div>")
-    corps_intro = '<div style="color:#1a1a1a !important; font-size:0.95rem; line-height:1.7; margin:8px 0;">' + t_esc
+    corps_intro = '<div style="' + _serif + 'color:#1a1a1a !important; font-size:0.95rem; text-align:center; line-height:1.7; margin:8px 0;">' + t_esc
     return (
         '<div style="background:#FFF9C4 !important; border-radius:12px; padding:18px; margin:6px;">'
         '<div style="color:#1A237E !important; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">'
         + html.escape(titre_carte) + "</div>"
+        '<div style="' + _serif + 'color:#1A237E !important; font-weight:bold; font-size:1.12rem; text-align:center; margin:14px 0 10px 0;">'
+        + html.escape(titre_priere) + "</div>"
         + corps_intro + "</div>")
 
 
@@ -575,7 +583,7 @@ def _render_page_rosaire_eyquem():
                 '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold;">📿 Le Rosaire complet selon l’esprit du Père Eyquem</div>'
                 '<div style="color:#e8eaf6 !important; font-size:0.9rem; margin-top:6px;">Quatre chapelets, vingt mystères — la prière du fondateur des Équipes du Rosaire · v7.6</div></div>',
                 unsafe_allow_html=True)
-    st.markdown(_rendre_intro_eyquem("PRIÈRE À LA VIERGE — Frère Joseph EYQUEM, o.p."), unsafe_allow_html=True)
+    st.markdown(_rendre_intro_eyquem("INTRODUCTION"), unsafe_allow_html=True)
 
     for nom_type, debut, fin, resume in GROUPES_CHAPELETS:
         couleur_forte = COULEURS_TYPES.get(nom_type.lower(), "#9E9E9E")
@@ -883,7 +891,7 @@ def _render_page_archives_audios(pid=None):
                 'title="Playlist" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>',
                 unsafe_allow_html=True)
         st.markdown("### 🎬 Morceaux en vidéo")
-        
+
         for v in videos_yt:
             with st.expander("🎵 " + (v["title"] or "(sans titre)")):
                 try:
