@@ -314,17 +314,23 @@ def _render_theme(compact=False):
         .stApp .stMarkdown .rub-photo { height:230px; }
     }
     .stApp .stMarkdown h3 { color: #FFD000 !important; font-size: clamp(0.95rem, 4.2vw, 1.25rem) !important; }
-    /* === CARTES PRIÈRE v7.7.3 — verrouillage lisibilité (bat le thème sombre) === */
+    /* === CARTES PRIÈRE v7.7.4 — verrouillage lisibilité (bat le thème sombre) === */
     .stApp .stMarkdown .carte-priere { background:#FFF9C4 !important; border-radius:12px; padding:14px 16px; margin:8px 6px; }
     .stApp .stMarkdown .carte-priere, .stApp .stMarkdown .carte-priere * { font-family:Georgia, serif !important; color:#1a1a1a !important; }
     .stApp .stMarkdown .carte-priere .cp-para { font-size:0.95rem; text-align:left; line-height:1.7; margin:6px 0; }
     .stApp .stMarkdown .carte-priere .cp-titre { color:#1A237E !important; font-weight:bold; font-size:1.02rem; border-bottom:1.5px solid #1A237E; padding-bottom:3px; margin:12px 0 8px 0; }
-    .stApp .stMarkdown .carte-priere .cp-rouge { color:#D32F2F !important; font-weight:bold; font-size:0.98rem; text-align:center; line-height:1.6; margin:10px 0 2px 0; }
+    .stApp .stMarkdown .carte-priere .cp-rouge { color:#D32F2F !important; font-weight:bold; font-size:0.98rem; text-align:inherit; line-height:1.6; margin:16px 0 4px 0; }
     .stApp .stMarkdown .carte-priere .cp-italique { font-style:italic !important; text-align:center; }
     .stApp .stMarkdown .carte-priere .cp-trait { border:none; border-top:1px solid #1A237E; margin:14px auto; }
     .stApp .stMarkdown .carte-priere .cp-bande { font-weight:bold; border-radius:8px; padding:8px 12px; text-align:center; margin:0 0 10px 0; font-family:sans-serif !important; }
     .stApp .stMarkdown .carte-priere .cp-photo { width:100%; max-width:860px; height:150px; object-fit:contain; border-radius:8px; display:block; margin:0 auto 10px auto; }
-    @media (min-width:769px) { .stApp .stMarkdown .carte-priere .cp-photo { height:230px; } }    
+    .stApp .stMarkdown .carte-priere .cp-accent { color:var(--c) !important; font-weight:bold; font-size:0.98rem; margin:10px 0 2px 0; }
+    .stApp .stMarkdown .carte-priere .cp-accent-inline { color:var(--c) !important; font-weight:bold; }
+    .stApp .stMarkdown .carte-priere .cp-accent-bg { background:var(--c) !important; color:#ffffff !important; }
+    .stApp .stMarkdown .details-mystere { background:#121a45; border:1px solid #27306b; border-left:6px solid var(--c); border-radius:12px; margin:8px 6px; overflow:hidden; }
+    .stApp .stMarkdown .details-mystere summary { list-style:none; cursor:pointer; background:var(--c) !important; color:#ffffff !important; font-weight:bold; font-family:sans-serif !important; padding:10px 16px; font-size:1rem; }
+    .stApp .stMarkdown .details-mystere summary::-webkit-details-marker { display:none; }
+    @media (min-width:769px) { .stApp .stMarkdown .carte-priere .cp-photo { height:230px; } }
     </style>""", unsafe_allow_html=True)
 
 
@@ -459,17 +465,17 @@ COULEURS_CLAIRES = {"joyeux": "#FF80AB", "lumineux": "#9FA8DA",
                     "douloureux": "#F48FB1", "glorieux": "#A5D6A7"}
 
 
-def _rendre_intro_eyquem(titre_carte="INTRODUCTION", afficher_titres=True):
-    """v7.7.3 — carte de la prière du Père Eyquem, conforme au dépliant.
-    afficher_titres=False (page Rosaire) : sans les titres, l'expander les
-    nomme déjà. Refrains rouges avec trait fin dessous (2 dans cette prière)."""
+def _rendre_intro_eyquem(titre_carte="INTRODUCTION", afficher_titres=True, trait_debut=False):
+    """v7.7.4 — carte de la prière du Père Eyquem, conforme au dépliant.
+    Refrains rouges SANS soulignement, alignés comme le texte ; trait de
+    début optionnel (page Rosaire) ; titres optionnels (livre de la dizaine)."""
     texte = DIZ_INTRO3
     _morceaux = texte.split("\n", 1)
     titre_priere = _morceaux[0].strip()
     reste = _morceaux[1].strip() if len(_morceaux) > 1 else ""
     t_esc = html.escape(reste).replace("\n", "<br>")
     t_esc = t_esc.replace("[R]", '</div><div class="cp-rouge">')
-    t_esc = t_esc.replace("[/R]", '</div><div class="cp-trait" style="max-width:260px; margin:6px auto;"></div><div class="cp-para">')
+    t_esc = t_esc.replace("[/R]", '</div><div class="cp-para">')
     t_esc = t_esc.replace("[I]", '</div><div class="cp-italique">')
     t_esc = t_esc.replace("[/I]", "</div>")
     corps = '<div class="cp-para">' + t_esc
@@ -477,7 +483,8 @@ def _rendre_intro_eyquem(titre_carte="INTRODUCTION", afficher_titres=True):
     if afficher_titres:
         _entete = ('<div class="cp-titre">' + html.escape(titre_carte) + "</div>"
                    '<div class="cp-titre" style="text-align:center;">' + html.escape(titre_priere) + "</div>")
-    return '<div class="carte-priere">' + _entete + corps + "</div>"
+    _trait = '<div class="cp-trait" style="margin-top:4px;"></div>' if trait_debut else ""
+    return '<div class="carte-priere">' + _trait + _entete + corps + "</div>"
 
 
 # ====================================================================
@@ -634,12 +641,19 @@ _DIZ_INTRO2_ESPACE = (
 
 
 def _rendre_texte_priere(texte):
-    """v7.7.3 — rendu d'un texte de prière. Ligne TOUT MAJUSCULES :
-    titre bleu + trait fin (si AFFICHER_TITRES_SECTIONS), sinon trait seul."""
+    """v7.7.4 — rendu d'un texte de prière. Ligne TOUT MAJUSCULES : trait fin
+    (ou titre bleu si AFFICHER_TITRES_SECTIONS). Ligne « ===TRAIT=== » :
+    trait de séparation inséré manuellement."""
     _sortie = ""
     _paragraphe = []
     for _ligne in str(texte).split("\n"):
         _l = _ligne.strip()
+        if _l == "===TRAIT===":
+            if _paragraphe:
+                _sortie += '<div class="cp-para">' + "<br>".join(_paragraphe) + "</div>"
+                _paragraphe = []
+            _sortie += '<div class="cp-trait"></div>'
+            continue
         _est_titre = (len(_l) >= 3 and _l == _l.upper() and any(ch.isalpha() for ch in _l))
         if _est_titre:
             if _paragraphe:
@@ -678,7 +692,7 @@ def _carte_etape(libelle):
 
 
 def _render_page_rosaire_eyquem():
-    """📿 Rosaire → Le Rosaire complet en Équipe (v7.7.3)."""
+    """📿 Rosaire → Le Rosaire complet en Équipe (v7.7.4)."""
     st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                 ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
                 ' border:2px solid #FFD700;">'
@@ -686,14 +700,16 @@ def _render_page_rosaire_eyquem():
                 '<div style="color:#e8eaf6 !important; font-size:0.9rem; margin-top:6px;">Vingt mystères médités en chaîne universelle · v7.7</div></div>',
                 unsafe_allow_html=True)
 
+    # ---------- A. DÉBUT ----------
     st.markdown(_carte_etape("✝️ DÉBUT DU ROSAIRE COMPLET"), unsafe_allow_html=True)
-    with st.expander("🚩 Un début"):
+    with st.expander("🚩 Débutons notre méditation"):
         st.markdown(_carte_priere(_trait_debut_page() + _rendre_texte_priere(DIZ_INTRO1)), unsafe_allow_html=True)
-    with st.expander("📿 L’introduction de la prière"):
-        st.markdown(_carte_priere(_trait_debut_page() + _rendre_texte_priere(_DIZ_INTRO2_ESPACE)), unsafe_allow_html=True)
-    with st.expander("🙏 La prière à la Vierge du Père Eyquem"):
-        st.markdown(_rendre_intro_eyquem("INTRODUCTION", afficher_titres=False), unsafe_allow_html=True)
+    with st.expander("📿 Introduction de la prière"):
+        st.markdown(_carte_priere(_rendre_texte_priere(_DIZ_INTRO2_ESPACE)), unsafe_allow_html=True)
+    with st.expander("🙏 Prière à la Vierge du Père Eyquem"):
+        st.markdown(_rendre_intro_eyquem("INTRODUCTION", afficher_titres=False, trait_debut=True), unsafe_allow_html=True)
 
+    # ---------- B-E. LES 20 MYSTÈRES ----------
     for nom_type, debut, fin, resume in GROUPES_CHAPELETS:
         couleur_forte = COULEURS_TYPES.get(nom_type.lower(), "#9E9E9E")
         couleur_claire = COULEURS_CLAIRES.get(nom_type.lower(), "#e8eaf6")
@@ -705,52 +721,61 @@ def _render_page_rosaire_eyquem():
         for m in MYSTERES:
             if not (debut <= m.get("id", 0) <= fin):
                 continue
-            with st.expander(f'{m.get("id", 0):02d} — {(m.get("titre") or "").title()}  ·  {m.get("reference") or ""}'):
-                _photo = PHOTOS_MYSTERES.get(m.get("id", 0)) or ""
-                _photo_html = '<img class="cp-photo" src="' + _photo + '" alt="">' if _photo.startswith("http") else ""
-                _bandeau = ('<div class="cp-bande" style="background:' + couleur_forte + ' !important; color:#ffffff !important;">'
-                            + str(m.get("id", 0)).zfill(2) + " — " + html.escape((m.get("titre") or "").title())
-                            + " · " + html.escape(m.get("reference") or "") + "</div>")
-                _corps_1 = (_photo_html + _bandeau
-                            + '<div style="color:' + couleur_forte + ' !important; font-weight:bold; font-size:0.98rem; margin:10px 0 2px 0;">Passage</div>'
-                            + '<div class="cp-para">' + html.escape(m.get("passage") or "").replace("\n", "<br>") + "</div>"
-                            + '<div style="color:' + couleur_forte + ' !important; font-weight:bold; font-size:0.98rem; margin:10px 0 2px 0;">Méditation</div>'
-                            + '<div class="cp-para">' + html.escape(m.get("meditation") or "").replace("\n", "<br>") + "</div>")
-                _t_actif = get_theme_actif()
-                if _t_actif:
-                    _lien_txt = get_lien_mystere(_t_actif[2], m.get("id", 0))
-                    if _lien_txt:
-                        _corps_1 += ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:10px 14px; margin:10px 0 2px 0;">'
-                                     '<div style="color:#1A237E !important; font-weight:bold; font-size:0.88rem;">🔗 Lien thématique — '
-                                     + html.escape(_t_actif[0] or "") + "</div>"
-                                     '<div style="color:#1a1a1a !important; font-size:0.92rem; line-height:1.7; margin-top:4px;">'
-                                     + html.escape(_lien_txt).replace("\n", "<br>") + "</div></div>")
-                st.markdown(_carte_priere(_corps_1, couleur_forte), unsafe_allow_html=True)
-                _intentions = "".join(
-                    _diz_txt("🕯️ Vierge Marie, mère de Dieu, intercède : " + _l.strip().lstrip("*").strip(), "#1a1a1a")
-                    for _l in (m.get("intentions") or "").split("\n") if _l.strip())
-                _fruits = "".join(
-                    _diz_txt("✨ " + _l.strip(), "#1a1a1a")
-                    for _l in (m.get("fruits") or "").split("\n") if _l.strip())
-                st.markdown(_carte_priere(_intentions + _fruits, couleur_forte), unsafe_allow_html=True)
-                st.markdown(_carte_priere(_rendre_texte_priere(_DIZ_NOTREPERE), couleur_forte), unsafe_allow_html=True)
-                _cla = m.get("clausules") or []
-                _grains = ""
-                for _g in range(1, 11):
-                    _clausule = _cla[_g - 1] if _g <= len(_cla) else ""
-                    _clausule = "" if _clausule is None else str(_clausule)
-                    _grains += ('<div class="cp-para" style="text-align:center; margin:12px 0;">'
-                                '<span style="display:inline-block; width:22px; height:22px; border-radius:4px; background:' + couleur_forte + ' !important; color:#ffffff !important; font-weight:bold; font-size:0.72rem; line-height:22px;">' + str(_g) + "</span><br>"
-                                "Je vous salue Marie, pleine de grâce,<br>le Seigneur est avec vous.<br>Vous êtes bénie entre toutes les femmes,<br>"
-                                '<span style="color:' + couleur_forte + ' !important; font-weight:bold;">et Jésus, ' + html.escape(_clausule) + "</span><br>"
-                                "le fruit de vos entrailles, est béni.<br>"
-                                "Sainte Marie, Mère de Dieu,<br>priez pour nous pauvres pécheurs,<br>maintenant et à l’heure de notre mort. Amen!</div>")
-                st.markdown(_carte_priere(_grains, couleur_forte), unsafe_allow_html=True)
-                st.markdown(_carte_priere(_rendre_texte_priere(_DIZ_GLORIA), couleur_forte), unsafe_allow_html=True)
+            _mid = m.get("id", 0)
+            _photo = PHOTOS_MYSTERES.get(_mid) or ""
+            _photo_html = '<img class="cp-photo" src="' + _photo + '" alt="">' if _photo.startswith("http") else ""
+            _bandeau = ('<div class="cp-bande" style="background:' + couleur_forte + ' !important; color:#ffffff !important;">'
+                        + str(_mid).zfill(2) + " — " + html.escape((m.get("titre") or "").title())
+                        + " · " + html.escape(m.get("reference") or "") + "</div>")
+            _corps_1 = (_trait_debut_page() + _photo_html + _bandeau
+                        + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Passage</div>'
+                        + '<div class="cp-para">' + html.escape(m.get("passage") or "").replace("\n", "<br>") + "</div>"
+                        + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Méditation</div>'
+                        + '<div class="cp-para">' + html.escape(m.get("meditation") or "").replace("\n", "<br>") + "</div>")
+            _t_actif = get_theme_actif()
+            if _t_actif:
+                _lien_txt = get_lien_mystere(_t_actif[2], _mid)
+                if _lien_txt:
+                    _corps_1 += ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:10px 14px; margin:10px 0 2px 0;">'
+                                 '<div style="color:#1A237E !important; font-weight:bold; font-size:0.88rem;">🔗 Lien thématique — '
+                                 + html.escape(_t_actif[0] or "") + "</div>"
+                                 '<div style="color:#1a1a1a !important; font-size:0.92rem; line-height:1.7; margin-top:4px;">'
+                                 + html.escape(_lien_txt).replace("\n", "<br>") + "</div></div>")
+            _intentions = ('<div class="cp-accent" style="--c:' + couleur_forte + ';">Intentions</div>'
+                           + "".join(
+                               _diz_txt("🕯️ Vierge Marie, mère de Dieu, intercède : " + _l.strip().lstrip("*").strip(), "#1a1a1a")
+                               for _l in (m.get("intentions") or "").split("\n") if _l.strip()))
+            _fruits = ('<div class="cp-accent" style="--c:' + couleur_forte + ';">Fruits du mystère</div>'
+                       + "".join(
+                           _diz_txt("✨ " + _l.strip(), "#1a1a1a")
+                           for _l in (m.get("fruits") or "").split("\n") if _l.strip()))
+            _cla = m.get("clausules") or []
+            _grains = ""
+            for _g in range(1, 11):
+                _clausule = _cla[_g - 1] if _g <= len(_cla) else ""
+                _clausule = "" if _clausule is None else str(_clausule)
+                _grains += ('<div class="cp-para" style="text-align:center; margin:12px 0;">'
+                            '<span class="cp-accent-bg" style="--c:' + couleur_forte + '; display:inline-block; width:22px; height:22px; border-radius:4px; font-size:0.72rem; line-height:22px;">' + str(_g) + "</span><br>"
+                            "Je vous salue Marie, pleine de grâce,<br>le Seigneur est avec vous.<br>Vous êtes bénie entre toutes les femmes,<br>"
+                            '<span class="cp-accent-inline" style="--c:' + couleur_forte + ';">et Jésus, ' + html.escape(_clausule) + "</span><br>"
+                            "le fruit de vos entrailles, est béni.<br>"
+                            "Sainte Marie, Mère de Dieu,<br>priez pour nous pauvres pécheurs,<br>maintenant et à l’heure de notre mort. Amen!</div>")
+            _details = ('<details class="details-mystere" style="--c:' + couleur_forte + ';">'
+                        "<summary>" + str(_mid).zfill(2) + "</summary>"
+                        '<div style="padding:6px 8px 8px 8px;">'
+                        + _carte_priere(_corps_1, couleur_forte)
+                        + _carte_priere(_intentions + _fruits, couleur_forte)
+                        + _carte_priere(_rendre_texte_priere(_DIZ_NOTREPERE), couleur_forte)
+                        + _carte_priere(_grains, couleur_forte)
+                        + _carte_priere(_rendre_texte_priere(_DIZ_GLORIA), couleur_forte)
+                        + "</div></details>")
+            st.markdown(_details, unsafe_allow_html=True)
 
+    # ---------- F. FIN ----------
     st.markdown(_carte_etape("🕯️ FIN DU ROSAIRE"), unsafe_allow_html=True)
-    with st.expander("🕊️ La prière finale"):
-        st.markdown(_carte_priere(_trait_debut_page() + _rendre_texte_priere(DIZ_OUTRO)), unsafe_allow_html=True)
+    with st.expander("Prière finale"):
+        _txt_fin = DIZ_OUTRO.replace("Ô Marie, conçue sans péché!", "===TRAIT===\nÔ Marie, conçue sans péché!", 1)
+        st.markdown(_carte_priere(_rendre_texte_priere(_txt_fin)), unsafe_allow_html=True)
 
     st.info("📿 La dizaine du jour vous attend sur l'Accueil (🏠 Actualités) — "
             "chaque membre fait avancer la chaîne selon son numéro.")
