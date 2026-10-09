@@ -590,10 +590,10 @@ AFFICHER_TITRES_SECTIONS = False
 
 # 🖼️ PHOTOS DES MYSTÈRES — collez ici vos liens imgbb (Direct link) :
 PHOTOS_MYSTERES = {
-    1: "https://i.ibb.co/fdsv8yVd/mysteres-1.webp", 2: "https://i.ibb.co/dJL5GpXz/mysteres-2.webp", 3: "https://i.ibb.co/spXgWNQG/mysteres-3.webp", 4: "https://i.ibb.co/0sXgWNQG/mysteres-4.webp", 5: "https://i.ibb.co/1sXgWNQG/mysteres-5.webp",
-    6: "https://i.ibb.co/2sXgWNQG/mysteres-6.webp", 7: "https://i.ibb.co/3sXgWNQG/mysteres-7.webp", 8: "https://i.ibb.co/4sXgWNQG/mysteres-8.webp", 9: "https://i.ibb.co/5sXgWNQG/mysteres-9.webp", 10: "https://i.ibb.co/6sXgWNQG/mysteres-10.webp",
-    11: "https://i.ibb.co/7sXgWNQG/mysteres-11.webp", 12: "https://i.ibb.co/8sXgWNQG/mysteres-12.webp", 13: "https://i.ibb.co/9sXgWNQG/mysteres-13.webp", 14: "https://i.ibb.co/0tXgWNQG/mysteres-14.webp", 15: "https://i.ibb.co/1tXgWNQG/mysteres-15.webp",
-    16: "https://i.ibb.co/2tXgWNQG/mysteres-16.webp", 17: "https://i.ibb.co/3tXgWNQG/mysteres-17.webp", 18: "https://i.ibb.co/4tXgWNQG/mysteres-18.webp", 19: "https://i.ibb.co/5tXgWNQG/mysteres-19.webp", 20: "https://i.ibb.co/6tXgWNQG/mysteres-20.webp",
+    1: "https://i.ibb.co/fdsv8yVd/mysteres-1.webp", 2: "https://i.ibb.co/dJL5GpXz/mysteres-2.webp", 3: "https://i.ibb.co/spXgWNQG/mysteres-3.webp", 4: "https://i.ibb.co/35HmgkLB/mysteres-4.webp", 5: "https://i.ibb.co/9kFZDf3X/mysteres-5.webp",
+    6: "https://i.ibb.co/GBcT1JJ/mysteres-6.webp", 7: "https://i.ibb.co/0yqC0kMj/mysteres-7.webp", 8: "https://i.ibb.co/xKdZnJGg/mysteres-8.webp", 9: "https://i.ibb.co/JWcN0FfL/mysteres-9.webp", 10: "https://i.ibb.co/20bHZjfr/mysteres-10.webp",
+    11: "https://i.ibb.co/s9MNpJSZ/mysteres-11.webp", 12: "https://i.ibb.co/pBfD7qpV/mysteres-12.webp", 13: "https://i.ibb.co/23FyJvNY/mysteres-13.webp", 14: "https://i.ibb.co/M5c9m7hj/mysteres-14.webp", 15: "https://i.ibb.co/LzxLrd5G/mysteres-15.webp",
+    16: "https://i.ibb.co/HL89nG7K/mysteres-16.webp", 17: "https://i.ibb.co/CsnpR8JV/mysteres-17.webp", 18: "https://i.ibb.co/8ncVZgcy/mysteres-18.webp", 19: "https://i.ibb.co/5gnfKCrs/mysteres-19.webp", 20: "https://i.ibb.co/vvMdjknN/mysteres-20.webp",
 }
 
 _DIZ_NOTREPERE = ("Notre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\n"
