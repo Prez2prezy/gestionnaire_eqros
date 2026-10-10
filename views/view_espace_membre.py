@@ -39,7 +39,7 @@ RUBRIQUES_MEMBRE = ["🏠 Actualités", "🕯️ Thème", "📿 Rosaire", "📅 
 RUBRIQUES_PUBLIC = ["🏠 Actualités", "📿 Rosaire", "🕯️ Thème", "📖 Archives"]
 SOUS_RUBRIQUES = {
     "🕯️ Thème": ["🔭 Vue d'ensemble", "🎓 Enseignements", "💬 Discussions"],
-    "📿 Rosaire": ["L'esprit du Père Eyquem", "Le thème de l'année"],
+    "📿 Rosaire": ["Le Rosaire chez les Équipiers", "Le Rosaire thèmatique"],
     "📖 Archives": ["🙏 Prières", "📖 Méditations", "🎵 Musiques"],
 }
 
@@ -696,7 +696,7 @@ def _render_page_rosaire_eyquem():
     st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                 ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
                 ' border:2px solid #FFD700;">'
-                '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold;">📿 Le Rosaire complet en Équipe</div>'
+                '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold;">📿 Le Rosaire chez les Équipiers</div>'
                 '<div style="color:#e8eaf6 !important; font-size:0.9rem; margin-top:6px;">Vingt mystères médités en chaîne universelle · v7.7</div></div>',
                 unsafe_allow_html=True)
 
