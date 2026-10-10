@@ -724,10 +724,7 @@ def _render_page_rosaire_eyquem():
             _mid = m.get("id", 0)
             _photo = PHOTOS_MYSTERES.get(_mid) or ""
             _photo_html = '<img class="cp-photo" src="' + _photo + '" alt="">' if _photo.startswith("http") else ""
-            _bandeau = ('<div class="cp-bande" style="background:' + couleur_forte + ' !important; color:#ffffff !important;">'
-                        + str(_mid).zfill(2) + " — " + html.escape((m.get("titre") or "").title())
-                        + " · " + html.escape(m.get("reference") or "") + "</div>")
-            _corps_1 = (_trait_debut_page() + _photo_html + _bandeau
+            _corps_1 = (_trait_debut_page() + _photo_html
                         + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Passage</div>'
                         + '<div class="cp-para">' + html.escape(m.get("passage") or "").replace("\n", "<br>") + "</div>"
                         + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Méditation</div>'
@@ -736,11 +733,9 @@ def _render_page_rosaire_eyquem():
             if _t_actif:
                 _lien_txt = get_lien_mystere(_t_actif[2], _mid)
                 if _lien_txt:
-                    _corps_1 += ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:10px 14px; margin:10px 0 2px 0;">'
-                                 '<div style="color:#1A237E !important; font-weight:bold; font-size:0.88rem;">🔗 Lien thématique — '
+                    _corps_1 += ('<div class="cp-accent" style="--c:' + couleur_forte + ';">🔗 Lien thématique — '
                                  + html.escape(_t_actif[0] or "") + "</div>"
-                                 '<div style="color:#1a1a1a !important; font-size:0.92rem; line-height:1.7; margin-top:4px;">'
-                                 + html.escape(_lien_txt).replace("\n", "<br>") + "</div></div>")
+                                 '<div class="cp-para">' + html.escape(_lien_txt).replace("\n", "<br>") + "</div>")
             _intentions = ('<div class="cp-accent" style="--c:' + couleur_forte + ';">Intentions</div>'
                            + "".join(
                                _diz_txt("🕯️ Vierge Marie, mère de Dieu, intercède : " + _l.strip().lstrip("*").strip(), "#1a1a1a")
@@ -761,7 +756,8 @@ def _render_page_rosaire_eyquem():
                             "le fruit de vos entrailles, est béni.<br>"
                             "Sainte Marie, Mère de Dieu,<br>priez pour nous pauvres pécheurs,<br>maintenant et à l’heure de notre mort. Amen!</div>")
             _details = ('<details class="details-mystere" style="--c:' + couleur_forte + ';">'
-                        "<summary>" + str(_mid).zfill(2) + "</summary>"
+                        "<summary>" + str(_mid).zfill(2) + " — " + html.escape((m.get("titre") or "").title())
+                        + " · " + html.escape(m.get("reference") or "") + "</summary>"
                         '<div style="padding:6px 8px 8px 8px;">'
                         + _carte_priere(_corps_1, couleur_forte)
                         + _carte_priere(_intentions + _fruits, couleur_forte)
@@ -1218,13 +1214,11 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                      + _diz_txt(m.get("meditation") or "", "#1a1a1a"))
             t_actif = get_theme_actif()
             if t_actif:
-                lien_txt = get_lien_mystere(t_actif[2], m["id"])
+                lien_txt = get_lien_mystere(t_actif[2], m.get("id", 0))
                 if lien_txt:
-                    corps += ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:12px 14px; margin:14px 0 2px 0;">'
-                              '<div style="color:#1A237E !important; font-weight:bold; font-size:0.9rem;">🔗 Lien thématique — '
+                    corps += ('<div class="cp-accent" style="--c:' + couleur + ';">🔗 Lien thématique — '
                               + html.escape(t_actif[0] or "") + "</div>"
-                              '<div style="color:#1a1a1a !important; font-size:0.92rem; line-height:1.7; margin-top:6px;">'
-                              + html.escape(lien_txt).replace("\n", "<br>") + "</div></div>")
+                              '<div class="cp-para">' + html.escape(lien_txt).replace("\n", "<br>") + "</div>")
 
         elif page["t"] == "intentions":
             intentions_html = ""
