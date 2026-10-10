@@ -39,7 +39,7 @@ RUBRIQUES_MEMBRE = ["🏠 Actualités", "🕯️ Thème", "📿 Rosaire", "📅 
 RUBRIQUES_PUBLIC = ["🏠 Actualités", "📿 Rosaire", "🕯️ Thème", "📖 Archives"]
 SOUS_RUBRIQUES = {
     "🕯️ Thème": ["🔭 Vue d'ensemble", "🎓 Enseignements", "💬 Discussions"],
-    "📿 Rosaire": ["Le Rosaire chez les Équipiers", "Le Rosaire thèmatique"],
+    "📿 Rosaire": ["Le Rosaire chez les Équipiers", "Le Rosaire thématique"],
     "📖 Archives": ["🙏 Prières", "📖 Méditations", "🎵 Musiques"],
 }
 
