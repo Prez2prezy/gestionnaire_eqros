@@ -490,6 +490,138 @@ def _rendre_intro_eyquem(titre_carte="INTRODUCTION", afficher_titres=True, trait
 # ====================================================================
 # PAGES DES RUBRIQUES
 # ====================================================================
+def _render_page_livret_thematique():
+    """📿 Rosaire → Le Rosaire thématique : VITRINE du livret de méditation
+    du mois du Rosaire (protection commerciale pendant la vente en paroisse).
+    PUBLIER_LIVRET = True dans livret_thematique.py → contenu complet en ligne."""
+    try:
+        from views.livret_thematique import (
+            PUBLIER_LIVRET, AFFICHE_LIVRET, AUTEURS_LIVRET, DEROULEMENT,
+            ACTION_GRACE, CONFITEOR, PRIERE_ESPRIT_SAINT, PRIERE_VIERGE_MARIE,
+            INTENTION_GENERALE, CREDO, CHANT_REGARDE_ETOILE, SALVE_REGINA,
+            REGINA_COELI, ANGELUS, PRIERE_FINALE_LIVRET, LITANIE,
+            SOUS_TITRES_GROUPES, MYSTERES_THEMATIQUES,
+            OU_SE_PROCURER, CONTACT_LIVRET_WHATSAPP)
+    except ImportError:
+        from livret_thematique import (
+            PUBLIER_LIVRET, AFFICHE_LIVRET, AUTEURS_LIVRET, DEROULEMENT,
+            ACTION_GRACE, CONFITEOR, PRIERE_ESPRIT_SAINT, PRIERE_VIERGE_MARIE,
+            INTENTION_GENERALE, CREDO, CHANT_REGARDE_ETOILE, SALVE_REGINA,
+            REGINA_COELI, ANGELUS, PRIERE_FINALE_LIVRET, LITANIE,
+            SOUS_TITRES_GROUPES, MYSTERES_THEMATIQUES,
+            OU_SE_PROCURER, CONTACT_LIVRET_WHATSAPP)
+
+    st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+                ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
+                ' border:2px solid #FFD700;">'
+                '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold;">📿 Le Rosaire thématique</div>'
+                '<div style="color:#e8eaf6 !important; font-size:0.9rem; margin-top:6px;">Livret de méditation du mois du Rosaire · « Il posait des questions. Force de la foi ! »</div></div>',
+                unsafe_allow_html=True)
+
+    # ---------- VITRINE (toujours visible) ----------
+    if AFFICHE_LIVRET and str(AFFICHE_LIVRET).startswith("http"):
+        st.markdown('<img src="' + AFFICHE_LIVRET + '" alt="Affiche du livret" '
+                    'style="width:100%; max-width:480px; display:block; margin:10px auto; '
+                    'border-radius:12px; border:2px solid #FFD700;">', unsafe_allow_html=True)
+    st.markdown(_carte_priere(
+        '<div class="cp-para">Un livret conçu pour le <b>mois du Rosaire</b> par '
+        + html.escape(AUTEURS_LIVRET) + ' : prières, méditations et clausules '
+        'déclinant le thème pastoral de l\'année dans chacun des vingt mystères.</div>'),
+        unsafe_allow_html=True)
+    with st.expander("📋 Déroulement de la prière (aperçu)"):
+        st.markdown(_carte_priere(_trait_debut_page()
+                    + '<div class="cp-para">' + html.escape(DEROULEMENT).replace("\n", "<br>") + "</div>"),
+                    unsafe_allow_html=True)
+
+    _wa_btn = ""
+    if CONTACT_LIVRET_WHATSAPP:
+        _lien_wa = lien_whatsapp(CONTACT_LIVRET_WHATSAPP,
+                                 "Bonjour, je souhaite me procurer le livret de méditation du mois du Rosaire. 📿")
+        if _lien_wa:
+            _wa_btn = ('<div style="text-align:center; margin:10px 0;">'
+                       '<a href="' + _lien_wa + '" target="_blank" '
+                       'style="display:inline-block; background:#25D366; color:#ffffff;'
+                       ' padding:10px 22px; border-radius:30px; font-weight:bold; text-decoration:none;">'
+                       '📱 Commander / renseignements par WhatsApp</a></div>')
+    st.markdown(_carte_priere(
+        '<div class="cp-para">🛒 <b>Où se procurer le livret ?</b><br>'
+        + html.escape(OU_SE_PROCURER) + "</div>"), unsafe_allow_html=True)
+    st.markdown(_wa_btn, unsafe_allow_html=True)
+
+    if not PUBLIER_LIVRET:
+        st.info("📖 Le contenu intégral du livret (méditations et clausules des vingt "
+                "mystères) n'est pas encore mis en ligne : il reste disponible en "
+                "paroisse tout le mois du Rosaire.")
+        return
+
+    # ---------- CONTENU COMPLET (PUBLIER_LIVRET = True) ----------
+    st.markdown(_carte_etape("✝️ DÉBUT DE LA CÉLÉBRATION"), unsafe_allow_html=True)
+    _ouvertures = [
+        ("🎶 Chant : Regarde l'étoile", CHANT_REGARDE_ETOILE),
+        ("🙏 Action de grâce (remerciements)", ACTION_GRACE),
+        ("🙏 Confiteor (je confesse à Dieu tout puissant)", CONFITEOR),
+        ("🙏 Prière à l'Esprit-Saint", PRIERE_ESPRIT_SAINT),
+        ("🙏 Prière à la Vierge Marie", PRIERE_VIERGE_MARIE),
+        ("✝️ Credo (Symbole de Nicée)", CREDO),
+        ("🙏 Intention générale", INTENTION_GENERALE),
+    ]
+    for _lib, _txt in _ouvertures:
+        if not _txt:
+            continue
+        with st.expander(_lib):
+            st.markdown(_carte_priere(_trait_debut_page() + _rendre_texte_priere(_txt)), unsafe_allow_html=True)
+
+    for nom_type, debut, fin, resume in GROUPES_CHAPELETS:
+        couleur_forte = COULEURS_TYPES.get(nom_type.lower(), "#9E9E9E")
+        couleur_claire = COULEURS_CLAIRES.get(nom_type.lower(), "#e8eaf6")
+        _sous_titre = SOUS_TITRES_GROUPES.get(debut, "")
+        st.markdown(
+            '<div style="background:#121a45; border-radius:15px; margin:10px 10px 4px 10px; padding:14px 20px; border:1px solid #27306b; border-left:6px solid ' + couleur_forte + ';">'
+            '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:1.05rem;">✝️ Mystères ' + nom_type + "</div>"
+            '<div style="color:#c7cdf5 !important; font-size:0.85rem; margin-top:2px;">' + html.escape(_sous_titre) + "</div>"
+            "</div>", unsafe_allow_html=True)
+        for _mid in range(debut, fin + 1):
+            _mt = MYSTERES_THEMATIQUES.get(_mid)
+            if not _mt:
+                continue
+            _summary = (str(_mid).zfill(2) + " — " + html.escape(_mt.get("titre", "").title())
+                        + " · " + html.escape(_mt.get("reference", "")))
+            _corps = (_trait_debut_page()
+                      + '<div class="cp-para" style="font-style:italic;">« ' + html.escape(_mt.get("citation", "")) + ' »</div>'
+                      + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Méditation</div>'
+                      + '<div class="cp-para">' + html.escape(_mt.get("meditation", "")) + "</div>"
+                      + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Intention de prière</div>'
+                      + '<div class="cp-para">' + html.escape(_mt.get("intention", "")) + "</div>"
+                      + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Notre Père · Dix « Je vous salue Marie »</div>'
+                      + '<div class="cp-para" style="text-align:center;">'
+                      "✝️ Notre Père qui es aux cieux …<br>"
+                      "Je vous salue Marie …et Jésus, <b>(Clausule)</b>,<br>le fruit de vos entrailles …</div>"
+                      + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Clausules</div>'
+                      + '<div class="cp-para">'
+                      + "".join("<b>" + str(i) + ".</b> " + html.escape(c) + "<br>"
+                                for i, c in enumerate(_mt.get("clausules", []), 1))
+                      + "</div>")
+            _details = ('<details class="details-mystere" style="--c:' + couleur_forte + ';">'
+                        "<summary>" + _summary + "</summary>"
+                        '<div style="padding:6px 8px 8px 8px;">'
+                        + _carte_priere(_corps, couleur_forte)
+                        + "</div></details>")
+            st.markdown(_details, unsafe_allow_html=True)
+
+    st.markdown(_carte_etape("🕯️ FIN DE LA CÉLÉBRATION"), unsafe_allow_html=True)
+    _fins = [
+        ("🕯️ Litanie de la Vierge Marie", LITANIE),
+        ("🕯️ Salve Regina", SALVE_REGINA),
+        ("🕯️ Regina Coeli (au temps pascal)", REGINA_COELI),
+        ("🕯️ L'Angelus", ANGELUS),
+        ("🙏 Prière finale", PRIERE_FINALE_LIVRET),
+    ]
+    for _lib, _txt in _fins:
+        if not _txt:
+            continue
+        with st.expander(_lib):
+            st.markdown(_carte_priere(_trait_debut_page() + _rendre_texte_priere(_txt)), unsafe_allow_html=True)
+
 def _render_page_theme_ensemble():
     """🕯️ Thème → Vue d'ensemble (avec affiches du thème et du sous-thème)."""
     theme = get_theme_actif()
@@ -1702,8 +1834,8 @@ def show_espace_membre(matloc_membre=None):
                         '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · v7.6</div></div>', unsafe_allow_html=True)
 
         if rub == "📿 Rosaire":
-            if sub == "Le thème de l'année":
-                _render_page_rosaire_theme()
+            if sub == "Le Rosaire thématique":
+                _render_page_livret_thematique()
             else:
                 _render_page_rosaire_eyquem()
         elif rub == "📖 Archives":
@@ -1843,8 +1975,8 @@ def show_espace_membre(matloc_membre=None):
                                 _enregistrer_presence(membre[0], evt[0], 'spirituel')
 
     elif rub == "📿 Rosaire":
-        if sub == "Le thème de l'année":
-            _render_page_rosaire_theme()
+        if sub == "Le Rosaire thématique":
+            _render_page_livret_thematique()
         else:
             _render_page_rosaire_eyquem()
 
