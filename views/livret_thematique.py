@@ -11,7 +11,7 @@ PUBLIER_LIVRET = False
 # 🖼️ Affiche du livret — collez ici le lien imgbb (Direct link) de l'affiche :
 AFFICHE_LIVRET = "https://i.ibb.co/JWwBnBnD/Force-de-Foi.jpg"
 
-AUTEURS_LIVRET = "Équipe Sainte Famille d'Aklomiabla — « Équipier : l'évangile avec Marie ! »"
+AUTEURS_LIVRET = "Les Équipiers de Sainte Famille d'Aklomiabla — « Équipier : l'évangile avec Marie ! »"
 
 DEROULEMENT = ("✳ CHANTS\n"
                "✳ ACTION DE GRACE (REMERCIEMENTS)\n"
