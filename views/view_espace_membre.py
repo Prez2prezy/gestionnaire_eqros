@@ -503,7 +503,7 @@ def _render_page_livret_thematique():
             SOUS_TITRES_GROUPES, MYSTERES_THEMATIQUES,
             OU_SE_PROCURER, CONTACT_LIVRET_WHATSAPP)
     except ImportError:
-        from livret_thematique import (
+        from views.livret_thematique import (
             PUBLIER_LIVRET, AFFICHE_LIVRET, AUTEURS_LIVRET, DEROULEMENT,
             ACTION_GRACE, CONFITEOR, PRIERE_ESPRIT_SAINT, PRIERE_VIERGE_MARIE,
             INTENTION_GENERALE, CREDO, CHANT_REGARDE_ETOILE, SALVE_REGINA,
