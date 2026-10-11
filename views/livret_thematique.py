@@ -6,7 +6,7 @@
 # pendant la vente du livret en paroisse). True → contenu complet en ligne.
 # ====================================================================
 
-PUBLIER_LIVRET = True
+PUBLIER_LIVRET = False
 
 # 🖼️ Affiche du livret — collez ici le lien imgbb (Direct link) de l'affiche :
 AFFICHE_LIVRET = "https://i.ibb.co/JWwBnBnD/Force-de-Foi.jpg"
