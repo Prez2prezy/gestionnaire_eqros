@@ -1232,7 +1232,7 @@ def gerer_theme_pastoral():
 
     # ---------- 1. THÈME ANNUEL ----------
     st.markdown("### 1️⃣ Le thème de l'année")
-    themes = c.execute("SELECT id, annee_debut, texte_theme, mystere_principal, actif FROM themes_pastoraux ORDER BY annee_debut DESC").fetchall()
+    themes = c.execute("SELECT id, annee_debut, texte_theme, mystere_principal, actif, affiche_url FROM themes_pastoraux ORDER BY annee_debut DESC").fetchall()
     if themes:
         for t in themes:
             etat = "🟢 ACTIF" if t[4] else "⚪"
@@ -1240,6 +1240,8 @@ def gerer_theme_pastoral():
             with c_txt:
                 st.write(f"**{t[1]}-{t[1]+1}** {etat} — Mystère N°{t[3] or '?'}")
                 st.caption(t[2])
+                if len(t) > 5 and t[5]:
+                    st.caption("🖼️ Affiche du thème enregistrée")
             with c_act:
                 if not t[4] and st.button("Activer", key=f"act_theme_{t[0]}"):
                     c.execute("UPDATE themes_pastoraux SET actif=0")
