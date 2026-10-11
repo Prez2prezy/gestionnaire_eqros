@@ -6,7 +6,7 @@
 # pendant la vente du livret en paroisse). True → contenu complet en ligne.
 # ====================================================================
 
-PUBLIER_LIVRET = False
+PUBLIER_LIVRET = True
 
 # 🖼️ Affiche du livret — collez ici le lien imgbb (Direct link) de l'affiche :
 AFFICHE_LIVRET = "https://i.ibb.co/JWwBnBnD/Force-de-Foi.jpg"
@@ -661,7 +661,7 @@ MYSTERES_THEMATIQUES = {
 # 🛒 VITRINE — où se procurer le livret (personnalisez librement) :
 OU_SE_PROCURER = ("Le livret de méditation du mois du Rosaire est disponible "
                   "auprès des Équipes du Rosaire de votre paroisse, pendant tout "
-                  "le mois du Rosaire.")
+                  "le mois du Rosaire, au prix de 500 FCFA.")
 
 # 📱 Contact WhatsApp facultatif (ex. "0700000000") — vide = pas de bouton :
-CONTACT_LIVRET_WHATSAPP = ""
+CONTACT_LIVRET_WHATSAPP = "0102231652"
