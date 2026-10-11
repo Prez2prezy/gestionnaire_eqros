@@ -661,7 +661,7 @@ MYSTERES_THEMATIQUES = {
 # 🛒 VITRINE — où se procurer le livret (personnalisez librement) :
 OU_SE_PROCURER = ("Le livret de méditation du mois du Rosaire est disponible "
                   "auprès des Équipes du Rosaire de votre paroisse, pendant tout "
-                  "le mois du Rosaire, au prix de XXXX FCFA.")
+                  "le mois du Rosaire.")
 
 # 📱 Contact WhatsApp facultatif (ex. "0700000000") — vide = pas de bouton :
 CONTACT_LIVRET_WHATSAPP = ""
