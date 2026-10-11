@@ -486,6 +486,18 @@ def _rendre_intro_eyquem(titre_carte="INTRODUCTION", afficher_titres=True, trait
     _trait = '<div class="cp-trait" style="margin-top:4px;"></div>' if trait_debut else ""
     return '<div class="carte-priere">' + _trait + _entete + corps + "</div>"
 
+def _texte_sur(couleur_hex):
+    """v7.7.6 — contraste automatique : renvoie un texte BLEU FONCÉ si le fond
+    est clair, BLANC sinon. Utilisé pour les textes posés sur la couleur d'un
+    chapelet (en-têtes des mystères, numéros des Ave)."""
+    try:
+        _h = str(couleur_hex).lstrip("#")
+        _r, _g, _b = int(_h[0:2], 16), int(_h[2:4], 16), int(_h[4:6], 16)
+        _lum = (0.299 * _r + 0.587 * _g + 0.114 * _b) / 255
+        return "#1A237E" if _lum > 0.6 else "#ffffff"
+    except Exception:
+        return "#ffffff"
+
 
 # ====================================================================
 # PAGES DES RUBRIQUES
@@ -557,7 +569,6 @@ def _render_page_livret_thematique():
     # ---------- CONTENU COMPLET (PUBLIER_LIVRET = True) ----------
     st.markdown(_carte_etape("✝️ DÉBUT DE LA CÉLÉBRATION"), unsafe_allow_html=True)
     _ouvertures = [
-        ("🎶 Chant : Regarde l'étoile", CHANT_REGARDE_ETOILE),
         ("🙏 Action de grâce (remerciements)", ACTION_GRACE),
         ("🙏 Confiteor (je confesse à Dieu tout puissant)", CONFITEOR),
         ("🙏 Prière à l'Esprit-Saint", PRIERE_ESPRIT_SAINT),
@@ -584,27 +595,39 @@ def _render_page_livret_thematique():
             _mt = MYSTERES_THEMATIQUES.get(_mid)
             if not _mt:
                 continue
+            _c_txt = _texte_sur(couleur_forte)
             _summary = (str(_mid).zfill(2) + " — " + html.escape(_mt.get("titre", "").title())
                         + " · " + html.escape(_mt.get("reference", "")))
-            _corps = (_trait_debut_page()
-                      + '<div class="cp-para" style="font-style:italic;">« ' + html.escape(_mt.get("citation", "")) + ' »</div>'
-                      + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Méditation</div>'
-                      + '<div class="cp-para">' + html.escape(_mt.get("meditation", "")) + "</div>"
-                      + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Intention de prière</div>'
-                      + '<div class="cp-para">' + html.escape(_mt.get("intention", "")) + "</div>"
-                      + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Notre Père · Dix « Je vous salue Marie »</div>'
-                      + '<div class="cp-para" style="text-align:center;">'
-                      "✝️ Notre Père qui es aux cieux …<br>"
-                      "Je vous salue Marie …et Jésus, <b>(Clausule)</b>,<br>le fruit de vos entrailles …</div>"
-                      + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Clausules</div>'
-                      + '<div class="cp-para">'
-                      + "".join("<b>" + str(i) + ".</b> " + html.escape(c) + "<br>"
-                                for i, c in enumerate(_mt.get("clausules", []), 1))
-                      + "</div>")
+            # Carte 1 — citation, méditation, intention
+            _corps_1 = (_trait_debut_page()
+                        + '<div class="cp-para" style="font-style:italic;">« ' + html.escape(_mt.get("citation", "")) + ' »</div>'
+                        + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Méditation</div>'
+                        + '<div class="cp-para">' + html.escape(_mt.get("meditation", "")) + "</div>"
+                        + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Intention de prière</div>'
+                        + '<div class="cp-para">' + html.escape(_mt.get("intention", "")) + "</div>")
+            # Carte 2 — NOTRE PÈRE complet (récitation visible, comme en Équipe)
+            _corps_np = _rendre_texte_priere(_DIZ_NOTREPERE)
+            # Carte 3 — les DIX « Je vous salue Marie » avec la clausule du livret
+            _cla = _mt.get("clausules", [])
+            _grains = ""
+            for _g in range(1, 11):
+                _clausule = _cla[_g - 1] if _g <= len(_cla) else ""
+                _clausule = "" if _clausule is None else str(_clausule)
+                _grains += ('<div class="cp-para" style="text-align:center; margin:12px 0;">'
+                            '<span class="cp-accent-bg" style="--c:' + couleur_forte + '; color:' + _c_txt + ' !important; display:inline-block; width:22px; height:22px; border-radius:4px; font-size:0.72rem; line-height:22px;">' + str(_g) + "</span><br>"
+                            "Je vous salue Marie, pleine de grâce,<br>le Seigneur est avec vous.<br>Vous êtes bénie entre toutes les femmes,<br>"
+                            '<span class="cp-accent-inline" style="--c:' + couleur_forte + ';">et Jésus, ' + html.escape(_clausule) + "</span><br>"
+                            "le fruit de vos entrailles, est béni.<br>"
+                            "Sainte Marie, Mère de Dieu,<br>priez pour nous pauvres pécheurs,<br>maintenant et à l’heure de notre mort. Amen!</div>")
+            # Carte 4 — GLORIA complet
+            _corps_gl = _rendre_texte_priere(_DIZ_GLORIA)
             _details = ('<details class="details-mystere" style="--c:' + couleur_forte + ';">'
-                        "<summary>" + _summary + "</summary>"
+                        '<summary style="color:' + _c_txt + ' !important;">' + _summary + "</summary>"
                         '<div style="padding:6px 8px 8px 8px;">'
-                        + _carte_priere(_corps, couleur_forte)
+                        + _carte_priere(_corps_1, couleur_forte)
+                        + _carte_priere(_corps_np, couleur_forte)
+                        + _carte_priere(_grains, couleur_forte)
+                        + _carte_priere(_corps_gl, couleur_forte)
                         + "</div></details>")
             st.markdown(_details, unsafe_allow_html=True)
 
@@ -615,6 +638,7 @@ def _render_page_livret_thematique():
         ("🕯️ Regina Coeli (au temps pascal)", REGINA_COELI),
         ("🕯️ L'Angelus", ANGELUS),
         ("🙏 Prière finale", PRIERE_FINALE_LIVRET),
+        ("🎶 Chant : Regarde l'étoile", CHANT_REGARDE_ETOILE),        
     ]
     for _lib, _txt in _fins:
         if not _txt:
