@@ -271,7 +271,7 @@ ACTION_GRACE = ("Seigneur Jésus, nous te rendons grâce pour ce temps de prièr
                 "lâche jamais. Comme le jeune Jésus au milieu des docteurs, "
                 "apprends-nous à écouter et à interroger ta Parole chaque jour.\n\n"
                 "Merci pour nos équipes, nos familles et nos communautés : pour "
-                "les joies que tu multiplies, les épreuves que tu traverse avec "
+                "les joies que tu multiplies, les épreuves que tu traverses avec "
                 "nous, et le silence dans lequel tu nous réponds toujours.\n\n"
                 "Que notre gratitude monte vers toi comme l'encens : pour tous "
                 "les bienfaits de cette année, pour tes grâces reçues en secret, "
