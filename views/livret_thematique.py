@@ -664,4 +664,4 @@ OU_SE_PROCURER = ("Le livret de méditation du mois du Rosaire est disponible "
                   "le mois du Rosaire.")
 
 # 📱 Contact WhatsApp facultatif (ex. "0700000000") — vide = pas de bouton :
-CONTACT_LIVRET_WHATSAPP = ""
+CONTACT_LIVRET_WHATSAPP = "0102231652"
