@@ -490,7 +490,7 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
                 magic_link = f"{base_url}/?e={item[10]}"
                 st.markdown("---")
 
-                message = (f"Équipier, confirme ta présence pour la {item[2]} du {i_date.strftime('%d/%m/%Y')},\n\npuis clique sur : 📅 Mes évènements"
+                message = (f"Équipier, confirme ta présence pour la {item[2]} du {i_date.strftime('%d/%m/%Y')},\n\n"
                            f"Cliquez ici pour répondre :\n{magic_link}")
                 wa_link = f"https://wa.me/?text={urllib.parse.quote(message, safe=':/?=')}"
                 st.markdown(f'<a href="{wa_link}" target="_blank" class="whatsapp-link">📱 Partager le lien de réponse (groupe / diffusion)</a>', unsafe_allow_html=True)
@@ -512,7 +512,8 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
                                 msg_perso = (f"Bonjour {m[0]} {m[1]},\n\n"
                                              f"Confirme ta présence pour la {item[2]} du {i_date.strftime('%d/%m/%Y')}"
                                              f"{f' à {item[3]}' if item[3] else ''}.\n\n"
-                                             f"Ta page personnelle t'attend ici (un clic suffit pour répondre) :\n{lien_perso}\n\n"
+                                             f"Ta page personnelle t'attend ici (un clic suffit pour répondre) :\n{lien_perso}\n"
+                                             f"puis clique sur : 📅 Mes évènements\n\n"
                                              f"💡 Astuce : ajoute ce lien à ton écran d'accueil (menu ⋮ → « Ajouter à l'écran d'accueil ») pour y accéder directement !\n\n"
                                              f"Si le lien ne s'ouvre pas, saisis ce code sur la page de l'évènement : {matloc_propre}")
                                 wa_perso = lien_whatsapp(m[2], msg_perso)
