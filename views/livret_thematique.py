@@ -6,7 +6,7 @@
 # pendant la vente du livret en paroisse). True → contenu complet en ligne.
 # ====================================================================
 
-PUBLIER_LIVRET = False
+PUBLIER_LIVRET = False  # ⚠️ À basculer sur True pour publier le livret complet en ligne
 
 # 🖼️ Affiche du livret — collez ici le lien imgbb (Direct link) de l'affiche :
 AFFICHE_LIVRET = "https://i.ibb.co/JWwBnBnD/Force-de-Foi.jpg"
@@ -284,7 +284,7 @@ CONFITEOR = ("Je confesse à Dieu tout-puissant,\n"
              "C’est pourquoi je supplie\n"
              "la Bienheureuse Vierge Marie,\n"
              "les anges et tous les saints,\n"
-             "et vous aussi, mes frères,\n"
+             "et vous aussi, mes frères et sœurs,\n"
              "de prier pour moi le Seigneur notre Dieu. Amen !")
 
 # Sous-titres thématiques des 4 chapelets (du livret)
@@ -661,7 +661,17 @@ MYSTERES_THEMATIQUES = {
 # 🛒 VITRINE — où se procurer le livret (personnalisez librement) :
 OU_SE_PROCURER = ("Le livret de méditation du mois du Rosaire est disponible "
                   "auprès des Équipes du Rosaire de votre paroisse, pendant tout "
-                  "le mois du Rosaire.")
+                  "le mois du Rosaire, au prix de 500 FCFA.")
 
 # 📱 Contact WhatsApp facultatif (ex. "0700000000") — vide = pas de bouton :
 CONTACT_LIVRET_WHATSAPP = ""
+
+
+# 🖼️ PHOTOS DES MYSTÈRES THÉMATIQUES — DÉDIÉES au thème de l'année.
+# Adaptez les images selon les passages bibliques retenus (lien imgbb, Direct link) :
+PHOTOS_MYSTERES_THEMATIQUE = {
+    1: "", 2: "", 3: "", 4: "", 5: "",
+    6: "", 7: "", 8: "", 9: "", 10: "",
+    11: "", 12: "", 13: "", 14: "", 15: "",
+    16: "", 17: "", 18: "", 19: "", 20: "",
+}
