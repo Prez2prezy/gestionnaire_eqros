@@ -513,7 +513,7 @@ def _render_page_livret_thematique():
             INTENTION_GENERALE, CREDO, CHANT_REGARDE_ETOILE, SALVE_REGINA,
             REGINA_COELI, ANGELUS, PRIERE_FINALE_LIVRET, LITANIE,
             SOUS_TITRES_GROUPES, MYSTERES_THEMATIQUES,
-            OU_SE_PROCURER, CONTACT_LIVRET_WHATSAPP)
+            OU_SE_PROCURER, CONTACT_LIVRET_WHATSAPP, PHOTOS_MYSTERES_THEMATIQUE)
     except ImportError:
         from views.livret_thematique import (
             PUBLIER_LIVRET, AFFICHE_LIVRET, AUTEURS_LIVRET, DEROULEMENT,
@@ -521,7 +521,7 @@ def _render_page_livret_thematique():
             INTENTION_GENERALE, CREDO, CHANT_REGARDE_ETOILE, SALVE_REGINA,
             REGINA_COELI, ANGELUS, PRIERE_FINALE_LIVRET, LITANIE,
             SOUS_TITRES_GROUPES, MYSTERES_THEMATIQUES,
-            OU_SE_PROCURER, CONTACT_LIVRET_WHATSAPP)
+            OU_SE_PROCURER, CONTACT_LIVRET_WHATSAPP, PHOTOS_MYSTERES_THEMATIQUE)
 
     st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                 ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
@@ -598,8 +598,11 @@ def _render_page_livret_thematique():
             _c_txt = _texte_sur(couleur_forte)
             _summary = (str(_mid).zfill(2) + " — " + html.escape(_mt.get("titre", "").title())
                         + " · " + html.escape(_mt.get("reference", "")))
-            # Carte 1 — citation, méditation, intention
-            _corps_1 = (_trait_debut_page()
+            # Carte 1 — photo du mystère, citation, méditation, intention
+            _photo_th = PHOTOS_MYSTERES_THEMATIQUE.get(_mid) or ""
+            _photo_th_html = ('<img class="cp-photo" src="' + _photo_th + '" alt="">'
+                              if _photo_th.startswith("http") else "")
+            _corps_1 = (_trait_debut_page() + _photo_th_html
                         + '<div class="cp-para" style="font-style:italic;">« ' + html.escape(_mt.get("citation", "")) + ' »</div>'
                         + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Méditation</div>'
                         + '<div class="cp-para">' + html.escape(_mt.get("meditation", "")) + "</div>"
