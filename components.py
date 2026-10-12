@@ -1405,6 +1405,7 @@ def gerer_theme_pastoral():
                    + ", ".join(str(_o) for _o in sorted(_secs_fe)) if (_len_fe := len(_secs_fe)) else "")
 
     st.markdown("---")
+    
 
     # ---------- 3. LE LIEN AVEC LES 20 MYSTÈRES ----------
     st.markdown("### 3️⃣ Le lien du thème avec les 20 mystères")
