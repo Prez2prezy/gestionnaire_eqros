@@ -512,8 +512,8 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
                                 msg_perso = (f"Bonjour {m[0]} {m[1]},\n\n"
                                              f"Confirme ta présence pour la {item[2]} du {i_date.strftime('%d/%m/%Y')}"
                                              f"{f' à {item[3]}' if item[3] else ''}.\n\n"
-                                             f"Ta page personnelle t'attend ici (un clic suffit pour répondre) :\n{lien_perso}\n"
-                                             f"puis clique sur : 📅 Mes évènements\n\n"
+                                             f"Ta page personnelle t'attend ici (2 clics suffit pour répondre) :\n{lien_perso}\n"
+                                             f"puis sur la rubrique '📅 Mes évènements'\n\n"
                                              f"💡 Astuce : ajoute ce lien à ton écran d'accueil (menu ⋮ → « Ajouter à l'écran d'accueil ») pour y accéder directement !\n\n"
                                              f"Si le lien ne s'ouvre pas, saisis ce code sur la page de l'évènement : {matloc_propre}")
                                 wa_perso = lien_whatsapp(m[2], msg_perso)
