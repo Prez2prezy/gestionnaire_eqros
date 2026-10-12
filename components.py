@@ -1336,6 +1336,76 @@ def gerer_theme_pastoral():
 
     st.markdown("---")
 
+    # ---------- 2️⃣ bis. LE FEUILLET MENSUEL EN ÉQUIPE (11 sections) ----------
+    st.markdown("### 2️⃣ bis. Le feuillet mensuel en Équipe")
+    st.caption("Saisie section par section du feuillet reçu (10-15 du mois). "
+               "Process conseillé : photographier les pages → transcription → collage ici. "
+               "Chaque section porte le lecteur attendu (R / 1 / 2 / 3 / tous) selon les "
+               "marges du feuillet. Ces contenus alimentent l'affichage aux équipes et "
+               "le futur mode rencontre.")
+    c.execute("""CREATE TABLE IF NOT EXISTS feuillet_sections (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    annee_debut INTEGER, mois INTEGER,
+                    ordre INTEGER, titre TEXT, contenu TEXT,
+                    lecteur TEXT, image_url TEXT)""")
+    commit_and_sync()
+
+    SECTIONS_FEUILLET = [
+        (2, "Éditorial"), (3, "Vivre en mouvement"), (4, "Célébrons en équipe"),
+        (5, "Prière à l'Esprit-Saint"), (6, "Invocation à Marie"),
+        (7, "À l'écoute de la Parole de Dieu"), (8, "Réflexion sur la Parole"),
+        (9, "Réflexion sur notre vie"), (10, "Prière de Louange et d'Intercession"),
+        (11, "Envoi en Mission"), (12, "Informations diverses"),
+    ]
+    _annees_fe = [t[1] for t in themes] or [get_periode_pastorale()[0]]
+    _annee_fe = st.selectbox("Année pastorale du feuillet", _annees_fe, key="fe_annee")
+    _mois_fe_lbl = st.selectbox("Mois pastoral du feuillet", MOIS_NOMS, key="fe_mois")
+    _mois_fe = MOIS_NOMS.index(_mois_fe_lbl) + 1
+
+    try:
+        _secs_fe = {r[0]: r for r in c.execute(
+            """SELECT ordre, titre, contenu, lecteur, image_url FROM feuillet_sections
+               WHERE annee_debut=? AND mois=?""", (_annee_fe, _mois_fe)).fetchall()}
+    except Exception:
+        _secs_fe = {}
+
+    _lbls_fe = [f"{'✅' if _o in _secs_fe else '⬜'} {_o}. {_t}" for _o, _t in SECTIONS_FEUILLET]
+    _choix_fe = st.selectbox("Section à saisir", _lbls_fe, key="fe_section")
+    _ord_fe = int(_choix_fe.split(".")[0])
+    _titre_def_fe = next(t for o, t in SECTIONS_FEUILLET if o == _ord_fe)
+    _ex_fe = _secs_fe.get(_ord_fe)
+
+    with st.form("form_feuillet_section"):
+        _titre_fe = st.text_input("Titre de la section",
+                                  value=(_ex_fe[1] if _ex_fe and _ex_fe[1] else _titre_def_fe), key="fe_titre")
+        _contenu_fe = st.text_area("Contenu (texte du feuillet)", height=160,
+                                   value=(_ex_fe[2] or "") if _ex_fe else "", key="fe_contenu")
+        _lect_opts = ["tous", "R", "1", "2", "3"]
+        _lect_idx = _lect_opts.index(_ex_fe[3]) if _ex_fe and _ex_fe[3] in _lect_opts else 0
+        _lecteur_fe = st.selectbox("Lecteur attendu (marge du feuillet)", _lect_opts, index=_lect_idx, key="fe_lecteur")
+        _img_fe = st.text_input("🔗 Lien d'image (imgbb — facultatif)",
+                                value=(_ex_fe[4] or "") if _ex_fe else "", key="fe_img")
+        if st.form_submit_button("💾 Enregistrer cette section", width="stretch"):
+            if _ex_fe:
+                c.execute("""UPDATE feuillet_sections SET titre=?, contenu=?, lecteur=?, image_url=?
+                             WHERE annee_debut=? AND mois=? AND ordre=?""",
+                          (_titre_fe.strip(), _contenu_fe.strip(), _lecteur_fe,
+                           _img_fe.strip() or None, _annee_fe, _mois_fe, _ord_fe))
+            else:
+                c.execute("""INSERT INTO feuillet_sections (annee_debut, mois, ordre, titre, contenu, lecteur, image_url)
+                             VALUES (?,?,?,?,?,?,?)""",
+                          (_annee_fe, _mois_fe, _ord_fe, _titre_fe.strip(), _contenu_fe.strip(),
+                           _lecteur_fe, _img_fe.strip() or None))
+            commit_and_sync()
+            st.session_state["flash_success"] = f"Section « {_titre_fe.strip()} » enregistrée ! ✅"
+            st.rerun()
+
+    if _secs_fe:
+        st.caption(f"📋 {_len_fe} section(s) saisie(s) pour {_mois_fe_lbl} {_annee_fe} : "
+                   + ", ".join(str(_o) for _o in sorted(_secs_fe)) if (_len_fe := len(_secs_fe)) else "")
+
+    st.markdown("---")
+
     # ---------- 3. LE LIEN AVEC LES 20 MYSTÈRES ----------
     st.markdown("### 3️⃣ Le lien du thème avec les 20 mystères")
     st.caption("Pour chaque mystère, la phrase qui relie son contenu au thème de l'année. "
