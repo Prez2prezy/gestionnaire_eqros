@@ -1371,7 +1371,9 @@ def gerer_theme_pastoral():
 
     _lbls_fe = [f"{'✅' if _o in _secs_fe else '⬜'} {_o}. {_t}" for _o, _t in SECTIONS_FEUILLET]
     _choix_fe = st.selectbox("Section à saisir", _lbls_fe, key="fe_section")
-    _ord_fe = int(_choix_fe.split(".")[0])
+    # v7.7.8 — extraction ROBUSTE : on ne garde que les chiffres du libellé
+    # (les badges ✅/⬜ et espaces ne doivent jamais casser la conversion).
+    _ord_fe = int("".join(ch for ch in _choix_fe.split(".")[0] if ch.isdigit()))
     _titre_def_fe = next(t for o, t in SECTIONS_FEUILLET if o == _ord_fe)
     _ex_fe = _secs_fe.get(_ord_fe)
 
@@ -1405,7 +1407,7 @@ def gerer_theme_pastoral():
                    + ", ".join(str(_o) for _o in sorted(_secs_fe)) if (_len_fe := len(_secs_fe)) else "")
 
     st.markdown("---")
-    
+
 
     # ---------- 3. LE LIEN AVEC LES 20 MYSTÈRES ----------
     st.markdown("### 3️⃣ Le lien du thème avec les 20 mystères")
