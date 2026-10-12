@@ -6,7 +6,7 @@
 # pendant la vente du livret en paroisse). True → contenu complet en ligne.
 # ====================================================================
 
-PUBLIER_LIVRET = False  # ⚠️ À basculer sur True pour publier le livret complet en ligne
+PUBLIER_LIVRET = True  # ⚠️ À basculer sur True pour publier le livret complet en ligne
 
 # 🖼️ Affiche du livret — collez ici le lien imgbb (Direct link) de l'affiche :
 AFFICHE_LIVRET = "https://i.ibb.co/JWwBnBnD/Force-de-Foi.jpg"
@@ -670,7 +670,7 @@ CONTACT_LIVRET_WHATSAPP = ""
 # 🖼️ PHOTOS DES MYSTÈRES THÉMATIQUES — DÉDIÉES au thème de l'année.
 # Adaptez les images selon les passages bibliques retenus (lien imgbb, Direct link) :
 PHOTOS_MYSTERES_THEMATIQUE = {
-    1: "", 2: "", 3: "", 4: "", 5: "",
+    1: "https://i.ibb.co/fdsv8yVd/mysteres-1.webp", 2: "", 3: "", 4: "", 5: "",
     6: "", 7: "", 8: "", 9: "", 10: "",
     11: "", 12: "", 13: "", 14: "", 15: "",
     16: "", 17: "", 18: "", 19: "", 20: "",
