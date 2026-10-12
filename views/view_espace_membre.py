@@ -647,7 +647,8 @@ def _render_page_livret_thematique():
             st.markdown(_carte_priere(_trait_debut_page() + _rendre_texte_priere(_txt)), unsafe_allow_html=True)
 
 def _render_page_theme_ensemble():
-    """🕯️ Thème → Vue d'ensemble (avec affiches du thème et du sous-thème)."""
+    """🕯️ Thème → Vue d'ensemble — v7.7.7 : langage du dépliant (bannière
+    bleu-or, badge d'étape, carte jaune verrouillée, trait fin)."""
     theme = get_theme_actif()
     if not theme:
         st.info("🕯️ Aucun thème pastoral n'est actuellement actif. "
@@ -667,7 +668,7 @@ def _render_page_theme_ensemble():
     except (ValueError, TypeError):
         mm = None
     if mm:
-        ligne_mystere = ('<div style="color:#b39ddb !important; font-size:0.9rem; margin-top:8px;">'
+        ligne_mystere = ('<div style="color:#e8eaf6 !important; font-size:0.92rem; margin-top:10px;">'
                          "📿 Mystère principal : N°" + str(mm.get("id", "?")) + " — "
                          + html.escape((mm.get("titre") or "").title()) + " ("
                          + html.escape(mm.get("reference") or "") + ")</div>")
@@ -675,24 +676,24 @@ def _render_page_theme_ensemble():
         '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
         ' padding:24px; border-radius:15px; text-align:center; margin:10px;'
         ' border:2px solid #FFD700;">'
-        '<div style="color:#9fa6d8 !important; font-size:0.85rem;">🕯️ THÈME PASTORAL '
-        + str(annee_debut) + " - " + str(annee_debut + 1) + " · v7.6</div>"
-        '<div style="color:#FFD700 !important; font-size:1.25rem; font-weight:bold; margin-top:8px; line-height:1.5;">« '
+        '<div style="color:#FFD000 !important; font-size:0.85rem; letter-spacing:1px;">🕯️ THÈME PASTORAL '
+        + str(annee_debut) + " - " + str(annee_debut + 1) + " · v7.7</div>"
+        '<div style="font-family:Georgia, serif !important; color:#FFD700 !important; font-size:1.25rem; font-weight:bold; margin-top:8px; line-height:1.5;">« '
         + html.escape(texte_theme or "") + ' »</div>'
         + ligne_mystere + "</div>", unsafe_allow_html=True)
-    if affiche_theme:
+    if affiche_theme and str(affiche_theme).startswith("http"):
+        st.markdown('<img src="' + str(affiche_theme) + '" alt="Affiche du thème" '
+                    'style="width:100%; max-width:720px; display:block; margin:10px auto; '
+                    'border-radius:12px; border:2px solid #FFD700;">', unsafe_allow_html=True)
+    elif affiche_theme:
         try:
             st.image(affiche_theme, width="stretch")
         except Exception:
             pass
 
     mois_courant = date.today().month
-    # v7.6.6 — ALIGNEMENT DES CONVENTIONS DE MOIS : le formulaire diocèse
-    # numérote en ordre PASTORAL (Septembre=1 … Août=12) ; l'affichage lisait
-    # le mois CIVIL (octobre=10) → sous-thème jamais retrouvé. Converti.
+    # v7.7 — lecture DIRECTE (avec affiche_url) ; mois PASTORAL (Sept=1 … Août=12)
     _mois_pastoral = ((mois_courant - 9) % 12) + 1
-    # v7.7 — lecture DIRECTE (avec affiche_url) : l'ancienne fonction datait
-    # d'avant la colonne affiche_url et ne renvoyait jamais l'image.
     try:
         sous = c.execute("""SELECT titre, contenu, feuillet_pdf, affiche_url FROM sous_themes
                             WHERE annee_debut=? AND mois=?""",
@@ -702,22 +703,22 @@ def _render_page_theme_ensemble():
     if st.query_params.get("debug") == "1":
         st.caption(f"🔎 DEBUG sous-thème — mois civil={mois_courant} → pastoral={_mois_pastoral} | "
                    f"sous-thème {'TROUVÉ' if sous else 'non trouvé'}")
+
+    st.markdown(_carte_etape("📅 LE SOUS-THÈME DU MOIS"), unsafe_allow_html=True)
     if sous:
         _v = list(sous) + [None] * 4
         titre_st, contenu_st, feuillet, affiche_st = _v[0], _v[1], _v[2], _v[3]
-        contenu_html = html.escape(contenu_st or "").replace("\n", "<br>")
-        img_html = (f'<img src="{affiche_st}" alt="Affiche du mois" '
-                    'style="width:100%; max-width:640px; display:block; margin:12px auto 0 auto; '
-                    'border-radius:10px; border:1px solid #27306b;">'
-                    if affiche_st else "")
-        bloc = ('<div style="background:#121a45; border-radius:15px; margin:10px; padding:20px; border:1px solid #27306b;">'
-                '<div style="color:#ffe082 !important; font-weight:bold; font-size:1.05rem; text-align:center;">📅 Sous-thème de '
-                + MOIS_FR[mois_courant - 1] + " : " + html.escape(titre_st or "") + "</div>"
-                + img_html
-                + ('<div style="color:#e8eaf6 !important; font-size:0.95rem; line-height:1.7; margin-top:12px; text-align:left;">'
-                   + contenu_html + "</div>" if contenu_html else "")
-                + "</div>")
-        st.markdown(bloc, unsafe_allow_html=True)
+        _mois_nom = MOIS_FR[mois_courant - 1]
+        _de = "d'" if _mois_nom[0].lower() in "aâeéèêiîoôuûh" else "de "
+        _entete = ('<div class="cp-titre" style="text-align:center;">Sous-thème '
+                   + _de + _mois_nom + " : " + html.escape(titre_st or "") + "</div>")
+        _img = ('<img src="' + str(affiche_st) + '" alt="Affiche du mois" '
+                'style="width:100%; max-width:640px; display:block; margin:10px auto; '
+                'border-radius:10px;">'
+                if affiche_st and str(affiche_st).startswith("http") else "")
+        _corps = (_trait_debut_page() + _img
+                  + '<div class="cp-para">' + html.escape(contenu_st or "").replace("\n", "<br>") + "</div>")
+        st.markdown(_carte_priere(_entete + _corps), unsafe_allow_html=True)
         if feuillet:
             st.caption("📄 Feuillet du mois")
             _render_pdf_inline(feuillet)
