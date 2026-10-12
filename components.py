@@ -490,7 +490,7 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
                 magic_link = f"{base_url}/?e={item[10]}"
                 st.markdown("---")
 
-                message = (f"Équipier, confirme ta présence pour la {item[2]} du {i_date.strftime('%d/%m/%Y')}.\n\n"
+                message = (f"Équipier, confirme ta présence pour la {item[2]} du {i_date.strftime('%d/%m/%Y')},\n\npuis clique sur : 📅 Mes évènements"
                            f"Cliquez ici pour répondre :\n{magic_link}")
                 wa_link = f"https://wa.me/?text={urllib.parse.quote(message, safe=':/?=')}"
                 st.markdown(f'<a href="{wa_link}" target="_blank" class="whatsapp-link">📱 Partager le lien de réponse (groupe / diffusion)</a>', unsafe_allow_html=True)
