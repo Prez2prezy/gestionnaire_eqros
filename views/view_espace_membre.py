@@ -649,12 +649,45 @@ def _render_page_livret_thematique():
         with st.expander(_lib):
             st.markdown(_carte_priere(_trait_debut_page() + _rendre_texte_priere(_txt)), unsafe_allow_html=True)
 
+# Lecteurs du feuillet — CONSTANTE unique (jamais de libellé retapé dans
+# les comparaisons). Les marqueurs R./T./1./2./3. du TEXTE restent la
+# référence ligne par ligne pour le futur pupitre.
+LBL_LECTEURS_FEUILLET = {"T": "Tous ensemble", "R": "Responsable",
+                         "1": "1er lecteur", "2": "2e lecteur", "3": "Chantre",
+                         "tous": "Tous ensemble"}
+
+
+def _badges_lecteurs_feuillet(v):
+    """« R,1,T » → 'Responsable · 1er lecteur · Tous ensemble'."""
+    if not v:
+        return ""
+    _codes = [x.strip() for x in str(v).split(",") if x.strip()]
+    _libelles = [LBL_LECTEURS_FEUILLET.get(x, x) for x in _codes]
+    return " · ".join(html.escape(x) for x in _libelles)
+
+
+try:
+    _dec_frag_flt = st.fragment
+except AttributeError:
+    def _dec_frag_flt(f):
+        return f
+
+
+def _rerun_flt():
+    """Re-run limité au livret quand le fragment existe ; plein écran sinon."""
+    try:
+        st.rerun(scope="fragment")
+    except TypeError:
+        st.rerun()
+
+
+@_dec_frag_flt
 def _render_feuillet_mensuel(annee_debut, mois_pastoral):
-    """📖 Le feuillet mensuel en Équipe — v7.7.9 : les sections (2-12) du mois
-    pastoral courant, saisies par le diocèse, en expanders sous la carte du
-    sous-thème. Rien ne s'affiche si aucune section n'est saisie.
-    Cartes jaunes (langage du dépliant) ; lignes TOUT MAJUSCULES → traits fins ;
-    image de section si renseignée ; badge du lecteur attendu."""
+    """📖 Le feuillet mensuel en Équipe — v7.7.9 : LIVRET À FEUILLETER.
+    Les sections (2-12) du mois pastoral courant deviennent les pages d'un
+    livre : couverture-sommaire, boutons ◀ Précédent / Suivant ▶. Fragment :
+    tourner une page ne redessine QUE le livret (position à l'écran gardée).
+    Rien ne s'affiche si aucune section n'est saisie."""
     try:
         sections = c.execute("""SELECT ordre, titre, contenu, lecteur, image_url
                                 FROM feuillet_sections
@@ -668,20 +701,74 @@ def _render_feuillet_mensuel(annee_debut, mois_pastoral):
                    f"→ {len(sections)} section(s) avec contenu")
     if not sections:
         return
-    _lbl_lecteur = {"tous": "Tous ensemble", "R": "Responsable",
-                    "1": "1er lecteur", "2": "2e lecteur", "3": "Chantre"}
+
     st.markdown(_carte_etape("📖 LE FEUILLET MENSUEL EN ÉQUIPE"), unsafe_allow_html=True)
-    for (ordre, titre, contenu, lecteur, image_url) in sections:
-        _badge = ""
-        if lecteur:
-            _badge = " · 🗣️ " + _lbl_lecteur.get(str(lecteur), str(lecteur))
-        with st.expander(f"📖 {ordre} — {titre or ''}{_badge}"):
-            _img_html = ""
-            if image_url and str(image_url).startswith("http"):
-                _img_html = '<img src="' + str(image_url) + '" alt="" class="cp-photo">'
-            st.markdown(_carte_priere(_trait_debut_page() + _img_html
-                                      + _rendre_texte_priere(contenu)),
-                        unsafe_allow_html=True)
+
+    # Nouveau mois/année affiché → retour à la couverture
+    _cle = f"{annee_debut}-{mois_pastoral}"
+    if st.session_state.get("flt_cle") != _cle:
+        st.session_state["flt_cle"] = _cle
+        st.session_state["flt_page"] = -1
+    if "flt_page" not in st.session_state:
+        st.session_state["flt_page"] = -1
+
+    # ---------- COUVERTURE / SOMMAIRE ----------
+    if st.session_state["flt_page"] < 0:
+        _pluriel = "page" if len(sections) == 1 else "pages"
+        _lignes = "".join(
+            '<div class="cp-para" style="margin:2px 0;">📖 <b>' + str(s[0]) + "</b> — "
+            + html.escape(s[1] or "") + "</div>" for s in sections)
+        st.markdown(_carte_priere(
+            _trait_debut_page()
+            + '<div class="cp-titre" style="text-align:center;">Feuillet du mois</div>'
+            + '<div class="cp-para" style="text-align:center;">' + str(len(sections))
+            + " " + _pluriel + " · ouvrez le livret pour feuilleter</div>" + _lignes),
+            unsafe_allow_html=True)
+        if st.button("📖 Ouvrir le livret", key="flt_open", width="stretch", type="primary"):
+            st.session_state["flt_page"] = 0
+            _rerun_flt()
+        return
+
+    # ---------- UNE PAGE = UNE SECTION ----------
+    idx = st.session_state["flt_page"]
+    if idx >= len(sections):
+        st.session_state["flt_page"] = 0
+        idx = 0
+    ordre, titre, contenu, lecteur, image_url = sections[idx]
+
+    _badge = _badges_lecteurs_feuillet(lecteur)
+    _entete = ('<div class="cp-titre" style="text-align:center;">'
+               + html.escape(titre or ("Section " + str(ordre))) + "</div>"
+               + '<div class="cp-para" style="text-align:center; font-size:0.85rem;">'
+               + "Page " + str(idx + 1) + " / " + str(len(sections))
+               + (" &nbsp;·&nbsp; 🗣️ " + _badge if _badge else "") + "</div>")
+    _img_html = ""
+    if image_url and str(image_url).startswith("http"):
+        _img_html = '<img src="' + str(image_url) + '" alt="" class="cp-photo">'
+    st.markdown(_carte_priere(_trait_debut_page() + _entete + _img_html
+                              + _rendre_texte_priere(contenu)),
+                unsafe_allow_html=True)
+
+    # ---------- NAVIGATION (comme le livre de la dizaine) ----------
+    c_prev, c_next = st.columns(2)
+    with c_prev:
+        if idx > 0:
+            if st.button("◀ Précédent", key=f"flt_prev_{idx}", width="stretch"):
+                st.session_state["flt_page"] = idx - 1
+                _rerun_flt()
+        else:
+            if st.button("📑 Sommaire", key=f"flt_home_{idx}", width="stretch"):
+                st.session_state["flt_page"] = -1
+                _rerun_flt()
+    with c_next:
+        if idx < len(sections) - 1:
+            if st.button("Suivant ▶", key=f"flt_next_{idx}", width="stretch", type="primary"):
+                st.session_state["flt_page"] = idx + 1
+                _rerun_flt()
+        else:
+            if st.button("✕ Fermer le livret", key=f"flt_end_{idx}", width="stretch"):
+                st.session_state["flt_page"] = -1
+                _rerun_flt()
 
 def _render_page_theme_ensemble():
     """🕯️ Thème → Vue d'ensemble — v7.7.7 : langage du dépliant (bannière
