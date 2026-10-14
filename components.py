@@ -1221,6 +1221,79 @@ def afficher_page_reponse_membre(event_id):
             </div>
             """, unsafe_allow_html=True)
 
+# --- 2️⃣ bis v7.7.9 : le bloc feuillet est un FRAGMENT. Les interactions
+# (changement de section, enregistrement) ne redessinent QUE ce bloc :
+# la page ne remonte plus en haut à chaque cochage. ---
+try:
+    _dec_frag = st.fragment
+except AttributeError:
+    def _dec_frag(f):
+        return f
+
+# Sections du feuillet mensuel (ordre, titre par défaut) — CONSTANTE module
+SECTIONS_FEUILLET = [
+    (2, "Éditorial"), (3, "Vivre en mouvement"), (4, "Célébrons en équipe"),
+    (5, "Prière à l'Esprit-Saint"), (6, "Invocation à Marie"),
+    (7, "À l'écoute de la Parole de Dieu"), (8, "Réflexion sur la Parole"),
+    (9, "Réflexion pour notre vie"), (10, "Prière de Louange et d'Intercession"),
+    (11, "Salve Regina"), (12, "Envoi en mission"),
+]
+
+
+@_dec_frag
+def _bloc_feuillet_diocese(themes, MOIS_NOMS):
+    """FRAGMENT du feuillet mensuel (saisie diocèse 2️⃣ bis)."""
+    _annees_fe = [t[1] for t in themes] or [get_periode_pastorale()[0]]
+    _annee_fe = st.selectbox("Année pastorale du feuillet", _annees_fe, key="fe_annee")
+    _mois_fe_lbl = st.selectbox("Mois pastoral du feuillet", MOIS_NOMS, key="fe_mois")
+    _mois_fe = MOIS_NOMS.index(_mois_fe_lbl) + 1
+
+    try:
+        _secs_fe = {r[0]: r for r in c.execute(
+            """SELECT ordre, titre, contenu, lecteur, image_url FROM feuillet_sections
+               WHERE annee_debut=? AND mois=?""", (_annee_fe, _mois_fe)).fetchall()}
+    except Exception:
+        _secs_fe = {}
+
+    # Selectbox sur la VALEUR STABLE (l'ordre, un entier). Le badge ✅/⬜ est
+    # de l'affichage pur (format_func) : aucune extraction depuis le libellé.
+    _titres_fe = dict(SECTIONS_FEUILLET)
+    _ord_fe = st.selectbox(
+        "Section à saisir",
+        [o for o, _t in SECTIONS_FEUILLET],
+        key="fe_section",
+        format_func=lambda o: f"{'✅' if o in _secs_fe else '⬜'} {o}. {_titres_fe[o]}")
+
+    _titre_def_fe = _titres_fe[_ord_fe]
+    _ex_fe = _secs_fe.get(_ord_fe)
+
+    with st.form("form_feuillet_section"):
+        _titre_fe = st.text_input("Titre de la section",
+                                  value=(_ex_fe[1] if _ex_fe and _ex_fe[1] else _titre_def_fe), key="fe_titre")
+        _contenu_fe = st.text_area("Contenu (texte du feuillet)", height=160,
+                                   value=(_ex_fe[2] or "") if _ex_fe else "", key="fe_contenu")
+        _lect_opts = ["tous", "R", "1", "2", "3"]
+        _lect_idx = _lect_opts.index(_ex_fe[3]) if _ex_fe and _ex_fe[3] in _lect_opts else 0
+        _lecteur_fe = st.selectbox("Lecteur attendu (marge du feuillet)", _lect_opts, index=_lect_idx, key="fe_lecteur")
+        _img_fe = st.text_input("🔗 Lien d'image (imgbb — facultatif)",
+                                value=(_ex_fe[4] or "") if _ex_fe else "", key="fe_img")
+        if st.form_submit_button("💾 Enregistrer cette section", width="stretch"):
+            if _ex_fe:
+                c.execute("""UPDATE feuillet_sections SET titre=?, contenu=?, lecteur=?, image_url=?
+                             WHERE annee_debut=? AND mois=? AND ordre=?""",
+                          (_titre_fe.strip(), _contenu_fe.strip(), _lecteur_fe,
+                           _img_fe.strip() or None, _annee_fe, _mois_fe, _ord_fe))
+            else:
+                c.execute("""INSERT INTO feuillet_sections (annee_debut, mois, ordre, titre, contenu, lecteur, image_url)
+                             VALUES (?,?,?,?,?,?,?)""",
+                          (_annee_fe, _mois_fe, _ord_fe, _titre_fe.strip(), _contenu_fe.strip(),
+                           _lecteur_fe, _img_fe.strip() or None))
+            commit_and_sync()
+            st.success(f"Section « {_titre_fe.strip()} » enregistrée ! ✅")
+
+    if _secs_fe:
+        st.caption(f"📋 {len(_secs_fe)} section(s) saisie(s) pour {_mois_fe_lbl} {_annee_fe} : "
+                   + ", ".join(str(_o) for _o in sorted(_secs_fe)))
 
 def gerer_theme_pastoral():
     """🕯️ Interface diocèse : thème annuel, 12 sous-thèmes mensuels (feuillets),
@@ -1336,7 +1409,7 @@ def gerer_theme_pastoral():
 
     st.markdown("---")
 
-    # ---------- 2️⃣ bis. LE FEUILLET MENSUEL EN ÉQUIPE (11 sections) ----------
+    # ---------- 2️⃣ bis. LE FEUILLET MENSUEL EN ÉQUIPE (FRAGMENT v7.7.9) ----------
     st.markdown("### 2️⃣ bis. Le feuillet mensuel en Équipe")
     st.caption("Saisie section par section du feuillet reçu (10-15 du mois). "
                "Process conseillé : photographier les pages → transcription → collage ici. "
@@ -1349,62 +1422,7 @@ def gerer_theme_pastoral():
                     ordre INTEGER, titre TEXT, contenu TEXT,
                     lecteur TEXT, image_url TEXT)""")
     commit_and_sync()
-
-    SECTIONS_FEUILLET = [
-        (2, "Éditorial"), (3, "Vivre en mouvement"), (4, "Célébrons en équipe"),
-        (5, "Prière à l'Esprit-Saint"), (6, "Invocation à Marie"),
-        (7, "À l'écoute de la Parole de Dieu"), (8, "Réflexion sur la Parole"),
-        (9, "Réflexion sur notre vie"), (10, "Prière de Louange et d'Intercession"),
-        (11, "Salve Regina"), (12, "Envoi en mission"),
-    ]
-    _annees_fe = [t[1] for t in themes] or [get_periode_pastorale()[0]]
-    _annee_fe = st.selectbox("Année pastorale du feuillet", _annees_fe, key="fe_annee")
-    _mois_fe_lbl = st.selectbox("Mois pastoral du feuillet", MOIS_NOMS, key="fe_mois")
-    _mois_fe = MOIS_NOMS.index(_mois_fe_lbl) + 1
-
-    try:
-        _secs_fe = {r[0]: r for r in c.execute(
-            """SELECT ordre, titre, contenu, lecteur, image_url FROM feuillet_sections
-               WHERE annee_debut=? AND mois=?""", (_annee_fe, _mois_fe)).fetchall()}
-    except Exception:
-        _secs_fe = {}
-
-    _lbls_fe = [f"{'✅' if _o in _secs_fe else '⬜'} {_o}. {_t}" for _o, _t in SECTIONS_FEUILLET]
-    _choix_fe = st.selectbox("Section à saisir", _lbls_fe, key="fe_section")
-    # v7.7.8 — extraction ROBUSTE : on ne garde que les chiffres du libellé
-    # (les badges ✅/⬜ et espaces ne doivent jamais casser la conversion).
-    _ord_fe = int("".join(ch for ch in _choix_fe.split(".")[0] if ch.isdigit()))
-    _titre_def_fe = next(t for o, t in SECTIONS_FEUILLET if o == _ord_fe)
-    _ex_fe = _secs_fe.get(_ord_fe)
-
-    with st.form("form_feuillet_section"):
-        _titre_fe = st.text_input("Titre de la section",
-                                  value=(_ex_fe[1] if _ex_fe and _ex_fe[1] else _titre_def_fe), key="fe_titre")
-        _contenu_fe = st.text_area("Contenu (texte du feuillet)", height=160,
-                                   value=(_ex_fe[2] or "") if _ex_fe else "", key="fe_contenu")
-        _lect_opts = ["tous", "R", "1", "2", "3"]
-        _lect_idx = _lect_opts.index(_ex_fe[3]) if _ex_fe and _ex_fe[3] in _lect_opts else 0
-        _lecteur_fe = st.selectbox("Lecteur attendu (marge du feuillet)", _lect_opts, index=_lect_idx, key="fe_lecteur")
-        _img_fe = st.text_input("🔗 Lien d'image (imgbb — facultatif)",
-                                value=(_ex_fe[4] or "") if _ex_fe else "", key="fe_img")
-        if st.form_submit_button("💾 Enregistrer cette section", width="stretch"):
-            if _ex_fe:
-                c.execute("""UPDATE feuillet_sections SET titre=?, contenu=?, lecteur=?, image_url=?
-                             WHERE annee_debut=? AND mois=? AND ordre=?""",
-                          (_titre_fe.strip(), _contenu_fe.strip(), _lecteur_fe,
-                           _img_fe.strip() or None, _annee_fe, _mois_fe, _ord_fe))
-            else:
-                c.execute("""INSERT INTO feuillet_sections (annee_debut, mois, ordre, titre, contenu, lecteur, image_url)
-                             VALUES (?,?,?,?,?,?,?)""",
-                          (_annee_fe, _mois_fe, _ord_fe, _titre_fe.strip(), _contenu_fe.strip(),
-                           _lecteur_fe, _img_fe.strip() or None))
-            commit_and_sync()
-            st.session_state["flash_success"] = f"Section « {_titre_fe.strip()} » enregistrée ! ✅"
-            st.rerun()
-
-    if _secs_fe:
-        st.caption(f"📋 {_len_fe} section(s) saisie(s) pour {_mois_fe_lbl} {_annee_fe} : "
-                   + ", ".join(str(_o) for _o in sorted(_secs_fe)) if (_len_fe := len(_secs_fe)) else "")
+    _bloc_feuillet_diocese(themes, MOIS_NOMS)
 
     st.markdown("---")
 
