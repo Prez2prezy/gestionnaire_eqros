@@ -24,6 +24,10 @@ try:
     from streamlit import iframe as _st_iframe
 
     def _comp_html(body, height=None):
+        # v7.7.10b — st.iframe refuse height=0/None (l'ancienne API les
+        # acceptait pour les scripts invisibles) : on force 1 pixel.
+        if not height:
+            height = 1
         return _st_iframe(body, height=height)
 except (ImportError, AttributeError):
     from streamlit.components.v1 import html as _comp_html
@@ -142,11 +146,11 @@ def _compter_bandes(membre=False, pid=None):
     for ligne in bandes:
         if len(ligne) < 1:
             continue
-        texte = ligne[0]
+        texte = str(ligne[0]) if ligne[0] is not None else ""
         cible = ligne[1] if len(ligne) > 1 else None
         if cible == "membre" and not membre:
             continue
-        if not texte:
+        if not texte.strip():
             continue
         n += 1
     return n
@@ -358,11 +362,11 @@ def _bandes_defilantes_html(membre=False, pid=None):
     for ligne in bandes:
         if len(ligne) < 1:
             continue
-        texte = ligne[0]
+        texte = str(ligne[0]) if ligne[0] is not None else ""
         cible = ligne[1] if len(ligne) > 1 else None
         if cible == "membre" and not membre:
             continue
-        if not texte:
+        if not texte.strip():
             continue
         duree = max(15, min(60, len(texte) // 2))
         texte_html = html.escape(texte)
@@ -697,11 +701,13 @@ def _rerun_flt():
         st.rerun()
 
 
-def _alerte_feuillet_fil(membre=False):
-    """Alerte en tête du fil d'actualités : badge 🆕 tant que le livret du
-    mois n'a pas été ouvert. Le clic ouvre le livret en autonomie sur place."""
+def _alerte_feuillet_fil(membre=False, matloc=None, pid=None):
+    """Alerte en tête du fil d'actualités (v7.7.10b) : carte + badge 🆕 tant
+    que le livret du mois n'a pas été ouvert (mémoire de session). Le lien
+    NAVIGUE vers 🕯️ Thème / 🔭 Vue d'ensemble : c'est LÀ que vit le feuillet,
+    et le deep-link &feuillet=1 y ouvre directement la lecture."""
     theme = get_theme_actif()
-    if not theme:
+    if not theme or len(theme) < 3:
         return
     _annee = theme[2]
     _mp = ((date.today().month - 9) % 12) + 1
@@ -729,15 +735,21 @@ def _alerte_feuillet_fil(membre=False):
         '<div class="rub-carte" style="padding:16px 18px; margin:15px 10px 8px 10px;">'
         '<div class="rub-carte-titre" style="font-size:1.02rem;">' + _titre + _ruban + "</div>"
         '<div class="rub-carte-txt" style="margin-top:4px;">Mois ' + _de2 + _mnom2 + " "
-        + str(_ac2) + " — cliquez pour ouvrir le livret et prier en Équipe.</div></div>",
+        + str(_ac2) + " — le livret vous attend dans 🕯️ Thème · Vue d'ensemble.</div></div>",
         unsafe_allow_html=True)
-    if st.button("📖 Ouvrir le feuillet", key="flt_fil_open", width="stretch", type="primary"):
-        st.session_state["flt_ouvert"] = True
-        st.session_state["flt_vu_cle"] = _cle
-        st.session_state["flt_page"] = 0
-        st.session_state["flt_cle"] = _cle
-        st.session_state.pop("flt_mois_sel", None)
-        st.rerun()
+    _idx_theme = RUBRIQUES_MEMBRE.index("🕯️ Thème") if membre \
+        else RUBRIQUES_PUBLIC.index("🕯️ Thème")
+    _href = "?espace=1"
+    if matloc:
+        _href += "&matloc=" + str(matloc)
+    if pid:
+        _href += "&p=" + str(pid)
+    _href += "&nav=1&r=" + str(_idx_theme) + "&s=0&feuillet=1"
+    st.markdown('<div style="text-align:center; margin:4px 10px 12px 10px;">'
+                '<a href="' + _href + '" target="_self" '
+                'style="display:inline-block; background:#4527a0; color:#ffffff;'
+                ' padding:10px 22px; border-radius:30px; font-weight:bold; text-decoration:none;">'
+                '📖 Ouvrir le feuillet</a></div>', unsafe_allow_html=True)
 
 
 @_dec_frag_flt
@@ -956,27 +968,15 @@ def _render_page_theme_ensemble():
         st.caption(f"🔎 DEBUG sous-thème — mois civil={mois_courant} → pastoral={_mois_pastoral} | "
                    f"sous-thème {'TROUVÉ' if sous else 'non trouvé'}")
 
-    # ---------- 📖 LE FEUILLET MENSUEL DE PRIÈRE (v7.7.10) ----------
+    # ---------- 📖 LE FEUILLET MENSUEL DE PRIÈRE (v7.7.10b) ----------
+    # Le livret REMPLACE la zone « Sous-thème » (décision diocèse) : sa
+    # couverture porte le sous-thème du mois. Le deep-link &feuillet=1 a
+    # déjà ouvert la lecture en tête de show_espace_membre → on marque vu.
+    if st.session_state.get("flt_ouvert"):
+        st.session_state.setdefault("flt_vu_cle", f"{annee_debut}-{_mois_pastoral}")
     _render_feuillet_mensuel(annee_debut, _mois_pastoral, sous=sous)
     if st.session_state.get("flt_ouvert"):
         return
-
-    # --- préservation : sous-thème détaillé + version PDF, repliés ---
-    if sous:
-        _v = list(sous) + [None] * 4
-        titre_st, contenu_st, feuillet, affiche_st = _v[0], _v[1], _v[2], _v[3]
-        with st.expander("🕯️ Le sous-thème du mois : " + (titre_st or "")):
-            _img = ('<img src="' + str(affiche_st) + '" alt="Affiche du mois" '
-                    'style="width:100%; max-width:640px; display:block; margin:10px auto; '
-                    'border-radius:10px;">'
-                    if affiche_st and str(affiche_st).startswith("http") else "")
-            st.markdown(_carte_priere(_trait_debut_page() + _img
-                        + '<div class="cp-para">'
-                        + html.escape(contenu_st or "").replace("\n", "<br>") + "</div>"),
-                        unsafe_allow_html=True)
-        if feuillet:
-            with st.expander("📄 Version PDF du feuillet"):
-                _render_pdf_inline(feuillet)
 
 
 def _render_page_en_preparation(emoji, titre, description):
@@ -1957,7 +1957,7 @@ def _render_fil_actualites(pid=None, membre=False, matloc=None):
     """v7.6 — fil du jour BLINDÉ : la ligne est complétée à 5 cases avant
     tout accès par index. LOT C5 : dernière publication VISIBLE du contexte."""
     # 📖 Alerte « nouveau feuillet » en tête du fil (v7.7.10)
-    _alerte_feuillet_fil(membre=membre)
+    _alerte_feuillet_fil(membre=membre, matloc=matloc, pid=pid)
     cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
         else ("AND paroisse_cible IS NULL", [])
     dernier = c.execute(f"""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
@@ -2014,6 +2014,13 @@ def _enregistrer_presence(membre_id, evt_id, choix):
 # ====================================================================
 def show_espace_membre(matloc_membre=None):
     livre_ouvert = st.session_state.get("diz_ouvert", False)
+
+    # 📖 Deep-link feuillet (&feuillet=1 — alerte du fil d'actualités) :
+    # ouvre la lecture AVANT le rendu de l'entête (le menu se masque comme
+    # pour le livre de la dizaine).
+    if st.query_params.get("feuillet") == "1" and not st.session_state.get("flt_ouvert"):
+        st.session_state["flt_ouvert"] = True
+        st.session_state["flt_page"] = 0
 
     _render_theme(compact=livre_ouvert)
 
@@ -2092,8 +2099,9 @@ def show_espace_membre(matloc_membre=None):
 
         rub, sub = _lire_nav(RUBRIQUES_PUBLIC)
         pid_pub = _pid_contexte()
-        _render_header(masquer_bandes=livre_ouvert,
-                       rubriques=(None if livre_ouvert else RUBRIQUES_PUBLIC),
+        _flt_lu = bool(st.session_state.get("flt_ouvert"))
+        _render_header(masquer_bandes=(livre_ouvert or _flt_lu),
+                       rubriques=(None if (livre_ouvert or _flt_lu) else RUBRIQUES_PUBLIC),
                        rub_act=rub, sub_act=sub, pid=pid_pub)
         # Accueil personnalisé si arrivée par QR paroissial signé
         _origine = st.session_state.get("paroisse_origine")
@@ -2135,13 +2143,6 @@ def show_espace_membre(matloc_membre=None):
             else:
                 _render_page_theme_ensemble()
         else:
-            # 📖 Livret ouvert ? Lecture en autonomie (comme la dizaine)
-            if st.session_state.get("flt_ouvert"):
-                _t_actif = get_theme_actif()
-                if _t_actif:
-                    _mp_fl = ((date.today().month - 9) % 12) + 1
-                    _render_feuillet_mensuel(_t_actif[2], _mp_fl)
-                    return
             _depliant_mouvement(st.session_state.get("paroisse_origine"))
             _render_dizaine_du_jour(est_membre=False)
             if st.session_state.get("diz_ouvert"):
@@ -2178,8 +2179,9 @@ def show_espace_membre(matloc_membre=None):
 
     rub, sub = _lire_nav(RUBRIQUES_MEMBRE)
     pid_m = _pid_contexte(membre[11])
-    _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert,
-                   rubriques=(None if livre_ouvert else RUBRIQUES_MEMBRE),
+    _flt_lu = bool(st.session_state.get("flt_ouvert"))
+    _render_header(membre, matloc_membre, masquer_bandes=(livre_ouvert or _flt_lu),
+                   rubriques=(None if (livre_ouvert or _flt_lu) else RUBRIQUES_MEMBRE),
                    rub_act=rub, sub_act=sub, pid=pid_m)
 
     if livre_ouvert:
@@ -2286,13 +2288,6 @@ def show_espace_membre(matloc_membre=None):
             _render_page_theme_ensemble()
 
     else:
-        # 📖 Livret ouvert ? Lecture en autonomie (comme la dizaine)
-        if st.session_state.get("flt_ouvert"):
-            _t_actif = get_theme_actif()
-            if _t_actif:
-                _mp_fl = ((date.today().month - 9) % 12) + 1
-                _render_feuillet_mensuel(_t_actif[2], _mp_fl)
-                return
         _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
         if st.session_state.get("diz_ouvert"):
             return
