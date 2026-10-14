@@ -649,6 +649,40 @@ def _render_page_livret_thematique():
         with st.expander(_lib):
             st.markdown(_carte_priere(_trait_debut_page() + _rendre_texte_priere(_txt)), unsafe_allow_html=True)
 
+def _render_feuillet_mensuel(annee_debut, mois_pastoral):
+    """📖 Le feuillet mensuel en Équipe — v7.7.9 : les sections (2-12) du mois
+    pastoral courant, saisies par le diocèse, en expanders sous la carte du
+    sous-thème. Rien ne s'affiche si aucune section n'est saisie.
+    Cartes jaunes (langage du dépliant) ; lignes TOUT MAJUSCULES → traits fins ;
+    image de section si renseignée ; badge du lecteur attendu."""
+    try:
+        sections = c.execute("""SELECT ordre, titre, contenu, lecteur, image_url
+                                FROM feuillet_sections
+                                WHERE annee_debut=? AND mois=? ORDER BY ordre""",
+                             (annee_debut, mois_pastoral)).fetchall()
+    except Exception:
+        return
+    sections = [s for s in sections if s[2]]
+    if st.query_params.get("debug") == "1":
+        st.caption(f"🔎 DEBUG feuillet — annee_debut={annee_debut} mois_pastoral={mois_pastoral} "
+                   f"→ {len(sections)} section(s) avec contenu")
+    if not sections:
+        return
+    _lbl_lecteur = {"tous": "Tous ensemble", "R": "Responsable",
+                    "1": "1er lecteur", "2": "2e lecteur", "3": "Chantre"}
+    st.markdown(_carte_etape("📖 LE FEUILLET MENSUEL EN ÉQUIPE"), unsafe_allow_html=True)
+    for (ordre, titre, contenu, lecteur, image_url) in sections:
+        _badge = ""
+        if lecteur:
+            _badge = " · 🗣️ " + _lbl_lecteur.get(str(lecteur), str(lecteur))
+        with st.expander(f"📖 {ordre} — {titre or ''}{_badge}"):
+            _img_html = ""
+            if image_url and str(image_url).startswith("http"):
+                _img_html = '<img src="' + str(image_url) + '" alt="" class="cp-photo">'
+            st.markdown(_carte_priere(_trait_debut_page() + _img_html
+                                      + _rendre_texte_priere(contenu)),
+                        unsafe_allow_html=True)
+
 def _render_page_theme_ensemble():
     """🕯️ Thème → Vue d'ensemble — v7.7.7 : langage du dépliant (bannière
     bleu-or, badge d'étape, carte jaune verrouillée, trait fin)."""
@@ -727,6 +761,9 @@ def _render_page_theme_ensemble():
             _render_pdf_inline(feuillet)
     else:
         st.info("📅 Le sous-thème de ce mois n'a pas encore été publié.")
+
+    # ---------- 📖 LE FEUILLET MENSUEL EN ÉQUIPE (v7.7.9) ----------
+    _render_feuillet_mensuel(annee_debut, _mois_pastoral)
 
 
 def _render_page_en_preparation(emoji, titre, description):
