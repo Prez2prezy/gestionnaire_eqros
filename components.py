@@ -1242,7 +1242,15 @@ SECTIONS_FEUILLET = [
 
 @_dec_frag
 def _bloc_feuillet_diocese(themes, MOIS_NOMS):
-    """FRAGMENT du feuillet mensuel (saisie diocèse 2️⃣ bis)."""
+    """FRAGMENT du feuillet mensuel (saisie diocèse 2️⃣ bis).
+    Une section peut impliquer PLUSIEURS lecteurs (multiselect) : la valeur
+    stockée est une chaîne « R,1,T ». L'ancienne valeur « tous » reste lue.
+    Les marqueurs R. / T. / 1. / 2. / 3. DU TEXTE restent la référence
+    ligne par ligne pour le futur pupitre."""
+    LIBELLES_LECTEURS = {"T": "Tous ensemble", "R": "Responsable",
+                         "1": "1er lecteur", "2": "2e lecteur", "3": "Chantre"}
+    _ordre_canonique = ["R", "1", "2", "3", "T"]
+
     _annees_fe = [t[1] for t in themes] or [get_periode_pastorale()[0]]
     _annee_fe = st.selectbox("Année pastorale du feuillet", _annees_fe, key="fe_annee")
     _mois_fe_lbl = st.selectbox("Mois pastoral du feuillet", MOIS_NOMS, key="fe_mois")
@@ -1256,7 +1264,7 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
         _secs_fe = {}
 
     # Selectbox sur la VALEUR STABLE (l'ordre, un entier). Le badge ✅/⬜ est
-    # de l'affichage pur (format_func) : aucune extraction depuis le libellé.
+    # de l'affichage pur (format_func) : aucune extraction depuis un libellé.
     _titres_fe = dict(SECTIONS_FEUILLET)
     _ord_fe = st.selectbox(
         "Section à saisir",
@@ -1264,30 +1272,51 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
         key="fe_section",
         format_func=lambda o: f"{'✅' if o in _secs_fe else '⬜'} {o}. {_titres_fe[o]}")
 
+    # Changement de section → purge des champs (sinon Streamlit réaffiche
+    # les valeurs de l'ancienne section au lieu de celles de la base).
+    if st.session_state.get("fe_ordre_vu") != _ord_fe:
+        st.session_state["fe_ordre_vu"] = _ord_fe
+        for _k in ("fe_titre", "fe_contenu", "fe_lecteurs", "fe_img"):
+            st.session_state.pop(_k, None)
+
     _titre_def_fe = _titres_fe[_ord_fe]
     _ex_fe = _secs_fe.get(_ord_fe)
+
+    def _parser_lecteurs(v):
+        if not v:
+            return []
+        _codes = [x.strip() for x in str(v).split(",") if x.strip()]
+        _codes = ["T" if x == "tous" else x for x in _codes]
+        return [x for x in _codes if x in LIBELLES_LECTEURS]
 
     with st.form("form_feuillet_section"):
         _titre_fe = st.text_input("Titre de la section",
                                   value=(_ex_fe[1] if _ex_fe and _ex_fe[1] else _titre_def_fe), key="fe_titre")
         _contenu_fe = st.text_area("Contenu (texte du feuillet)", height=160,
                                    value=(_ex_fe[2] or "") if _ex_fe else "", key="fe_contenu")
-        _lect_opts = ["tous", "R", "1", "2", "3"]
-        _lect_idx = _lect_opts.index(_ex_fe[3]) if _ex_fe and _ex_fe[3] in _lect_opts else 0
-        _lecteur_fe = st.selectbox("Lecteur attendu (marge du feuillet)", _lect_opts, index=_lect_idx, key="fe_lecteur")
+        st.caption("🗣️ Cochez TOUS les lecteurs impliqués dans cette section "
+                   "(les marqueurs R. / T. / 1. / 2. / 3. du texte font foi ligne par ligne).")
+        _lecteurs_sel = st.multiselect(
+            "Lecteurs impliqués (marge du feuillet)",
+            _ordre_canonique,
+            default=_parser_lecteurs(_ex_fe[3]) if _ex_fe else [],
+            format_func=lambda x: LIBELLES_LECTEURS.get(x, x),
+            key="fe_lecteurs")
         _img_fe = st.text_input("🔗 Lien d'image (imgbb — facultatif)",
                                 value=(_ex_fe[4] or "") if _ex_fe else "", key="fe_img")
         if st.form_submit_button("💾 Enregistrer cette section", width="stretch"):
+            _lecteur_st = (",".join(sorted(set(_lecteurs_sel), key=_ordre_canonique.index))
+                           if _lecteurs_sel else None)
             if _ex_fe:
                 c.execute("""UPDATE feuillet_sections SET titre=?, contenu=?, lecteur=?, image_url=?
                              WHERE annee_debut=? AND mois=? AND ordre=?""",
-                          (_titre_fe.strip(), _contenu_fe.strip(), _lecteur_fe,
+                          (_titre_fe.strip(), _contenu_fe.strip(), _lecteur_st,
                            _img_fe.strip() or None, _annee_fe, _mois_fe, _ord_fe))
             else:
                 c.execute("""INSERT INTO feuillet_sections (annee_debut, mois, ordre, titre, contenu, lecteur, image_url)
                              VALUES (?,?,?,?,?,?,?)""",
                           (_annee_fe, _mois_fe, _ord_fe, _titre_fe.strip(), _contenu_fe.strip(),
-                           _lecteur_fe, _img_fe.strip() or None))
+                           _lecteur_st, _img_fe.strip() or None))
             commit_and_sync()
             st.success(f"Section « {_titre_fe.strip()} » enregistrée ! ✅")
 
