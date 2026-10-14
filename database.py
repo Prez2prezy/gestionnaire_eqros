@@ -64,6 +64,9 @@ class CursorWrapper:
         self.cursor = cursor
 
     def execute(self, query, params=None):
+        # v7.7.10e — « global conn » DOIT précéder toute utilisation de conn
+        # dans la fonction (SyntaxError sinon) : il est donc en tête.
+        global conn
         last_err = None
         for attempt in range(3):
             try:
@@ -82,7 +85,6 @@ class CursorWrapper:
                 msg = str(e).lower()
                 if "stream not found" in msg or "connection reset" in msg:
                     time.sleep(1)
-                    global conn
                     try:
                         conn, _ = create_connection()
                         self.cursor = conn.cursor()
