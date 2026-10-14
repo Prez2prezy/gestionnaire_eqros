@@ -1355,7 +1355,7 @@ def gerer_theme_pastoral():
         (5, "Prière à l'Esprit-Saint"), (6, "Invocation à Marie"),
         (7, "À l'écoute de la Parole de Dieu"), (8, "Réflexion sur la Parole"),
         (9, "Réflexion sur notre vie"), (10, "Prière de Louange et d'Intercession"),
-        (11, "Envoi en Mission"), (12, "Informations diverses"),
+        (11, "Envoi en Mission"), (12, "Envoi en mission"),
     ]
     _annees_fe = [t[1] for t in themes] or [get_periode_pastorale()[0]]
     _annee_fe = st.selectbox("Année pastorale du feuillet", _annees_fe, key="fe_annee")
