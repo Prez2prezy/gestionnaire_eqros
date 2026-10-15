@@ -1274,9 +1274,9 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
 
     # Changement de section → purge des champs (sinon Streamlit réaffiche
     # les valeurs de l'ancienne section au lieu de celles de la base).
-    if st.session_state.get("fe_ctx_vu") != (_annee_fe, _mois_fe, _ord_fe):
-        st.session_state["fe_ctx_vu"] = (_annee_fe, _mois_fe, _ord_fe)
-        for _k in ("fe_titre", "fe_contenu", "fe_lecteurs", "fe_img", "fe_num"):
+    if st.session_state.get("fe_ordre_vu") != _ord_fe:
+        st.session_state["fe_ordre_vu"] = _ord_fe
+        for _k in ("fe_titre", "fe_contenu", "fe_lecteurs", "fe_img"):
             st.session_state.pop(_k, None)
 
     _titre_def_fe = _titres_fe[_ord_fe]
@@ -1323,34 +1323,6 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
     if _secs_fe:
         st.caption(f"📋 {len(_secs_fe)} section(s) saisie(s) pour {_mois_fe_lbl} {_annee_fe} : "
                    + ", ".join(str(_o) for _o in sorted(_secs_fe)))
-
-    # 🔢 N° imprimé du feuillet (ex. 523) — affiché dans le titre de la zone
-    c.execute("""CREATE TABLE IF NOT EXISTS feuillet_meta (
-                    annee_debut INTEGER, mois INTEGER, numero TEXT,
-                    UNIQUE(annee_debut, mois))""")
-    commit_and_sync()
-    try:
-        _meta_row = c.execute("SELECT numero FROM feuillet_meta WHERE annee_debut=? AND mois=?",
-                              (_annee_fe, _mois_fe)).fetchone()
-    except Exception:
-        _meta_row = None
-    with st.form("form_feuillet_meta"):
-        _num_fe = st.text_input("🔢 N° imprimé du feuillet (affiché dans le titre de la zone)",
-                                value=(_meta_row[0] if _meta_row and _meta_row[0] else ""),
-                                key="fe_num", placeholder="ex. 523")
-        if st.form_submit_button("💾 Enregistrer le n° du feuillet", width="stretch"):
-            _v = (_num_fe or "").strip()
-            if _v:
-                c.execute("""INSERT INTO feuillet_meta (annee_debut, mois, numero) VALUES (?, ?, ?)
-                             ON CONFLICT(annee_debut, mois) DO UPDATE SET numero=excluded.numero""",
-                          (_annee_fe, _mois_fe, _v))
-                commit_and_sync()
-                st.success(f"N° « {_v} » enregistré pour {_mois_fe_lbl} {_annee_fe} ! ✅")
-            else:
-                c.execute("DELETE FROM feuillet_meta WHERE annee_debut=? AND mois=?",
-                          (_annee_fe, _mois_fe))
-                commit_and_sync()
-                st.info("N° effacé.")
 
 def gerer_theme_pastoral():
     """🕯️ Interface diocèse : thème annuel, 12 sous-thèmes mensuels (feuillets),
