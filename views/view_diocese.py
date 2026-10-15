@@ -617,6 +617,42 @@ def show_diocese():
                             del st.session_state['new_pwd_par']
                             st.rerun()
 
+        # 📡 Compte du Service Communication — la cellule prépare les contenus
+        # et les soumet au SAS. Sans ce compte, la page Communication est
+        # inaccessible (aucun autre endroit ne crée ce rôle).
+        st.markdown("### 📡 Service Communication")
+        user_com = c.execute("SELECT id, username FROM utilisateurs WHERE role='communication'").fetchone()
+        if user_com:
+            with st.expander(f"📡 Compte existant — {user_com[1]}"):
+                st.write(f"**Identifiant :** `{user_com[1]}`")
+                if st.button("🔄 Réinitialiser le mot de passe", key="reset_com"):
+                    nouveau_com = generer_mot_de_passe()
+                    c.execute("UPDATE utilisateurs SET password=? WHERE id=?", (hash_password(nouveau_com), user_com[0]))
+                    commit_and_sync()
+                    st.session_state['new_pwd_com'] = {'user': user_com[1], 'pwd': nouveau_com}
+                if st.session_state.get('new_pwd_com') and st.session_state['new_pwd_com']['user'] == user_com[1]:
+                    st.markdown(f"<div style='background:#e8f5e9;padding:15px;border-radius:10px;border:1px solid #c8e6c9;'>🔑 Nouveau mot de passe pour <code>{st.session_state['new_pwd_com']['user']}</code> : <code style='color:#d84315;font-size:1.2rem;'>{st.session_state['new_pwd_com']['pwd']}</code></div>", unsafe_allow_html=True)
+                    if st.button("OK, j'ai noté le mot de passe", key="ok_pwd_com"):
+                        del st.session_state['new_pwd_com']
+                        st.rerun()
+        else:
+            with st.expander("➕ Créer le compte de la cellule Communication"):
+                st.caption("Ce compte donne accès au canal de soumission (prières, bandes défilantes, "
+                           "actualités, thème, musiques). Rien n'est publié sans votre validation au SAS.")
+                nom_com = st.text_input("Nom d'utilisateur", value="communication", key="com_user")
+                mdp_com = st.text_input("Mot de passe (laisser vide → généré automatiquement)", type="password", key="com_pwd")
+                if st.button("📡 Créer le compte Communication", key="btn_creer_com", type="primary"):
+                    ident = (nom_com or "").strip() or "communication"
+                    if c.execute("SELECT id FROM utilisateurs WHERE username=?", (ident,)).fetchone():
+                        st.error("❌ Ce nom d'utilisateur existe déjà.")
+                    else:
+                        _mdp_final = (mdp_com or "").strip() or generer_mot_de_passe()
+                        c.execute("INSERT INTO utilisateurs (username, password, role, diocese_id) VALUES (?,?,?,?)",
+                                  (ident, hash_password(_mdp_final), "communication", 1))
+                        commit_and_sync()
+                        st.session_state['new_pwd_com'] = {'user': ident, 'pwd': _mdp_final}
+                        st.rerun()
+
     elif menu == "📊 Statistiques":
         st.markdown('<h2 style="color:#1A237E;">📊 Statistiques générales</h2>', unsafe_allow_html=True)
         tab_gen, tab_freq = st.tabs(["📌 Général", "📈 Fréquentation"])
@@ -705,3 +741,4 @@ def show_diocese():
                 commit_and_sync()
                 st.session_state["flash_success"] = "Toutes les données ont été supprimées. 🗑️"
                 st.rerun()
+
