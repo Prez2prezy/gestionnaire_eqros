@@ -1,9 +1,11 @@
 # ====================================================================
-# view_espace_membre.py — VERSION 7.6 (réécriture une pièce)
-# v7.6 : ① liens du menu naviguent DANS l'onglet courant (fini les 10
-# onglets) ; ② fil du mjour blindé ; ③ compteur fusionné « 1 visite =
-# 1 arrivée » ; ④ fonctions bandes blindées (accès par index).
-# Hérite de v7.5 : menu liens HTML purs + ruban hover + ☰ mobile,
+# view_espace_membre.py — VERSION 7.8.1 (correctif navigation)
+# v7.8.1 : les liens du menu remarchent — l'intercepteur _liens_meme_onglet
+# n'annule plus le clic natif avant d'avoir RÉUSSI la nav JS (Streamlit 1.66
+# sandboxe ses iframes sans allow-top-navigation → SecurityError silencieux
+# = tous les liens du menu morts). Essai JS, repli navigation native.
+# Hérite de v7.8 : feuillets mensuels (vitrine, livret autonome, alerte fil,
+# archives) ; de v7.6 : menu liens HTML purs + ruban hover + ☰ mobile,
 # navigation ?r=&s=, mesure autocorrigée, QR paroissial, lecteur complet.
 # Marqueurs : Ctrl+F → "VERSION 7.6", "_liens_meme_onglet", "· v7.6".
 # ====================================================================
@@ -112,9 +114,19 @@ def _scroll_top(cle):
 def _liens_meme_onglet(cle):
     """v7.6 — LES LIENS DU MENU NAVIGUENT DANS L'ONGLET COURANT.
     Constat terrain : Streamlit force certains liens vers un nouvel onglet
-    (10 clics = 10 onglets). Double parade : ① target="_self" écrit dans le
-    HTML des ancres ; ② intercepteur qui reprend le clic et navigue le
-    document parent. Ré-attaché à chaque run (le DOM est recréé)."""
+    (10 clics = 10 onglets). Parade : target="_self" écrit dans le HTML
+    des ancres + intercepteur qui reprend le clic et navigue le document
+    parent. Ré-attaché à chaque run (le DOM est recréé).
+    v7.8.1 — CORRECTIF MAJEUR : Streamlit 1.66 sandboxe ses iframes SANS
+    « allow-top-navigation » → `window.top.location.href=…` lève
+    SecurityError. L'ancien code appelait d'abord e.preventDefault() PUIS
+    tentait la nav JS : celle-ci échouait en silence et le clic ne faisait
+    PLUS RIEN (tous les liens du menu et des sous-rubriques morts).
+    Stratégie « essai sans risque » :
+      ① tenter la nav JS (top) ;
+      ② si elle RÉUSSIT → preventDefault() (évite le double chargement) ;
+      ③ si elle ÉCHOUE → ne RIEN annuler : le navigateur suit l'ancre
+        nativement (target="_self" garantit l'onglet courant)."""
     script = (
         "<script>(function(){var d=window.parent.document;var essais=0;"
         "var t=setInterval(function(){essais++;"
@@ -122,8 +134,11 @@ def _liens_meme_onglet(cle):
         "for(var i=0;i<as.length;i++){"
         "if(!as[i].getAttribute('data-self76')){"
         "as[i].setAttribute('data-self76','1');as[i].setAttribute('target','_self');"
-        "(function(a){a.addEventListener('click',function(e){e.preventDefault();"
-        "window.top.location.href=a.href;});})(as[i]);}"
+        "(function(a){a.addEventListener('click',function(e){"
+        "var nav=false;"
+        "try{window.top.location.href=a.href;nav=true;}catch(err){}"
+        "if(nav&&e&&e.preventDefault){e.preventDefault();}"
+        "});})(as[i]);}"
         "n++;}"
         "if(n>0&&essais>2){clearInterval(t);}"
         "else if(essais>20){clearInterval(t);}"
@@ -401,7 +416,8 @@ def _render_header(membre=None, matloc=None, masquer_bandes=False,
                    rubriques=None, rub_act=None, sub_act=None, pid=None):
     """Entête FIGÉE — v7.6 : menu en liens HTML avec target="_self"
     (navigation DANS l'onglet courant ; l'intercepteur _liens_meme_onglet
-    garantit le résultat). PC : ruban au survol. Mobile : ☰ en <details>."""
+    tente la nav JS puis LAISSE la navigation native agir si le sandbox
+    la refuse — v7.8.1). PC : ruban au survol. Mobile : ☰ en <details>."""
     logo_b64 = _logo_base64()
     logo_html = (f'<img src="data:image/png;base64,{logo_b64}" alt="Logo">'
                  if logo_b64 else '<div style="font-size:4rem;">📿</div>')
