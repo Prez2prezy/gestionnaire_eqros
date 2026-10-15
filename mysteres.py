@@ -357,19 +357,11 @@ def get_mysteres_du_jour(num):
 
 
 def get_theme_actif():
-    """Retourne (texte_theme, mystere_principal, annee_debut) du thème actif, ou None.
-    v7.7.10c — BLINDAGE : quelle que soit la réponse de la base (tuple court,
-    ligne incomplète), la fonction renvoie TOUJOURS soit None, soit un tuple
-    d'EXACTEMENT 3 éléments. Aucun appelant ne peut plus recevoir un tuple court."""
+    """Retourne (texte_theme, mystere_principal, annee_debut) du thème actif, ou None."""
     try:
         r = c.execute("""SELECT texte_theme, mystere_principal, annee_debut FROM themes_pastoraux
                          WHERE actif=1 ORDER BY annee_debut DESC LIMIT 1""").fetchone()
-        if not r:
-            return None
-        r = tuple(r)
-        if len(r) < 3:
-            r = r + (None,) * (3 - len(r))
-        return (r[0], r[1], r[2])
+        return r
     except Exception:
         return None
 
