@@ -166,6 +166,22 @@ def init_tables_and_migrations():
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     annee_debut INTEGER, mystere_id INTEGER, texte_lien TEXT,
                     UNIQUE(annee_debut, mystere_id))""")
+    # Sections du feuillet mensuel en équipe (v7.7.9) — créée DÈS L'INIT
+    # (auparavant seulement à la volée dans components.py, ce qui rendait
+    # les lectures de l'Espace membre dépendantes d'une visite préalable
+    # de la gestion diocèse du thème).
+    c.execute("""CREATE TABLE IF NOT EXISTS feuillet_sections (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    annee_debut INTEGER, mois INTEGER,
+                    ordre INTEGER, titre TEXT, contenu TEXT,
+                    lecteur TEXT, image_url TEXT)""")
+    # Publications du feuillet mensuel de prière (v7.8) — publier un feuillet
+    # déclenche l'alerte dans le fil d'actualité et son archivage automatique.
+    c.execute("""CREATE TABLE IF NOT EXISTS feuillets_publications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    annee_debut INTEGER, mois INTEGER, numero INTEGER,
+                    date_publication TEXT,
+                    UNIQUE(annee_debut, mois))""")
     commit_and_sync()
 
     # --- 2. DONNÉES PAR DÉFAUT ---
@@ -204,6 +220,10 @@ def init_tables_and_migrations():
     safe_migrate("ALTER TABLE sous_themes ADD COLUMN affiche_url TEXT")
     # Rubrique courante mémorisée dans le jeton de session
     safe_migrate("ALTER TABLE sessions_persistantes ADD COLUMN menu_courant TEXT")
+    # Colonnes de l'actualité validée (date + lieu informatifs) — migrées ici
+    # plutôt qu'à la volée dans view_communication_validation.py (robustesse)
+    safe_migrate("ALTER TABLE espace_spirituel ADD COLUMN date_evenement TEXT")
+    safe_migrate("ALTER TABLE espace_spirituel ADD COLUMN lieu TEXT")
 
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
     try:
@@ -233,3 +253,4 @@ try:
     setup_database()
 except Exception as e:
     logger.error(f"Erreur critique lors de l'initialisation de la DB: {e}")
+
