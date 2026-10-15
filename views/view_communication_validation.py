@@ -218,3 +218,5 @@ def show_validation_communication():
                    "Les sous-thèmes mensuels et les liens avec les 20 mystères sont des outils de gestion du diocèse : "
                    "saisie directe ci-dessous.")
         gerer_theme_pastoral()
+
+
