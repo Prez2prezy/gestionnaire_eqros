@@ -24,10 +24,6 @@ try:
     from streamlit import iframe as _st_iframe
 
     def _comp_html(body, height=None):
-        # v7.7.10b — st.iframe refuse height=0/None (l'ancienne API les
-        # acceptait pour les scripts invisibles) : on force 1 pixel.
-        if not height:
-            height = 1
         return _st_iframe(body, height=height)
 except (ImportError, AttributeError):
     from streamlit.components.v1 import html as _comp_html
@@ -146,11 +142,11 @@ def _compter_bandes(membre=False, pid=None):
     for ligne in bandes:
         if len(ligne) < 1:
             continue
-        texte = str(ligne[0]) if ligne[0] is not None else ""
+        texte = ligne[0]
         cible = ligne[1] if len(ligne) > 1 else None
         if cible == "membre" and not membre:
             continue
-        if not texte.strip():
+        if not texte:
             continue
         n += 1
     return n
@@ -362,11 +358,11 @@ def _bandes_defilantes_html(membre=False, pid=None):
     for ligne in bandes:
         if len(ligne) < 1:
             continue
-        texte = str(ligne[0]) if ligne[0] is not None else ""
+        texte = ligne[0]
         cible = ligne[1] if len(ligne) > 1 else None
         if cible == "membre" and not membre:
             continue
-        if not texte.strip():
+        if not texte:
             continue
         duree = max(15, min(60, len(texte) // 2))
         texte_html = html.escape(texte)
@@ -653,37 +649,21 @@ def _render_page_livret_thematique():
         with st.expander(_lib):
             st.markdown(_carte_priere(_trait_debut_page() + _rendre_texte_priere(_txt)), unsafe_allow_html=True)
 
-# ====================================================================
-# 📖 LE FEUILLET MENSUEL DE PRIÈRE — v7.7.10 : couverture-sommaire avec
-# bouton d'ouverture, lecture en AUTONOMIE (une page à la fois, bandeau
-# collant, pagination en pied), archive des mois passés, alerte dans le
-# fil d'actualités. Les marqueurs R./T./1./2./3. du TEXTE restent la
-# référence pour le futur pupitre.
-# ====================================================================
-
-def _feuillet_mois_civil(mois_pastoral, annee_debut):
-    """Mois PASTORAL (Sept=1 … Août=12) → (mois civil, année civile)."""
-    if mois_pastoral <= 4:
-        return mois_pastoral + 8, annee_debut
-    return mois_pastoral - 4, annee_debut + 1
+# Lecteurs du feuillet — CONSTANTE unique (jamais de libellé retapé dans
+# les comparaisons). Les marqueurs R./T./1./2./3. du TEXTE restent la
+# référence ligne par ligne pour le futur pupitre.
+LBL_LECTEURS_FEUILLET = {"T": "Tous ensemble", "R": "Responsable",
+                         "1": "1er lecteur", "2": "2e lecteur", "3": "Chantre",
+                         "tous": "Tous ensemble"}
 
 
-def _feuillet_label_mois(mois_pastoral, annee_debut):
-    """« octobre 2026 »."""
-    _mc, _ac = _feuillet_mois_civil(mois_pastoral, annee_debut)
-    return MOIS_FR[_mc - 1] + " " + str(_ac)
-
-
-def _feuillet_numero(annee_debut, mois_pastoral):
-    """N° imprimé du feuillet (ex. 523), saisi par le diocèse. None si absent."""
-    try:
-        _r = c.execute("SELECT numero FROM feuillet_meta WHERE annee_debut=? AND mois=?",
-                       (annee_debut, mois_pastoral)).fetchone()
-        if _r and _r[0]:
-            return str(_r[0]).strip() or None
-    except Exception:
-        pass
-    return None
+def _badges_lecteurs_feuillet(v):
+    """« R,1,T » → 'Responsable · 1er lecteur · Tous ensemble'."""
+    if not v:
+        return ""
+    _codes = [x.strip() for x in str(v).split(",") if x.strip()]
+    _libelles = [LBL_LECTEURS_FEUILLET.get(x, x) for x in _codes]
+    return " · ".join(html.escape(x) for x in _libelles)
 
 
 try:
@@ -694,69 +674,20 @@ except AttributeError:
 
 
 def _rerun_flt():
-    """Re-run limité au livret : tourner une page ne fait pas remonter l'écran."""
+    """Re-run limité au livret quand le fragment existe ; plein écran sinon."""
     try:
         st.rerun(scope="fragment")
     except TypeError:
         st.rerun()
 
 
-def _alerte_feuillet_fil(membre=False, matloc=None, pid=None):
-    """Alerte en tête du fil d'actualités (v7.7.10b) : carte + badge 🆕 tant
-    que le livret du mois n'a pas été ouvert (mémoire de session). Le lien
-    NAVIGUE vers 🕯️ Thème / 🔭 Vue d'ensemble : c'est LÀ que vit le feuillet,
-    et le deep-link &feuillet=1 y ouvre directement la lecture."""
-    theme = get_theme_actif()
-    if not theme or len(theme) < 3:
-        return
-    _annee = theme[2]
-    _mp = ((date.today().month - 9) % 12) + 1
-    try:
-        _nb = c.execute("""SELECT COUNT(*) FROM feuillet_sections
-                           WHERE annee_debut=? AND mois=?
-                             AND contenu IS NOT NULL AND TRIM(contenu) != ''""",
-                        (_annee, _mp)).fetchone()[0]
-    except Exception:
-        return
-    if not _nb:
-        return
-    _cle = f"{_annee}-{_mp}"
-    _nouveau = st.session_state.get("flt_vu_cle") != _cle
-    _numero = _feuillet_numero(_annee, _mp)
-    _titre = ("📖 LE FEUILLET MENSUEL DE PRIÈRE N° " + _numero) if _numero \
-        else "📖 Le feuillet mensuel de prière"
-    _ruban = (' <span style="background:#D32F2F; color:#ffffff; border-radius:12px;'
-              ' padding:2px 10px; font-size:0.75rem; font-weight:bold;">🆕 NOUVEAU</span>'
-              if _nouveau else "")
-    _mc2, _ac2 = _feuillet_mois_civil(_mp, _annee)
-    _mnom2 = MOIS_FR[_mc2 - 1]
-    _de2 = "d'" if _mnom2[0].lower() in "aâeéèêiîoôuûh" else "de "
-    st.markdown(
-        '<div class="rub-carte" style="padding:16px 18px; margin:15px 10px 8px 10px;">'
-        '<div class="rub-carte-titre" style="font-size:1.02rem;">' + _titre + _ruban + "</div>"
-        '<div class="rub-carte-txt" style="margin-top:4px;">Mois ' + _de2 + _mnom2 + " "
-        + str(_ac2) + " — le livret vous attend dans 🕯️ Thème · Vue d'ensemble.</div></div>",
-        unsafe_allow_html=True)
-    _idx_theme = RUBRIQUES_MEMBRE.index("🕯️ Thème") if membre \
-        else RUBRIQUES_PUBLIC.index("🕯️ Thème")
-    _href = "?espace=1"
-    if matloc:
-        _href += "&matloc=" + str(matloc)
-    if pid:
-        _href += "&p=" + str(pid)
-    _href += "&nav=1&r=" + str(_idx_theme) + "&s=0&feuillet=1"
-    st.markdown('<div style="text-align:center; margin:4px 10px 12px 10px;">'
-                '<a href="' + _href + '" target="_self" '
-                'style="display:inline-block; background:#4527a0; color:#ffffff;'
-                ' padding:10px 22px; border-radius:30px; font-weight:bold; text-decoration:none;">'
-                '📖 Ouvrir le feuillet</a></div>', unsafe_allow_html=True)
-
-
 @_dec_frag_flt
-def _render_feuillet_mensuel(annee_debut, mois_pastoral, sous=None):
-    """📖 LE FEUILLET MENSUEL DE PRIÈRE — couverture (badge N°, mois, sommaire,
-    bouton d'ouverture, archive) OU lecture autonome (bandeau-titre collant,
-    pagination en pied). Rien ne s'affiche si aucune section n'est saisie."""
+def _render_feuillet_mensuel(annee_debut, mois_pastoral):
+    """📖 Le feuillet mensuel en Équipe — v7.7.9 : LIVRET À FEUILLETER.
+    Les sections (2-12) du mois pastoral courant deviennent les pages d'un
+    livre : couverture-sommaire, boutons ◀ Précédent / Suivant ▶. Fragment :
+    tourner une page ne redessine QUE le livret (position à l'écran gardée).
+    Rien ne s'affiche si aucune section n'est saisie."""
     try:
         sections = c.execute("""SELECT ordre, titre, contenu, lecteur, image_url
                                 FROM feuillet_sections
@@ -771,144 +702,73 @@ def _render_feuillet_mensuel(annee_debut, mois_pastoral, sous=None):
     if not sections:
         return
 
-    # ------------------- MODE LECTURE (autonomie) -------------------
-    if st.session_state.get("flt_ouvert"):
-        _sel = st.session_state.get("flt_mois_sel") or (annee_debut, mois_pastoral)
-        if tuple(_sel) != (annee_debut, mois_pastoral):
-            try:
-                sections = c.execute("""SELECT ordre, titre, contenu, lecteur, image_url
-                                        FROM feuillet_sections
-                                        WHERE annee_debut=? AND mois=? ORDER BY ordre""",
-                                     (int(_sel[0]), int(_sel[1]))).fetchall()
-                sections = [s for s in sections if s[2]]
-            except Exception:
-                sections = []
-            if not sections:
-                st.session_state.pop("flt_mois_sel", None)
-                st.session_state["flt_ouvert"] = False
-                st.rerun()
-        _cle_page = str(_sel[0]) + "-" + str(_sel[1])
-        if st.session_state.get("flt_cle") != _cle_page:
-            st.session_state["flt_cle"] = _cle_page
+    st.markdown(_carte_etape("📖 LE FEUILLET MENSUEL EN ÉQUIPE"), unsafe_allow_html=True)
+
+    # Nouveau mois/année affiché → retour à la couverture
+    _cle = f"{annee_debut}-{mois_pastoral}"
+    if st.session_state.get("flt_cle") != _cle:
+        st.session_state["flt_cle"] = _cle
+        st.session_state["flt_page"] = -1
+    if "flt_page" not in st.session_state:
+        st.session_state["flt_page"] = -1
+
+    # ---------- COUVERTURE / SOMMAIRE ----------
+    if st.session_state["flt_page"] < 0:
+        _pluriel = "page" if len(sections) == 1 else "pages"
+        _lignes = "".join(
+            '<div class="cp-para" style="margin:2px 0;">📖 <b>' + str(s[0]) + "</b> — "
+            + html.escape(s[1] or "") + "</div>" for s in sections)
+        st.markdown(_carte_priere(
+            _trait_debut_page()
+            + '<div class="cp-titre" style="text-align:center;">Feuillet du mois</div>'
+            + '<div class="cp-para" style="text-align:center;">' + str(len(sections))
+            + " " + _pluriel + " · ouvrez le livret pour feuilleter</div>" + _lignes),
+            unsafe_allow_html=True)
+        if st.button("📖 Ouvrir le livret", key="flt_open", width="stretch", type="primary"):
             st.session_state["flt_page"] = 0
-        idx = st.session_state.get("flt_page", 0)
-        if idx < 0 or idx >= len(sections):
-            idx = 0
-            st.session_state["flt_page"] = 0
-        ordre, titre, contenu, lecteur, image_url = sections[idx]
-        _titre_page = titre or ("Section " + str(ordre))
-        _pag = "Page " + str(idx + 1) + " / " + str(len(sections))
-
-        # Bandeau-titre TOUJOURS VISIBLE (collant sous l'entête du site)
-        st.markdown(
-            '<div class="flt-bandeau" style="position:sticky; top:200px; z-index:600;'
-            ' background:#1A237E; border:1px solid #FFD700; border-radius:10px;'
-            ' padding:8px 12px; margin:6px 10px 8px 10px; text-align:center;">'
-            '<span style="font-family:Georgia, serif; color:#FFD000; font-weight:bold;'
-            ' font-size:1rem;">📖 ' + html.escape(_titre_page) + '</span>'
-            '<span style="color:#e8eaf6; font-size:0.8rem;"> &nbsp;·&nbsp; ' + _pag
-            + "</span></div>", unsafe_allow_html=True)
-        _comp_html(
-            "<script>(function(){var t0=-1;function a(){try{"
-            "var d=window.parent.document;var h=d.querySelector('.sticky-header');"
-            "var b=d.querySelector('.flt-bandeau');"
-            "if(h&&b){var n=h.offsetHeight+6;if(n!==t0){t0=n;b.style.top=n+'px';}}"
-            "}catch(e){}}a();setInterval(a,400);})();</script>", height=0)
-
-        _img_html = ""
-        if image_url and str(image_url).startswith("http"):
-            _img_html = '<img src="' + str(image_url) + '" alt="" class="cp-photo">'
-        st.markdown(_carte_priere(_trait_debut_page()
-                                  + '<div class="cp-titre" style="text-align:center;">'
-                                  + html.escape(_titre_page) + "</div>"
-                                  + _img_html + _rendre_texte_priere(contenu)),
-                    unsafe_allow_html=True)
-
-        # Pied de page : trait fin + pagination seule (demande g)
-        st.markdown('<div style="border:none; border-top:1px solid #1A237E;'
-                    ' margin:14px 10px 4px 10px;"></div>'
-                    '<div style="text-align:center; color:#9fa6d8; font-size:0.85rem;">'
-                    + _pag + "</div>", unsafe_allow_html=True)
-
-        c_prev, c_next = st.columns(2)
-        with c_prev:
-            if idx > 0:
-                if st.button("◀ Précédent", key=f"flt_prev_{idx}", width="stretch"):
-                    st.session_state["flt_page"] = idx - 1
-                    _rerun_flt()
-            else:
-                if st.button("✕ Fermer le livret", key=f"flt_close_l_{idx}", width="stretch"):
-                    st.session_state["flt_ouvert"] = False
-                    st.session_state.pop("flt_mois_sel", None)
-                    st.rerun()
-        with c_next:
-            if idx < len(sections) - 1:
-                if st.button("Suivant ▶", key=f"flt_next_{idx}", width="stretch", type="primary"):
-                    st.session_state["flt_page"] = idx + 1
-                    _rerun_flt()
-            else:
-                if st.button("✕ Fermer le livret", key=f"flt_close_r_{idx}", width="stretch"):
-                    st.session_state["flt_ouvert"] = False
-                    st.session_state.pop("flt_mois_sel", None)
-                    st.rerun()
+            _rerun_flt()
         return
 
-    # ------------------- COUVERTURE / SOMMAIRE -------------------
-    _cle = f"{annee_debut}-{mois_pastoral}"
-    _numero = _feuillet_numero(annee_debut, mois_pastoral)
-    _badge = "📖 LE FEUILLET MENSUEL DE PRIÈRE" + (" N° " + _numero if _numero else "")
-    st.markdown(_carte_etape(_badge), unsafe_allow_html=True)
-    _mc, _ac = _feuillet_mois_civil(mois_pastoral, annee_debut)
-    _mois_nom = MOIS_FR[_mc - 1]
-    _de = "d'" if _mois_nom[0].lower() in "aâeéèêiîoôuûh" else "de "
-    _lignes_sous = ""
-    if sous and sous[0]:
-        _lignes_sous = ('<div class="cp-para" style="text-align:center;">🕯️ Sous-thème : <b>'
-                        + html.escape(str(sous[0])) + "</b></div>")
-    _sommaire = "".join(
-        '<div class="cp-para" style="margin:2px 0;">📖 <b>' + str(s[0]) + "</b> — "
-        + html.escape(s[1] or "") + "</div>" for s in sections)
-    st.markdown(_carte_priere(
-        _trait_debut_page()
-        + '<div class="cp-titre" style="text-align:center;">Mois ' + _de + _mois_nom
-        + " " + str(_ac) + "</div>"
-        + _lignes_sous
-        + '<div class="cp-para" style="text-align:center; font-size:0.85rem;">'
-        + str(len(sections)) + " pages · ouvrez le livret pour feuilleter</div>"
-        + _sommaire), unsafe_allow_html=True)
-    if st.button("📖 Ouvrir le livret", key="flt_open", width="stretch", type="primary"):
-        st.session_state["flt_ouvert"] = True
-        st.session_state["flt_vu_cle"] = _cle
+    # ---------- UNE PAGE = UNE SECTION ----------
+    idx = st.session_state["flt_page"]
+    if idx >= len(sections):
         st.session_state["flt_page"] = 0
-        st.session_state["flt_cle"] = _cle
-        st.session_state.pop("flt_mois_sel", None)
-        st.rerun()
+        idx = 0
+    ordre, titre, contenu, lecteur, image_url = sections[idx]
 
-    # ------------------- ARCHIVE DES MOIS PASSÉS -------------------
-    try:
-        _mois_lus = c.execute("""SELECT DISTINCT annee_debut, mois FROM feuillet_sections
-                                 ORDER BY annee_debut DESC, mois DESC""").fetchall()
-    except Exception:
-        _mois_lus = []
-    _autres = [tuple(m) for m in _mois_lus if tuple(m) != (annee_debut, mois_pastoral)]
-    if _autres:
-        with st.expander("🗂️ Relire les feuillets des mois passés"):
-            for (_ma, _mm) in _autres:
-                _lab = "Feuillet de " + _feuillet_label_mois(_mm, _ma)
-                _num_m = _feuillet_numero(_ma, _mm)
-                if _num_m:
-                    _lab += " (N° " + _num_m + ")"
-                _c_lab, _c_btn = st.columns([4, 1])
-                with _c_lab:
-                    st.write(_lab)
-                with _c_btn:
-                    if st.button("📖", key=f"flt_arch_{_ma}_{_mm}",
-                                 help="Ouvrir ce feuillet en lecture"):
-                        st.session_state["flt_ouvert"] = True
-                        st.session_state["flt_mois_sel"] = (int(_ma), int(_mm))
-                        st.session_state["flt_page"] = 0
-                        st.session_state["flt_cle"] = f"{_ma}-{_mm}"
-                        st.rerun()
+    _badge = _badges_lecteurs_feuillet(lecteur)
+    _entete = ('<div class="cp-titre" style="text-align:center;">'
+               + html.escape(titre or ("Section " + str(ordre))) + "</div>"
+               + '<div class="cp-para" style="text-align:center; font-size:0.85rem;">'
+               + "Page " + str(idx + 1) + " / " + str(len(sections))
+               + (" &nbsp;·&nbsp; 🗣️ " + _badge if _badge else "") + "</div>")
+    _img_html = ""
+    if image_url and str(image_url).startswith("http"):
+        _img_html = '<img src="' + str(image_url) + '" alt="" class="cp-photo">'
+    st.markdown(_carte_priere(_trait_debut_page() + _entete + _img_html
+                              + _rendre_texte_priere(contenu)),
+                unsafe_allow_html=True)
+
+    # ---------- NAVIGATION (comme le livre de la dizaine) ----------
+    c_prev, c_next = st.columns(2)
+    with c_prev:
+        if idx > 0:
+            if st.button("◀ Précédent", key=f"flt_prev_{idx}", width="stretch"):
+                st.session_state["flt_page"] = idx - 1
+                _rerun_flt()
+        else:
+            if st.button("📑 Sommaire", key=f"flt_home_{idx}", width="stretch"):
+                st.session_state["flt_page"] = -1
+                _rerun_flt()
+    with c_next:
+        if idx < len(sections) - 1:
+            if st.button("Suivant ▶", key=f"flt_next_{idx}", width="stretch", type="primary"):
+                st.session_state["flt_page"] = idx + 1
+                _rerun_flt()
+        else:
+            if st.button("✕ Fermer le livret", key=f"flt_end_{idx}", width="stretch"):
+                st.session_state["flt_page"] = -1
+                _rerun_flt()
 
 def _render_page_theme_ensemble():
     """🕯️ Thème → Vue d'ensemble — v7.7.7 : langage du dépliant (bannière
@@ -968,15 +828,29 @@ def _render_page_theme_ensemble():
         st.caption(f"🔎 DEBUG sous-thème — mois civil={mois_courant} → pastoral={_mois_pastoral} | "
                    f"sous-thème {'TROUVÉ' if sous else 'non trouvé'}")
 
-    # ---------- 📖 LE FEUILLET MENSUEL DE PRIÈRE (v7.7.10b) ----------
-    # Le livret REMPLACE la zone « Sous-thème » (décision diocèse) : sa
-    # couverture porte le sous-thème du mois. Le deep-link &feuillet=1 a
-    # déjà ouvert la lecture en tête de show_espace_membre → on marque vu.
-    if st.session_state.get("flt_ouvert"):
-        st.session_state.setdefault("flt_vu_cle", f"{annee_debut}-{_mois_pastoral}")
-    _render_feuillet_mensuel(annee_debut, _mois_pastoral, sous=sous)
-    if st.session_state.get("flt_ouvert"):
-        return
+    st.markdown(_carte_etape("📅 LE SOUS-THÈME DU MOIS"), unsafe_allow_html=True)
+    if sous:
+        _v = list(sous) + [None] * 4
+        titre_st, contenu_st, feuillet, affiche_st = _v[0], _v[1], _v[2], _v[3]
+        _mois_nom = MOIS_FR[mois_courant - 1]
+        _de = "d'" if _mois_nom[0].lower() in "aâeéèêiîoôuûh" else "de "
+        _entete = ('<div class="cp-titre" style="text-align:center;">Sous-thème '
+                   + _de + _mois_nom + " : " + html.escape(titre_st or "") + "</div>")
+        _img = ('<img src="' + str(affiche_st) + '" alt="Affiche du mois" '
+                'style="width:100%; max-width:640px; display:block; margin:10px auto; '
+                'border-radius:10px;">'
+                if affiche_st and str(affiche_st).startswith("http") else "")
+        _corps = (_trait_debut_page() + _img
+                  + '<div class="cp-para">' + html.escape(contenu_st or "").replace("\n", "<br>") + "</div>")
+        st.markdown(_carte_priere(_entete + _corps), unsafe_allow_html=True)
+        if feuillet:
+            st.caption("📄 Feuillet du mois")
+            _render_pdf_inline(feuillet)
+    else:
+        st.info("📅 Le sous-thème de ce mois n'a pas encore été publié.")
+
+    # ---------- 📖 LE FEUILLET MENSUEL EN ÉQUIPE (v7.7.9) ----------
+    _render_feuillet_mensuel(annee_debut, _mois_pastoral)
 
 
 def _render_page_en_preparation(emoji, titre, description):
@@ -1953,11 +1827,9 @@ def _render_actualites(pid=None):
                     st.markdown(f"🎬 [Voir la vidéo]({a[3]})")
 
 
-def _render_fil_actualites(pid=None, membre=False, matloc=None):
+def _render_fil_actualites(pid=None):
     """v7.6 — fil du jour BLINDÉ : la ligne est complétée à 5 cases avant
     tout accès par index. LOT C5 : dernière publication VISIBLE du contexte."""
-    # 📖 Alerte « nouveau feuillet » en tête du fil (v7.7.10)
-    _alerte_feuillet_fil(membre=membre, matloc=matloc, pid=pid)
     cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
         else ("AND paroisse_cible IS NULL", [])
     dernier = c.execute(f"""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
@@ -2014,13 +1886,6 @@ def _enregistrer_presence(membre_id, evt_id, choix):
 # ====================================================================
 def show_espace_membre(matloc_membre=None):
     livre_ouvert = st.session_state.get("diz_ouvert", False)
-
-    # 📖 Deep-link feuillet (&feuillet=1 — alerte du fil d'actualités) :
-    # ouvre la lecture AVANT le rendu de l'entête (le menu se masque comme
-    # pour le livre de la dizaine).
-    if st.query_params.get("feuillet") == "1" and not st.session_state.get("flt_ouvert"):
-        st.session_state["flt_ouvert"] = True
-        st.session_state["flt_page"] = 0
 
     _render_theme(compact=livre_ouvert)
 
@@ -2099,9 +1964,8 @@ def show_espace_membre(matloc_membre=None):
 
         rub, sub = _lire_nav(RUBRIQUES_PUBLIC)
         pid_pub = _pid_contexte()
-        _flt_lu = bool(st.session_state.get("flt_ouvert"))
-        _render_header(masquer_bandes=(livre_ouvert or _flt_lu),
-                       rubriques=(None if (livre_ouvert or _flt_lu) else RUBRIQUES_PUBLIC),
+        _render_header(masquer_bandes=livre_ouvert,
+                       rubriques=(None if livre_ouvert else RUBRIQUES_PUBLIC),
                        rub_act=rub, sub_act=sub, pid=pid_pub)
         # Accueil personnalisé si arrivée par QR paroissial signé
         _origine = st.session_state.get("paroisse_origine")
@@ -2179,9 +2043,8 @@ def show_espace_membre(matloc_membre=None):
 
     rub, sub = _lire_nav(RUBRIQUES_MEMBRE)
     pid_m = _pid_contexte(membre[11])
-    _flt_lu = bool(st.session_state.get("flt_ouvert"))
-    _render_header(membre, matloc_membre, masquer_bandes=(livre_ouvert or _flt_lu),
-                   rubriques=(None if (livre_ouvert or _flt_lu) else RUBRIQUES_MEMBRE),
+    _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert,
+                   rubriques=(None if livre_ouvert else RUBRIQUES_MEMBRE),
                    rub_act=rub, sub_act=sub, pid=pid_m)
 
     if livre_ouvert:
@@ -2291,5 +2154,5 @@ def show_espace_membre(matloc_membre=None):
         _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
         if st.session_state.get("diz_ouvert"):
             return
-        _render_fil_actualites(pid=pid_m, membre=True, matloc=matloc_membre)
+        _render_fil_actualites(pid=pid_m)
         _render_actualites(pid=pid_m)
