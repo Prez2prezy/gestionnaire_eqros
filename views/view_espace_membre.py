@@ -1,11 +1,14 @@
 # ====================================================================
-# view_espace_membre.py — VERSION 7.8.1 (correctif navigation)
-# v7.8.1 : les liens du menu remarchent — l'intercepteur _liens_meme_onglet
-# n'annule plus le clic natif avant d'avoir RÉUSSI la nav JS (Streamlit 1.66
-# sandboxe ses iframes sans allow-top-navigation → SecurityError silencieux
-# = tous les liens du menu morts). Essai JS, repli navigation native.
-# Hérite de v7.8 : feuillets mensuels (vitrine, livret autonome, alerte fil,
-# archives) ; de v7.6 : menu liens HTML purs + ruban hover + ☰ mobile,
+# view_espace_membre.py — VERSION 7.8.2 (retour en haut + alerte + archives)
+# v7.8.2 : ① e — RETOUR EN HAUT DE PAGE à chaque tour de page du livret
+# (script scrollé avec nonce → ré-exécuté à chaque page, fini le scroll
+# manuel vers le titre) ; ② h — l'alerte « 📖 Nouveau feuillet » du fil
+# mène à 🕯️ Thème → 🔭 Vue d'ensemble (Sommaire du feuillet) ;
+# ③ i — archivage des feuillets précédents EN EXPANDERS avec liens dans
+# Vue d'ensemble (la sous-rubrique Archives → 📖 Feuillets est retirée).
+# Hérite de v7.8.1 : correctif navigation (sandbox sans allow-top-navigation).
+# Hérite de v7.8 : feuillets mensuels (vitrine, livret autonome, alerte fil).
+# Hérite de v7.6 : menu liens HTML purs + ruban hover + ☰ mobile,
 # navigation ?r=&s=, mesure autocorrigée, QR paroissial, lecteur complet.
 # Marqueurs : Ctrl+F → "VERSION 7.6", "_liens_meme_onglet", "· v7.6".
 # ====================================================================
@@ -54,7 +57,7 @@ RUBRIQUES_PUBLIC = ["🏠 Actualités", "📿 Rosaire", "🕯️ Thème", "📖 
 SOUS_RUBRIQUES = {
     "🕯️ Thème": ["🔭 Vue d'ensemble", "🎓 Enseignements", "💬 Discussions"],
     "📿 Rosaire": ["Le Rosaire chez les Équipiers", "Le Rosaire thématique"],
-    "📖 Archives": ["🙏 Prières", "📖 Méditations", "🎵 Musiques", "📖 Feuillets"],
+    "📖 Archives": ["🙏 Prières", "📖 Méditations", "🎵 Musiques"],
 }
 
 def _lire_nav(rubriques):
@@ -104,9 +107,30 @@ def _extraire_pdf_legacy(contenu):
 
 
 def _scroll_top(cle):
-    """Remet la vue en haut (sous l'entête) à chaque page du livre."""
+    """v7.8.2-e — RETOUR EN HAUT DE PAGE à chaque tour de page : à l'ouverture
+    d'une nouvelle page, la lecture reprend TOUJOURS en haut (là où se trouve
+    le titre), sans devoir scroller vers le haut.
+    Double correctif :
+    ① CONTENEUR : Streamlit 1.66 ne scrolle PAS la fenêtre (window.scrollTo
+      reste inopérant) mais la section <section class="main"> ; on remet à
+      zéro le scrollTop de TOUS les conteneurs possibles (main, appView,
+      documentElement, body, window) pour rester compatible.
+    ② NONCE : le `cle` (page affichée) est injecté dans le script → chaque
+      page produit un script DIFFÉRENT → Streamlit recharge l'iframe → le
+      scroll s'exécute (sans nonce, l'iframe identique était réutilisée).
+    Un 2e passage à 400 ms passe au-dessus de la restauration interne."""
+    nonce = re.sub(r"[^0-9A-Za-z_-]", "", str(cle) or "x")
+    _js = ("var d=window.parent.document;"
+           "var els=d.querySelectorAll('section.main,[data-testid=\"stMain\"],"
+           "[data-testid=\"stAppViewContainer\"]');"
+           "for(var i=0;i<els.length;i++){els[i].scrollTop=0;}"
+           "d.documentElement.scrollTop=0;d.body.scrollTop=0;"
+           "try{window.parent.scrollTo(0,0);}catch(e){};")
     try:
-        _comp_html("<script>window.parent.scrollTo(0, 0);</script>", height=0)
+        _comp_html("<script>/*" + nonce + "*/"
+                   "try{" + _js + "}catch(e){}"
+                   "setTimeout(function(){try{" + _js + "}catch(e){}},400);"
+                   "</script>", height=0)
     except Exception:
         pass
 
@@ -748,9 +772,11 @@ def _nettoyer_params_livret():
 
 
 def _traiter_lien_profond_livret():
-    """v7.8-h — Lien profond depuis l'alerte du fil d'actualité
-    (?flt=1[&fa=ANNEE&fm=MOIS]) : ouvre directement le livret en autonomie.
-    Sans fa/fm : feuillet courant du thème actif."""
+    """v7.8-h · v7.8.2-i — Lien profond ?flt=1&fa=ANNÉE&fm=MOIS : ouvre
+    directement le livret en autonomie. Utilisé par les liens « 📖 Relire ce
+    feuillet » des expanders d'archivage (Vue d'ensemble) — l'alerte du fil,
+    elle, mène désormais à la vitrine de Vue d'ensemble. Sans fa/fm :
+    feuillet courant du thème actif."""
     if st.query_params.get("flt") != "1":
         return
     _fa = _fm = None
@@ -816,9 +842,10 @@ def _render_feuillet_vitrine(annee_debut, mois_pastoral):
 def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"):
     """📖 Lecteur du livret — v7.8 : une section = une page.
     autonome=True  : mode plein écran (barre de titre fixe, fermeture) ;
-    autonome=False : lecture encastrée (Archives → Feuillets).
+    autonome=False : lecture encastrée (réservé à un usage interne).
     v7.8-e : titre de la page toujours visible en haut (barre fixe, mode
-    autonome) · v7.8-f : sans badge de lecteurs · v7.8-g : pagination seule
+    autonome) · v7.8.2-e : retour en HAUT de page à chaque tour (_scroll_top
+    avec nonce) · v7.8-f : sans badge de lecteurs · v7.8-g : pagination seule
     en pied de page sous un trait fin."""
     sections = _feuillet_sections(annee_debut, mois_pastoral)
     if not sections:
@@ -934,6 +961,55 @@ def _render_feuillet_autonome():
     _render_feuillet_livret(_annee, _mois, autonome=True, pfx="flt")
 
 
+def _render_feuillets_archives_expanders(annee_theme, mois_courant):
+    """📚 v7.8.2-i — ARCHIVAGE des feuillets précédents, directement dans
+    🕯️ Thème → 🔭 Vue d'ensemble : un expander par feuillet déjà paru (hors
+    celui affiché dans la vitrine du mois), chaque expander portant un lien
+    « 📖 Relire ce feuillet » qui rouvre le livret EN AUTONOMIE via le lien
+    profond ?flt=1&fa=ANNÉE&fm=MOIS (même lecteur que le livret du mois)."""
+    try:
+        pubs = c.execute("""SELECT annee_debut, mois, numero, date_publication
+                            FROM feuillets_publications
+                            ORDER BY annee_debut DESC, mois DESC""").fetchall()
+    except Exception:
+        return
+    _prec = [p for p in pubs
+             if not (p[0] == annee_theme and p[1] == mois_courant)]
+    if not _prec:
+        return
+    # Base du lien profond : l'espace courant voyage (membre : matloc — QR : p=)
+    base = "?espace=1"
+    _mat = st.query_params.get("matloc")
+    if isinstance(_mat, list):
+        _mat = _mat[0] if _mat else None
+    if _mat:
+        base += "&matloc=" + str(_mat)
+    _pp = st.query_params.get("p")
+    if isinstance(_pp, list):
+        _pp = _pp[0] if _pp else None
+    if _pp:
+        base += "&p=" + str(_pp)
+    _r_theme = 1 if _mat else 2   # index de 🕯️ Thème (membre / public)
+    st.markdown('<div class="cp-accent" style="--c:#1A237E; margin-top:22px;">'
+                "📚 Les feuillets précédents</div>", unsafe_allow_html=True)
+    for (a, m, num, dp) in _prec:
+        _titre = ("📖 Feuillet N° " + str(num or m) + " — Mois de "
+                  + MOIS_PASTORAL_NOMS[m - 1] + " " + str(_annee_civile_feuillet(a, m)))
+        with st.expander(_titre):
+            _meta = "Feuillet mensuel de prière archivé"
+            _d = safe_date(dp) if dp else None
+            if _d:
+                _meta += " · publié le " + _d.strftime("%d/%m/%Y")
+            st.caption(_meta)
+            _href = (base + "&nav=1&r=" + str(_r_theme) + "&s=0"
+                     + "&flt=1&fa=" + str(a) + "&fm=" + str(m))
+            st.markdown('<a href="' + _href + '" target="_self" '
+                        'style="display:inline-block; background:#4527a0; color:#ffffff; '
+                        'padding:9px 22px; border-radius:30px; font-weight:bold; '
+                        'font-size:0.9rem; text-decoration:none; margin-top:6px;">'
+                        "📖 Relire ce feuillet</a>", unsafe_allow_html=True)
+
+
 def _render_page_theme_ensemble():
     """🕯️ Thème → Vue d'ensemble — v7.7.7 : langage du dépliant (bannière
     bleu-or, badge d'étape, carte jaune verrouillée, trait fin)."""
@@ -986,6 +1062,9 @@ def _render_page_theme_ensemble():
 
     # ---------- 📖 LE FEUILLET MENSUEL DE PRIÈRE (v7.8) ----------
     _render_feuillet_vitrine(annee_debut, _mois_pastoral)
+
+    # ---------- 📚 FEUILLETS PRÉCÉDENTS (v7.8.2-i) : archivage en expanders ----------
+    _render_feuillets_archives_expanders(annee_debut, _mois_pastoral)
 
 
 def _render_page_en_preparation(emoji, titre, description):
@@ -1264,40 +1343,6 @@ def _render_page_archives_textes(type_contenu, message_vide, pid=None):
                 st.markdown(texte, unsafe_allow_html=True)
             if url_pdf:
                 _render_pdf_inline(url_pdf)
-
-
-def _render_page_archives_feuillets():
-    """📖 Archives → Feuillets (v7.8-i) : relire les feuillets mensuels de
-    prière déjà parus. Chaque feuillet se rouvre avec le même lecteur que le
-    livret du mois (lecture encastrée, sommaire cliquable, pagination)."""
-    try:
-        lignes = c.execute("""SELECT fs.annee_debut, fs.mois, COUNT(*), fp.date_publication
-                              FROM feuillet_sections fs
-                              LEFT JOIN feuillets_publications fp
-                                     ON fp.annee_debut = fs.annee_debut
-                                    AND fp.mois = fs.mois
-                              WHERE fs.contenu IS NOT NULL AND TRIM(fs.contenu) != ''
-                              GROUP BY fs.annee_debut, fs.mois, fp.date_publication
-                              ORDER BY fs.annee_debut DESC, fs.mois DESC""").fetchall()
-    except Exception:
-        lignes = []
-    if not lignes:
-        st.info("📖 Aucun feuillet mensuel de prière n'est encore disponible. "
-                "Les feuillets publiés par le diocèse seront archivés ici pour être relus.")
-        return
-    _labels = []
-    for (_a, _m, _n, _dp) in lignes:
-        _lbl = ("📖 Feuillet N° " + str(_m) + " — Mois de " + MOIS_PASTORAL_NOMS[_m - 1]
-                + " " + str(_annee_civile_feuillet(_a, _m)) + " · " + str(_n) + " page(s)")
-        if _dp:
-            _d = safe_date(_dp)
-            _lbl += " · publié le " + (_d.strftime("%d/%m/%Y") if _d else str(_dp))
-        else:
-            _lbl += " · (non publié)"
-        _labels.append(_lbl)
-    _choix = st.selectbox("📂 Choisir un feuillet à relire", _labels, key="arch_fe_choix")
-    _i = _labels.index(_choix)
-    _render_feuillet_livret(lignes[_i][0], lignes[_i][1], autonome=False, pfx="arch")
 
 
 def _render_page_archives_audios(pid=None):
@@ -1998,10 +2043,11 @@ def _render_actualites(pid=None):
 
 
 def _alerte_feuillet_fil(lien_theme=None):
-    """v7.8-h — Alerte « nouveau feuillet » en tête du fil d'actualité.
+    """v7.8-h · v7.8.2-h — Alerte « nouveau feuillet » en tête du fil d'actualité.
     Visible 45 jours après la publication (couvre un mois pastoral complet) ;
-    « Ouvrir le livret » ouvre le livret en autonomie (lien profond ?flt=1) ;
-    « 📌 Marquer comme lue » la masque pour la session en cours."""
+    le clic mène à 🕯️ Thème → 🔭 Vue d'ensemble, devant la vitrine du feuillet
+    (Sommaire du feuillet publié) ; « 📌 Marquer comme lue » la masque pour
+    la session en cours."""
     try:
         pub = c.execute("""SELECT annee_debut, mois, numero, date_publication
                            FROM feuillets_publications
@@ -2018,10 +2064,12 @@ def _alerte_feuillet_fil(lien_theme=None):
         return
     _lien = ""
     if lien_theme:
-        _lien = ('<a href="' + lien_theme + "&flt=1&fa=" + str(pub[0]) + "&fm=" + str(pub[1])
+        # v7.8.2-h — le clic mène à 🕯️ Thème → 🔭 Vue d'ensemble (vitrine :
+        # Sommaire du feuillet, puis « Ouvrir le livret » pour la lecture).
+        _lien = ('<a href="' + lien_theme + "&s=0"
                  + '" target="_self" style="display:inline-block; background:#4527a0; '
                  'color:#ffffff; padding:10px 24px; border-radius:30px; font-weight:bold; '
-                 'text-decoration:none; margin-top:10px;">📖 Ouvrir le livret</a>')
+                 'text-decoration:none; margin-top:10px;">📖 Voir le feuillet du mois</a>')
     st.markdown(
         '<div class="rub-carte" style="border:2px solid #FFD700; padding:18px; '
         'text-align:center; margin:15px 10px 6px 10px;">'
@@ -2218,8 +2266,6 @@ def show_espace_membre(matloc_membre=None):
                 _render_page_archives_textes("meditation", "Aucune méditation disponible.", pid=pid_pub)
             elif sub == "🎵 Musiques":
                 _render_page_archives_audios(pid=pid_pub)
-            elif sub == "📖 Feuillets":
-                _render_page_archives_feuillets()
             else:
                 _render_page_archives_textes("priere", "Aucune prière publiée.", pid=pid_pub)
         elif rub == "🕯️ Thème":
@@ -2369,8 +2415,6 @@ def show_espace_membre(matloc_membre=None):
             _render_page_archives_textes("meditation", "Aucune méditation disponible.", pid=pid_m)
         elif sub == "🎵 Musiques":
             _render_page_archives_audios(pid=pid_m)
-        elif sub == "📖 Feuillets":
-            _render_page_archives_feuillets()
         else:
             _render_page_archives_textes("priere", "Aucune prière publiée.", pid=pid_m)
 
