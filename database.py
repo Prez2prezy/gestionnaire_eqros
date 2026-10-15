@@ -64,27 +64,15 @@ class CursorWrapper:
         self.cursor = cursor
 
     def execute(self, query, params=None):
-        # v7.7.10e — « global conn » DOIT précéder toute utilisation de conn
-        # dans la fonction (SyntaxError sinon) : il est donc en tête.
-        global conn
         last_err = None
         for attempt in range(3):
             try:
-                # v7.7.10d — CORRECTIF RACINE des « tuple index out of range » :
-                # chaque requête s'exécute sur un CURSEUR FRAIS (conn.cursor()).
-                # Avant, TOUTE l'app partageait un seul curseur ; depuis les
-                # fragments (threads parallèles), deux requêtes pouvaient
-                # s'entrelacer et l'une lire le résultat de l'autre (tuple
-                # plus court → IndexError). Un curseur par requête isole
-                # chaque résultat : la course est impossible.
-                _cur = conn.cursor()
-                _res = _cur.execute(query, tuple(params) if params else ())
-                self.cursor = _cur  # c.lastrowid / c.description suivent la dernière requête
-                return _res
+                return self.cursor.execute(query, tuple(params) if params else ())
             except Exception as e:
                 msg = str(e).lower()
                 if "stream not found" in msg or "connection reset" in msg:
                     time.sleep(1)
+                    global conn
                     try:
                         conn, _ = create_connection()
                         self.cursor = conn.cursor()
@@ -101,10 +89,7 @@ class CursorWrapper:
     def __getattr__(self, name):
         return getattr(self.cursor, name)
 
-# v7.7.10d — le CursorWrapper (curseur frais par requête) sert AUSSI en
-# local : Streamlit y exécute les fragments dans des threads, le même
-# entrelacement était possible sur sqlite3.
-c = CursorWrapper(conn.cursor())
+c = CursorWrapper(conn.cursor()) if USE_TURSO else conn.cursor()
 
 def commit_and_sync():
     try:
