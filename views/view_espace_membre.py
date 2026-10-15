@@ -831,6 +831,18 @@ def _render_feuillet_vitrine(annee_debut, mois_pastoral):
         + str(len(sections)) + " " + _pluriel
         + " · ouvrez le livret pour feuilleter</div>"),
         unsafe_allow_html=True)
+
+    # ---------- 📝 ÉDITORIAL (v7.8.3) : la première section du feuillet est
+    # lue directement dans la vitrine — le clic de l'alerte du fil mène bien
+    # à « Sommaire / Éditorial » (demande h), sans devoir ouvrir le livret.
+    _prem = sections[0]
+    st.markdown(_carte_priere(
+        _trait_debut_page()
+        + '<div class="cp-accent" style="--c:#1A237E;">📝 '
+        + html.escape(_prem[1] or "Éditorial") + "</div>"
+        + _rendre_texte_priere(_prem[2])),
+        unsafe_allow_html=True)
+
     if st.button("📖 Ouvrir le livret", key="flt_open", width="stretch", type="primary"):
         st.session_state["flt_cle"] = f"{annee_debut}-{mois_pastoral}"
         st.session_state["flt_page"] = 0
@@ -2056,6 +2068,10 @@ def _alerte_feuillet_fil(lien_theme=None):
         return
     if not pub:
         return
+    # v7.8.3 — pas d'alerte pour une publication sans contenu (sinon le clic
+    # mènerait à une vitrine « pas encore publié »).
+    if not _feuillet_sections(pub[0], pub[1]):
+        return
     _dpub = safe_date(pub[3])
     if not _dpub or (date.today() - _dpub).days > 45:
         return
@@ -2064,12 +2080,15 @@ def _alerte_feuillet_fil(lien_theme=None):
         return
     _lien = ""
     if lien_theme:
-        # v7.8.2-h — le clic mène à 🕯️ Thème → 🔭 Vue d'ensemble (vitrine :
-        # Sommaire du feuillet, puis « Ouvrir le livret » pour la lecture).
-        _lien = ('<a href="' + lien_theme + "&s=0"
+        # v7.8.4 — RETOUR au comportement initial : le clic ouvre DIRECTEMENT
+        # le livret du feuillet annoncé (lien profond ?flt=1&fa=&fm=, même
+        # mécanisme que les liens « 📖 Relire ce feuillet » des archives) ;
+        # fa/fm pointent la publication annoncée, quel que soit le mois lu.
+        _lien = ('<a href="' + lien_theme + "&flt=1&fa=" + str(pub[0])
+                 + "&fm=" + str(pub[1])
                  + '" target="_self" style="display:inline-block; background:#4527a0; '
                  'color:#ffffff; padding:10px 24px; border-radius:30px; font-weight:bold; '
-                 'text-decoration:none; margin-top:10px;">📖 Voir le feuillet du mois</a>')
+                 'text-decoration:none; margin-top:10px;">📖 Ouvrir le livret du feuillet</a>')
     st.markdown(
         '<div class="rub-carte" style="border:2px solid #FFD700; padding:18px; '
         'text-align:center; margin:15px 10px 6px 10px;">'
