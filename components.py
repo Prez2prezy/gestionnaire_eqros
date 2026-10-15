@@ -1327,7 +1327,8 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
     # ---------- 📢 PUBLICATION DU FEUILLET (v7.8) ----------
     # Publier = enregistrer le feuillet comme officiel du mois : une alerte
     # « 📖 Nouveau feuillet » apparaît alors en tête du fil d'actualité de
-    # l'Espace de Prière, et le feuillet rejoint les 📖 Archives (Feuillets).
+    # l'Espace de Prière, et le feuillet est archivé dans 🕯️ Thème →
+    # 🔭 Vue d'ensemble (expanders « 📚 Les feuillets précédents »).
     st.markdown("---")
     _pub_fe = None
     try:
