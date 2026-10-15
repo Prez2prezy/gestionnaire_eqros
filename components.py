@@ -1324,6 +1324,43 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
         st.caption(f"📋 {len(_secs_fe)} section(s) saisie(s) pour {_mois_fe_lbl} {_annee_fe} : "
                    + ", ".join(str(_o) for _o in sorted(_secs_fe)))
 
+    # ---------- 📢 PUBLICATION DU FEUILLET (v7.8) ----------
+    # Publier = enregistrer le feuillet comme officiel du mois : une alerte
+    # « 📖 Nouveau feuillet » apparaît alors en tête du fil d'actualité de
+    # l'Espace de Prière, et le feuillet rejoint les 📖 Archives (Feuillets).
+    st.markdown("---")
+    _pub_fe = None
+    try:
+        _pub_fe = c.execute("""SELECT date_publication FROM feuillets_publications
+                               WHERE annee_debut=? AND mois=?""",
+                            (_annee_fe, _mois_fe)).fetchone()
+    except Exception:
+        _pub_fe = None
+    if _pub_fe:
+        _dpub = safe_date(_pub_fe[0])
+        st.caption(f"📢 Feuillet N°{_mois_fe} publié le "
+                   f"{_dpub.strftime('%d/%m/%Y') if _dpub else _pub_fe[0]} — "
+                   "alerte affichée dans le fil d'actualité · archivé pour la communauté. "
+                   "Republier met la date d'alerte à jour.")
+    else:
+        st.caption("📢 Feuillet non publié : une fois les sections saisies, publiez-le "
+                   "pour alerter la communauté dans le fil d'actualité.")
+    if st.button("📢 Publier le feuillet du mois",
+                 key=f"publier_fe_{_annee_fe}_{_mois_fe}",
+                 type="primary", width="stretch",
+                 disabled=(len(_secs_fe) == 0)):
+        c.execute("""INSERT INTO feuillets_publications (annee_debut, mois, numero, date_publication)
+                     VALUES (?, ?, ?, ?)
+                     ON CONFLICT(annee_debut, mois)
+                     DO UPDATE SET numero=excluded.numero,
+                                   date_publication=excluded.date_publication""",
+                  (_annee_fe, _mois_fe, _mois_fe, date.today().isoformat()))
+        commit_and_sync()
+        st.session_state["flash_success"] = (
+            f"Feuillet N°{_mois_fe} ({_mois_fe_lbl}) publié ! ✅ "
+            "La communauté sera alertée dans le fil d'actualité de l'Espace de Prière.")
+        st.rerun()
+
 def gerer_theme_pastoral():
     """🕯️ Interface diocèse : thème annuel, 12 sous-thèmes mensuels (feuillets),
     et le lien du thème avec CHACUN des 20 mystères."""
@@ -1509,3 +1546,4 @@ def gerer_theme_pastoral():
                 st.error("Échec. Vérifiez (1) les secrets TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID "
                          "(Streamlit Cloud → Manage app → Settings → Secrets) et (2) les logs "
                          "(Manage app → Logs) : le motif exact de l'échec y est désormais écrit.")
+
