@@ -670,8 +670,10 @@ CONTACT_LIVRET_WHATSAPP = ""
 # 🖼️ PHOTOS DES MYSTÈRES THÉMATIQUES — DÉDIÉES au thème de l'année.
 # Adaptez les images selon les passages bibliques retenus (lien imgbb, Direct link) :
 PHOTOS_MYSTERES_THEMATIQUE = {
-    1: "https://i.ibb.co/fdsv8yVd/mysteres-1.webp", 2: "", 3: "", 4: "", 5: "",
+    1: "", 2: "", 3: "", 4: "", 5: "",
     6: "", 7: "", 8: "", 9: "", 10: "",
     11: "", 12: "", 13: "", 14: "", 15: "",
     16: "", 17: "", 18: "", 19: "", 20: "",
 }
+
+
