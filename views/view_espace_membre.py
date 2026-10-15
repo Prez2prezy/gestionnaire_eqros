@@ -2156,3 +2156,4 @@ def show_espace_membre(matloc_membre=None):
             return
         _render_fil_actualites(pid=pid_m)
         _render_actualites(pid=pid_m)
+        
