@@ -454,7 +454,8 @@ def show_diocese():
         if _vue_dio == "📡 Communication":
             st.caption("🕯️ Le SAS : la cellule Communication prépare et soumet — VOUS seul validez et publiez. "
                        "Chaque contenu validé rejoint sa zone dédiée de l'Espace de Prière. "
-                       "En bas du SAS : vos outils de gestion du thème (activation, sous-thèmes, liens).")
+                       "v7.8.5 : le feuillet mensuel en Équipe est désormais géré par le "
+                       "Service Communication (onglet 🕯️ Thème pastoral).")
             from views.view_communication_validation import show_validation_communication
             show_validation_communication()
 
