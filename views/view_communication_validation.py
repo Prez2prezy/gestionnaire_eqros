@@ -8,7 +8,6 @@ import html
 from datetime import date
 from database import c, commit_and_sync, safe_migrate
 from services import envoyer_notification_telegram
-from components import gerer_theme_pastoral
 
 
 LIBELLES = {"priere": "🙏 Prière", "meditation": "📖 Méditation",
@@ -211,12 +210,22 @@ def show_validation_communication():
             if h[3] == "refuse" and h[4]:
                 st.error("Motif : " + h[4])
 
-    # --- OUTILS DE GESTION DIOCÈSE (pas des soumissions) ---
+    # --- v7.8.5 : la « 🕯️ Gestion du thème » quitte le SAS ---
     st.markdown("---")
-    with st.expander("🕯️ Gestion du thème (activation, sous-thèmes mensuels, liens des mystères)"):
-        st.caption("Le thème annuel est SOUMIS via le canal Communication puis activé ici à la validation. "
-                   "Les sous-thèmes mensuels et les liens avec les 20 mystères sont des outils de gestion du diocèse : "
-                   "saisie directe ci-dessous.")
-        gerer_theme_pastoral()
+    st.caption("🕯️ Le feuillet mensuel en Équipe (ex-zone 2️⃣ bis) est désormais géré par le "
+               "Service Communication (onglet 🕯️ Thème pastoral). Les zones « thème de "
+               "l'année », « 12 sous-thèmes mensuels » et « liens des 20 mystères » sont "
+               "retirées : le contenu du mois est porté par le feuillet.")
 
+    # --- 🧪 TEST DE NOTIFICATION TELEGRAM (v7.6.6, replacé ici v7.8.5) ---
+    st.markdown("---")
+    with st.expander("🧪 Test de notification Telegram"):
+        st.caption("Vérifie que les messages « soumission » et « publication » repartent bien.")
+        if st.button("📨 Envoyer un message de test", key="test_telegram"):
+            if envoyer_notification_telegram("🧪 Message de test — notifications des Équipes du Rosaire ✅"):
+                st.success("Message envoyé ! Regardez votre Telegram. 📲")
+            else:
+                st.error("Échec. Vérifiez (1) les secrets TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID "
+                         "(Streamlit Cloud → Manage app → Settings → Secrets) et (2) les logs "
+                         "(Manage app → Logs) : le motif exact de l'échec y est désormais écrit.")
 
