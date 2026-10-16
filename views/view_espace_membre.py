@@ -1,5 +1,20 @@
 # ====================================================================
-# view_espace_membre.py — VERSION 7.8.2 (retour en haut + alerte + archives)
+# view_espace_membre.py — VERSION 7.8.5 (vitrine épurée + sommaire unique)
+# v7.8.5 : ① la carte « 📝 Éditorial » est RETIRÉE de la vitrine — retour au
+# duo Sommaire + « Ouvrir le livret » ; les archives suivent donc
+# IMMÉDIATEMENT le bouton ; ② sommaire du livret en présentation UNIQUE
+# (les entrées cliquables « 📖 N — Titre » remplacent la liste statique
+# doublonnée et les boutons « ▶ » pris pour des expanders) ; ③ « ✕ Fermer
+# le livret » ramène à 🕯️ Thème → 🔭 Vue d'ensemble ; ④ l'emplacement des
+# archives est ANNONCÉ même sans feuillet précédent.
+# v7.8.4 : ③ le clic sur l'alerte « Nouveau feuillet » OUVRE DIRECTEMENT le
+# livret du feuillet annoncé via le lien profond ?flt=1&fa=ANNÉE&fm=MOIS
+# (même mécanisme que les liens d'archive), au lieu de mener à la vitrine.
+# v7.8.3 : ① vitrine du feuillet — la PREMIÈRE section (Éditorial) est lue
+# directement dans la vitrine de Vue d'ensemble, sous le Sommaire (demande h :
+# le clic de l'alerte mène à « Sommaire / Éditorial du feuillet ») ;
+# ② blindage alerte — aucune alerte si le feuillet annoncé n'a aucune
+# section saisie (sinon le clic mènerait à « pas encore publié »).
 # v7.8.2 : ① e — RETOUR EN HAUT DE PAGE à chaque tour de page du livret
 # (script scrollé avec nonce → ré-exécuté à chaque page, fini le scroll
 # manuel vers le titre) ; ② h — l'alerte « 📖 Nouveau feuillet » du fil
@@ -832,17 +847,6 @@ def _render_feuillet_vitrine(annee_debut, mois_pastoral):
         + " · ouvrez le livret pour feuilleter</div>"),
         unsafe_allow_html=True)
 
-    # ---------- 📝 ÉDITORIAL (v7.8.3) : la première section du feuillet est
-    # lue directement dans la vitrine — le clic de l'alerte du fil mène bien
-    # à « Sommaire / Éditorial » (demande h), sans devoir ouvrir le livret.
-    _prem = sections[0]
-    st.markdown(_carte_priere(
-        _trait_debut_page()
-        + '<div class="cp-accent" style="--c:#1A237E;">📝 '
-        + html.escape(_prem[1] or "Éditorial") + "</div>"
-        + _rendre_texte_priere(_prem[2])),
-        unsafe_allow_html=True)
-
     if st.button("📖 Ouvrir le livret", key="flt_open", width="stretch", type="primary"):
         st.session_state["flt_cle"] = f"{annee_debut}-{mois_pastoral}"
         st.session_state["flt_page"] = 0
@@ -886,17 +890,16 @@ def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"
 
     # ---------- SOMMAIRE (page -1) ----------
     if idx < 0:
-        _lignes = "".join(
-            '<div class="cp-para" style="margin:2px 0;">📖 <b>' + str(s[0]) + "</b> — "
-            + html.escape(s[1] or "") + "</div>" for s in sections)
+        # v7.8.5-② — présentation UNIQUE : la liste statique doublonnée dans
+        # la carte est retirée ; chaque entrée cliquable « 📖 N — Titre »
+        # (sans « ▶ », confondu avec un expander) tient lieu de sommaire.
         st.markdown(_carte_priere(
             _trait_debut_page()
             + '<div class="cp-titre" style="text-align:center;">' + _entete_livret + "</div>"
-            + '<div class="cp-accent" style="--c:#1A237E;">Sommaire du feuillet</div>'
-            + _lignes),
+            + '<div class="cp-accent" style="--c:#1A237E;">Sommaire du feuillet</div>'),
             unsafe_allow_html=True)
         for _i, _s in enumerate(sections):
-            if st.button("▶ " + str(_s[0]) + ". " + (_s[1] or "Section " + str(_s[0])),
+            if st.button("📖 " + str(_s[0]) + " — " + (_s[1] or "Section " + str(_s[0])),
                          key=f"{pfx}_som_{_i}", width="stretch"):
                 st.session_state[_k_page] = _i
                 st.rerun()
@@ -987,7 +990,13 @@ def _render_feuillets_archives_expanders(annee_theme, mois_courant):
         return
     _prec = [p for p in pubs
              if not (p[0] == annee_theme and p[1] == mois_courant)]
+    # v7.8.5-④ — l'emplacement est ANNONCÉ même sans feuillet précédent :
+    # l'archivage reste visible « juste après le bouton Ouvrir ».
+    st.markdown('<div class="cp-accent" style="--c:#1A237E; margin-top:22px;">'
+                "📚 Les feuillets précédents</div>", unsafe_allow_html=True)
     if not _prec:
+        st.caption("Les feuillets des mois passés s'archiveront ici, dès la "
+                   "publication du prochain feuillet mensuel.")
         return
     # Base du lien profond : l'espace courant voyage (membre : matloc — QR : p=)
     base = "?espace=1"
@@ -1002,8 +1011,6 @@ def _render_feuillets_archives_expanders(annee_theme, mois_courant):
     if _pp:
         base += "&p=" + str(_pp)
     _r_theme = 1 if _mat else 2   # index de 🕯️ Thème (membre / public)
-    st.markdown('<div class="cp-accent" style="--c:#1A237E; margin-top:22px;">'
-                "📚 Les feuillets précédents</div>", unsafe_allow_html=True)
     for (a, m, num, dp) in _prec:
         _titre = ("📖 Feuillet N° " + str(num or m) + " — Mois de "
                   + MOIS_PASTORAL_NOMS[m - 1] + " " + str(_annee_civile_feuillet(a, m)))
@@ -2057,9 +2064,11 @@ def _render_actualites(pid=None):
 def _alerte_feuillet_fil(lien_theme=None):
     """v7.8-h · v7.8.2-h — Alerte « nouveau feuillet » en tête du fil d'actualité.
     Visible 45 jours après la publication (couvre un mois pastoral complet) ;
-    le clic mène à 🕯️ Thème → 🔭 Vue d'ensemble, devant la vitrine du feuillet
-    (Sommaire du feuillet publié) ; « 📌 Marquer comme lue » la masque pour
-    la session en cours."""
+    le clic OUVRE DIRECTEMENT le livret du feuillet annoncé (lien profond
+    ?flt=1&fa=ANNÉE&fm=MOIS — v7.8.4, même mécanisme que les liens
+    d'archive) ; « 📌 Marquer comme lue » la masque pour la session en
+    cours. Blindage v7.8.3 : pas d'alerte si le feuillet annoncé n'a
+    aucune section saisie."""
     try:
         pub = c.execute("""SELECT annee_debut, mois, numero, date_publication
                            FROM feuillets_publications
