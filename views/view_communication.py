@@ -3,6 +3,8 @@
 # La cellule prépare et SOUMET ; le diocèse valide au SAS et publie.
 # 6 onglets : 🙏 Prière/Méditation · 📺 Bandes défilantes · 🖼️ Affiches & B-A
 # (publication simple : actualités) · 🕯️ Thème pastoral · 🎵 Musique · 📔 Journal
+# v2.1 (v7.8.5) : l'onglet 🕯️ Thème pastoral accueille aussi la zone
+# 2️⃣ bis « Le feuillet mensuel en Équipe » (déplacée du SAS diocèse).
 # Les évènements avec Réponse de Communion relèvent EXCLUSIVEMENT de l'agenda
 # (canal des responsables d'équipe) — jamais de ce canal.
 # Marqueurs : Ctrl+F → "VERSION 2.0", "_onglet_actualites".
@@ -13,6 +15,7 @@ from datetime import date
 from database import c, commit_and_sync
 from services import (sauvegarder_illustration, sauvegarder_audio, sauvegarder_video,
                       envoyer_notification_telegram, get_periode_pastorale)
+from components import gerer_feuillet_mensuel
 
 
 def _liste_paroisses():
@@ -190,7 +193,7 @@ def _onglet_actualites():
 def _onglet_theme():
     st.caption("🕯️ Préparez le thème pastoral de l'année (texte + mystère porteur + affiche facultative). Après validation, le diocèse "
                "l'activera : il s'affichera dans l'Espace de Prière (🕯️ Thème → Vue d'ensemble). "
-               "Les sous-thèmes mensuels restent gérés directement par le diocèse (SAS).")
+               "v7.8.5 : le FEUILLET MENSUEL en Équipe est saisi et publié ICI (ci-dessous).")
     with st.form("form_theme_soum", clear_on_submit=False):
         annee_t = st.number_input("Année de début de la période pastorale", 2020, 2060,
                                   get_periode_pastorale()[0], step=1)
@@ -216,6 +219,12 @@ def _onglet_theme():
                             # Convention : date_evenement = année, lieu = mystère porteur
                             "date_evenement": str(int(annee_t)),
                             "lieu": str(int(myst_t))})
+
+    # ---------- v7.8.5 : zone 2️⃣ bis — LE FEUILLET MENSUEL EN ÉQUIPE ----------
+    # (déplacée du SAS diocèse : tout le contenu du mois est porté par le
+    # feuillet ; les zones 1️⃣/2️⃣/3️⃣ sont retirées.)
+    st.markdown("---")
+    gerer_feuillet_mensuel()
 
 
 # ---------------- 🎵 MUSIQUE ----------------
