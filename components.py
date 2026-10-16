@@ -1362,121 +1362,11 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
             "La communauté sera alertée dans le fil d'actualité de l'Espace de Prière.")
         st.rerun()
 
-def gerer_theme_pastoral():
-    """🕯️ Interface diocèse : thème annuel, 12 sous-thèmes mensuels (feuillets),
-    et le lien du thème avec CHACUN des 20 mystères."""
-    st.caption("Structure : un thème annuel porté par un mystère (ex. 2026-2027 : "
-               "« IL POSAIT DES QUESTIONS. FORCE DE LA FOI ! » — Mystère N°5, le "
-               "Recouvrement au Temple), décliné en 12 sous-thèmes mensuels, et relié "
-               "à chacun des 20 mystères. Affiché dans les deux espaces et dans le "
-               "livre de la dizaine.")
-
-    # ---------- 1. THÈME ANNUEL ----------
-    st.markdown("### 1️⃣ Le thème de l'année")
-    themes = c.execute("SELECT id, annee_debut, texte_theme, mystere_principal, actif, affiche_url FROM themes_pastoraux ORDER BY annee_debut DESC").fetchall()
-    if themes:
-        for t in themes:
-            etat = "🟢 ACTIF" if t[4] else "⚪"
-            c_txt, c_act = st.columns([5, 1])
-            with c_txt:
-                st.write(f"**{t[1]}-{t[1]+1}** {etat} — Mystère N°{t[3] or '?'}")
-                st.caption(t[2])
-                if len(t) > 5 and t[5]:
-                    st.caption("🖼️ Affiche du thème enregistrée")
-            with c_act:
-                if not t[4] and st.button("Activer", key=f"act_theme_{t[0]}"):
-                    c.execute("UPDATE themes_pastoraux SET actif=0")
-                    c.execute("UPDATE themes_pastoraux SET actif=1 WHERE id=?", (t[0],))
-                    commit_and_sync()
-                    st.rerun()
-
-    st.info("🕯️ Le thème de l'année est désormais SOUMIS via le canal Communication "
-            "(Service Communication → 🕯️ Thème pastoral) puis activé ici, à la validation du SAS. "
-            "La liste ci-dessus permet de réactiver un thème déjà enregistré.")
-
-    st.markdown("---")
-
-    # ---------- 2. SOUS-THÈMES MENSUELS ----------
-    st.markdown("### 2️⃣ Les 12 sous-thèmes mensuels (feuillets)")
-    mois_actuel, _, _ = get_periode_pastorale()
-    annees_existantes = [t[1] for t in themes] or [mois_actuel]
-    annee_st = st.selectbox("Année pastorale", annees_existantes, key="tp_annee_st")
-
-    MOIS_NOMS = ["Septembre", "Octobre", "Novembre", "Décembre", "Janvier", "Février",
-                 "Mars", "Avril", "Mai", "Juin", "Juillet", "Août"]
-
-    with st.form("form_sous_theme"):
-        mois_st = st.selectbox("Mois pastoral", MOIS_NOMS, key="tp_mois")
-        titre_st = st.text_input("Titre du sous-thème", key="tp_st_titre")
-        contenu_st = st.text_area("Contenu / développement", height=120, key="tp_st_contenu")
-        img_st = st.file_uploader("Affiche / illustration du mois (photo, optionnel)",
-                                  type=["jpg", "jpeg", "png", "webp"], key="tp_st_img")
-        # COHABITATION : lien imgbb prioritaire, sinon upload Cloudinary
-        lien_img_st = st.text_input("🔗 …ou collez un LIEN d'affiche du mois (imgbb, etc.)",
-                                    key="tp_st_img_lien", placeholder="https://i.ibb.co/...")
-        pdf_st = st.file_uploader("Feuillet du mois (PDF, optionnel)", type=["pdf"], key="tp_st_pdf")
-        # COHABITATION PDF : lien direct (hébergeur au choix) ou upload Cloudinary
-        lien_pdf_st = st.text_input("🔗 …ou collez un LIEN direct du feuillet PDF",
-                                    key="tp_st_pdf_lien", placeholder="https://…/feuillet.pdf")
-        if st.form_submit_button("📅 Enregistrer le sous-thème", width="stretch"):
-            if not titre_st.strip():
-                st.error("Le titre du sous-thème est obligatoire.")
-            else:
-                url_pdf = None
-                _lien_pdf = (lien_pdf_st or "").strip()
-                if _lien_pdf:
-                    if _lien_pdf.startswith("http"):
-                        url_pdf = _lien_pdf
-                    else:
-                        st.error("Lien PDF ignoré : il doit commencer par https://")
-                if not url_pdf and pdf_st:
-                    url_pdf = sauvegarder_pdf(pdf_st)
-                url_img = None
-                _lien_img = (lien_img_st or "").strip()
-                if _lien_img:
-                    if _lien_img.startswith("http"):
-                        url_img = _lien_img
-                    else:
-                        st.error("Lien d'affiche ignoré : il doit commencer par https://")
-                if not url_img and img_st:
-                    url_img = sauvegarder_illustration(img_st)
-                mois_num = MOIS_NOMS.index(mois_st) + 1
-                existant = c.execute("SELECT id, feuillet_pdf FROM sous_themes WHERE annee_debut=? AND mois=?",
-                                     (annee_st, mois_num)).fetchone()
-                if existant:
-                    feuillet = url_pdf if url_pdf else existant[1]
-                    c.execute("""UPDATE sous_themes SET titre=?, contenu=?, feuillet_pdf=? WHERE id=?""",
-                              (titre_st.strip(), contenu_st.strip(), feuillet, existant[0]))
-                    if url_img:
-                        c.execute("UPDATE sous_themes SET affiche_url=? WHERE id=?", (url_img, existant[0]))
-                else:
-                    c.execute("""INSERT INTO sous_themes (annee_debut, mois, titre, contenu, feuillet_pdf, affiche_url)
-                                 VALUES (?, ?, ?, ?, ?, ?)""",
-                              (annee_st, mois_num, titre_st.strip(), contenu_st.strip(), url_pdf, url_img))
-                commit_and_sync()
-                st.session_state["flash_success"] = f"Sous-thème de {mois_st} enregistré ! ✅"
-                st.rerun()
-
-    existants_st = c.execute("""SELECT mois, titre, feuillet_pdf, affiche_url FROM sous_themes
-                                WHERE annee_debut=? ORDER BY mois""", (annee_st,)).fetchall()
-    if existants_st:
-        st.caption("Sous-thèmes enregistrés :")
-        for s in existants_st:
-            c_m, c_t, c_p, c_d = st.columns([1, 5, 1, 1])
-            with c_m: st.write(f"**{MOIS_NOMS[s[0]-1]}**")
-            with c_t: st.write(s[1] + (" 🖼️" if s[3] else "") + (" 📄" if s[2] else ""))
-            with c_p:
-                if s[2]:
-                    st.markdown(f'<a href="{s[2]}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">📄 Voir</a>', unsafe_allow_html=True)
-            with c_d:
-                if st.button("🗑️", key=f"del_st_{annee_st}_{s[0]}"):
-                    c.execute("DELETE FROM sous_themes WHERE annee_debut=? AND mois=?", (annee_st, s[0]))
-                    commit_and_sync()
-                    st.rerun()
-
-    st.markdown("---")
-
-    # ---------- 2️⃣ bis. LE FEUILLET MENSUEL EN ÉQUIPE (FRAGMENT v7.7.9) ----------
+def gerer_feuillet_mensuel():
+    """2️⃣ bis — LE FEUILLET MENSUEL EN ÉQUIPE (v7.8.5 : déplacé du SAS diocèse
+    vers Service Communication → 🕯️ Thème pastoral ; les zones 1️⃣ thème de
+    l'année, 2️⃣ sous-thèmes mensuels et 3️⃣ liens des 20 mystères sont
+    retirées : tout le contenu du mois est désormais porté par le feuillet)."""
     st.markdown("### 2️⃣ bis. Le feuillet mensuel en Équipe")
     st.caption("Saisie section par section du feuillet reçu (10-15 du mois). "
                "Process conseillé : photographier les pages → transcription → collage ici. "
@@ -1489,62 +1379,8 @@ def gerer_theme_pastoral():
                     ordre INTEGER, titre TEXT, contenu TEXT,
                     lecteur TEXT, image_url TEXT)""")
     commit_and_sync()
+    themes = c.execute("SELECT id, annee_debut, texte_theme, mystere_principal, "
+                       "actif, affiche_url FROM themes_pastoraux ORDER BY annee_debut DESC").fetchall()
+    MOIS_NOMS = ["Septembre", "Octobre", "Novembre", "Décembre", "Janvier", "Février",
+                 "Mars", "Avril", "Mai", "Juin", "Juillet", "Août"]
     _bloc_feuillet_diocese(themes, MOIS_NOMS)
-
-    st.markdown("---")
-
-
-    # ---------- 3. LE LIEN AVEC LES 20 MYSTÈRES ----------
-    st.markdown("### 3️⃣ Le lien du thème avec les 20 mystères")
-    st.caption("Pour chaque mystère, la phrase qui relie son contenu au thème de l'année. "
-               "Cet encart apparaîtra dans le livre de la dizaine, sur la page du mystère.")
-    annee_lien = st.selectbox("Année pastorale", annees_existantes, key="tp_annee_lien")
-
-    with st.form("form_lien_mystere"):
-        myst_lien = st.number_input("Mystère (1-20)", min_value=1, max_value=20, value=1, step=1, key="tp_myst_lien")
-        existant_lien = c.execute("SELECT texte_lien FROM theme_mystere WHERE annee_debut=? AND mystere_id=?",
-                                  (annee_lien, myst_lien)).fetchone()
-        valeur_initiale = existant_lien[0] if existant_lien else ""
-        texte_lien = st.text_area("Texte du lien thématique",
-                                  value=valeur_initiale, height=100, key="tp_lien_txt",
-                                  placeholder="Ex. (mystère 5) : Comme Jésus retrouvé au Temple, "
-                                              "interrogeons notre foi : que demandons-nous à Dieu cette année ?")
-        if st.form_submit_button("🔗 Enregistrer le lien", width="stretch"):
-            if texte_lien.strip():
-                c.execute("""INSERT INTO theme_mystere (annee_debut, mystere_id, texte_lien)
-                             VALUES (?, ?, ?)
-                             ON CONFLICT(annee_debut, mystere_id)
-                             DO UPDATE SET texte_lien=excluded.texte_lien""",
-                          (annee_lien, myst_lien, texte_lien.strip()))
-                commit_and_sync()
-                st.session_state["flash_success"] = f"Lien du mystère N°{myst_lien} enregistré ! ✅"
-                st.rerun()
-            else:
-                st.error("Le texte du lien est obligatoire (ou videz le champ et utilisez Supprimer).")
-
-    liens_existants = c.execute("""SELECT mystere_id, texte_lien FROM theme_mystere
-                                   WHERE annee_debut=? ORDER BY mystere_id""", (annee_lien,)).fetchall()
-    if liens_existants:
-        st.caption(f"{len(liens_existants)} lien(s) enregistré(s) pour {annee_lien}-{annee_lien+1} :")
-        for lm in liens_existants:
-            c_m, c_t, c_d = st.columns([1, 6, 1])
-            with c_m: st.write(f"**N°{lm[0]}**")
-            with c_t: st.caption(lm[1][:100] + ("…" if len(lm[1]) > 100 else ""))
-            with c_d:
-                if st.button("🗑️", key=f"del_lien_{annee_lien}_{lm[0]}"):
-                    c.execute("DELETE FROM theme_mystere WHERE annee_debut=? AND mystere_id=?", (annee_lien, lm[0]))
-                    commit_and_sync()
-                    st.rerun()
-
-    # --- 🧪 TEST DE NOTIFICATION TELEGRAM (v7.6.6) ---
-    st.markdown("---")
-    with st.expander("🧪 Test de notification Telegram"):
-        st.caption("Vérifie que les messages « soumission » et « publication » repartent bien.")
-        if st.button("📨 Envoyer un message de test", key="test_telegram"):
-            if envoyer_notification_telegram("🧪 Message de test — notifications des Équipes du Rosaire ✅"):
-                st.success("Message envoyé ! Regardez votre Telegram. 📲")
-            else:
-                st.error("Échec. Vérifiez (1) les secrets TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID "
-                         "(Streamlit Cloud → Manage app → Settings → Secrets) et (2) les logs "
-                         "(Manage app → Logs) : le motif exact de l'échec y est désormais écrit.")
-
