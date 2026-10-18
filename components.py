@@ -1320,16 +1320,79 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
             commit_and_sync()
             st.success(f"Section « {_titre_fe.strip()} » enregistrée ! ✅")
 
+    # ---------- ♻️ SAISIE UNIQUE (v7.8.7) ----------
+    # Certaines rubriques ne changent PAS d'un mois à l'autre : le « Salve
+    # Regina » d'octobre est identique à celui de septembre (idem Prière à
+    # l'Esprit-Saint, Invocation à Marie…). Ce bouton reprend la DERNIÈRE
+    # saisie connue de cette section (mois précédents, années antérieures) :
+    # ces textes se saisissent UNE fois, puis se recopient d'un clic.
+    if st.session_state.pop("fe_reprise_ok", None):
+        st.success("Texte du mois précédent repris : vérifiez-le, ajustez si "
+                   "besoin, puis enregistrez la section. ✅")
+    if not _ex_fe:
+        _prev_fe = None
+        try:
+            _prev_fe = c.execute(
+                """SELECT titre, contenu, lecteur, image_url, annee_debut, mois
+                   FROM feuillet_sections
+                   WHERE ordre=?
+                     AND (annee_debut < ? OR (annee_debut = ? AND mois < ?))
+                     AND TRIM(COALESCE(contenu, '')) != ''
+                   ORDER BY annee_debut DESC, mois DESC LIMIT 1""",
+                (_ord_fe, _annee_fe, _annee_fe, _mois_fe)).fetchone()
+        except Exception:
+            _prev_fe = None
+        if _prev_fe:
+            # Année civile d'un mois pastoral : sept.-déc. (1-4) = année de
+            # début ; janv.-août (5-12) = année de début + 1.
+            _an_civ = _prev_fe[4] if _prev_fe[5] <= 4 else _prev_fe[4] + 1
+            st.info(f"♻️ « {_titres_fe[_ord_fe]} » a déjà été saisi pour "
+                    f"{MOIS_NOMS[_prev_fe[5]-1]} {_an_civ} — les rubriques "
+                    "invariables ne se saisissent qu'UNE fois.")
+            if st.button("♻️ Reprendre le texte du mois précédent",
+                         key=f"reprendre_fe_{_annee_fe}_{_mois_fe}_{_ord_fe}",
+                         width="stretch"):
+                _ex2 = c.execute("""SELECT id FROM feuillet_sections
+                                    WHERE annee_debut=? AND mois=? AND ordre=?""",
+                                 (_annee_fe, _mois_fe, _ord_fe)).fetchone()
+                if _ex2:
+                    c.execute("""UPDATE feuillet_sections
+                                 SET titre=?, contenu=?, lecteur=?, image_url=?
+                                 WHERE annee_debut=? AND mois=? AND ordre=?""",
+                              (_prev_fe[0], _prev_fe[1], _prev_fe[2], _prev_fe[3],
+                               _annee_fe, _mois_fe, _ord_fe))
+                else:
+                    c.execute("""INSERT INTO feuillet_sections
+                                 (annee_debut, mois, ordre, titre, contenu,
+                                  lecteur, image_url) VALUES (?,?,?,?,?,?,?)""",
+                              (_annee_fe, _mois_fe, _ord_fe, _prev_fe[0],
+                               _prev_fe[1], _prev_fe[2], _prev_fe[3]))
+                commit_and_sync()
+                for _k in ("fe_titre", "fe_contenu", "fe_lecteurs", "fe_img"):
+                    st.session_state.pop(_k, None)
+                st.session_state["fe_reprise_ok"] = True
+                st.rerun()
+
     if _secs_fe:
         st.caption(f"📋 {len(_secs_fe)} section(s) saisie(s) pour {_mois_fe_lbl} {_annee_fe} : "
                    + ", ".join(str(_o) for _o in sorted(_secs_fe)))
 
-    # ---------- 📢 PUBLICATION DU FEUILLET (v7.8) ----------
-    # Publier = enregistrer le feuillet comme officiel du mois : une alerte
-    # « 📖 Nouveau feuillet » apparaît alors en tête du fil d'actualité de
-    # l'Espace de Prière, et le feuillet est archivé dans 🕯️ Thème →
-    # 🔭 Vue d'ensemble (expanders « 📚 Les feuillets précédents »).
+    # ---------- 📨 SOUMISSION DU FEUILLET AU DIOCÈSE (v7.8.6) ----------
+    # RAPPEL DU FLUX : le Service Communication ne publie JAMAIS d'elle-même.
+    # Soumettre = envoyer le feuillet au SAS diocèse (« 🕊️ Soumissions du
+    # Service Communication » → « 🟡 En attente de validation »). Le diocèse
+    # SEUL publie : c'est alors qu'une alerte « 📖 Nouveau feuillet » apparaît
+    # en tête du fil d'actualité de l'Espace de Prière, et le feuillet est
+    # archivé dans 🕯️ Thème → 🔭 Vue d'ensemble.
     st.markdown("---")
+    _soum_fe = None
+    try:
+        _soum_fe = c.execute("""SELECT statut, date_soumission FROM soumissions_comm
+                                WHERE type_contenu='feuillet' AND date_evenement=? AND lieu=?
+                                ORDER BY id DESC LIMIT 1""",
+                             (str(_annee_fe), str(_mois_fe))).fetchone()
+    except Exception:
+        _soum_fe = None
     _pub_fe = None
     try:
         _pub_fe = c.execute("""SELECT date_publication FROM feuillets_publications
@@ -1337,30 +1400,59 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
                             (_annee_fe, _mois_fe)).fetchone()
     except Exception:
         _pub_fe = None
+
     if _pub_fe:
         _dpub = safe_date(_pub_fe[0])
-        st.caption(f"📢 Feuillet N°{_mois_fe} publié le "
+        st.caption(f"✅ Feuillet N°{_mois_fe} publié par le diocèse le "
                    f"{_dpub.strftime('%d/%m/%Y') if _dpub else _pub_fe[0]} — "
-                   "alerte affichée dans le fil d'actualité · archivé pour la communauté. "
-                   "Republier met la date d'alerte à jour.")
+                   "alerte affichée dans le fil d'actualité · archivé pour la communauté.")
+    elif _soum_fe and _soum_fe[0] == "attente":
+        _dsoum = safe_date(_soum_fe[1])
+        st.info(f"🟡 Feuillet N°{_mois_fe} soumis au diocèse le "
+                f"{_dsoum.strftime('%d/%m/%Y') if _dsoum else _soum_fe[1]} — "
+                "en attente de sa validation. C'est le diocèse qui publie.")
+    elif _soum_fe and _soum_fe[0] == "refuse":
+        st.warning("❌ Le diocèse a refusé la dernière soumission de ce feuillet "
+                   "(voir 📔 Journal). Corrigez si besoin puis soumettez à nouveau.")
     else:
-        st.caption("📢 Feuillet non publié : une fois les sections saisies, publiez-le "
-                   "pour alerter la communauté dans le fil d'actualité.")
-    if st.button("📢 Publier le feuillet du mois",
-                 key=f"publier_fe_{_annee_fe}_{_mois_fe}",
-                 type="primary", width="stretch",
-                 disabled=(len(_secs_fe) == 0)):
-        c.execute("""INSERT INTO feuillets_publications (annee_debut, mois, numero, date_publication)
-                     VALUES (?, ?, ?, ?)
-                     ON CONFLICT(annee_debut, mois)
-                     DO UPDATE SET numero=excluded.numero,
-                                   date_publication=excluded.date_publication""",
-                  (_annee_fe, _mois_fe, _mois_fe, date.today().isoformat()))
-        commit_and_sync()
-        st.session_state["flash_success"] = (
-            f"Feuillet N°{_mois_fe} ({_mois_fe_lbl}) publié ! ✅ "
-            "La communauté sera alertée dans le fil d'actualité de l'Espace de Prière.")
-        st.rerun()
+        st.caption("📨 Feuillet non soumis : une fois les sections saisies, "
+                   "soumettez-le au diocèse — seul le diocèse publie.")
+
+    if _soum_fe and _soum_fe[0] == "attente":
+        st.button("⏳ Soumission en attente du diocèse",
+                  key=f"attente_fe_{_annee_fe}_{_mois_fe}",
+                  disabled=True, width="stretch")
+    else:
+        if st.button("📨 Soumettre le feuillet au diocèse",
+                     key=f"publier_fe_{_annee_fe}_{_mois_fe}",
+                     type="primary", width="stretch",
+                     disabled=(len(_secs_fe) == 0)):
+            if len(_secs_fe) == 0:
+                st.error("Aucune section saisie : le feuillet ne peut pas être soumis.")
+            else:
+                _titre_soum = (f"Feuillet mensuel de prière N°{_mois_fe} — "
+                               f"{_mois_fe_lbl} {_annee_fe}")
+                c.execute("""INSERT INTO soumissions_comm
+                             (auteur_id, type_contenu, titre, contenu_texte,
+                              image_url, fichier_url, video_url, date_evenement,
+                              lieu, statut, date_soumission, paroisse_cible)
+                             VALUES (?, 'feuillet', ?, NULL, NULL, NULL, NULL,
+                                     ?, ?, 'attente', ?, NULL)""",
+                          (st.session_state.get('user_id'), _titre_soum,
+                           str(_annee_fe), str(_mois_fe), date.today().isoformat()))
+                commit_and_sync()
+                try:
+                    envoyer_notification_telegram(
+                        "📡 <b>Service Communication</b> — feuillet N°" + str(_mois_fe)
+                        + " (" + html.escape(_mois_fe_lbl) + " " + str(_annee_fe)
+                        + ") soumis À VALIDER par le diocèse")
+                except Exception:
+                    pass
+                st.session_state["flash_success"] = (
+                    f"Feuillet N°{_mois_fe} ({_mois_fe_lbl}) soumis au diocèse. ✅ "
+                    "Rien ne sera publié sans sa validation — le feuillet apparaît "
+                    "dans « 🟡 En attente de validation » côté diocèse.")
+                st.rerun()
 
 def gerer_feuillet_mensuel():
     """2️⃣ bis — LE FEUILLET MENSUEL EN ÉQUIPE (v7.8.5 : déplacé du SAS diocèse
