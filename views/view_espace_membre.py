@@ -1815,14 +1815,22 @@ def _render_pdf_inline(url_pdf):
         f'</div></div>', unsafe_allow_html=True)
 
 
-def _render_coin_affiche():
+def _render_coin_affiche(pid=None):
+    """v7.8.6 — le Coin Affiche respecte le périmètre paroissial :
+    un évènement créé par une ÉQUIPE n'y apparaît que dans le contexte de
+    SA paroisse (QR paroissial ou membre de la paroisse). Sans contexte
+    paroissial, seuls les évènements diocèse/paroisse sont visibles."""
+    _filtre_eq, _prm_eq = ("(equipe_id IS NULL OR equipe_id IN "
+                           "(SELECT id FROM equipes WHERE paroisse_id=?))", [pid]) if pid \
+        else ("equipe_id IS NULL", [])
     lignes = []
     erreur_sql = None
     try:
-        lignes = c.execute("""SELECT type_evenement, date_evenement, lieu, affiche_url, video_url FROM evenements
+        lignes = c.execute(f"""SELECT type_evenement, date_evenement, lieu, affiche_url, video_url FROM evenements
                               WHERE (affiche_url IS NOT NULL OR video_url IS NOT NULL) AND date_evenement >= ?
+                              AND {_filtre_eq}
                               ORDER BY date_evenement ASC LIMIT 5""",
-                          (date.today().isoformat(),)).fetchall()
+                          [date.today().isoformat()] + _prm_eq).fetchall()
     except Exception as e:
         erreur_sql = str(e)
         lignes = []
@@ -1863,9 +1871,10 @@ def _render_coin_affiche():
                 st.markdown(f"🎬 [Voir la vidéo]({visuel[4]})")
     else:
         try:
-            prochain = c.execute("""SELECT type_evenement, date_evenement, lieu FROM evenements
-                                    WHERE date_evenement >= ? ORDER BY date_evenement ASC LIMIT 1""",
-                                 (date.today().isoformat(),)).fetchone()
+            prochain = c.execute(f"""SELECT type_evenement, date_evenement, lieu FROM evenements
+                                    WHERE date_evenement >= ? AND {_filtre_eq}
+                                    ORDER BY date_evenement ASC LIMIT 1""",
+                                 [date.today().isoformat()] + _prm_eq).fetchone()
         except Exception:
             prochain = None
         if prochain and len(prochain) >= 3:
@@ -2151,7 +2160,57 @@ def _render_fil_actualites(pid=None, lien_theme=None):
     else:
         st.info("Aucun contenu spirituel n'a encore été publié.")
 
-    _render_coin_affiche()
+    _render_coin_affiche(pid)
+    _render_actualites_paroisse(pid)
+
+
+def _render_actualites_paroisse(pid=None):
+    """📰 Actualités de la Paroisse (v7.8.6) — le fil de l'espace communautaire
+    de la paroisse : les prochains évènements créés par ses ÉQUIPES (et par la
+    paroisse elle-même). Périmètre strict : visible UNIQUEMENT dans le contexte
+    de cette paroisse (QR paroissial ou membre de la paroisse) — jamais au-delà.
+    La Réponse de Communion reste dans « 📅 Mes évènements » côté membre."""
+    if not pid:
+        return  # aucun contexte paroissial → pas d'actualité paroissiale
+    try:
+        evts = c.execute("""SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
+                                   e.affiche_url, e.video_url, e.auteur_nom,
+                                   eq.nom_equipe, e.equipe_id
+                            FROM evenements e
+                            LEFT JOIN equipes eq ON e.equipe_id = eq.id
+                            WHERE e.date_evenement >= ?
+                              AND (eq.paroisse_id = ? OR e.paroisse_id = ?)
+                            ORDER BY e.date_evenement ASC LIMIT 5""",
+                         (date.today().isoformat(), pid, pid)).fetchall()
+    except Exception:
+        return
+    if not evts:
+        return
+    st.markdown('<h3 style="font-family:Georgia, serif;">📰 Actualités de la Paroisse</h3>',
+                unsafe_allow_html=True)
+    st.caption("🕊️ Les prochains évènements de votre communauté paroissiale — "
+               "annoncés par ses équipes. Membre : signez votre présence dans "
+               "« 📅 Mes évènements ».")
+    for evt in evts:
+        d_e = safe_date(evt[1])
+        date_txt = d_e.strftime("%d/%m/%Y") if d_e else "Date à définir"
+        delta = (d_e - date.today()).days if d_e else None
+        delai = "🔴 Aujourd'hui !" if delta == 0 else "🟠 Demain" if delta == 1 else \
+                (f"📅 Dans {delta} jours" if delta is not None else "")
+        icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
+                 "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(evt[2], "📅")
+        organisateur = f"👥 {evt[7]}" if evt[7] else "🏘️ La paroisse"
+        entete = f"{icone} {evt[2]} — {date_txt} · {delai}" if delai else f"{icone} {evt[2]} — {date_txt}"
+        with st.expander(entete):
+            st.write(f"**🏢 Organisé par :** {organisateur}")
+            st.write(f"**📍 Lieu :** {evt[3] or 'Lieu à définir'}")
+            if evt[4] and str(evt[4]).startswith("http"):
+                st.markdown(f'<img src="{evt[4]}" alt="" class="rub-photo">', unsafe_allow_html=True)
+            if evt[5] and str(evt[5]).startswith("http"):
+                try:
+                    st.video(evt[5], width="stretch")
+                except Exception:
+                    st.markdown(f"🎬 [Voir la vidéo]({evt[5]})")
 
 
 def _enregistrer_presence(membre_id, evt_id, choix):
@@ -2464,4 +2523,3 @@ def show_espace_membre(matloc_membre=None):
                          + (f"&p={pid_m}" if pid_m else "") + "&nav=1&r=1")
         _render_fil_actualites(pid=pid_m, lien_theme=_lien_theme_m)
         _render_actualites(pid=pid_m)
-
