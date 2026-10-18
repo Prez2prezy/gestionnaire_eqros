@@ -32,12 +32,20 @@ def _assurer_table():
                     contenu_texte TEXT, image_url TEXT, fichier_url TEXT,
                     video_url TEXT, date_evenement TEXT, lieu TEXT,
                     statut TEXT DEFAULT 'attente', motif_refus TEXT,
-                    date_soumission TEXT, paroisse_cible INTEGER)""")
+                    date_soumission TEXT, paroisse_cible INTEGER,
+                    date_publication_prevue TEXT)""")
     try:
         c.execute("SELECT paroisse_cible FROM soumissions_comm LIMIT 1")
     except Exception:
         try:
             c.execute("ALTER TABLE soumissions_comm ADD COLUMN paroisse_cible INTEGER")
+        except Exception:
+            pass
+    try:
+        c.execute("SELECT date_publication_prevue FROM soumissions_comm LIMIT 1")
+    except Exception:
+        try:
+            c.execute("ALTER TABLE soumissions_comm ADD COLUMN date_publication_prevue TEXT")
         except Exception:
             pass
     commit_and_sync()
@@ -51,6 +59,7 @@ LIBELLES = {"priere": "🙏 Prière", "meditation": "📖 Méditation",
             "feuillet": "📖 Feuillet mensuel de prière"}
 
 STATUTS = {"attente": "🟡 En attente de validation du diocèse",
+           "programme": "🗓️ Programmée par le diocèse (publication auto à l'échéance)",
            "publie": "✅ Publiée par le diocèse",
            "refuse": "❌ Refusée par le diocèse"}
 
@@ -265,7 +274,8 @@ def _onglet_musique():
 def _onglet_journal():
     _paroisses_map = {p[0]: p[1] for p in c.execute("SELECT id, nom FROM paroisses").fetchall()}
     lignes = c.execute("""SELECT id, type_contenu, titre, statut, motif_refus,
-                                 date_soumission, paroisse_cible FROM soumissions_comm
+                                 date_soumission, paroisse_cible, date_publication_prevue
+                          FROM soumissions_comm
                           ORDER BY id DESC LIMIT 30""").fetchall()
     if not lignes:
         st.info("Aucune soumission pour le moment.")
@@ -275,6 +285,9 @@ def _onglet_journal():
         entete = f"{libelle} — {s[2] or '(sans titre)'} ({s[5]}){_cible_lbl}"
         with st.expander(entete):
             st.write(STATUTS.get(s[3], s[3]))
+            if s[3] == "programme" and s[7]:
+                st.info("⏰ Publication automatique prévue le **" + s[7] + "** (dès qu'une page "
+                        "de l'application est ouverte après cette heure).")
             if s[3] == "refuse" and s[4]:
                 st.error("Motif du refus : " + s[4])
 
