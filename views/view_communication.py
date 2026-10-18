@@ -14,7 +14,8 @@ import html
 from datetime import date
 from database import c, commit_and_sync
 from services import (sauvegarder_illustration, sauvegarder_audio, sauvegarder_video,
-                      envoyer_notification_telegram, get_periode_pastorale)
+                      envoyer_notification_telegram, get_periode_pastorale,
+                      afficher_messages_flash)
 from components import gerer_feuillet_mensuel
 
 
@@ -46,7 +47,8 @@ LIBELLES = {"priere": "🙏 Prière", "meditation": "📖 Méditation",
             "audio": "🎵 Musique", "annonce_defilante": "📺 Bande défilante",
             "actualite": "📰 Actualité (affiche/BA)",
             "theme_pastoral": "🕯️ Thème pastoral",
-            "evenement": "📅 Évènement (historique)"}
+            "evenement": "📅 Évènement (historique)",
+            "feuillet": "📖 Feuillet mensuel de prière"}
 
 STATUTS = {"attente": "🟡 En attente de validation du diocèse",
            "publie": "✅ Publiée par le diocèse",
@@ -283,6 +285,7 @@ def _onglet_journal():
 def show_communication():
     _assurer_table()
     _bandeau()
+    afficher_messages_flash()  # v7.8.7 : le flash « soumis au diocèse » s'affiche enfin ici
     st.caption("📡 Tout contenu de ce canal est SOUMIS puis validé par le responsable diocésain avant publication. "
                "Les évènements avec Réponse de Communion passent exclusivement par l'agenda (canal des responsables d'équipe).")
     onglets = st.tabs(["🙏 Prière / Méditation", "📺 Bandes défilantes", "🖼️ Affiches & Bandes-annonces",
