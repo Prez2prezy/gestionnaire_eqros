@@ -5,9 +5,9 @@
 # ====================================================================
 import streamlit as st
 import html
-from datetime import date
+from datetime import date, datetime, time
 from database import c, commit_and_sync, safe_migrate
-from services import envoyer_notification_telegram
+from services import envoyer_notification_telegram, publier_soumission
 
 
 LIBELLES = {"priere": "🙏 Prière", "meditation": "📖 Méditation",
@@ -34,6 +34,11 @@ def _assurer_colonnes_cible():
             c.execute(f"SELECT {_col} FROM espace_spirituel LIMIT 1")
         except Exception:
             safe_migrate(f"ALTER TABLE espace_spirituel ADD COLUMN {_col} TEXT")
+    # v7.8.8 — date de publication programmée (lazy cron côté app)
+    try:
+        c.execute("SELECT date_publication_prevue FROM soumissions_comm LIMIT 1")
+    except Exception:
+        safe_migrate("ALTER TABLE soumissions_comm ADD COLUMN date_publication_prevue TEXT")
     # Affiches du thème et des sous-thèmes (auto-réparation)
     for _t in ("themes_pastoraux", "sous_themes"):
         try:
@@ -134,6 +139,38 @@ def show_validation_communication():
 
             _nom_c = _nom_paroisse(s[10]) if len(s) > 10 else None
             st.info("🎯 Cible : " + (_nom_c if _nom_c else "🌍 Diocèse (tous)"))
+
+            # --- v7.8.8 : PROGRAMMATION DE LA PUBLICATION ---
+            # Publier maintenant OU programmer : le contenu reste invisible
+            # jusqu'à la date/heure choisie, puis est publié automatiquement
+            # (réveil au chargement de l'app — Abidjan = UTC, pas de décalage).
+            with st.expander("🗓️ Programmer la publication (au lieu de publier maintenant)"):
+                _d_prog = st.date_input("Date de publication", value=date.today(), key=f"dp_{s[0]}")
+                _h_prog = st.time_input("Heure de publication", value=time(8, 0), key=f"hp_{s[0]}")
+                st.caption("Le contenu rejoindra l'Espace de Prière à cette date et heure, sans nouveau "
+                           "clic (publication automatique dès qu'une page de l'application est ouverte "
+                           "après l'échéance — heure du serveur, Abidjan = UTC).")
+                if st.button("🗓️ Programmer la publication", key=f"prog_{s[0]}", type="primary",
+                             use_container_width=True):
+                    _dt = datetime.combine(_d_prog, _h_prog)
+                    if _dt <= datetime.now():
+                        st.error("La date/heure choisie est déjà passée : choisissez un moment futur.")
+                    else:
+                        c.execute("""UPDATE soumissions_comm SET statut='programme',
+                                     date_publication_prevue=? WHERE id=?""",
+                                  (_dt.strftime("%Y-%m-%d %H:%M"), s[0]))
+                        commit_and_sync()
+                        try:
+                            envoyer_notification_telegram(
+                                "🗓️ <b>Diocèse</b> — publication PROGRAMMÉE pour le "
+                                + _dt.strftime("%d/%m/%Y à %H:%M") + " : "
+                                + html.escape(s[2] or "(sans titre)"))
+                        except Exception:
+                            pass
+                        st.session_state["flash_success"] = (
+                            "Publication programmée pour le "
+                            + _dt.strftime("%d/%m/%Y à %H:%M") + ". 🗓️")
+                        st.rerun()
 
             c_pub, c_ref = st.columns(2)
             with c_pub:
@@ -257,9 +294,54 @@ def show_validation_communication():
                         st.rerun()
 
     st.markdown("---")
+    # ---------- v7.8.8 : PUBLICATIONS PROGRAMMÉES ----------
+    _programmees = []
+    try:
+        _programmees = c.execute("""SELECT id, type_contenu, titre, contenu_texte, image_url,
+                                           fichier_url, video_url, date_evenement, lieu,
+                                           date_soumission, paroisse_cible, date_publication_prevue
+                                    FROM soumissions_comm WHERE statut='programme'
+                                    ORDER BY date_publication_prevue ASC""").fetchall()
+    except Exception:
+        _programmees = []
+    st.markdown(f"### 🗓️ Programmées ({len(_programmees)})")
+    if not _programmees:
+        st.caption("Aucune publication programmée. Utilisez « 🗓️ Programmer la publication » "
+                   "dans une soumission en attente pour la diffuser à une date/heure choisie.")
+    for s in _programmees:
+        libelle = LIBELLES.get(s[1], s[1])
+        with st.expander(f"🗓️ {libelle} — {s[2] or '(sans titre)'} → le {s[11]}"):
+            if s[3]:
+                st.markdown("**Texte :**")
+                st.markdown(s[3])
+            if s[4]:
+                try: st.image(s[4], width=300)
+                except Exception: pass
+            st.info(f"⏰ Publication automatique prévue le **{s[11]}** "
+                    "(dès qu'une page de l'application est ouverte après cette heure).")
+            ca, cb = st.columns(2)
+            with ca:
+                if st.button("▶️ Publier maintenant", key=f"pnow_{s[0]}",
+                             type="primary", use_container_width=True):
+                    if publier_soumission(s):
+                        c.execute("UPDATE soumissions_comm SET statut='publie' WHERE id=?", (s[0],))
+                        commit_and_sync()
+                        _notifier(s, "publie")
+                        st.session_state["flash_success"] = "Contenu publié immédiatement (programmation annulée). ✅"
+                        st.rerun()
+                    else:
+                        st.error("Publication impossible (contenu incomplet). Utilisez « ↩️ Revenir en attente » puis corrigez ou refusez.")
+            with cb:
+                if st.button("↩️ Revenir en attente", key=f"patt_{s[0]}", use_container_width=True):
+                    c.execute("UPDATE soumissions_comm SET statut='attente', date_publication_prevue=NULL WHERE id=?", (s[0],))
+                    commit_and_sync()
+                    st.session_state["flash_success"] = "Programmation annulée — la soumission est de retour dans la file d'attente."
+                    st.rerun()
+
+    st.markdown("---")
     st.markdown("### 📔 Historique des décisions")
     historique = c.execute("""SELECT id, type_contenu, titre, statut, motif_refus, date_soumission
-                              FROM soumissions_comm WHERE statut != 'attente'
+                              FROM soumissions_comm WHERE statut IN ('publie','refuse')
                               ORDER BY id DESC LIMIT 30""").fetchall()
     if not historique:
         st.caption("Aucune décision pour l'instant.")
