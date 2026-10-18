@@ -1,5 +1,14 @@
 # ====================================================================
-# view_espace_membre.py — VERSION 7.8.5 (vitrine épurée + sommaire unique)
+# view_espace_membre.py — VERSION 7.8.9 (lecteur compagnon — musique en continu)
+# v7.8.9 : ① le bouton 🎧 ouvre l'onglet d'écoute en FENÊTRE COMPAGNON nommée
+# sur PC (réutilisée à chaque clic) et dans le MÊME onglet sur téléphone ;
+# ② la page d'écoute porte une barre « ◀️ Revenir à l'appli » (sur téléphone,
+# un tap ramène à l'espace et la musique suit) ; ③ MINI-BARRE COMPAGNON
+# flottante sur toutes les pages de l'espace : reprise automatique de la
+# musique là où elle s'était arrêtée (sessionStorage) — on prie dans
+# « 📿 Rosaire » ou le livret pendant que la musique continue ; ④ contrôles
+# Media Session (écran verrouillé / notifications) + vignette flottante 📺
+# (Picture-in-Picture, si supporté).
 # v7.8.5 : ① la carte « 📝 Éditorial » est RETIRÉE de la vitrine — retour au
 # duo Sommaire + « Ouvrir le livret » ; les archives suivent donc
 # IMMÉDIATEMENT le bouton ; ② sommaire du livret en présentation UNIQUE
@@ -182,6 +191,53 @@ def _liens_meme_onglet(cle):
         "if(n>0&&essais>2){clearInterval(t);}"
         "else if(essais>20){clearInterval(t);}"
         "},300);})();</script>")
+    try:
+        _comp_html(script, height=0)
+    except Exception:
+        pass
+
+
+def _fixer_liens_ecoute():
+    """v7.8.9 — CORRECTIF SANITISEUR pour les liens du lecteur compagnon.
+    Constat (test navigateur) : Streamlit 1.66 injecte target="_blank" +
+    rel="noopener noreferrer" dans TOUTES les ancres de st.markdown → les
+    boutons 🎧 / ◀️ Revenir ouvraient un NOUVEL onglet au lieu de naviguer
+    dans l'onglet courant (la mémoire sessionStorage suivait l'ancien
+    onglet : musique perdue de vue). Parade (motif éprouvé _liens_meme_onglet,
+    v7.8.1) : après rendu, on réécrit `target` en JS sur le DOM vivant et on
+    attache un intercepteur « essai sans risque » :
+      ① tenter la nav JS du document parent (top) ;
+      ② si elle réussit → preventDefault() ;
+      ③ si SecurityError (sandbox) → ne RIEN annuler : l'ancre native suit
+        (target="_self" réécrit garantit l'onglet courant).
+    Cibles : « 🎧 Écouter en priant » (mobile, _self), « ◀️ Revenir à
+    l'appli » (_self). Le bouton PC n'est PAS intercepté : on lui rend
+    seulement son nom de fenêtre « rosaire_ecoute » (onglet réutilisé,
+    window.name sert à la détection compagnon côté page d'écoute).
+    `rel` est RETIRÉ sur les trois : le rel=noopener imposé empêche la
+    réutilisation d'un onglet nommé (2e clic = 2e onglet).
+    Boucle durable : le DOM est recréé à chaque rerun Streamlit."""
+    script = (
+        "<script>(function(){var d=window.parent.document;"
+        "var t=setInterval(function(){"
+        "var cibles=[['a.btn-eco.mob','_self',true],"
+        "['a.btn-rv','_self',true],"
+        "['a.btn-eco.pc','rosaire_ecoute',false]];"
+        "for(var j=0;j<cibles.length;j++){"
+        "var as=d.querySelectorAll(cibles[j][0]);"
+        "for(var i=0;i<as.length;i++){var a=as[i];"
+        "if(!a.getAttribute('data-eco89')){"
+        "a.setAttribute('data-eco89','1');"
+        "a.setAttribute('target',cibles[j][1]);"
+        "a.removeAttribute('rel');"
+        "if(cibles[j][2]){(function(an){"
+        "an.addEventListener('click',function(e){"
+        "var nav=false;"
+        "try{window.top.location.href=an.href;nav=true;}catch(err){}"
+        "if(nav&&e&&e.preventDefault){e.preventDefault();}"
+        "});})(a);}}"
+        "}}"
+        "},350);})();</script>")
     try:
         _comp_html(script, height=0)
     except Exception:
@@ -1364,18 +1420,14 @@ def _render_page_archives_textes(type_contenu, message_vide, pid=None):
                 _render_pdf_inline(url_pdf)
 
 
-def _render_page_archives_audios(pid=None):
-    """Archives Musiques — LECTEUR COMPLET (playlist, ⏮️⏭️, 🔀, 🔁, sélection).
-    Les MP3 en lien direct alimentent la playlist ; les liens YouTube
-    s'affichent séparément. LOT C5 : filtre par contexte paroissial."""
+def _pistes_du_contexte(pid=None):
+    """v7.8.9 — pistes MP3 + vidéos YouTube du contexte paroissial.
+    FACTORISÉ : sert la page d'écoute 🎧 ET la mini-barre compagnon."""
     cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
         else ("AND paroisse_cible IS NULL", [])
     audios = c.execute(f"""SELECT titre, fichier_url FROM espace_spirituel
                           WHERE type_contenu='audio' {cond} ORDER BY date_publication DESC, id DESC""",
                        prm).fetchall()
-    if not audios:
-        st.info("Aucun fichier audio.")
-        return
     pistes, videos_yt = [], []
     for a in audios:
         u = str(a[1]) if a[1] is not None else ""
@@ -1387,17 +1439,86 @@ def _render_page_archives_audios(pid=None):
             videos_yt.append({"title": titre_sur, "url": u})
         else:
             pistes.append({"title": html.escape(titre_sur), "url": u})
+    return pistes, videos_yt
 
-    # v7.7 — bouton masqué sur la page d'écoute elle-même (sinon il
-    # réapparaissait dans l'onglet d'écoute, ce qui est inutile).
+
+def _render_page_archives_audios(pid=None):
+    """Archives Musiques — LECTEUR COMPLET (playlist, ⏮️⏭️, 🔀, 🔁, sélection).
+    Les MP3 en lien direct alimentent la playlist ; les liens YouTube
+    s'affichent séparément. LOT C5 : filtre par contexte paroissial.
+    v7.8.9 — LECTEUR COMPAGNON : ① bouton d'ouverture intelligent (popup
+    nommé sur PC / même onglet sur téléphone) ; ② barre « ◀️ Revenir à
+    l'appli » sur la page d'écoute ; ③ la position de lecture est mémorisée
+    (sessionStorage) pour la mini-barre compagnon ; ④ Media Session + 📺."""
+    pistes, videos_yt = _pistes_du_contexte(pid)
+    if not pistes and not videos_yt:
+        st.info("Aucun fichier audio.")
+        return
+
+    # v7.8.9 — bouton d'ouverture intelligent, masqué sur la page d'écoute
+    # elle-même (sinon il réapparaissait dans l'onglet d'écoute, ce qui est
+    # inutile). Téléphone (≤ 820 px) : MÊME onglet — la barre « ◀️ Revenir »
+    # puis la mini-barre compagnon prennent le relais, la musique suit le
+    # visiteur page après page. PC : fenêtre compagnon nommée
+    # « rosaire_ecoute » (réutilisée à chaque clic, jamais dupliquée).
     if st.query_params.get("musique") != "1":
         _lien_ecoute = "?espace=1&musique=1" + (f"&p={pid}" if pid else "")
-        st.markdown('<div style="text-align:center; margin:0 0 14px 0;">'
-                    '<a href="' + _lien_ecoute + '" target="_blank" '
-                    'style="display:inline-block; background:#4527a0; color:#ffffff;'
-                    ' padding:10px 22px; border-radius:30px; font-weight:bold; text-decoration:none;">'
-                    '🎧 Ouvrir l’onglet d’écoute dédié</a></div>',
-                    unsafe_allow_html=True)
+        # v7.8.9 — st.markdown SANITISE le HTML (onclick supprimé, rel=noopener
+        # ajouté) : la bascule téléphone/PC se fait donc en CSS PUR (@media) —
+        # deux boutons, un seul visible selon la largeur d'écran.
+        # Téléphone (≤ 820 px) : lien MÊME onglet « 🎧 Écouter en priant » —
+        # la barre « ◀️ Revenir » puis la mini-barre compagnon prennent le
+        # relais, la musique suit le visiteur page après page.
+        # PC : fenêtre/onglet compagnon nommé « rosaire_ecoute » (réutilisé à
+        # chaque clic, jamais dupliqué — le nom sert aussi à la détecter).
+        st.markdown(
+            '<style>'
+            '.btn-eco { display:inline-block; background:#4527a0; color:#ffffff;'
+            ' padding:10px 22px; border-radius:30px; font-weight:bold; text-decoration:none;'
+            ' margin:0 4px; }'
+            '.btn-eco.mob { display:none; }'
+            '@media (max-width: 820px) { .btn-eco.mob { display:inline-block; }'
+            ' .btn-eco.pc { display:none; } }'
+            '</style>'
+            '<div style="text-align:center; margin:0 0 6px 0;">'
+            '<a class="btn-eco pc" href="' + _lien_ecoute + '" target="rosaire_ecoute">'
+            '🎧 Ouvrir l’onglet d’écoute dédié</a>'
+            '<a class="btn-eco mob" href="' + _lien_ecoute + '">'
+            '🎧 Écouter en priant</a></div>'
+            '<div style="text-align:center; color:#9fa6d8 !important; font-size:0.8rem;'
+            ' margin:0 0 14px 0;">📱 La musique vous suit ensuite de page en page —'
+            ' tapez « ◀️ Revenir à l’appli » pour continuer à prier. 🎶</div>',
+            unsafe_allow_html=True)
+        _fixer_liens_ecoute()
+
+    # v7.8.9 — barre « ◀️ Revenir à l'appli » (page d'écoute uniquement).
+    # Même onglet (téléphone) : un tap ramène à l'Espace de Prière et la
+    # mini-barre compagnon reprend la musique. Fenêtre compagnon (PC) :
+    # le lecteur masque le bouton et affiche l'astuce « réduisez la fenêtre ».
+    if st.query_params.get("musique") == "1" and pistes:
+        _lien_retour = "?espace=1" + (f"&p={pid}" if pid else "")
+        st.markdown(
+            '<style>'
+            '.block-container { padding-bottom: 130px !important; }'
+            '#bar-revenir { position:fixed; bottom:0; left:0; right:0; z-index:999999;'
+            ' background:linear-gradient(135deg,#1A237E 0%,#4527a0 100%);'
+            ' border-top:2px solid #FFD700; text-align:center;'
+            ' padding:12px 12px calc(12px + env(safe-area-inset-bottom));'
+            ' box-shadow:0 -6px 22px rgba(0,0,0,0.45); }'
+            '#bar-revenir a.btn-rv { display:inline-block; background:#FFD700; color:#1A237E;'
+            ' font-weight:bold; text-decoration:none; padding:12px 38px; border-radius:30px;'
+            ' font-size:1.05rem; }'
+            '#bar-revenir .hint-rv { display:none; color:#e8eaf6 !important; font-size:0.85rem;'
+            ' line-height:1.5; }'
+            '</style>'
+            '<div id="bar-revenir">'
+            '<a class="btn-rv" id="btn-rv-meme" href="' + _lien_retour + '">'
+            '◀️ Revenir à l’appli</a>'
+            '<div class="hint-rv" id="hint-rv-popup">🖥️ Fenêtre compagnon : réduisez-la,'
+            ' la musique continue pendant que vous priez dans la fenêtre principale. 🎶</div>'
+            '</div>',
+            unsafe_allow_html=True)
+        _fixer_liens_ecoute()
 
     if pistes:
         player_html = """
@@ -1411,6 +1532,7 @@ def _render_page_archives_audios(pid=None):
                 <button id="btn-shuffle" style="background:none; border:none; font-size:20px; cursor:pointer; opacity:0.5; padding:5px;">🔀</button>
                 <button id="btn-loop" style="background:none; border:none; font-size:20px; cursor:pointer; opacity:0.5; padding:5px;">🔁</button>
                 <button id="btn-next" style="background:none; border:none; font-size:20px; cursor:pointer; padding:5px;">⏭️</button>
+                <button id="btn-pip" style="background:none; border:none; font-size:20px; cursor:pointer; padding:5px; display:none;" title="Vignette flottante">📺</button>
                 <button id="btn-play-selection" style="background:#4527a0; color:white; border:none; font-size:14px; cursor:pointer; opacity:0.5; padding:5px 10px; border-radius:15px;">▶️ Sélection</button>
             </div>
             <video id="audio-player" controls controlsList="nodownload" style="width: 100%; outline:none; max-height: 150px; background:black; border-radius:8px;"></video>
@@ -1543,6 +1665,128 @@ def _render_page_archives_audios(pid=None):
             document.getElementById('btn-shuffle').addEventListener('click', toggleShuffle);
             document.getElementById('btn-loop').addEventListener('click', toggleLoop);
             document.getElementById('btn-play-selection').addEventListener('click', playSelection);
+
+            // ================= v7.8.9 — LECTEUR COMPAGNON =================
+            var CLE_ETAT = 'rosaire_lecteur_etat_v1';
+            function sauverEtat(enLecture) {
+                try {
+                    var p = tracks[currentTrackIndex];
+                    if (!p) return;
+                    sessionStorage.setItem(CLE_ETAT, JSON.stringify({
+                        u: p.url, titre: p.title, t: audio.currentTime || 0,
+                        playing: !!enLecture, ts: Date.now()
+                    }));
+                } catch (e) {}
+            }
+            function majMetaMedia() {
+                if (!('mediaSession' in navigator)) return;
+                try {
+                    var p = tracks[currentTrackIndex];
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: p ? p.title : 'Lecteur Spirituel',
+                        artist: 'Équipes du Rosaire',
+                        album: 'Chapelet en musique'
+                    });
+                } catch (e) {}
+            }
+            audio.addEventListener('play', function () {
+                sauverEtat(true); majMetaMedia();
+                if ('mediaSession' in navigator) {
+                    try { navigator.mediaSession.playbackState = 'playing'; } catch (e) {}
+                }
+            });
+            audio.addEventListener('pause', function () {
+                sauverEtat(false);
+                if ('mediaSession' in navigator) {
+                    try { navigator.mediaSession.playbackState = 'paused'; } catch (e) {}
+                }
+            });
+            audio.addEventListener('timeupdate', function () { if (!audio.paused) sauverEtat(true); });
+            if ('mediaSession' in navigator) {
+                try { navigator.mediaSession.setActionHandler('play', function () { audio.play(); }); } catch (e) {}
+                try { navigator.mediaSession.setActionHandler('pause', function () { audio.pause(); }); } catch (e) {}
+                try { navigator.mediaSession.setActionHandler('previoustrack', prevTrack); } catch (e) {}
+                try { navigator.mediaSession.setActionHandler('nexttrack', nextTrack); } catch (e) {}
+            }
+            // — vignette flottante 📺 (Picture-in-Picture, si le navigateur le permet) —
+            (function () {
+                var pipOk = false;
+                try { pipOk = document.pictureInPictureEnabled && !!audio.requestPictureInPicture; } catch (e) {}
+                var pipIOS = !!(audio.webkitSupportsPresentationMode && typeof audio.webkitSetPresentationMode === 'function');
+                if (!pipOk && !pipIOS) return;
+                var b = document.getElementById('btn-pip');
+                b.style.display = 'inline-block';
+                try {
+                    audio.poster = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+                        '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180">'
+                        + '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+                        + '<stop offset="0" stop-color="#1A237E"/><stop offset="1" stop-color="#4527a0"/>'
+                        + '</linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/>'
+                        + '<text x="160" y="84" font-size="52" text-anchor="middle">🎵</text>'
+                        + '<text x="160" y="132" font-size="17" fill="#FFD700" text-anchor="middle" '
+                        + 'font-family="sans-serif" font-weight="bold">Équipes du Rosaire</text></svg>');
+                } catch (e) {}
+                b.addEventListener('click', function () {
+                    try {
+                        if (document.pictureInPictureElement) { document.exitPictureInPicture(); return; }
+                        if (pipOk) {
+                            audio.requestPictureInPicture().catch(function () { b.style.opacity = '0.35'; });
+                            return;
+                        }
+                        if (pipIOS) {
+                            audio.webkitSetPresentationMode(
+                                audio.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+                        }
+                    } catch (e) { b.style.opacity = '0.35'; }
+                });
+            })();
+            // — reprise automatique là où la musique s'était arrêtée —
+            (function () {
+                var brut = null;
+                try { brut = sessionStorage.getItem(CLE_ETAT); } catch (e) {}
+                if (!brut) return;
+                var etat = null;
+                try { etat = JSON.parse(brut); } catch (e) {}
+                if (!etat || !etat.u || Date.now() - (etat.ts || 0) > 7200000) return;
+                var idx = -1;
+                for (var i = 0; i < tracks.length; i++) { if (tracks[i].url === etat.u) { idx = i; break; } }
+                if (idx < 0) return;
+                currentTrackIndex = idx;
+                audio.src = tracks[idx].url;
+                nowPlaying.innerText = tracks[idx].title;
+                renderPlaylist();
+                var reprendreA = (etat.t && isFinite(etat.t)) ? etat.t : 0;
+                if (reprendreA > 0) {
+                    audio.addEventListener('loadedmetadata', function () {
+                        try { audio.currentTime = reprendreA; } catch (e) {}
+                    }, { once: true });
+                }
+                if (etat.playing) {
+                    audio.play().catch(function () {
+                        console.log('Reprise automatique bloquée par le navigateur : appuyez sur ▶️');
+                    });
+                }
+            })();
+            // — adaptation de la barre « Revenir » selon le mode d'ouverture —
+            // Fenêtre compagnon (PC, ouverte par window.open) : masquer le bouton
+            // « ◀️ Revenir » et afficher l'astuce ; même onglet (téléphone) : le
+            // bouton reste visible (par défaut) et ramène à l'Espace de Prière.
+            (function () {
+                try {
+                    var w = window.parent.window;
+                    // rel=noopener (ajouté par Streamlit) coupe window.opener :
+                    // on identifie la fenêtre/onglet compagnon par son NOM
+                    // « rosaire_ecoute » (posé par target=), opener en secours.
+                    var estFenetreCompagnon = (w.name === 'rosaire_ecoute') || !!w.opener;
+                    var doc = window.parent.document;
+                    var bm = doc.getElementById('btn-rv-meme');
+                    var bh = doc.getElementById('hint-rv-popup');
+                    if (bm && bh && estFenetreCompagnon) {
+                        bm.style.display = 'none';
+                        bh.style.display = 'inline-block';
+                    }
+                } catch (e) {}
+            })();
             renderPlaylist();
         </script>
         """.replace("TRACKS_DATA", json.dumps(pistes).replace("</", "<\\/"))
@@ -1583,8 +1827,192 @@ def _render_page_archives_audios(pid=None):
                 except Exception:
                     st.markdown(f"🎬 [Écouter la vidéo]({v['url']})")
 
-    if not pistes and not videos_yt:
-        st.warning("Les URL des fichiers doivent commencer par http:// ou https://")
+# ====================================================================
+# v7.8.9 — MINI-BARRE COMPAGNON (musique en continu, page après page)
+# ====================================================================
+def _render_mini_lecteur(pid=None):
+    """MINI-BARRE COMPAGNON — barre flottante en bas de l'écran, présente sur
+    TOUTES les pages de l'Espace de Prière (sauf la page d'écoute 🎧 elle-même).
+    Dès qu'une musique a été lancée (page d'écoute ou mini-barre), elle se
+    REPREND automatiquement là où elle s'était arrêtée : on prie dans
+    « 📿 Rosaire chez les Équipiers », le livret ou les archives pendant que
+    le chapelet musical continue. Mémoire : sessionStorage (un onglet).
+    ⚠️ L'iframe se repositionne LUI-MÊME en position fixe dans la page
+    parente via window.frameElement (même origine — motif _mesure_entete).
+    Ne rend RIEN (iframe escamotée) sans lecture récente."""
+    pistes, _yt = _pistes_du_contexte(pid)
+    if not pistes:
+        return
+    pistes_json = json.dumps(pistes).replace("</", "<\\/")
+    mini_html = """
+<style>
+  html, body { margin:0; padding:0; overflow:hidden; background:transparent; }
+  #mini { display:none; align-items:center; gap:8px; height:54px; padding:0 10px;
+          box-sizing:border-box; font-family:sans-serif;
+          background:linear-gradient(135deg,#1A237E 0%,#4527a0 100%); }
+  #mini button { background:rgba(255,255,255,0.12); border:1px solid #FFD700; color:#FFD700;
+                 font-size:16px; border-radius:50%; width:38px; height:38px; min-width:38px;
+                 cursor:pointer; padding:0; line-height:1; }
+  #m-titre { flex:1; color:#e8eaf6; font-size:0.85rem; font-weight:bold;
+             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:left; }
+</style>
+<div id="mini">
+  <button id="m-play" title="Lecture / pause">▶️</button>
+  <div id="m-titre"></div>
+  <button id="m-next" title="Piste suivante">⏭️</button>
+  <button id="m-pip" title="Vignette flottante" style="display:none;">📺</button>
+</div>
+<audio id="m-audio" playsinline preload="none"></audio>
+<script>
+(function () {
+    var CLE = 'rosaire_lecteur_etat_v1';
+    var pistes = PISTES_DATA;
+    var audio = document.getElementById('m-audio');
+    var box = document.getElementById('mini');
+    var btnP = document.getElementById('m-play');
+    var titreEl = document.getElementById('m-titre');
+    var urlCourante = null, titreCourant = '', idxCourant = -1;
+
+    function escamoter() {
+        try {
+            var f = window.frameElement;
+            if (f) { f.style.display = 'none'; }
+        } catch (e) {}
+    }
+    function flotter() {
+        try {
+            var f = window.frameElement;
+            if (!f) return;
+            f.style.display = 'block';
+            f.style.position = 'fixed'; f.style.bottom = '12px'; f.style.left = '50%';
+            f.style.transform = 'translateX(-50%)';
+            f.style.width = 'min(360px, 94vw)'; f.style.height = '56px';
+            f.style.minHeight = '56px'; f.style.maxHeight = '56px';
+            f.style.zIndex = '999999'; f.style.border = '1px solid #FFD700';
+            f.style.borderRadius = '30px'; f.style.boxShadow = '0 8px 26px rgba(0,0,0,0.5)';
+            f.style.background = 'transparent';
+            try {
+                var p = f.parentElement;
+                if (p) { p.style.height = '0px'; p.style.overflow = 'hidden';
+                         p.style.margin = '0'; p.style.padding = '0';
+                         p.style.background = 'transparent'; }
+            } catch (e) {}
+            var doc = f.ownerDocument;
+            var bc = doc.querySelector('.block-container');
+            if (bc) bc.style.setProperty('padding-bottom', '96px', 'important');
+        } catch (e) {}
+    }
+
+    var etat = null;
+    try { etat = JSON.parse(sessionStorage.getItem(CLE) || 'null'); } catch (e) {}
+    if (!etat || !etat.u || Date.now() - (etat.ts || 0) > 7200000) { escamoter(); return; }
+
+    for (var i = 0; i < pistes.length; i++) { if (pistes[i].url === etat.u) { idxCourant = i; break; } }
+    urlCourante = etat.u;
+    titreCourant = etat.titre || (idxCourant >= 0 ? pistes[idxCourant].title : 'Musique');
+    titreEl.innerText = '🎵 ' + titreCourant;
+    audio.src = urlCourante;
+    box.style.display = 'flex';
+    flotter();
+
+    function sauver(enLecture) {
+        try {
+            sessionStorage.setItem(CLE, JSON.stringify({
+                u: urlCourante, titre: titreCourant, t: audio.currentTime || 0,
+                playing: !!enLecture, ts: Date.now()
+            }));
+        } catch (e) {}
+    }
+    function majMeta() {
+        if (!('mediaSession' in navigator)) return;
+        try {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: titreCourant, artist: 'Équipes du Rosaire', album: 'Chapelet en musique'
+            });
+        } catch (e) {}
+    }
+    function lancer() {
+        audio.play().then(function () { btnP.innerText = '⏸️'; sauver(true); majMeta(); })
+                    .catch(function () {
+                        btnP.innerText = '▶️';
+                        titreEl.innerText = '▶️ Tapez pour reprendre — ' + titreCourant;
+                    });
+    }
+    function changerPiste(p) {
+        if (!p) return;
+        urlCourante = p.url; titreCourant = p.title;
+        idxCourant = pistes.indexOf(p);
+        titreEl.innerText = '🎵 ' + titreCourant;
+        audio.src = urlCourante;
+        lancer();
+    }
+    btnP.addEventListener('click', function () {
+        if (audio.paused) { if (audio.src) lancer(); }
+        else { audio.pause(); btnP.innerText = '▶️'; sauver(false); }
+    });
+    var nxt = document.getElementById('m-next');
+    if (pistes.length > 1) {
+        nxt.addEventListener('click', function () {
+            changerPiste(pistes[(idxCourant + 1) % pistes.length]);
+        });
+    } else { nxt.style.display = 'none'; }
+    audio.addEventListener('play', function () { btnP.innerText = '⏸️'; sauver(true); majMeta(); });
+    audio.addEventListener('pause', function () { btnP.innerText = '▶️'; sauver(false); });
+    audio.addEventListener('timeupdate', function () { if (!audio.paused) sauver(true); });
+    audio.addEventListener('ended', function () {
+        if (pistes.length > 1) changerPiste(pistes[(idxCourant + 1) % pistes.length]);
+    });
+    if ('mediaSession' in navigator) {
+        try { navigator.mediaSession.setActionHandler('play', function () { lancer(); }); } catch (e) {}
+        try { navigator.mediaSession.setActionHandler('pause', function () { audio.pause(); }); } catch (e) {}
+        try { navigator.mediaSession.setActionHandler('nexttrack', function () {
+            if (pistes.length > 1) changerPiste(pistes[(idxCourant + 1) % pistes.length]);
+        }); } catch (e) {}
+    }
+    var reprendreA = (etat.t && isFinite(etat.t)) ? etat.t : 0;
+    if (reprendreA > 0) {
+        audio.addEventListener('loadedmetadata', function () {
+            try { if (Math.abs(audio.currentTime - reprendreA) > 1) audio.currentTime = reprendreA; } catch (e) {}
+        }, { once: true });
+    }
+    if (etat.playing) lancer(); else btnP.innerText = '▶️';
+
+    // — vignette flottante 📺 (si le navigateur le permet) —
+    var pipOk = false;
+    try { pipOk = document.pictureInPictureEnabled && !!audio.requestPictureInPicture; } catch (e) {}
+    var pipIOS = !!(audio.webkitSupportsPresentationMode && typeof audio.webkitSetPresentationMode === 'function');
+    if (pipOk || pipIOS) {
+        var bp = document.getElementById('m-pip');
+        bp.style.display = 'inline-block';
+        try {
+            audio.poster = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180">'
+                + '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+                + '<stop offset="0" stop-color="#1A237E"/><stop offset="1" stop-color="#4527a0"/>'
+                + '</linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/>'
+                + '<text x="160" y="84" font-size="52" text-anchor="middle">🎵</text>'
+                + '<text x="160" y="132" font-size="17" fill="#FFD700" text-anchor="middle" '
+                + 'font-family="sans-serif" font-weight="bold">Équipes du Rosaire</text></svg>');
+        } catch (e) {}
+        bp.addEventListener('click', function () {
+            try {
+                if (document.pictureInPictureElement) { document.exitPictureInPicture(); return; }
+                if (pipOk) {
+                    audio.requestPictureInPicture().catch(function () { bp.style.opacity = '0.35'; });
+                    return;
+                }
+                if (pipIOS) audio.webkitSetPresentationMode(
+                    audio.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+            } catch (e) { bp.style.opacity = '0.35'; }
+        });
+    }
+})();
+</script>
+""".replace("PISTES_DATA", pistes_json)
+    try:
+        _comp_html(mini_html, height=56)
+    except Exception:
+        pass
 
 
 def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
@@ -2279,10 +2707,16 @@ def show_espace_membre(matloc_membre=None):
                     " border:2px solid #FFD700;\">"
                     "<div style=\"color:#FFD700 !important; font-weight:bold;\">🎧 Onglet d’écoute dédié</div>"
                     "<div style=\"color:#e8eaf6 !important; font-size:0.85rem; margin-top:4px;\">"
-                    "Laissez cet onglet ouvert : la musique continue pendant que vous priez dans l’autre onglet. 📿</div></div>",
+                    "Lancez la musique, puis « ◀️ Revenir à l’appli » : elle continue et vous suit de page en page. 📿🎶</div></div>",
                     unsafe_allow_html=True)
         _render_page_archives_audios(pid=st.session_state.get("paroisse_origine"))
         return
+
+    # v7.8.9 — MINI-BARRE COMPAGNON : dès qu'une musique a été lancée, elle
+    # suit le visiteur sur TOUTES les pages de l'Espace de Prière (accueil,
+    # 📿 Rosaire chez les Équipiers, livret, archives…) — reprise automatique
+    # là où elle s'était arrêtée. Ne rend RIEN sans lecture récente.
+    _render_mini_lecteur(pid=st.session_state.get("paroisse_origine"))
 
     msg_ok = st.session_state.pop("flash_success", None)
     if msg_ok:
@@ -2523,3 +2957,4 @@ def show_espace_membre(matloc_membre=None):
                          + (f"&p={pid_m}" if pid_m else "") + "&nav=1&r=1")
         _render_fil_actualites(pid=pid_m, lien_theme=_lien_theme_m)
         _render_actualites(pid=pid_m)
+
