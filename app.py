@@ -10,6 +10,17 @@ from services import (hash_password, verifier_mot_de_passe,
 # --- Configuration de la page ---
 st.set_page_config(page_title="Gestionnaire des Équipes du Rosaire - Diocèse de Grand-Bassam", layout="wide")
 
+# --- v7.8.8 : RÉVEIL des publications programmées (lazy cron) ---
+# Streamlit n'a pas de tâche de fond : chaque chargement de page vérifie
+# (au plus toutes les 60 s par session) si des publications programmées
+# par le diocèse sont arrivées à échéance et les publie.
+import time as _time_mod
+if _time_mod.time() - float(st.session_state.get("_reveil_programmes_ts", 0)) > 60:
+    st.session_state["_reveil_programmes_ts"] = _time_mod.time()
+    from services import executer_publications_programmees
+    executer_publications_programmees()
+
+
 # --- INTERCEPTION DES LIENS SPECIAUX ---
 params = st.query_params
 
