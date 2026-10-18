@@ -14,7 +14,8 @@ LIBELLES = {"priere": "🙏 Prière", "meditation": "📖 Méditation",
             "audio": "🎵 Musique", "annonce_defilante": "📺 Bande défilante",
             "actualite": "📰 Actualité (affiche/BA)",
             "theme_pastoral": "🕯️ Thème pastoral",
-            "evenement": "📅 Évènement (historique)"}
+            "evenement": "📅 Évènement (historique)",
+            "feuillet": "📖 Feuillet mensuel de prière"}
 
 
 def _assurer_colonnes_cible():
@@ -100,6 +101,36 @@ def show_validation_communication():
                     _an = None
                 st.info("🕯️ Thème de l'année pastorale " + (f"{_an} - {_an + 1}" if _an else "à préciser")
                         + f" — Mystère porteur N°{s[8] or '?'}")
+            if s[1] == "feuillet":
+                # v7.8.6 — convention de soumission : date_evenement = année
+                # pastorale, lieu = mois pastoral (1-12, Septembre = 1).
+                _an_f, _mois_f = None, None
+                try:
+                    _an_f = int(s[7]) if s[7] else None
+                except (ValueError, TypeError):
+                    _an_f = None
+                try:
+                    _mois_f = int(s[8]) if s[8] else None
+                except (ValueError, TypeError):
+                    _mois_f = None
+                MOIS_PAST = ["Septembre", "Octobre", "Novembre", "Décembre", "Janvier",
+                             "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août"]
+                _mois_lbl_f = MOIS_PAST[_mois_f - 1] if _mois_f and 1 <= _mois_f <= 12 else "?"
+                _an_civ = (_an_f + 1) if _mois_f and _mois_f >= 5 else _an_f  # Janvier → août : année civile +1
+                st.info(f"📖 Feuillet N°{_mois_f or '?'} — {_mois_lbl_f} {_an_civ or _an_f or '?'} "
+                        f"(année pastorale {_an_f or '?'})")
+                try:
+                    _secs_sas = c.execute("""SELECT ordre, titre FROM feuillet_sections
+                                             WHERE annee_debut=? AND mois=? ORDER BY ordre""",
+                                          (_an_f, _mois_f)).fetchall()
+                except Exception:
+                    _secs_sas = []
+                if _secs_sas:
+                    st.success(f"✅ {len(_secs_sas)} section(s) saisie(s) : "
+                               + " · ".join(f"{o}. {t or ''}" for o, t in _secs_sas))
+                else:
+                    st.error("⚠️ Aucune section saisie pour ce mois : la publication "
+                             "est impossible (le clic mènerait à une vitrine vide).")
 
             _nom_c = _nom_paroisse(s[10]) if len(s) > 10 else None
             st.info("🎯 Cible : " + (_nom_c if _nom_c else "🌍 Diocèse (tous)"))
@@ -162,6 +193,36 @@ def show_validation_communication():
                         else:
                             st.error("Année pastorale illisible : utilisez « ❌ Refuser ».")
                             _ok = False
+                    elif s[1] == "feuillet":
+                        # v7.8.6 — publication du feuillet : le diocèse seul
+                        # valide ; l'alerte « 📖 Nouveau feuillet » part alors
+                        # dans le fil d'actualité de l'Espace de Prière.
+                        try:
+                            _an_fp = int(s[7]) if s[7] else None
+                        except (ValueError, TypeError):
+                            _an_fp = None
+                        try:
+                            _mois_fp = int(s[8]) if s[8] else None
+                        except (ValueError, TypeError):
+                            _mois_fp = None
+                        if not _an_fp or not _mois_fp or not (1 <= _mois_fp <= 12):
+                            st.error("Mois/année du feuillet illisibles : utilisez « ❌ Refuser ».")
+                            _ok = False
+                        else:
+                            _n_secs = c.execute("""SELECT COUNT(*) FROM feuillet_sections
+                                                   WHERE annee_debut=? AND mois=?""",
+                                                (_an_fp, _mois_fp)).fetchone()[0]
+                            if _n_secs == 0:
+                                st.error("Aucune section saisie pour ce mois : publication impossible.")
+                                _ok = False
+                            else:
+                                c.execute("""INSERT INTO feuillets_publications
+                                             (annee_debut, mois, numero, date_publication)
+                                             VALUES (?, ?, ?, ?)
+                                             ON CONFLICT(annee_debut, mois)
+                                             DO UPDATE SET numero=excluded.numero,
+                                                           date_publication=excluded.date_publication""",
+                                          (_an_fp, _mois_fp, _mois_fp, date.today().isoformat()))
                     elif s[1] == "evenement":  # ancien type (onglet supprimé), gardé pour l'historique
                         c.execute("""INSERT INTO evenements
                                      (type_evenement, date_evenement, lieu, affiche_url, video_url, auteur_nom, paroisse_cible)
