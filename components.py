@@ -1387,7 +1387,7 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
     st.markdown("---")
     _soum_fe = None
     try:
-        _soum_fe = c.execute("""SELECT statut, date_soumission FROM soumissions_comm
+        _soum_fe = c.execute("""SELECT statut, date_soumission, date_publication_prevue FROM soumissions_comm
                                 WHERE type_contenu='feuillet' AND date_evenement=? AND lieu=?
                                 ORDER BY id DESC LIMIT 1""",
                              (str(_annee_fe), str(_mois_fe))).fetchone()
@@ -1411,6 +1411,10 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
         st.info(f"🟡 Feuillet N°{_mois_fe} soumis au diocèse le "
                 f"{_dsoum.strftime('%d/%m/%Y') if _dsoum else _soum_fe[1]} — "
                 "en attente de sa validation. C'est le diocèse qui publie.")
+    elif _soum_fe and _soum_fe[0] == "programme":
+        st.info(f"🗓️ Le diocèse a programmé la publication de ce feuillet pour le "
+                f"**{_soum_fe[2] or '?'}** : il rejoindra automatiquement l'Espace de "
+                "Prière à cette date/heure — aucune autre action nécessaire.")
     elif _soum_fe and _soum_fe[0] == "refuse":
         st.warning("❌ Le diocèse a refusé la dernière soumission de ce feuillet "
                    "(voir 📔 Journal). Corrigez si besoin puis soumettez à nouveau.")
@@ -1421,6 +1425,10 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
     if _soum_fe and _soum_fe[0] == "attente":
         st.button("⏳ Soumission en attente du diocèse",
                   key=f"attente_fe_{_annee_fe}_{_mois_fe}",
+                  disabled=True, width="stretch")
+    elif _soum_fe and _soum_fe[0] == "programme":
+        st.button("🗓️ Programmée — publication automatique à l'échéance",
+                  key=f"prog_fe_{_annee_fe}_{_mois_fe}",
                   disabled=True, width="stretch")
     else:
         if st.button("📨 Soumettre le feuillet au diocèse",
