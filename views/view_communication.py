@@ -115,6 +115,15 @@ def _onglet_priere_meditation():
         img = st.file_uploader("Illustration (photo — facultatif, hébergement diocèse)",
                                type=["jpg", "jpeg", "png", "webp"])
         img_lien = st.text_input("…ou lien d'image (https://... — ex. imgbb : i.ibb.co/…)")
+        # v7.8.11 — POSITION DE LA PHOTO : optionnel, l'image flotte alors
+        # DANS la carte « Prière/Méditation du jour » du fil (texte habillé) ;
+        # sans choix, elle reste centrée au-dessus (comportement initial).
+        _pos_pm = st.selectbox(
+            "Position de la photo (affichage dans le fil du jour)",
+            ["centree", "droite", "gauche"],
+            format_func=lambda x: {"centree": "Centrée au-dessus du texte (par défaut)",
+                                   "droite": "À droite du texte",
+                                   "gauche": "À gauche du texte"}[x])
         pdf_url = st.text_input("Lien PDF (facultatif — https://...)")
         _cible = _choisir_cible()
         if st.form_submit_button("📨 Soumettre au diocèse", type="primary"):
@@ -132,6 +141,10 @@ def _onglet_priere_meditation():
                     if img and not img_url:
                         st.warning("⚠️ L'envoi du fichier a échoué (service d'hébergement momentanément indisponible). "
                                    "La soumission partira SANS image ; utilisez un lien imgbb pour en inclure une.")
+                # v7.8.11 — préfixe de position, lu à l'affichage par
+                # _parser_pos_photo (voir view_espace_membre.py)
+                if img_url and _pos_pm in ("droite", "gauche"):
+                    img_url = f"[{_pos_pm}] {img_url}"
                 _soumettre({
                     "type_contenu": "priere" if type_pm == "Prière" else "meditation",
                     "titre": titre.strip(), "contenu_texte": contenu.strip(),
