@@ -1,5 +1,23 @@
 # ====================================================================
-# view_espace_membre.py — VERSION 7.8.9 (lecteur compagnon — musique en continu)
+# view_espace_membre.py — VERSION 7.8.11 (mise en page du feuillet)
+# v7.8.11 : ① MISE EN PAGE TYPOGRAPHIQUE des pages du livret (demande n°4) :
+#   marqueurs R./T./1./2./3+T. en gras, réponses « T. »/« 3+T. » en gras,
+#   section « À l'écoute de la Parole de Dieu » en gras (sauf le titre du
+#   passage, en italique), Salve Regina en gras, interligne entre marqueurs,
+#   légende des rôles et puce « Accueil » de « Célébrons en équipe », titres
+#   de rubrique en police manuscrite (Caveat, Google Fonts ; repli local
+#   Segoe Print / Comic Sans MS) ;
+# ② CADRE PHOTO sous chaque titre de section (image encadrée façon photo
+#   papier, ou emplacement pointillé si pas d'image) + POSITION de la photo
+#   au choix : haut / droite / gauche avec habillage du texte (demande n°3,
+#   nouvelle colonne feuillet_sections.pos_image) ;
+# ③ ALERTE feuillet : elle annonce le DERNIER MOIS PASTORAL publié (et non la
+#   dernière publication en date) — republier septembre après octobre ne
+#   renvoie plus l'alerte sur septembre (demande n°2) ; une publication à
+#   date illisible est annoncée sans mention de date (auto-réparation) ;
+# ④ Photos de Prière/Méditation du fil : préfixe [droite]/[gauche] du lien
+#   (choisi à la soumission) → image flottante dans la carte du jour.
+# (lecteur compagnon — musique en continu, v7.8.9)
 # v7.8.9 : ① le bouton 🎧 ouvre l'onglet d'écoute en FENÊTRE COMPAGNON nommée
 # sur PC (réutilisée à chaque clic) et dans le MÊME onglet sur téléphone ;
 # ② la page d'écoute porte une barre « ◀️ Revenir à l'appli » (sur téléphone,
@@ -39,6 +57,7 @@
 import os
 import re
 import html
+import unicodedata
 import base64
 import urllib.parse
 import json
@@ -306,6 +325,9 @@ def _render_theme(compact=False):
     )
     st.markdown(
         '<style>'
+        # v7.8.11 — police manuscrite des titres de section du livret
+        # (@import DOIT précéder toute règle CSS) ; repli local si hors-ligne.
+        + "@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&display=swap');\n"
         + regle_contenu +
         """
     [data-testid="stHeader"] { display: none !important; }
@@ -466,6 +488,57 @@ def _render_theme(compact=False):
         font-family: Georgia, serif; font-size: 0.98rem; }
     .flt-pagination { text-align: center; color: #9fa6d8; font-size: 0.9rem;
         margin: 0 0 14px 0; font-family: sans-serif; }
+    /* === LIVRET v7.8.11 — MISE EN PAGE TYPOGRAPHIQUE DU FEUILLET === */
+    .flt-barre-titre { font-family:'Caveat','Segoe Print','Bradley Hand',cursive;
+        font-size:1.3rem; }
+    .stApp .stMarkdown .carte-priere .fe-titre-rubrique,
+    .stApp .stMarkdown .carte-priere .fe-titre-rubrique * {
+        font-family:'Caveat','Segoe Print','Bradley Hand','Comic Sans MS',cursive !important;
+        font-size:1.62rem !important; font-weight:700 !important; line-height:1.25 !important; }
+    .stApp .stMarkdown .carte-priere .fe-p { margin:0 0 12px 0; }
+    .stApp .stMarkdown .carte-priere .fe-gras,
+    .stApp .stMarkdown .carte-priere .fe-gras * { font-weight:bold !important; }
+    .stApp .stMarkdown .carte-priere .fe-marq { font-weight:bold !important; }
+    .stApp .stMarkdown .carte-priere .fe-accueil { color:#1A237E !important;
+        font-weight:bold !important; font-size:1.08rem !important;
+        text-decoration:underline !important; margin:4px 0 10px 0; }
+    .stApp .stMarkdown .carte-priere .fe-passage { font-style:italic !important;
+        text-align:center; font-weight:normal !important; }
+    .stApp .stMarkdown .carte-priere .fe-photo-cadre { background:#ffffff;
+        border:1px solid #C9A227; box-shadow:0 3px 10px rgba(0,0,0,.30);
+        border-radius:8px; padding:5px; display:inline-block; }
+    .stApp .stMarkdown .carte-priere .fe-photo-cadre .cp-photo { margin:0 auto; }
+    .stApp .stMarkdown .carte-priere .fe-photo-droite { float:right; width:47%;
+        max-width:320px; margin:4px 0 10px 16px; }
+    .stApp .stMarkdown .carte-priere .fe-photo-gauche { float:left; width:47%;
+        max-width:320px; margin:4px 16px 10px 0; }
+    .stApp .stMarkdown .carte-priere .fe-photo-droite .cp-photo,
+    .stApp .stMarkdown .carte-priere .fe-photo-gauche .cp-photo { width:100%;
+        height:150px; object-fit:cover; margin:0; }
+    @media (min-width:769px) {
+        .stApp .stMarkdown .carte-priere .fe-photo-droite .cp-photo,
+        .stApp .stMarkdown .carte-priere .fe-photo-gauche .cp-photo { height:170px; }
+    }
+    .stApp .stMarkdown .carte-priere .fe-cadre-vide { border:2px dashed #C9A227;
+        background:#FFFDE7; color:#8d6e08 !important; border-radius:10px;
+        padding:12px 10px; text-align:center; font-size:0.9rem;
+        margin:4px auto 14px auto; max-width:430px; }
+    @media (max-width:640px) {
+        .stApp .stMarkdown .carte-priere .fe-photo-droite,
+        .stApp .stMarkdown .carte-priere .fe-photo-gauche { float:none !important;
+            width:100% !important; max-width:100% !important; margin:4px 0 12px 0 !important; }
+    }
+    /* v7.8.11 — photos flottantes de la carte Prière/Méditation du fil */
+    .stApp .stMarkdown .rub-photo-fd { float:right; width:44%; max-width:300px;
+        height:auto; max-height:240px; object-fit:cover; border-radius:8px;
+        margin:4px 0 10px 14px; }
+    .stApp .stMarkdown .rub-photo-fg { float:left; width:44%; max-width:300px;
+        height:auto; max-height:240px; object-fit:cover; border-radius:8px;
+        margin:4px 14px 10px 0; }
+    @media (max-width:640px) {
+        .stApp .stMarkdown .rub-photo-fd, .stApp .stMarkdown .rub-photo-fg {
+            float:none; width:100%; max-width:100%; margin:0 0 10px 0; }
+    }
     </style>""", unsafe_allow_html=True)
 
 
@@ -815,14 +888,22 @@ MOIS_PASTORAL_NOMS = ["septembre", "octobre", "novembre", "décembre", "janvier"
 
 
 def _feuillet_sections(annee_debut, mois_pastoral):
-    """Sections du feuillet ayant un contenu, triées par ordre (blindé)."""
+    """Sections du feuillet ayant un contenu, triées par ordre (blindé).
+    v7.8.11 — 6e colonne (index 5) = pos_image : position de la photo dans
+    la page du livret (« haut » / « droite » / « gauche », NULL = haut)."""
     try:
-        rows = c.execute("""SELECT ordre, titre, contenu, lecteur, image_url
+        rows = c.execute("""SELECT ordre, titre, contenu, lecteur, image_url, pos_image
                             FROM feuillet_sections
                             WHERE annee_debut=? AND mois=? ORDER BY ordre""",
                          (annee_debut, mois_pastoral)).fetchall()
     except Exception:
-        return []
+        try:
+            rows = c.execute("""SELECT ordre, titre, contenu, lecteur, image_url, NULL
+                                FROM feuillet_sections
+                                WHERE annee_debut=? AND mois=? ORDER BY ordre""",
+                             (annee_debut, mois_pastoral)).fetchall()
+        except Exception:
+            return []
     return [s for s in rows if s[2]]
 
 
@@ -964,7 +1045,7 @@ def _render_feuillet_vitrine(annee_debut, mois_pastoral):
         + html.escape(s[1] or "") + "</div>" for s in sections)
     st.markdown(_carte_priere(
         _trait_debut_page()
-        + '<div class="cp-titre" style="text-align:center;">Mois de '
+        + '<div class="cp-titre fe-titre-rubrique" style="text-align:center;">Mois de '
         + html.escape(MOIS_PASTORAL_NOMS[mois_pastoral - 1]) + " "
         + str(_annee_civile_feuillet(annee_debut, mois_pastoral)) + "</div>"
         + '<div class="cp-accent" style="--c:#1A237E;">Sommaire du feuillet</div>'
@@ -1028,7 +1109,7 @@ def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"
         # (sans « ▶ », confondu avec un expander) tient lieu de sommaire.
         st.markdown(_carte_priere(
             _trait_debut_page()
-            + '<div class="cp-titre" style="text-align:center;">' + _entete_livret + "</div>"
+            + '<div class="cp-titre fe-titre-rubrique" style="text-align:center;">' + _entete_livret + "</div>"
             + '<div class="cp-accent" style="--c:#1A237E;">Sommaire du feuillet</div>'),
             unsafe_allow_html=True)
         for _i, _s in enumerate(sections):
@@ -1044,9 +1125,10 @@ def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"
         return
 
     # ---------- UNE PAGE = UNE SECTION ----------
-    _ligne = list(sections[idx]) + [None] * 5
+    _ligne = list(sections[idx]) + [None] * 6
     ordre, titre, contenu = _ligne[0], _ligne[1], _ligne[2]
     image_url = _ligne[4]
+    pos_image = _ligne[5] if len(_ligne) > 5 else None
     _titre_page = titre or ("Section " + str(ordre))
 
     if autonome:
@@ -1054,14 +1136,34 @@ def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"
         st.markdown('<div class="flt-barre"><div class="flt-barre-titre">📖 '
                     + html.escape(_titre_page) + "</div></div>", unsafe_allow_html=True)
 
-    _img_html = ""
-    if image_url and str(image_url).startswith("http"):
-        _img_html = '<img src="' + str(image_url) + '" alt="" class="cp-photo">'
-    st.markdown(_carte_priere(_trait_debut_page()
-                              + '<div class="cp-titre" style="text-align:center;">'
-                              + html.escape(_titre_page) + "</div>"
-                              + _img_html + _rendre_texte_priere(contenu)),
-                unsafe_allow_html=True)
+    # v7.8.11 — CADRE PHOTO sous le titre (demandes n°3 et 4f) : image
+    # encadrée (façon photo papier) ou emplacement pointillé si la section
+    # n'a pas d'image ; POSITION au choix (haut centrée / droite / gauche
+    # avec habillage du texte — demande n°3).
+    _pos_prefixe, _img_url = _parser_pos_photo(image_url)
+    _img_valide = bool(_img_url and str(_img_url).startswith("http"))
+    if _img_valide and pos_image in ("droite", "gauche"):
+        _flottant = pos_image
+    elif _img_valide:
+        _flottant = _pos_prefixe
+    else:
+        _flottant = None
+    if _img_valide:
+        _classe_fl = (" fe-photo-" + _flottant) if _flottant in ("droite", "gauche") else ""
+        _cadre_photo = ('<div class="fe-photo-cadre' + _classe_fl + '">'
+                        + '<img src="' + html.escape(str(_img_url)) + '" alt="" class="cp-photo"></div>')
+    else:
+        _cadre_photo = '<div class="fe-cadre-vide">📷 Photo de la rubrique</div>'
+        _flottant = None
+    _page_html = ('<div class="cp-titre fe-titre-rubrique" style="text-align:center;">'
+                  + html.escape(_titre_page) + "</div>")
+    _corps_fe = _mise_en_page_feuillet(titre, contenu)
+    if _flottant in ("droite", "gauche"):
+        _page_html += ('<div class="fe-corps">' + _cadre_photo + _corps_fe
+                       + '<div style="clear:both;"></div></div>')
+    else:
+        _page_html += _cadre_photo + _corps_fe
+    st.markdown(_carte_priere(_trait_debut_page() + _page_html), unsafe_allow_html=True)
     _scroll_top(f"{pfx}{idx}")
 
     # ---------- NAVIGATION (comme le livre de la dizaine) ----------
@@ -1324,6 +1426,139 @@ def _rendre_texte_priere(texte):
     return _sortie
 
 
+# ================= MISE EN PAGE DU FEUILLET — v7.8.11 =================
+# Marqueur de rubrique : R. / T. / 1. / 2. / 3. / 3+T. (suivis de . : — – -).
+_RE_MARQ_FE = re.compile(r"^\s*(R|T|1|2|3)(\s*\+\s*T)?\s*[.:=—–-]\s*")
+# Titre du passage biblique (section « À l'écoute de la Parole de Dieu ») :
+# reste en style normal (italique) quand toute la section passe en gras.
+_RE_PASSAGE_FE = re.compile(
+    r"^(au livre|évangile\b|lecture (de|du|des|d')|première lecture|deuxième lecture"
+    r"|livre (de|du|des)|lettre (de|du|des))", re.I)
+
+
+def _sans_accents_fe(t):
+    """Minuscules sans accents (comparaison robuste des titres)."""
+    return unicodedata.normalize("NFD", str(t or "").lower()).encode("ascii", "ignore").decode("utf-8")
+
+
+def _parser_pos_photo(url):
+    """v7.8.11 — un lien d'image peut porter un préfixe « [droite] » ou
+    « [gauche] » (position choisie à la soumission). Retourne le couple
+    (position, url_propre) — position = None si pas de préfixe."""
+    if not url:
+        return None, url
+    _u = str(url).strip()
+    _low = _u.lower()
+    if _low.startswith("[droite]"):
+        return "droite", _u[8:].strip()
+    if _low.startswith("[gauche]"):
+        return "gauche", _u[8:].strip()
+    return None, _u
+
+
+def _mise_en_page_feuillet(titre, contenu):
+    """v7.8.11 — mise en page typographique du texte d'une section du livret
+    (demande n°4), d'après le livret papier :
+      a. les marqueurs R. / T. / 1. / 2. / 3+T. sont EN GRAS (seul le marqueur) ;
+      b. le texte des réponses « T. » et « 3+T. » est ENTIEREMENT en gras
+         (y compris les vers qui suivent, jusqu'à la ligne vide) ;
+      c. section « À l'écoute de la Parole de Dieu » : TOUT en gras sauf le
+         titre du passage (Évangile… / Au Livre…, rendu en italique centré) ;
+      d. section « Salve Regina » : TOUT en gras ;
+      e. interligne plus généreux entre deux marqueurs (classe fe-p) ;
+      h. « Célébrons en équipe » : la légende des rôles (R — Responsable… /
+         1 — 1er lecteur · 2 — 2e lecteur · 3 — Chantre · T — Tous ensemble)
+         est en gras, et la ligne « Accueil » devient une puce soulignée de
+         taille sous-titre.
+    Le comportement de _rendre_texte_priere est conservé pour le reste
+    (===TRAIT=== → trait, lignes tout-majuscules → trait fin)."""
+    _t = _sans_accents_fe(titre)
+    _est_sec7 = "ecoute de la parole" in _t
+    _est_salve = "salve regina" in _t
+    _est_sec4 = "celebrons en equipe" in _t
+
+    _blocs = []
+    _para = []          # [(html_ligne, en_gras)] — paragraphe en cours
+    _bloc_tous = False  # v7.8.11 — True tant que court un bloc « T. »/« 3+T. »
+
+    def _flush():
+        if not _para:
+            return
+        if all(g for _h, g in _para):
+            _blocs.append('<div class="cp-para fe-p fe-gras">'
+                          + "<br>".join(h for h, _g in _para) + "</div>")
+        elif not any(g for _h, g in _para):
+            _blocs.append('<div class="cp-para fe-p">'
+                          + "<br>".join(h for h, _g in _para) + "</div>")
+        else:
+            _blocs.append('<div class="cp-para fe-p">'
+                          + "<br>".join(("<b>" + h + "</b>") if g else h
+                                        for h, g in _para) + "</div>")
+        _para.clear()
+
+    for _brut in str(contenu or "").split("\n"):
+        _l = _brut.strip()
+        if _l == "===TRAIT===":
+            _flush()
+            _bloc_tous = False
+            _blocs.append('<div class="cp-trait"></div>')
+            continue
+        if not _l:
+            _flush()
+            _bloc_tous = False
+            continue
+        # (c) titre du passage — jamais en gras, en italique centré
+        if _est_sec7 and len(_l) <= 95 and _RE_PASSAGE_FE.match(_l):
+            _flush()
+            _bloc_tous = False
+            _blocs.append('<div class="cp-para fe-p fe-passage">'
+                          + html.escape(_l) + "</div>")
+            continue
+        # Titre tout-majuscules → trait fin (comportement conservé)
+        if len(_l) >= 3 and _l == _l.upper() and any(ch.isalpha() for ch in _l):
+            _flush()
+            _bloc_tous = False
+            _blocs.append('<div class="cp-trait"></div>')
+            continue
+        # (h) puce « Accueil » — sous-titre souligné, Célébrons en équipe
+        if _est_sec4 and _l.rstrip(":.").strip().lower() == "accueil":
+            _flush()
+            _bloc_tous = False
+            _blocs.append('<div class="cp-para fe-p fe-accueil">•&nbsp;Accueil</div>')
+            continue
+        _m = _RE_MARQ_FE.match(_l)
+        if _m:
+            _token = _l[:_m.end()].strip()
+            _reste = _l[_m.end():]
+            _est_tous = (_m.group(1) == "T") or ("+" in (_m.group(2) or ""))
+            _legende = (_est_sec4 and any(w in _l.lower() for w in
+                        ("responsable", "lecteur", "chantre", "tous ensemble")))
+            _flush()
+            if _est_salve or _est_sec7 or _legende:
+                # (c)(d)(h) tout en gras
+                _para.append((html.escape(_l), True))
+                _bloc_tous = False
+                _flush()
+            elif _est_tous:
+                # (b) réponse « Tous » : marqueur + texte en gras, le bloc
+                # continue tant que des vers suivent (ligne vide = fin)
+                _para.append((html.escape(_l), True))
+                _bloc_tous = True
+            else:
+                # (a) seul le marqueur est en gras
+                _para.append(("<b>" + html.escape(_token) + "</b> "
+                              + html.escape(_reste), False))
+                _bloc_tous = False
+            continue
+        if _est_salve or _est_sec7:
+            # (c)(d) tout en gras
+            _para.append((html.escape(_l), True))
+        else:
+            _para.append((html.escape(_l), bool(_bloc_tous)))
+    _flush()
+    return "".join(_blocs)
+
+
 def _carte_priere(corps_html, couleur=None):
     """v7.7.3 — carte jaune SANS en-tête ; liseré gauche coloré (option)."""
     _b = ' style="border-left:6px solid ' + couleur + ';"' if couleur else ""
@@ -1489,8 +1724,9 @@ def _render_page_archives_textes(type_contenu, message_vide, pid=None):
             texte, url_pdf = (p[1] or ""), p[3]
             if not url_pdf:
                 texte, url_pdf = _extraire_pdf_legacy(texte)
-            if p[2] and p[2].startswith("http"):
-                st.markdown(f'<img src="{p[2]}" alt="" class="rub-photo">', unsafe_allow_html=True)
+            _pu, _purl = _parser_pos_photo(p[2])
+            if _purl and _purl.startswith("http"):
+                st.markdown(f'<img src="{_purl}" alt="" class="rub-photo">', unsafe_allow_html=True)
             if texte:
                 st.markdown(texte, unsafe_allow_html=True)
             if url_pdf:
@@ -2564,8 +2800,9 @@ def _render_actualites(pid=None):
     for a in lignes:
         with st.expander("📰 " + (a[0] or "(sans titre)")):
             st.caption(f"Publié le {a[4] or '—'}")
-            if a[2] and str(a[2]).startswith("http"):
-                st.markdown(f'<img src="{a[2]}" alt="" class="rub-photo">', unsafe_allow_html=True)
+            _au, _aurl = _parser_pos_photo(a[2])
+            if _aurl and _aurl.startswith("http"):
+                st.markdown(f'<img src="{_aurl}" alt="" class="rub-photo">', unsafe_allow_html=True)
             if a[1]:
                 st.markdown(a[1].replace("\n", "  \n"), unsafe_allow_html=True)
             if a[3] and str(a[3]).startswith("http"):
@@ -2584,19 +2821,30 @@ def _alerte_feuillet_fil(lien_theme=None):
     cours. Blindage v7.8.3 : pas d'alerte si le feuillet annoncé n'a
     aucune section saisie."""
     try:
-        pub = c.execute("""SELECT annee_debut, mois, numero, date_publication
-                           FROM feuillets_publications
-                           ORDER BY date_publication DESC, id DESC LIMIT 1""").fetchone()
+        _pubs = c.execute("""SELECT annee_debut, mois, numero, date_publication
+                             FROM feuillets_publications
+                             ORDER BY annee_debut DESC, mois DESC""").fetchall()
     except Exception:
         return
+    if not _pubs:
+        return
+    # v7.8.11 — l'alerte annonce le DERNIER MOIS PASTORAL paru récemment (et
+    # non la dernière publication en date) : republier le feuillet de
+    # septembre après celui d'octobre ne renvoie plus l'alerte sur septembre.
+    # Une publication dont la date est illisible est considérée comme « à
+    # annoncer » (sans mention de date) : auto-réparation des lignes à date
+    # mal formatée. Hors délai de 45 jours : pas d'alerte.
+    pub, _dpub = None, None
+    for _p in _pubs:
+        _d = safe_date(_p[3])
+        if _d is None or (date.today() - _d).days <= 45:
+            pub, _dpub = _p, _d
+            break
     if not pub:
         return
     # v7.8.3 — pas d'alerte pour une publication sans contenu (sinon le clic
     # mènerait à une vitrine « pas encore publié »).
     if not _feuillet_sections(pub[0], pub[1]):
-        return
-    _dpub = safe_date(pub[3])
-    if not _dpub or (date.today() - _dpub).days > 45:
         return
     _cle = f"{pub[0]}-{pub[1]}"
     if st.session_state.get("alerte_feuillet_lue") == _cle:
@@ -2615,10 +2863,11 @@ def _alerte_feuillet_fil(lien_theme=None):
     # v7.8.10 — la couverture du livret ACCOMPAGNE l'alerte : carte visuelle
     # (bleu nuit + or, image personnalisée si saisie par la cellule) portant
     # N°, mois, thème de l'année et le bouton d'ouverture.
+    _mention = "🔔 Nouveau : le feuillet mensuel de prière est disponible !"
+    if _dpub:
+        _mention += " · publié le " + _dpub.strftime("%d/%m/%Y")
     st.markdown(_couverture_feuillet_html(
-        pub[0], pub[1], compact=True, lien=_lien,
-        titre_haut=("🔔 Nouveau : le feuillet mensuel de prière est disponible !"
-                    " · publié le " + _dpub.strftime("%d/%m/%Y"))),
+        pub[0], pub[1], compact=True, lien=_lien, titre_haut=_mention),
         unsafe_allow_html=True)
     if st.button("📌 Marquer l'alerte comme lue", key="alerte_feuillet_lu_btn"):
         st.session_state["alerte_feuillet_lue"] = _cle
@@ -2647,14 +2896,24 @@ def _render_fil_actualites(pid=None, lien_theme=None):
         if not url_pdf:
             texte, url_pdf = _extraire_pdf_legacy(texte)
 
-        if ligne[3] and str(ligne[3]).startswith("http"):
+        # v7.8.11 — position de la photo : préfixe [droite]/[gauche] du lien
+        # (choisi à la soumission) → image flottante DANS la carte, le texte
+        # habille ; sinon l'image reste au-dessus (comportement initial).
+        _pos_fil, _url_fil = _parser_pos_photo(ligne[3])
+        _img_flottante = ""
+        if _pos_fil in ("droite", "gauche") and _url_fil and str(_url_fil).startswith("http"):
+            _img_flottante = ('<img src="' + html.escape(str(_url_fil)) + '" alt="" class="'
+                              + ("rub-photo-fd" if _pos_fil == "droite" else "rub-photo-fg") + '">')
+        elif ligne[3] and str(ligne[3]).startswith("http"):
             st.markdown(f'<img src="{ligne[3]}" alt="" class="rub-photo">', unsafe_allow_html=True)
 
         texte_html = texte.replace("\n", "<br>")
         st.markdown(
             f'<div class="rub-carte" style="padding:20px; text-align:center; margin:15px 10px;">'
+            f'{_img_flottante}'
             f'<div class="rub-carte-titre" style="font-size:1.15rem; border-bottom:1px solid #27306b; padding-bottom:8px; margin-bottom:12px;">{etiquette} - {html.escape(ligne[1] or "")}</div>'
             f'<div class="rub-carte-txt" style="font-size:0.98rem; line-height:1.7; text-align:left;">{texte_html}</div>'
+            f'<div style="clear:both;"></div>'
             f'</div>', unsafe_allow_html=True)
 
         if url_pdf:
@@ -2706,8 +2965,9 @@ def _render_actualites_paroisse(pid=None):
         with st.expander(entete):
             st.write(f"**🏢 Organisé par :** {organisateur}")
             st.write(f"**📍 Lieu :** {evt[3] or 'Lieu à définir'}")
-            if evt[4] and str(evt[4]).startswith("http"):
-                st.markdown(f'<img src="{evt[4]}" alt="" class="rub-photo">', unsafe_allow_html=True)
+            _eu, _eurl = _parser_pos_photo(evt[4])
+            if _eurl and _eurl.startswith("http"):
+                st.markdown(f'<img src="{_eurl}" alt="" class="rub-photo">', unsafe_allow_html=True)
             if evt[5] and str(evt[5]).startswith("http"):
                 try:
                     st.video(evt[5], width="stretch")
