@@ -230,6 +230,22 @@ def init_tables_and_migrations():
     # plutôt qu'à la volée dans view_communication_validation.py (robustesse)
     safe_migrate("ALTER TABLE espace_spirituel ADD COLUMN date_evenement TEXT")
     safe_migrate("ALTER TABLE espace_spirituel ADD COLUMN lieu TEXT")
+    # v7.8.11 — position de la photo dans la page du livret (haut/droite/gauche)
+    safe_migrate("ALTER TABLE feuillet_sections ADD COLUMN pos_image TEXT")
+    # v7.8.11 — publications de feuillets : dédoublonnage puis index UNIQUE.
+    # Les bases créées avant la contrainte UNIQUE(annee_debut, mois)
+    # pouvaient accumuler des lignes jumelles à chaque republication, ce qui
+    # embrouillait l'alerte « 📖 Nouveau feuillet » ; l'index garantit aussi
+    # le fonctionnement des upserts (ON CONFLICT) sur ces bases anciennes.
+    try:
+        c.execute("""DELETE FROM feuillets_publications WHERE id NOT IN
+                     (SELECT MAX(id) FROM feuillets_publications
+                      GROUP BY annee_debut, mois)""")
+        c.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_feuillets_pub_mois
+                     ON feuillets_publications(annee_debut, mois)""")
+        commit_and_sync()
+    except Exception:
+        pass
 
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
     try:
