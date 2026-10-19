@@ -547,13 +547,18 @@ def publier_soumission(s):
                                 (_an_fp, _mois_fp)).fetchone()[0]
             if _n_secs == 0:
                 return False
-            c.execute("""INSERT INTO feuillets_publications
-                         (annee_debut, mois, numero, date_publication)
-                         VALUES (?, ?, ?, ?)
-                         ON CONFLICT(annee_debut, mois)
-                         DO UPDATE SET numero=excluded.numero,
-                                       date_publication=excluded.date_publication""",
-                      (_an_fp, _mois_fp, _mois_fp, _auj))
+            # v7.8.11 — UPDATE puis INSERT (au lieu d'ON CONFLICT) : robuste
+            # même sur une base ancienne sans contrainte UNIQUE, et la date de
+            # publication est TOUJOURS rafraîchie à chaque republication.
+            _cur = c.execute("""UPDATE feuillets_publications
+                                SET numero=?, date_publication=?
+                                WHERE annee_debut=? AND mois=?""",
+                          (_mois_fp, _auj, _an_fp, _mois_fp))
+            if (_cur.rowcount or 0) == 0:
+                c.execute("""INSERT INTO feuillets_publications
+                             (annee_debut, mois, numero, date_publication)
+                             VALUES (?, ?, ?, ?)""",
+                          (_an_fp, _mois_fp, _mois_fp, _auj))
         elif s[1] == "evenement":  # ancien type, gardé pour l'historique
             c.execute("""INSERT INTO evenements
                          (type_evenement, date_evenement, lieu, affiche_url,
@@ -606,3 +611,4 @@ def executer_publications_programmees():
                          date_publication_prevue=NULL WHERE id=?""", (s[0],))
     if _n:
         commit_and_sync()
+
