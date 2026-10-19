@@ -182,6 +182,12 @@ def init_tables_and_migrations():
                     annee_debut INTEGER, mois INTEGER, numero INTEGER,
                     date_publication TEXT,
                     UNIQUE(annee_debut, mois))""")
+    # v7.8.10 — couverture personnalisée du livret (par mois pastoral) :
+    # elle accompagne l'alerte « 📖 Nouveau feuillet » et le sommaire du
+    # livret. Sans image saisie, une couverture est générée automatiquement.
+    c.execute("""CREATE TABLE IF NOT EXISTS feuillets_couvertures (
+                    annee_debut INTEGER, mois INTEGER, image_url TEXT,
+                    UNIQUE(annee_debut, mois))""")
     commit_and_sync()
 
     # --- 2. DONNÉES PAR DÉFAUT ---
@@ -253,4 +259,3 @@ try:
     setup_database()
 except Exception as e:
     logger.error(f"Erreur critique lors de l'initialisation de la DB: {e}")
-
