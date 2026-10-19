@@ -831,6 +831,77 @@ def _annee_civile_feuillet(annee_debut, mois_pastoral):
     return annee_debut if mois_pastoral <= 4 else annee_debut + 1
 
 
+def _couverture_feuillet_html(annee_debut, mois_pastoral, compact=False,
+                              lien=None, titre_haut=None):
+    """🎨 Couverture du livret (v7.8.10) — carte visuelle du feuillet, du même
+    style que la couverture de la dizaine (bleu nuit + or). La couverture
+    accompagne : ① l'alerte « 📖 Nouveau feuillet » du fil d'actualité
+    (compact=True, mention via titre_haut, bouton-lien via `lien`) ; ② le
+    livret lui-même (au-dessus du sommaire). Si la cellule a saisi une image
+    de couverture (🎨 expander du feuillet, table feuillets_couvertures),
+    elle est montrée ; sinon la carte seule fait office de couverture.
+    RETOURNE le HTML — l'appelant l'affiche via st.markdown."""
+    _img = None
+    try:
+        _r = c.execute("""SELECT image_url FROM feuillets_couvertures
+                          WHERE annee_debut=? AND mois=?""",
+                       (annee_debut, mois_pastoral)).fetchone()
+        _img = (_r[0] or "").strip() if _r else None
+    except Exception:
+        _img = None
+    if _img and not str(_img).startswith("http"):
+        _img = None
+    _theme = None
+    try:
+        _t = c.execute("""SELECT texte_theme FROM themes_pastoraux
+                          WHERE annee_debut=? ORDER BY actif DESC LIMIT 1""",
+                       (annee_debut,)).fetchone()
+        _theme = (_t[0] or "").strip() if _t else None
+    except Exception:
+        _theme = None
+    _mois_civ = str(_annee_civile_feuillet(annee_debut, mois_pastoral))
+    _pad_haut, _pad_bas, _taille_num, _wimg = (
+        ("12px 14px 6px", "4px 14px 14px", "1.85rem", 36) if compact
+        else ("20px 18px 8px", "6px 18px 24px", "2.4rem", 46))
+    _img_html = ""
+    if _img:
+        _img_html = (
+            '<img src="' + html.escape(str(_img)) + '" alt="" '
+            'style="width:calc(100% - ' + str(_wimg) + 'px); max-height:280px; '
+            'object-fit:cover; border-radius:10px; '
+            'border:1px solid rgba(255,215,0,.55); display:block; margin:12px auto 0; '
+            'box-shadow:0 4px 14px rgba(0,0,0,.35);">')
+    _haut_html = ""
+    if titre_haut:
+        _haut_html = ('<div style="color:#FFD000 !important; font-weight:bold; '
+                      'font-size:0.95rem; padding:14px 16px 0;">'
+                      + html.escape(str(titre_haut)) + '</div>')
+    _theme_html = ""
+    if _theme:
+        _theme_html = ('<div style="color:#c5cae9; font-size:0.8rem; font-style:italic; '
+                       'margin:10px 14px 0;">« ' + html.escape(_theme) + ' »</div>')
+    _lien_html = ""
+    if lien:
+        _lien_html = '<div style="padding:' + _pad_bas + ';">' + str(lien) + '</div>'
+    return (
+        '<div style="background:linear-gradient(160deg,#0d1440 0%,#1A237E 55%,#283593 100%); '
+        'border:2px solid #FFD700; border-radius:16px; overflow:hidden; text-align:center; '
+        'margin:15px 10px 6px 10px; box-shadow:0 6px 18px rgba(0,0,0,.30);">'
+        + _haut_html + _img_html
+        + '<div style="padding:' + _pad_haut + ';">'
+        '<div style="color:#FFD700; letter-spacing:2.5px; font-size:0.7rem; font-weight:bold;">'
+        '📿 ÉQUIPES DU ROSAIRE</div>'
+        '<div style="color:#ffffff; font-weight:bold; font-size:1.12rem; margin-top:8px;">'
+        '📖 Le feuillet mensuel de prière</div>'
+        '<div style="color:#FFD700; font-size:' + _taille_num + '; font-weight:bold; line-height:1.15;">'
+        'N° ' + str(mois_pastoral) + '</div>'
+        '<div style="color:#e8eaf6; font-size:0.95rem; text-transform:uppercase; '
+        'letter-spacing:1.5px; margin-top:4px;">'
+        + html.escape(MOIS_PASTORAL_NOMS[mois_pastoral - 1]) + " " + _mois_civ + '</div>'
+        + _theme_html
+        + '</div>' + _lien_html + '</div>')
+
+
 def _nettoyer_params_livret():
     """Retire ?flt=1&fa=&fm= de l'URL : une fois ouvert, le livret vit dans la
     session (sinon « Fermer » rouvrirait immédiatement le livret)."""
@@ -905,7 +976,9 @@ def _render_feuillet_vitrine(annee_debut, mois_pastoral):
 
     if st.button("📖 Ouvrir le livret", key="flt_open", width="stretch", type="primary"):
         st.session_state["flt_cle"] = f"{annee_debut}-{mois_pastoral}"
-        st.session_state["flt_page"] = 0
+        # v7.8.10 — ouverture À LA COUVERTURE (couverture → sommaire → pages),
+        # parcours naturel d'un livret papier.
+        st.session_state["flt_page"] = -1
         st.session_state["flt_ouvert"] = True
         st.session_state.pop("diz_ouvert", None)
         st.rerun()
@@ -946,6 +1019,10 @@ def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"
 
     # ---------- SOMMAIRE (page -1) ----------
     if idx < 0:
+        # v7.8.10 — la COUVERTURE du livret ouvre la lecture, avant le
+        # sommaire (même parcours qu'un livret papier : couverture → sommaire).
+        st.markdown(_couverture_feuillet_html(annee_debut, mois_pastoral),
+                    unsafe_allow_html=True)
         # v7.8.5-② — présentation UNIQUE : la liste statique doublonnée dans
         # la carte est retirée ; chaque entrée cliquable « 📖 N — Titre »
         # (sans « ▶ », confondu avec un expander) tient lieu de sommaire.
@@ -2534,17 +2611,14 @@ def _alerte_feuillet_fil(lien_theme=None):
                  + "&fm=" + str(pub[1])
                  + '" target="_self" style="display:inline-block; background:#4527a0; '
                  'color:#ffffff; padding:10px 24px; border-radius:30px; font-weight:bold; '
-                 'text-decoration:none; margin-top:10px;">📖 Ouvrir le livret du feuillet</a>')
-    st.markdown(
-        '<div class="rub-carte" style="border:2px solid #FFD700; padding:18px; '
-        'text-align:center; margin:15px 10px 6px 10px;">'
-        '<div style="color:#FFD000 !important; font-weight:bold; font-size:1.05rem;">'
-        '📖 Nouveau : le feuillet mensuel de prière N° ' + str(pub[2] or pub[1])
-        + " est disponible !</div>"
-        '<div style="color:#e8eaf6 !important; font-size:0.9rem; margin-top:6px;">'
-        "Mois de " + MOIS_PASTORAL_NOMS[pub[1] - 1] + " "
-        + str(_annee_civile_feuillet(pub[0], pub[1])) + " · publié le "
-        + _dpub.strftime("%d/%m/%Y") + "</div>" + _lien + "</div>",
+                 'text-decoration:none; margin-top:6px;">📖 Ouvrir le livret du feuillet</a>')
+    # v7.8.10 — la couverture du livret ACCOMPAGNE l'alerte : carte visuelle
+    # (bleu nuit + or, image personnalisée si saisie par la cellule) portant
+    # N°, mois, thème de l'année et le bouton d'ouverture.
+    st.markdown(_couverture_feuillet_html(
+        pub[0], pub[1], compact=True, lien=_lien,
+        titre_haut=("🔔 Nouveau : le feuillet mensuel de prière est disponible !"
+                    " · publié le " + _dpub.strftime("%d/%m/%Y"))),
         unsafe_allow_html=True)
     if st.button("📌 Marquer l'alerte comme lue", key="alerte_feuillet_lu_btn"):
         st.session_state["alerte_feuillet_lue"] = _cle
