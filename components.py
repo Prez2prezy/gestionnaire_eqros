@@ -1272,12 +1272,14 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
         key="fe_section",
         format_func=lambda o: f"{'✅' if o in _secs_fe else '⬜'} {o}. {_titres_fe[o]}")
 
-    # Changement de section → purge des champs (sinon Streamlit réaffiche
-    # les valeurs de l'ancienne section au lieu de celles de la base).
-    if st.session_state.get("fe_ordre_vu") != _ord_fe:
-        st.session_state["fe_ordre_vu"] = _ord_fe
-        for _k in ("fe_titre", "fe_contenu", "fe_lecteurs", "fe_img"):
-            st.session_state.pop(_k, None)
+    # v7.8.10 — CORRECTION FACILITÉE : chaque triplet (année, mois, section)
+    # possède SES PROPRES clés de widget. Le texte déjà enregistré est donc
+    # TOUJOURS rechargé depuis la base à l'affichage : sélectionner une
+    # section au vert ✅ montre immédiatement son titre ET son texte — fini
+    # les champs vides qui obligeaient à reprendre toute la procédure
+    # (l'ancien purge systématique « fe_ordre_vu » est retiré : les clés
+    # contextuelles rendent impossible le mélange de valeurs).
+    _ctx_fe = f"{_annee_fe}_{_mois_fe}_{_ord_fe}"
 
     _titre_def_fe = _titres_fe[_ord_fe]
     _ex_fe = _secs_fe.get(_ord_fe)
@@ -1291,9 +1293,11 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
 
     with st.form("form_feuillet_section"):
         _titre_fe = st.text_input("Titre de la section",
-                                  value=(_ex_fe[1] if _ex_fe and _ex_fe[1] else _titre_def_fe), key="fe_titre")
+                                  value=(_ex_fe[1] if _ex_fe and _ex_fe[1] else _titre_def_fe),
+                                  key=f"fe_titre_{_ctx_fe}")
         _contenu_fe = st.text_area("Contenu (texte du feuillet)", height=160,
-                                   value=(_ex_fe[2] or "") if _ex_fe else "", key="fe_contenu")
+                                   value=(_ex_fe[2] or "") if _ex_fe else "",
+                                   key=f"fe_contenu_{_ctx_fe}")
         st.caption("🗣️ Cochez TOUS les lecteurs impliqués dans cette section "
                    "(les marqueurs R. / T. / 1. / 2. / 3. du texte font foi ligne par ligne).")
         _lecteurs_sel = st.multiselect(
@@ -1301,9 +1305,10 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
             _ordre_canonique,
             default=_parser_lecteurs(_ex_fe[3]) if _ex_fe else [],
             format_func=lambda x: LIBELLES_LECTEURS.get(x, x),
-            key="fe_lecteurs")
+            key=f"fe_lecteurs_{_ctx_fe}")
         _img_fe = st.text_input("🔗 Lien d'image (imgbb — facultatif)",
-                                value=(_ex_fe[4] or "") if _ex_fe else "", key="fe_img")
+                                value=(_ex_fe[4] or "") if _ex_fe else "",
+                                key=f"fe_img_{_ctx_fe}")
         if st.form_submit_button("💾 Enregistrer cette section", width="stretch"):
             _lecteur_st = (",".join(sorted(set(_lecteurs_sel), key=_ordre_canonique.index))
                            if _lecteurs_sel else None)
@@ -1368,10 +1373,48 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
                               (_annee_fe, _mois_fe, _ord_fe, _prev_fe[0],
                                _prev_fe[1], _prev_fe[2], _prev_fe[3]))
                 commit_and_sync()
+                # v7.8.10 — purge des clés CONTEXTUELLES du triplet courant :
+                # le rerun recrée les champs depuis la base (texte repris).
                 for _k in ("fe_titre", "fe_contenu", "fe_lecteurs", "fe_img"):
-                    st.session_state.pop(_k, None)
+                    st.session_state.pop(f"{_k}_{_ctx_fe}", None)
                 st.session_state["fe_reprise_ok"] = True
                 st.rerun()
+
+    # ---------- 🎨 COUVERTURE DU LIVRET (v7.8.10) ----------
+    # La couverture accompagne désormais l'alerte « 📖 Nouveau feuillet » du
+    # fil d'actualité ET le livret lui-même (au-dessus du sommaire). Une
+    # couverture élégante est générée automatiquement (style de l'app) ; la
+    # cellule peut y insérer sa PROPRE image (lien imgbb, comme les sections).
+    try:
+        c.execute("""CREATE TABLE IF NOT EXISTS feuillets_couvertures (
+                        annee_debut INTEGER, mois INTEGER, image_url TEXT,
+                        UNIQUE(annee_debut, mois))""")
+        commit_and_sync()
+        _cov_fe = c.execute("""SELECT image_url FROM feuillets_couvertures
+                               WHERE annee_debut=? AND mois=?""",
+                            (_annee_fe, _mois_fe)).fetchone()
+    except Exception:
+        _cov_fe = None
+    _cov_url = (_cov_fe[0] or "") if _cov_fe else ""
+    with st.expander("🎨 Couverture du livret (accompagne l'alerte et le livret)"):
+        st.caption("Sans image, une couverture élégante est générée automatiquement "
+                   "(N° du feuillet, mois, thème de l'année). Pour personnaliser : "
+                   "collez ici le lien de l'image de couverture du feuillet (imgbb).")
+        st.text_input("🔗 Lien de la couverture (imgbb — facultatif)",
+                      value=_cov_url, key=f"fe_cov_{_annee_fe}_{_mois_fe}")
+        if st.button("💾 Enregistrer la couverture",
+                     key=f"fe_cov_btn_{_annee_fe}_{_mois_fe}"):
+            c.execute("""INSERT INTO feuillets_couvertures (annee_debut, mois, image_url)
+                         VALUES (?,?,?)
+                         ON CONFLICT(annee_debut, mois)
+                         DO UPDATE SET image_url=excluded.image_url""",
+                      (_annee_fe, _mois_fe,
+                       (st.session_state.get(f"fe_cov_{_annee_fe}_{_mois_fe}") or "").strip() or None))
+            commit_and_sync()
+            st.session_state["flash_success"] = ("🎨 Couverture enregistrée ! Elle "
+                                                 "accompagne l'alerte du fil d'actualité "
+                                                 "et le sommaire du livret.")
+            st.rerun()
 
     if _secs_fe:
         st.caption(f"📋 {len(_secs_fe)} section(s) saisie(s) pour {_mois_fe_lbl} {_annee_fe} : "
@@ -1401,36 +1444,97 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
     except Exception:
         _pub_fe = None
 
+    # v7.8.10 — REPUBLIATION D'UNE VERSION CORRIGÉE : un feuillet DÉJÀ PUBLIÉ
+    # peut être corrigé section par section (leur texte s'affiche à la
+    # sélection) puis RESOUMIS ; la validation du diocèse met à jour la
+    # publication et l'alerte du fil. L'ancien bloc stoppait tout après la
+    # première publication (les elif court-circuités faisaient disparaître le
+    # bouton) : les corrections n'atteignaient jamais la communauté.
+    def _soumettre_feuillet(version_corrigee=False):
+        _titre_soum = (f"Feuillet mensuel de prière N°{_mois_fe} — "
+                       f"{_mois_fe_lbl} {_annee_fe}")
+        if version_corrigee:
+            _titre_soum += " (version corrigée)"
+        c.execute("""INSERT INTO soumissions_comm
+                     (auteur_id, type_contenu, titre, contenu_texte,
+                      image_url, fichier_url, video_url, date_evenement,
+                      lieu, statut, date_soumission, paroisse_cible)
+                     VALUES (?, 'feuillet', ?, NULL, NULL, NULL, NULL,
+                             ?, ?, 'attente', ?, NULL)""",
+                  (st.session_state.get('user_id'), _titre_soum,
+                   str(_annee_fe), str(_mois_fe), date.today().isoformat()))
+        commit_and_sync()
+        try:
+            envoyer_notification_telegram(
+                "📡 <b>Service Communication</b> — feuillet N°" + str(_mois_fe)
+                + " (" + html.escape(_mois_fe_lbl) + " " + str(_annee_fe)
+                + ") soumis À VALIDER par le diocèse"
+                + (" (version corrigée)" if version_corrigee else ""))
+        except Exception:
+            pass
+        st.session_state["flash_success"] = (
+            f"Feuillet N°{_mois_fe} ({_mois_fe_lbl}) soumis au diocèse. ✅ "
+            "Rien ne sera publié sans sa validation — la soumission apparaît "
+            "dans « 🟡 En attente de validation » côté diocèse.")
+        st.rerun()
+
+    _att_fe = bool(_soum_fe) and _soum_fe[0] == "attente"
+    _prog_fe = bool(_soum_fe) and _soum_fe[0] == "programme"
+
     if _pub_fe:
         _dpub = safe_date(_pub_fe[0])
         st.caption(f"✅ Feuillet N°{_mois_fe} publié par le diocèse le "
                    f"{_dpub.strftime('%d/%m/%Y') if _dpub else _pub_fe[0]} — "
                    "alerte affichée dans le fil d'actualité · archivé pour la communauté.")
-    elif _soum_fe and _soum_fe[0] == "attente":
+        if _att_fe:
+            st.info("🟡 Version corrigée soumise au diocèse — en attente de sa "
+                    "validation pour republier le livret mis à jour.")
+            st.button("⏳ Correction en attente du diocèse",
+                      key=f"corr_att_fe_{_annee_fe}_{_mois_fe}",
+                      disabled=True, width="stretch")
+        elif _prog_fe:
+            st.info(f"🗓️ Republiation du livret corrigé programmée pour le "
+                    f"**{_soum_fe[2] or '?'}** : il rejoindra automatiquement "
+                    "l'Espace de Prière à cette date/heure.")
+            st.button("🗓️ Correction programmée",
+                      key=f"corr_prog_fe_{_annee_fe}_{_mois_fe}",
+                      disabled=True, width="stretch")
+        else:
+            st.caption("✏️ Une correction à apporter ? Modifiez les sections "
+                       "ci-dessus (leur texte s'affiche à la sélection), puis "
+                       "soumettez la version corrigée : le diocèse la valide "
+                       "et republie le livret.")
+            if st.button("📨 Soumettre une version corrigée au diocèse",
+                         key=f"publier_corr_fe_{_annee_fe}_{_mois_fe}",
+                         type="primary", width="stretch"):
+                _soumettre_feuillet(version_corrigee=True)
+    elif _att_fe:
         _dsoum = safe_date(_soum_fe[1])
         st.info(f"🟡 Feuillet N°{_mois_fe} soumis au diocèse le "
                 f"{_dsoum.strftime('%d/%m/%Y') if _dsoum else _soum_fe[1]} — "
                 "en attente de sa validation. C'est le diocèse qui publie.")
-    elif _soum_fe and _soum_fe[0] == "programme":
-        st.info(f"🗓️ Le diocèse a programmé la publication de ce feuillet pour le "
-                f"**{_soum_fe[2] or '?'}** : il rejoindra automatiquement l'Espace de "
-                "Prière à cette date/heure — aucune autre action nécessaire.")
-    elif _soum_fe and _soum_fe[0] == "refuse":
-        st.warning("❌ Le diocèse a refusé la dernière soumission de ce feuillet "
-                   "(voir 📔 Journal). Corrigez si besoin puis soumettez à nouveau.")
-    else:
-        st.caption("📨 Feuillet non soumis : une fois les sections saisies, "
-                   "soumettez-le au diocèse — seul le diocèse publie.")
-
-    if _soum_fe and _soum_fe[0] == "attente":
         st.button("⏳ Soumission en attente du diocèse",
                   key=f"attente_fe_{_annee_fe}_{_mois_fe}",
                   disabled=True, width="stretch")
-    elif _soum_fe and _soum_fe[0] == "programme":
+    elif _prog_fe:
+        st.info(f"🗓️ Le diocèse a programmé la publication de ce feuillet pour le "
+                f"**{_soum_fe[2] or '?'}** : il rejoindra automatiquement l'Espace de "
+                "Prière à cette date/heure — aucune autre action nécessaire.")
         st.button("🗓️ Programmée — publication automatique à l'échéance",
                   key=f"prog_fe_{_annee_fe}_{_mois_fe}",
                   disabled=True, width="stretch")
+    elif _soum_fe and _soum_fe[0] == "refuse":
+        st.warning("❌ Le diocèse a refusé la dernière soumission de ce feuillet "
+                   "(voir 📔 Journal). Corrigez les sections ci-dessus si besoin, "
+                   "puis soumettez à nouveau.")
+        if st.button("📨 Soumettre le feuillet au diocèse",
+                     key=f"publier_fe_{_annee_fe}_{_mois_fe}",
+                     type="primary", width="stretch",
+                     disabled=(len(_secs_fe) == 0)):
+            _soumettre_feuillet()
     else:
+        st.caption("📨 Feuillet non soumis : une fois les sections saisies, "
+                   "soumettez-le au diocèse — seul le diocèse publie.")
         if st.button("📨 Soumettre le feuillet au diocèse",
                      key=f"publier_fe_{_annee_fe}_{_mois_fe}",
                      type="primary", width="stretch",
@@ -1438,29 +1542,7 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
             if len(_secs_fe) == 0:
                 st.error("Aucune section saisie : le feuillet ne peut pas être soumis.")
             else:
-                _titre_soum = (f"Feuillet mensuel de prière N°{_mois_fe} — "
-                               f"{_mois_fe_lbl} {_annee_fe}")
-                c.execute("""INSERT INTO soumissions_comm
-                             (auteur_id, type_contenu, titre, contenu_texte,
-                              image_url, fichier_url, video_url, date_evenement,
-                              lieu, statut, date_soumission, paroisse_cible)
-                             VALUES (?, 'feuillet', ?, NULL, NULL, NULL, NULL,
-                                     ?, ?, 'attente', ?, NULL)""",
-                          (st.session_state.get('user_id'), _titre_soum,
-                           str(_annee_fe), str(_mois_fe), date.today().isoformat()))
-                commit_and_sync()
-                try:
-                    envoyer_notification_telegram(
-                        "📡 <b>Service Communication</b> — feuillet N°" + str(_mois_fe)
-                        + " (" + html.escape(_mois_fe_lbl) + " " + str(_annee_fe)
-                        + ") soumis À VALIDER par le diocèse")
-                except Exception:
-                    pass
-                st.session_state["flash_success"] = (
-                    f"Feuillet N°{_mois_fe} ({_mois_fe_lbl}) soumis au diocèse. ✅ "
-                    "Rien ne sera publié sans sa validation — le feuillet apparaît "
-                    "dans « 🟡 En attente de validation » côté diocèse.")
-                st.rerun()
+                _soumettre_feuillet()
 
 def gerer_feuillet_mensuel():
     """2️⃣ bis — LE FEUILLET MENSUEL EN ÉQUIPE (v7.8.5 : déplacé du SAS diocèse
