@@ -1258,10 +1258,16 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
 
     try:
         _secs_fe = {r[0]: r for r in c.execute(
-            """SELECT ordre, titre, contenu, lecteur, image_url FROM feuillet_sections
+            """SELECT ordre, titre, contenu, lecteur, image_url, pos_image FROM feuillet_sections
                WHERE annee_debut=? AND mois=?""", (_annee_fe, _mois_fe)).fetchall()}
     except Exception:
-        _secs_fe = {}
+        # v7.8.11 — repli sur l'ancien schéma sans pos_image (5 colonnes)
+        try:
+            _secs_fe = {r[0]: r + (None,) for r in c.execute(
+                """SELECT ordre, titre, contenu, lecteur, image_url FROM feuillet_sections
+                   WHERE annee_debut=? AND mois=?""", (_annee_fe, _mois_fe)).fetchall()}
+        except Exception:
+            _secs_fe = {}
 
     # Selectbox sur la VALEUR STABLE (l'ordre, un entier). Le badge ✅/⬜ est
     # de l'affichage pur (format_func) : aucune extraction depuis un libellé.
@@ -1309,19 +1315,32 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
         _img_fe = st.text_input("🔗 Lien d'image (imgbb — facultatif)",
                                 value=(_ex_fe[4] or "") if _ex_fe else "",
                                 key=f"fe_img_{_ctx_fe}")
+        # v7.8.11 — POSITION DE LA PHOTO (demande n°3) : la photo (ou le cadre
+        # vide) se place sous le titre ; elle peut être centrée au-dessus du
+        # texte ou flottante à droite/gauche, le texte habillant la photo.
+        _pos_lbl_fe = {"haut": "⬆️ Au-dessus du texte (centrée — par défaut)",
+                       "droite": "▶️ À droite du texte (le texte habille la photo)",
+                       "gauche": "◀️ À gauche du texte (le texte habille la photo)"}
+        _pos_def_fe = (_ex_fe[5] if _ex_fe and len(_ex_fe) > 5 and _ex_fe[5] in _pos_lbl_fe
+                       else "haut")
+        _pos_img_fe = st.selectbox(
+            "🖼️ Position de la photo dans le livret",
+            list(_pos_lbl_fe), index=list(_pos_lbl_fe).index(_pos_def_fe),
+            format_func=lambda x: _pos_lbl_fe[x], key=f"fe_pos_{_ctx_fe}")
         if st.form_submit_button("💾 Enregistrer cette section", width="stretch"):
             _lecteur_st = (",".join(sorted(set(_lecteurs_sel), key=_ordre_canonique.index))
                            if _lecteurs_sel else None)
             if _ex_fe:
-                c.execute("""UPDATE feuillet_sections SET titre=?, contenu=?, lecteur=?, image_url=?
+                c.execute("""UPDATE feuillet_sections SET titre=?, contenu=?, lecteur=?, image_url=?, pos_image=?
                              WHERE annee_debut=? AND mois=? AND ordre=?""",
                           (_titre_fe.strip(), _contenu_fe.strip(), _lecteur_st,
-                           _img_fe.strip() or None, _annee_fe, _mois_fe, _ord_fe))
+                           _img_fe.strip() or None, _pos_img_fe,
+                           _annee_fe, _mois_fe, _ord_fe))
             else:
-                c.execute("""INSERT INTO feuillet_sections (annee_debut, mois, ordre, titre, contenu, lecteur, image_url)
-                             VALUES (?,?,?,?,?,?,?)""",
+                c.execute("""INSERT INTO feuillet_sections (annee_debut, mois, ordre, titre, contenu, lecteur, image_url, pos_image)
+                             VALUES (?,?,?,?,?,?,?,?)""",
                           (_annee_fe, _mois_fe, _ord_fe, _titre_fe.strip(), _contenu_fe.strip(),
-                           _lecteur_st, _img_fe.strip() or None))
+                           _lecteur_st, _img_fe.strip() or None, _pos_img_fe))
             commit_and_sync()
             st.success(f"Section « {_titre_fe.strip()} » enregistrée ! ✅")
 
@@ -1338,7 +1357,7 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
         _prev_fe = None
         try:
             _prev_fe = c.execute(
-                """SELECT titre, contenu, lecteur, image_url, annee_debut, mois
+                """SELECT titre, contenu, lecteur, image_url, pos_image, annee_debut, mois
                    FROM feuillet_sections
                    WHERE ordre=?
                      AND (annee_debut < ? OR (annee_debut = ? AND mois < ?))
@@ -1350,9 +1369,9 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
         if _prev_fe:
             # Année civile d'un mois pastoral : sept.-déc. (1-4) = année de
             # début ; janv.-août (5-12) = année de début + 1.
-            _an_civ = _prev_fe[4] if _prev_fe[5] <= 4 else _prev_fe[4] + 1
+            _an_civ = _prev_fe[4] if _prev_fe[6] <= 4 else _prev_fe[4] + 1
             st.info(f"♻️ « {_titres_fe[_ord_fe]} » a déjà été saisi pour "
-                    f"{MOIS_NOMS[_prev_fe[5]-1]} {_an_civ} — les rubriques "
+                    f"{MOIS_NOMS[_prev_fe[6]-1]} {_an_civ} — les rubriques "
                     "invariables ne se saisissent qu'UNE fois.")
             if st.button("♻️ Reprendre le texte du mois précédent",
                          key=f"reprendre_fe_{_annee_fe}_{_mois_fe}_{_ord_fe}",
@@ -1362,20 +1381,20 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
                                  (_annee_fe, _mois_fe, _ord_fe)).fetchone()
                 if _ex2:
                     c.execute("""UPDATE feuillet_sections
-                                 SET titre=?, contenu=?, lecteur=?, image_url=?
+                                 SET titre=?, contenu=?, lecteur=?, image_url=?, pos_image=?
                                  WHERE annee_debut=? AND mois=? AND ordre=?""",
-                              (_prev_fe[0], _prev_fe[1], _prev_fe[2], _prev_fe[3],
+                              (_prev_fe[0], _prev_fe[1], _prev_fe[2], _prev_fe[3], _prev_fe[4],
                                _annee_fe, _mois_fe, _ord_fe))
                 else:
                     c.execute("""INSERT INTO feuillet_sections
                                  (annee_debut, mois, ordre, titre, contenu,
-                                  lecteur, image_url) VALUES (?,?,?,?,?,?,?)""",
+                                  lecteur, image_url, pos_image) VALUES (?,?,?,?,?,?,?,?)""",
                               (_annee_fe, _mois_fe, _ord_fe, _prev_fe[0],
-                               _prev_fe[1], _prev_fe[2], _prev_fe[3]))
+                               _prev_fe[1], _prev_fe[2], _prev_fe[3], _prev_fe[4]))
                 commit_and_sync()
                 # v7.8.10 — purge des clés CONTEXTUELLES du triplet courant :
                 # le rerun recrée les champs depuis la base (texte repris).
-                for _k in ("fe_titre", "fe_contenu", "fe_lecteurs", "fe_img"):
+                for _k in ("fe_titre", "fe_contenu", "fe_lecteurs", "fe_img", "fe_pos"):
                     st.session_state.pop(f"{_k}_{_ctx_fe}", None)
                 st.session_state["fe_reprise_ok"] = True
                 st.rerun()
