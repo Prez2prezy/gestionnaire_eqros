@@ -188,6 +188,16 @@ def init_tables_and_migrations():
     c.execute("""CREATE TABLE IF NOT EXISTS feuillets_couvertures (
                     annee_debut INTEGER, mois INTEGER, image_url TEXT,
                     UNIQUE(annee_debut, mois))""")
+    # v7.8.13 — « 🙏 Vos intentions à une équipe » : le visiteur / membre
+    # confie une intention DIRECTEMENT au responsable d'une équipe (sans
+    # passer par le diocèse). La chaîne de prière de l'équipe la porte dans
+    # la dizaine du jour, en toute discrétion (« être une tombe »).
+    # statut : recue / prie / archive.
+    c.execute("""CREATE TABLE IF NOT EXISTS intentions_equipes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    equipe_id INTEGER, paroisse_id INTEGER,
+                    auteur_nom TEXT, texte TEXT,
+                    statut TEXT DEFAULT 'recue', date_soumission TEXT)""")
     commit_and_sync()
 
     # --- 2. DONNÉES PAR DÉFAUT ---
@@ -232,6 +242,15 @@ def init_tables_and_migrations():
     safe_migrate("ALTER TABLE espace_spirituel ADD COLUMN lieu TEXT")
     # v7.8.11 — position de la photo dans la page du livret (haut/droite/gauche)
     safe_migrate("ALTER TABLE feuillet_sections ADD COLUMN pos_image TEXT")
+    # v7.8.13 — photos du feuillet en 2 catégories (demande user) :
+    #   a) image_url                = photo de la BANDE DE TITRE (1/4 à droite) ;
+    #   b) image_url2 + pos_image2  = 1re photo DU CORPS du texte ;
+    #      image_url3 + pos_image3  = 2e photo DU CORPS (2 maximum), positions
+    #      « haut-droite / haut-gauche / bas-droite / bas-gauche ».
+    safe_migrate("ALTER TABLE feuillet_sections ADD COLUMN image_url2 TEXT")
+    safe_migrate("ALTER TABLE feuillet_sections ADD COLUMN pos_image2 TEXT")
+    safe_migrate("ALTER TABLE feuillet_sections ADD COLUMN image_url3 TEXT")
+    safe_migrate("ALTER TABLE feuillet_sections ADD COLUMN pos_image3 TEXT")
     # v7.8.11 — publications de feuillets : dédoublonnage puis index UNIQUE.
     # Les bases créées avant la contrainte UNIQUE(annee_debut, mois)
     # pouvaient accumuler des lignes jumelles à chaque republication, ce qui
