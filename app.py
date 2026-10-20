@@ -8,39 +8,10 @@ from services import (hash_password, verifier_mot_de_passe,
                       supprimer_token_session)
 
 # --- Configuration de la page ---
-st.set_page_config(page_title="Gestionnaire des Équipes du Rosaire - Diocèse de Grand-Bassam", layout="wide")
-
-
-# --- v7.8.13 : PWA — DEUX icônes personnalisées (demande user) ---
-# Une icône par partie : 📿 chapelet (Espace de Prière) / 🔑 clé (Administration).
-# Le manifest + les favicons sont échangés DYNAMIQUEMENT selon la partie
-# ouverte : « Ajouter à l'écran d'accueil » installe alors la bonne icône —
-# l'icône Streamlit (❗) disparaît des deux. Icônes servies par Streamlit
-# (server.enableStaticServing=true → /app/static/).
-def _injecter_pwa(partie="admin"):
-    _mf = ("/app/static/manifest-espace.json" if partie == "espace"
-           else "/app/static/manifest-admin.json")
-    _ic = ("/app/static/icon-espace-192.png" if partie == "espace"
-           else "/app/static/icon-admin-192.png")
-    _js = ('<script>(function(){var d=window.parent.document;'
-           'var mf="' + _mf + '";var ic="' + _ic + '";var essais=0;'
-           'var a=function(){try{'
-           'var m=d.querySelector(\'link[rel="manifest"]\');'
-           'if(!m){m=d.createElement("link");m.setAttribute("rel","manifest");d.head.appendChild(m);}'
-           'if(m.getAttribute("href")!==mf)m.setAttribute("href",mf);'
-           'var ap=d.querySelector(\'link[rel="apple-touch-icon"]\');'
-           'if(!ap){ap=d.createElement("link");ap.setAttribute("rel","apple-touch-icon");d.head.appendChild(ap);}'
-           'ap.setAttribute("href",ic);'
-           'var fs=d.querySelectorAll(\'link[rel="icon"],link[rel="shortcut icon"]\');'
-           'if(fs.length===0){var f=d.createElement("link");f.setAttribute("rel","icon");d.head.appendChild(f);fs=[f];}'
-           'for(var i=0;i<fs.length;i++){fs[i].setAttribute("href",ic);}'
-           '}catch(e){}};'
-           'a();var iv=setInterval(function(){essais++;if(essais>20)clearInterval(iv);a();},500);'
-           '})();</script>')
-    try:
-        _comp_html(_js, height=0)
-    except Exception:
-        pass
+# v7.8.14 — page_icon par défaut 📿 : l'icône Streamlit (❗) disparaît de l'onglet.
+# L'injection dynamique (injecter_icone_pwa) affine ensuite : 📿 Espaces / 🔑 Admin.
+st.set_page_config(page_title="Gestionnaire des Équipes du Rosaire - Diocèse de Grand-Bassam",
+                   page_icon="📿", layout="wide")
 
 # --- v7.8.8 : RÉVEIL des publications programmées (lazy cron) ---
 # Streamlit n'a pas de tâche de fond : chaque chargement de page vérifie
@@ -65,21 +36,25 @@ if espace_val:
     # Au cas où Streamlit renvoie une liste au lieu d'une chaîne
     if isinstance(espace_val, list): espace_val = espace_val[0]
     if isinstance(matloc_val, list): matloc_val = matloc_val[0]
+    
+    # v7.8.14 — icône 📿 (favicon + PWA) pour les Espaces de Prière
+    from components import injecter_icone_pwa
+    injecter_icone_pwa(espace=True)
 
-    _injecter_pwa("espace")
     from views.view_espace_membre import show_espace_membre
     show_espace_membre(matloc_val)
     st.stop()
-
+    
 elif event_val:
     if isinstance(event_val, list): event_val = event_val[0]
-    _injecter_pwa("espace")
-    from components import afficher_page_reponse_membre
+    from components import afficher_page_reponse_membre, injecter_icone_pwa
+    injecter_icone_pwa(espace=True)   # page publique : icône 📿
     afficher_page_reponse_membre(event_val)
     st.stop()
 
-# v7.8.13 — partie Administration (Gestionnaire) : icône 🔑 clé
-_injecter_pwa("admin")
+# v7.8.14 — Administration (connexion + rôles) : icône 🔑 (favicon + PWA)
+from components import injecter_icone_pwa
+injecter_icone_pwa(espace=False)
 
 # --- CSS personnalisé ---
 st.markdown("""
@@ -353,3 +328,4 @@ elif st.session_state['role'] == 'equipe':
 elif st.session_state['role'] == 'communication':
     from views.view_communication import show_communication
     show_communication()
+
