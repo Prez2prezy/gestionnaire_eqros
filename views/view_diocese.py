@@ -407,14 +407,18 @@ def show_diocese():
     elif menu == "📌 Suivi":
         st.markdown(f'<h2 style="color:#1A237E;">📌 Suivi et Agenda - {nom_dio}</h2>', unsafe_allow_html=True)
 
-        tab_avenir, tab_passe, tab_etat = st.tabs(["📅 Agenda", "📝 Vie de prière des paroisses", "📊 Engagement spirituel"])
-
-        with tab_avenir:
+        # v7.8.14 — SÉLECTEUR PERSISTANT (remplace st.tabs, qui ne garde aucune
+        # mémoire : chaque interaction ramenait à l'onglet primaire).
+        _onglets_dio = ["📅 Agenda", "📝 Vie de prière des paroisses", "📊 Engagement spirituel"]
+        _suivi_dio = st.radio("Section du suivi", _onglets_dio, key="dio_suivi_onglet",
+                              horizontal=True, label_visibility="collapsed")
+        st.markdown("---")
+        if _suivi_dio == _onglets_dio[0]:
             ajouter_evenement_agenda(diocese_id=1, auteur_nom=st.session_state.get('username'))
             st.markdown("---")
             afficher_agenda_complet_universel(diocese_id=1)
 
-        with tab_passe:
+        elif _suivi_dio == _onglets_dio[1]:
             paroisses = c.execute("SELECT id, nom, commune FROM paroisses").fetchall()
             if paroisses:
                 par_dict = {f"{p[1]} ({p[2]})": p[0] for p in paroisses}
@@ -428,7 +432,7 @@ def show_diocese():
             else:
                 st.info("Aucune paroisse créée.")
 
-        with tab_etat:
+        else:
             paroisses2 = c.execute("SELECT id, nom, commune FROM paroisses").fetchall()
             if paroisses2:
                 par_dict2 = {f"{p[1]} ({p[2]})": p[0] for p in paroisses2}
