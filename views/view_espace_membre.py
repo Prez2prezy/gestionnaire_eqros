@@ -1039,6 +1039,33 @@ def _render_feuillet_vitrine(annee_debut, mois_pastoral):
         return
     st.markdown(_carte_etape("📖 LE FEUILLET MENSUEL DE PRIÈRE N° " + str(mois_pastoral)),
                 unsafe_allow_html=True)
+    # v7.8.12 — l'état de PUBLICATION est affiché : la vitrine montre aussi un
+    # feuillet simplement SAISI (aperçu, lien profond, sommaire) ; sans ce
+    # bandeau, la cellule croyait le mois « publié » alors que l'alerte 🔔 du
+    # fil annonce toujours le dernier mois PUBLIÉ par le diocèse (principe SAS :
+    # la cellule soumet, le diocèse seul publie).
+    try:
+        _pub_vit = c.execute("""SELECT 1 FROM feuillets_publications
+                                WHERE annee_debut=? AND mois=?""",
+                             (annee_debut, mois_pastoral)).fetchone()
+    except Exception:
+        _pub_vit = None
+    if not _pub_vit:
+        _dern = None
+        try:
+            _dern = c.execute("""SELECT annee_debut, mois FROM feuillets_publications
+                                 ORDER BY annee_debut DESC, mois DESC LIMIT 1""").fetchone()
+        except Exception:
+            _dern = None
+        _txt_dern = ""
+        if _dern:
+            _txt_dern = (" — l'alerte 🔔 du fil annonce toujours : N° " + str(_dern[1])
+                         + " · " + MOIS_PASTORAL_NOMS[_dern[1] - 1] + " "
+                         + str(_annee_civile_feuillet(_dern[0], _dern[1])) + ".")
+        st.warning("🟡 **Livret en préparation** — le diocèse n'a pas encore publié ce "
+                   "feuillet (circuit « 📨 Soumettre le feuillet au diocèse » → validation)"
+                   + _txt_dern + " Une fois validé, l'alerte passera automatiquement "
+                   "à ce mois, avec sa couverture.")
     _pluriel = "page" if len(sections) == 1 else "pages"
     _lignes = "".join(
         '<div class="cp-para" style="margin:2px 0;">📖 <b>' + str(s[0]) + "</b> — "
