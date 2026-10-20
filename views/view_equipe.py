@@ -11,6 +11,109 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
                         afficher_historique_suivi, afficher_whatsapp_tabs, widget_type_abonnement, 
                         enregistrer_presence_equipe, afficher_etat_presences_globales)
 
+def _assurer_table_intentions_eq():
+    """v7.8.14 — création douce de la table des intentions confiées aux équipes
+    (statut : 'recue' → 'en_priere' → 'archivee')."""
+    try:
+        c.execute("""CREATE TABLE IF NOT EXISTS intentions_equipes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        equipe_id INTEGER NOT NULL,
+                        texte TEXT NOT NULL,
+                        auteur_nom TEXT,
+                        anonyme INTEGER DEFAULT 0,
+                        statut TEXT DEFAULT 'recue',
+                        date_soumission TEXT,
+                        date_statut TEXT)""")
+        commit_and_sync()
+    except Exception:
+        pass
+
+
+def _onglet_intentions_equipe(eid):
+    """🙏 VOS INTENTIONS À UNE ÉQUIPE (v7.8.14) — onglet de « 📌 Suivi et
+    Agenda » : la boîte de réception du responsable. Compteur, 🕊️ Prise en
+    prière, 🗄️ Archiver, principe « être une tombe » rappelé."""
+    _assurer_table_intentions_eq()
+    st.caption("🙏 Les intentions confiées à votre équipe depuis l'Espace de "
+               "Prière (« 🙏 Vos intentions à une équipe », juste avant 📰 "
+               "Actualités) arrivent ICI, directement à vous. 🤫 **Principe "
+               "« être une tombe »** : elles ne se racontent pas, ne se "
+               "commentent pas et ne sortent jamais de l'équipe — elles se "
+               "portent en prière, puis s'archivent.")
+    try:
+        n_rec = c.execute("SELECT COUNT(*) FROM intentions_equipes "
+                          "WHERE equipe_id=? AND statut='recue'", (eid,)).fetchone()[0]
+        n_pri = c.execute("SELECT COUNT(*) FROM intentions_equipes "
+                          "WHERE equipe_id=? AND statut='en_priere'", (eid,)).fetchone()[0]
+        n_arc = c.execute("SELECT COUNT(*) FROM intentions_equipes "
+                          "WHERE equipe_id=? AND statut='archivee'", (eid,)).fetchone()[0]
+        en_attente = c.execute("""SELECT id, texte, auteur_nom, anonyme, statut,
+                                         date_soumission, date_statut
+                                  FROM intentions_equipes
+                                  WHERE equipe_id=? AND statut != 'archivee'
+                                  ORDER BY date_soumission DESC, id DESC""",
+                               (eid,)).fetchall()
+        archivees = c.execute("""SELECT id, texte, auteur_nom, anonyme,
+                                        date_soumission, date_statut
+                                 FROM intentions_equipes
+                                 WHERE equipe_id=? AND statut='archivee'
+                                 ORDER BY date_statut DESC, id DESC""",
+                              (eid,)).fetchall()
+    except Exception:
+        st.error("Impossible de lire les intentions pour le moment.")
+        return
+    m1, m2, m3 = st.columns(3)
+    m1.metric("🆕 Reçues", n_rec)
+    m2.metric("🕊️ En prière", n_pri)
+    m3.metric("🗄️ Archivées", n_arc)
+    st.markdown("---")
+    if not en_attente:
+        st.info("Aucune intention en attente : la boîte de réception est vide. "
+                "Les fidèles les confient depuis « 🙏 Vos intentions à une "
+                "équipe » de l'Espace de Prière.")
+    for (iid, texte, auteur, anon, statut, dsoum, dstat) in en_attente:
+        badge = "🆕" if statut == 'recue' else "🕊️"
+        qui = "Anonyme" if anon else (auteur or "Membre")
+        with st.expander(f"{badge} {dsoum} — {qui}"):
+            st.write(texte)
+            if statut == 'en_priere':
+                st.caption("🕊️ En prière depuis le " + str(dstat or dsoum))
+            else:
+                st.caption("🆕 Reçue le " + str(dsoum))
+            b1, b2 = st.columns(2)
+            with b1:
+                if statut == 'recue':
+                    if st.button("🕊️ Prise en prière", key=f"int_pri_{iid}",
+                                 width="stretch", type="primary"):
+                        c.execute("UPDATE intentions_equipes SET statut='en_priere', "
+                                  "date_statut=? WHERE id=?",
+                                  (date.today().isoformat(), iid))
+                        commit_and_sync()
+                        st.rerun()
+                else:
+                    st.button("🕊️ En prière", key=f"int_pri_ok_{iid}",
+                              width="stretch", disabled=True)
+            with b2:
+                if st.button("🗄️ Archiver", key=f"int_arc_{iid}", width="stretch"):
+                    c.execute("UPDATE intentions_equipes SET statut='archivee', "
+                              "date_statut=? WHERE id=?",
+                              (date.today().isoformat(), iid))
+                    commit_and_sync()
+                    st.rerun()
+    if archivees:
+        st.markdown("---")
+        with st.expander(f"🗄️ Archives des intentions ({len(archivees)})"):
+            for (iid, texte, auteur, anon, dsoum, dstat) in archivees:
+                qui = "Anonyme" if anon else (auteur or "Membre")
+                st.markdown("**" + str(dsoum) + " — " + qui + "**")
+                st.write(texte)
+                if st.button("🗑️ Supprimer définitivement", key=f"int_del_{iid}"):
+                    c.execute("DELETE FROM intentions_equipes WHERE id=?", (iid,))
+                    commit_and_sync()
+                    st.rerun()
+                st.markdown("---")
+
+
 def show_equipe():
     eid = st.session_state['equipe_id']
     equipe_info = c.execute("SELECT nom_equipe, responsable, bureau FROM equipes WHERE id=?", (eid,)).fetchone()
@@ -23,7 +126,7 @@ def show_equipe():
     pid = pid_result[0]
     max_membres = get_max_membres(eid)
 
-    _rubriques_eq = ["👥 Mon équipe", "👤 Mes membres", "🙏 Intentions", "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "📦 Archives"]
+    _rubriques_eq = ["👥 Mon équipe", "👤 Mes membres", "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "📦 Archives"]
     if "nav_eq" in st.session_state and st.session_state["nav_eq"] not in _rubriques_eq:
         del st.session_state["nav_eq"]
     if "nav_eq" not in st.session_state:
@@ -54,11 +157,6 @@ def show_equipe():
                         c.execute("UPDATE equipes SET responsable=?, bureau=? WHERE id=?", (nouveau_resp, nouveau_bureau, eid))
                         commit_and_sync(); st.success("Informations mises à jour ! ✅"); st.rerun()
                     else: st.error("Le nom du responsable est obligatoire.")
-
-    elif menu == "🙏 Intentions":
-        # v7.8.13 — boîte de réception des intentions confiées par les
-        # visiteurs / membres depuis l'Espace de Prière (circuit court).
-        _boite_intentions(eid)
 
     elif menu == "👤 Mes membres":
         st.markdown(f'<h2 style="color:#1A237E;">👤 Membres - {nom_equipe}</h2>', unsafe_allow_html=True)
@@ -306,17 +404,24 @@ def show_equipe():
 
     elif menu == "📌 Suivi":
         st.markdown(f'<h2 style="color:#1A237E;">📌 Suivi et Agenda - {nom_equipe}</h2>', unsafe_allow_html=True)
-        tab_avenir, tab_passe, tab_etat = st.tabs(["📅 Agenda", "📝 Vie de prière de l'équipe", "📊 Engagement spirituel"])
-        
-        with tab_avenir:
+        # v7.8.14 — SÉLECTEUR PERSISTANT (remplace st.tabs, qui ne garde AUCUNE
+        # mémoire entre rafraîchissements : chaque coche ou bouton ramenait à
+        # l'onglet primaire) + 4ᵉ onglet « 🙏 Vos intentions à une équipe ».
+        _onglets_suivi = ["📅 Agenda", "🙏 Vos intentions à une équipe",
+                          "📝 Vie de prière de l'équipe", "📊 Engagement spirituel"]
+        _suivi_actif = st.radio("Section du suivi", _onglets_suivi,
+                                key="eq_suivi_onglet", horizontal=True,
+                                label_visibility="collapsed")
+        st.markdown("---")
+        if _suivi_actif == _onglets_suivi[0]:
             ajouter_evenement_agenda(equipe_id=eid, auteur_nom=st.session_state['username'])
             st.markdown("---")
             afficher_agenda_complet_universel(equipe_id=eid)
-
-        with tab_passe:
+        elif _suivi_actif == _onglets_suivi[1]:
+            _onglet_intentions_equipe(eid)
+        elif _suivi_actif == _onglets_suivi[2]:
             enregistrer_presence_equipe(equipe_id=eid)
-            
-        with tab_etat:
+        else:
             afficher_etat_presences_globales(equipe_id=eid)
 
     elif menu == "💬 WhatsApp":
@@ -394,73 +499,3 @@ def show_equipe():
         else: 
             st.info("Aucune archive.")
 
-
-
-
-
-
-
-
-
-
-
-def _boite_intentions(eid):
-    """🙏 Intentions confiées à l'équipe (v7.8.13) — boîte de réception du
-    responsable : les visiteurs / membres déposent depuis l'Espace de Prière
-    (« 🙏 Vos intentions à une équipe », juste avant « 📰 Actualités de la
-    Paroisse »). Principe de la chaîne : « être une tombe » — les intentions
-    restent ici, jamais partagées au-delà de l'équipe ; on les porte dans la
-    dizaine du jour, environ un mois."""
-    c.execute("""CREATE TABLE IF NOT EXISTS intentions_equipes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    equipe_id INTEGER, paroisse_id INTEGER,
-                    auteur_nom TEXT, texte TEXT,
-                    statut TEXT DEFAULT 'recue', date_soumission TEXT)""")
-    commit_and_sync()
-    st.markdown('<h2 style="color:#1A237E;">🙏 Intentions confiées à l\'équipe</h2>',
-                unsafe_allow_html=True)
-    st.caption("Principe de la chaîne : « être une tombe » — ces intentions restent ici, "
-               "jamais partagées au-delà de l'équipe. On les porte dans la dizaine du jour, "
-               "environ un mois.")
-    try:
-        _rows = c.execute("""SELECT id, auteur_nom, texte, statut, date_soumission
-                             FROM intentions_equipes WHERE equipe_id=?
-                             ORDER BY id DESC""", (eid,)).fetchall()
-    except Exception:
-        _rows = []
-    _n_rec = sum(1 for r in _rows if r[3] == 'recue')
-    _n_prie = sum(1 for r in _rows if r[3] == 'prie')
-    _n_arch = sum(1 for r in _rows if r[3] == 'archive')
-    st.info(f"📩 {_n_rec} nouvelle(s) à prendre en prière · 🕊️ {_n_prie} en cours · "
-            f"🗄️ {_n_arch} archivée(s)")
-    if not _rows:
-        st.info("Aucune intention pour le moment. Les visiteurs et membres de la paroisse "
-                "vous en écrivent depuis l'Espace de Prière : expander « 🙏 Vos intentions "
-                "à une équipe », juste avant « 📰 Actualités de la Paroisse ».")
-        return
-    for _r in _rows:
-        _iid, _aut, _txt, _statut, _dt = _r[0], _r[1], _r[2], _r[3], _r[4]
-        _badge = {"recue": "📩", "prie": "🕊️", "archive": "🗄️"}.get(_statut, "📩")
-        _dd = safe_date(_dt)
-        _titre = (_badge + " " + (_dd.strftime("%d/%m/%Y") if _dd else (_dt or "—"))
-                  + " — " + (_aut or "Intention anonyme"))
-        with st.expander(_titre):
-            st.markdown(_txt or "")
-            _c1, _c2 = st.columns(2)
-            with _c1:
-                if _statut != 'prie':
-                    if st.button("🕊️ Prise en prière", key=f"int_prie_{_iid}",
-                                 width="stretch"):
-                        c.execute("UPDATE intentions_equipes SET statut='prie' WHERE id=?",
-                                  (_iid,))
-                        commit_and_sync()
-                        st.rerun()
-                else:
-                    st.caption("🕊️ Portée en prière par l'équipe")
-            with _c2:
-                if _statut != 'archive':
-                    if st.button("🗄️ Archiver", key=f"int_arch_{_iid}", width="stretch"):
-                        c.execute("UPDATE intentions_equipes SET statut='archive' WHERE id=?",
-                                  (_iid,))
-                        commit_and_sync()
-                        st.rerun()
