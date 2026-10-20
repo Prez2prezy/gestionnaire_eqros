@@ -3024,29 +3024,39 @@ def _alerte_feuillet_fil(lien_theme=None):
 
 def _assurer_table_intentions():
     """v7.8.14 — table des intentions confiées aux équipes (création douce).
-    statut : 'recue' → 'en_priere' → 'archivee' (côté responsable d'équipe)."""
+    statut : 'recue' → 'en_priere' → 'archivee' (côté responsable d'équipe).
+    v7.8.15 — colonne auteur_contact (WhatsApp / adresse mail du fidèle)."""
     try:
         c.execute("""CREATE TABLE IF NOT EXISTS intentions_equipes (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         equipe_id INTEGER NOT NULL,
                         texte TEXT NOT NULL,
                         auteur_nom TEXT,
+                        auteur_contact TEXT,
                         anonyme INTEGER DEFAULT 0,
                         statut TEXT DEFAULT 'recue',
                         date_soumission TEXT,
                         date_statut TEXT)""")
+        try:
+            c.execute("ALTER TABLE intentions_equipes ADD COLUMN auteur_contact TEXT")
+        except Exception:
+            pass  # colonne déjà présente
         commit_and_sync()
     except Exception:
         pass
 
 
 def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None):
-    """🙏 VOS INTENTIONS À UNE ÉQUIPE (v7.8.14) — présenté dans le langage du
-    dépliant (« 🕯️ Un jour, une dizaine » : bannière bleu-or), JUSTE AVANT
-    « 📰 Actualités de la Paroisse ». Choix de l'équipe, texte, anonymat
-    possible → l'intention arrive DIRECTEMENT au responsable de l'équipe
-    (onglet « 🙏 » de « 📌 Suivi et Agenda » côté gestionnaire), sans passer
-    par le fil public ni par le diocèse."""
+    """🙏 VOS INTENTIONS À UNE ÉQUIPE (v7.8.15) — présenté COMME LE DÉPLIANT :
+    UN SEUL CADRE DORÉ (fond bleu nuit #121a45, liseré or #FFD700) englobant
+    la bannière, les badges, l'expanseur « Choix de l'équipe » et tous les
+    champs (les champs ont un liséré doré), JUSTE AVANT « 📰 Actualités de la
+    Paroisse » — et UNIQUEMENT dans l'Espace communautaire (v7.8.15 : retiré
+    côté vue Membre). Champs : Nom et Prénom*, Contact WhatsApp / Adresse
+    mail*, Intention de prière* ; case d'acceptation (anti-spam) obligatoire ;
+    anonymat possible → l'intention arrive DIRECTEMENT au responsable de
+    l'équipe (onglet « 🙏 » de « 📌 Suivi et Agenda »), sans passer par le fil
+    public ni par le diocèse."""
     if not pid:
         return
     _assurer_table_intentions()
@@ -3058,60 +3068,169 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
         equipes = []
     if not equipes:
         return
-    st.markdown("---")
-    st.markdown(
-        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-        ' padding:16px; border-radius:15px; text-align:center; margin:0 10px 6px 10px;'
-        ' border:2px solid #FFD700;">'
-        '<div class="dpl-titre-g" style="font-size:clamp(1.05rem, 4.5vw, 1.2rem);">'
-        '🙏 Vos intentions à une équipe</div>'
-        '<div style="color:#ffffff; font-size:0.85rem; margin-top:4px;">'
-        'Confiez une intention de prière à l’équipe de votre choix : elle arrive '
-        'directement au responsable, qui la portera en prière avec son équipe — '
-        'et la gardera strictement confidentielle.</div></div>',
-        unsafe_allow_html=True)
-    st.caption("🤫 Principe « être une tombe » : votre intention n'est ni lue à "
-               "haute voix, ni commentée, ni rapportée — elle est portée en prière.")
-    _idx_def = 0
-    if equipe_membre_id:
-        for _i, _e in enumerate(equipes):
-            if _e[0] == equipe_membre_id:
-                _idx_def = _i
-                break
-    with st.form("form_intention_equipe", clear_on_submit=True):
-        _eq = st.selectbox("👥 Équipe destinataire", equipes, index=_idx_def,
-                           format_func=lambda e: e[1])
-        _txt = st.text_area("🙏 Votre intention de prière", height=110,
-                            max_chars=600,
-                            placeholder="Pour la santé de…, pour ma famille…, "
-                                        "pour les vocations…")
-        _anon = st.checkbox("🕊️ Rester anonyme (le responsable verra « Anonyme »)",
-                            value=False)
-        if st.form_submit_button("📨 Confier cette intention", type="primary",
-                                 width="stretch"):
-            if not (_txt or "").strip():
-                st.warning("Écrivez d'abord votre intention dans la zone de texte.")
-            else:
-                _auteur = None if _anon else (auteur_nom or "Visiteur de l'Espace de Prière")
-                c.execute("""INSERT INTO intentions_equipes
-                             (equipe_id, texte, auteur_nom, anonyme, statut, date_soumission)
-                             VALUES (?, ?, ?, ?, 'recue', ?)""",
-                          (_eq[0], _txt.strip(), _auteur,
-                           1 if _anon else 0, date.today().isoformat()))
-                commit_and_sync()
-                st.session_state["flash_success"] = (
-                    "🙏 Votre intention a été confiée à l'équipe « " + str(_eq[1])
-                    + " ». Elle arrive directement au responsable — elle sera portée "
-                    "en prière, en toute confidentialité.")
-                st.rerun()
+    # ── CSS du CADRE DORÉ (v7.8.15) : le container bordé (st.container
+    # border=True) reçoit la classe .int-cadre-or par un mini-script (même
+    # mécanisme que injecter_icone_pwa) — le CSS ne touche donc QUE ce cadre :
+    # fond bleu nuit, expanseurs à liseré or, champs à liséré or.
+    st.markdown('<style>'
+        '.int-cadre-or [data-testid="stExpander"] { border:1.5px solid #C9A227'
+        ' !important; border-radius:10px !important; background:rgba(255,215,0,0.07)'
+        ' !important; }'
+        '.int-cadre-or [data-testid="stExpander"] summary { color:#FFD000'
+        ' !important; font-weight:600 !important; }'
+        '.int-cadre-or input, .int-cadre-or textarea { border:1.5px solid #C9A227'
+        ' !important; border-radius:8px !important; background:#0d1338 !important;'
+        ' color:#ffffff !important; }'
+        '.int-cadre-or input::placeholder, .int-cadre-or textarea::placeholder'
+        ' { color:#8a93c9 !important; }'
+        '.int-cadre-or div[data-baseweb="select"] > div { border:1.5px solid'
+        ' #C9A227 !important; border-radius:8px !important; background:#0d1338'
+        ' !important; color:#ffffff !important; }'
+        '.int-cadre-or label, .int-cadre-or label p { color:#e8eaf6 !important; }'
+        '.int-cadre-or [data-testid="stCaptionContainer"] p { color:#b8c0e8'
+        ' !important; }'
+        '</style>', unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown('<div id="int-or-marker"></div>', unsafe_allow_html=True)
+        # ── BANNIÈRE (langage du dépliant) — tout est DANS le cadre doré
+        st.markdown(
+            '<div style="background:linear-gradient(135deg,#1A237E 0%,#4527a0 100%);'
+            ' border:1px solid #FFD700; border-radius:12px; padding:14px 12px;'
+            ' text-align:center; margin:2px 4px 10px 4px;">'
+            '<div class="dpl-titre-g" style="font-size:clamp(1.05rem, 4.5vw, 1.25rem);">'
+            '🙏 Vos intentions à une équipe</div>'
+            '<div style="color:#ffffff; font-size:clamp(0.85rem, 3.6vw, 1rem);'
+            ' margin-top:6px; line-height:1.6;">'
+            'Confie à Notre Dame du Rosaire ton intention de prière<br>'
+            'par le canal d’une équipe</div>'
+            '<div style="display:inline-block; margin-top:9px; background:rgba(255,215,0,0.14);'
+            ' border:1px solid #FFD700; border-radius:20px; padding:4px 14px;'
+            ' color:#FFD000; font-size:0.78rem;">🤫 « être une tombe » : confiée,'
+            ' priée, jamais racontée</div></div>',
+            unsafe_allow_html=True)
+        _idx_def = 0
+        if equipe_membre_id:
+            for _i, _e in enumerate(equipes):
+                if _e[0] == equipe_membre_id:
+                    _idx_def = _i
+                    break
+        # ── CHOIX DE L'ÉQUIPE : expanseur HORS formulaire — chaque clic met
+        # à jour le TITRE de l'expanseur (« — nom de l'équipe ») et le choix
+        # est mémorisé en session ; les champs restent dans le formulaire.
+        _idx_choisi = st.session_state.get("int_eq_choix")
+        if not isinstance(_idx_choisi, int) or _idx_choisi < 0 or _idx_choisi >= len(equipes):
+            st.session_state.pop("int_eq_choix", None)  # index obsolète
+            _idx_choisi = _idx_def
+        _titre_ex = "👥 Choix de l’équipe"
+        if "int_eq_choix" in st.session_state:
+            _titre_ex += " — " + str(equipes[_idx_choisi][1])
+        with st.expander(_titre_ex):
+            st.radio("À quelle équipe confier votre intention ?",
+                     list(range(len(equipes))), index=_idx_choisi,
+                     format_func=lambda i: equipes[i][1],
+                     key="int_eq_choix", label_visibility="collapsed")
+        with st.form("form_intention_equipe", clear_on_submit=False):
+            # ── CHAMPS (liséré doré via CSS ci-dessus)
+            st.markdown('<div style="color:#FFD000; font-size:0.85rem;'
+                        ' margin:2px 2px 6px 2px;">« * » indique les champs'
+                        ' obligatoires</div>', unsafe_allow_html=True)
+            # Clés PAR GÉNÉRATION (v7.8.15) : les widgets d'un st.form ne se
+            # resynchronisent pas au rerun → au succès, int_gen s'incrémente
+            # et les champs renaissent NEUFS (vides), sans perdre la saisie
+            # en cas de validation refusée (clear_on_submit reste False).
+            _gen = st.session_state.get("int_gen", 0)
+            _k = lambda b: b + "_" + str(_gen)
+            if _k("int_nom") not in st.session_state and (auteur_nom or "").strip():
+                st.session_state[_k("int_nom")] = auteur_nom
+            _nom = st.text_input("Nom et Prénom *", key=_k("int_nom"), max_chars=80,
+                                 placeholder="Ex : Jean DUPONT")
+            _contact = st.text_input("Contact WhatsApp / Adresse mail *",
+                                     key=_k("int_contact"), max_chars=120,
+                                     placeholder="Ex : +225 07 00 00 00 00 ou jean@exemple.com")
+            _txt = st.text_area("Intention de prière *", key=_k("int_txt"), height=110,
+                                max_chars=600,
+                                placeholder="Pour la santé de…, pour ma famille…, "
+                                            "pour les vocations…")
+            _anon = st.checkbox("🕊️ Rester anonyme (le responsable verra « Anonyme »)",
+                                key=_k("int_anon"))
+            _rgpd = st.checkbox(
+                "En envoyant cette intention, j’accepte que certaines données techniques "
+                "soient utilisées à des fins de sécurité et de lutte contre les envois "
+                "automatisés (spam). Voir la politique de confidentialité ci-dessous.",
+                key=_k("int_rgpd"))
+            with st.expander("🔒 Politique de confidentialité"):
+                st.caption("Vos nom et contact servent uniquement à identifier votre intention "
+                           "auprès du responsable d’équipe (et, s’il le souhaite, à vous répondre). "
+                           "Ils ne sont jamais publiés, ni partagés, ni utilisés à des fins "
+                           "commerciales. Des traces techniques minimales (date, session) peuvent "
+                           "être conservées pour la sécurité et la lutte contre les envois "
+                           "automatisés (spam). Vous pouvez demander la suppression de votre "
+                           "intention à tout moment auprès du responsable de l’équipe.")
+            if st.form_submit_button("📨 Confier cette intention", type="primary",
+                                     width="stretch"):
+                _manque = []
+                if not (_nom or "").strip():
+                    _manque.append("votre nom et prénom")
+                if not (_contact or "").strip():
+                    _manque.append("un contact (WhatsApp ou adresse mail)")
+                if not (_txt or "").strip():
+                    _manque.append("votre intention de prière")
+                if not _rgpd:
+                    _manque.append("l’acceptation (case ☑) de la politique de confidentialité")
+                if _manque:
+                    st.warning("Il manque : " + " ; ".join(_manque) + ".")
+                else:
+                    _i = st.session_state.get("int_eq_choix")
+                    if not isinstance(_i, int) or not (0 <= _i < len(equipes)):
+                        _i = 0
+                    _eq = equipes[_i]
+                    _auteur = None if _anon else (
+                        (_nom or "").strip() or "Visiteur de l’Espace de Prière")
+                    c.execute("""INSERT INTO intentions_equipes
+                                 (equipe_id, texte, auteur_nom, auteur_contact, anonyme,
+                                  statut, date_soumission)
+                                 VALUES (?, ?, ?, ?, ?, 'recue', ?)""",
+                              (_eq[0], _txt.strip(), _auteur, (_contact or "").strip(),
+                               1 if _anon else 0, date.today().isoformat()))
+                    commit_and_sync()
+                    st.session_state["int_gen"] = _gen + 1  # champs renaissent vides
+                    for _b in ("int_nom", "int_contact", "int_txt", "int_anon", "int_rgpd"):
+                        st.session_state.pop(_b + "_" + str(_gen), None)
+                    st.session_state["flash_success"] = (
+                        "🙏 Votre intention a été confiée à l’équipe « " + str(_eq[1])
+                        + " ». Elle arrive directement au responsable — elle sera portée "
+                        "en prière, en toute confidentialité.")
+                    st.rerun()
+        # ── Mini-script (dernier élément du cadre, remonte au container bordé)
+        # : pose le cadre doré + la classe .int-cadre-or (CSS ci-dessus). Comme
+        # injecter_icone_pwa : tourne à chaque rerun, iframe invisible.
+        try:
+            from streamlit.components.v1 import html as _chtml_int
+            _chtml_int(
+                "<script>(function(){"
+                "var d=window.parent.document;"
+                "var m=d.getElementById('int-or-marker'); if(!m) return;"
+                "var w=m.closest('div[data-testid=\"stVerticalBlock\"]'); if(!w) return;"
+                "w.style.border='2px solid #FFD700';"
+                "w.style.borderRadius='15px';"
+                "w.style.background='#121a45';"
+                "w.style.boxShadow='0 4px 14px rgba(0,0,0,0.35)';"
+                "w.style.padding='10px 6px';"
+                "w.classList.add('int-cadre-or');"
+                "})();</script>", height=0)
+        except Exception:
+            pass
 
 
 def _render_fil_actualites(pid=None, lien_theme=None, equipe_membre_id=None,
-                           auteur_nom=None):
+                           auteur_nom=None, intentions=True):
     """v7.6 — fil du jour BLINDÉ : la ligne est complétée à 5 cases avant
     tout accès par index. LOT C5 : dernière publication VISIBLE du contexte.
     v7.8-h : une alerte « 📖 Nouveau feuillet » couronne le fil quand le
-    diocèse vient de publier le feuillet mensuel de prière."""
+    diocèse vient de publier le feuillet mensuel de prière.
+    v7.8.15 — « 🙏 Vos intentions à une équipe » est réservée à l'Espace
+    COMMUNAUTAIRE : intentions=False côté vue Membre (elle ne s'y affiche
+    plus)."""
     _alerte_feuillet_fil(lien_theme)
 
     cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
@@ -3155,10 +3274,11 @@ def _render_fil_actualites(pid=None, lien_theme=None, equipe_membre_id=None,
         st.info("Aucun contenu spirituel n'a encore été publié.")
 
     _render_coin_affiche(pid)
-    # v7.8.14 — « 🙏 Vos intentions à une équipe » JUSTE AVANT les actualités
-    # de la paroisse (style du dépliant, arrivée directe au responsable).
-    _render_intentions_equipes(pid=pid, equipe_membre_id=equipe_membre_id,
-                               auteur_nom=auteur_nom)
+    # v7.8.15 — « 🙏 Vos intentions à une équipe » JUSTE AVANT les actualités
+    # de la paroisse — ESPACE COMMUNAUTAIRE UNIQUEMENT (retirée côté Membre).
+    if intentions:
+        _render_intentions_equipes(pid=pid, equipe_membre_id=equipe_membre_id,
+                                   auteur_nom=auteur_nom)
     _render_actualites_paroisse(pid)
 
 
@@ -3528,6 +3648,7 @@ def show_espace_membre(matloc_membre=None):
                          + (f"&p={pid_m}" if pid_m else "") + "&nav=1&r=1")
         _render_fil_actualites(pid=pid_m, lien_theme=_lien_theme_m,
                                equipe_membre_id=membre[10],
-                               auteur_nom=((membre[1] or "") + " " + (membre[2] or "")).strip())
+                               auteur_nom=((membre[1] or "") + " " + (membre[2] or "")).strip(),
+                               intentions=False)  # v7.8.15 : retiré côté Membre
         _render_actualites(pid=pid_m)
 
