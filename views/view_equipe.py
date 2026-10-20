@@ -13,17 +13,23 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
 
 def _assurer_table_intentions_eq():
     """v7.8.14 — création douce de la table des intentions confiées aux équipes
-    (statut : 'recue' → 'en_priere' → 'archivee')."""
+    (statut : 'recue' → 'en_priere' → 'archivee').
+    v7.8.15 — colonne auteur_contact (WhatsApp / adresse mail du fidèle)."""
     try:
         c.execute("""CREATE TABLE IF NOT EXISTS intentions_equipes (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         equipe_id INTEGER NOT NULL,
                         texte TEXT NOT NULL,
                         auteur_nom TEXT,
+                        auteur_contact TEXT,
                         anonyme INTEGER DEFAULT 0,
                         statut TEXT DEFAULT 'recue',
                         date_soumission TEXT,
                         date_statut TEXT)""")
+        try:
+            c.execute("ALTER TABLE intentions_equipes ADD COLUMN auteur_contact TEXT")
+        except Exception:
+            pass  # colonne déjà présente
         commit_and_sync()
     except Exception:
         pass
@@ -34,12 +40,12 @@ def _onglet_intentions_equipe(eid):
     Agenda » : la boîte de réception du responsable. Compteur, 🕊️ Prise en
     prière, 🗄️ Archiver, principe « être une tombe » rappelé."""
     _assurer_table_intentions_eq()
-    st.caption("🙏 Les intentions confiées à votre équipe depuis l'Espace de "
-               "Prière (« 🙏 Vos intentions à une équipe », juste avant 📰 "
-               "Actualités) arrivent ICI, directement à vous. 🤫 **Principe "
-               "« être une tombe »** : elles ne se racontent pas, ne se "
-               "commentent pas et ne sortent jamais de l'équipe — elles se "
-               "portent en prière, puis s'archivent.")
+    st.caption("🙏 Les intentions confiées à votre équipe depuis l’**Espace "
+               "communautaire** (« 🙏 Vos intentions à une équipe », juste avant "
+               "📰 Actualités de la Paroisse) arrivent ICI, directement à vous. "
+               "🤫 **Principe « être une tombe »** : elles ne se racontent pas, "
+               "ne se commentent pas et ne sortent jamais de l’équipe — elles se "
+               "portent en prière, puis s’archivent.")
     try:
         n_rec = c.execute("SELECT COUNT(*) FROM intentions_equipes "
                           "WHERE equipe_id=? AND statut='recue'", (eid,)).fetchone()[0]
@@ -47,13 +53,13 @@ def _onglet_intentions_equipe(eid):
                           "WHERE equipe_id=? AND statut='en_priere'", (eid,)).fetchone()[0]
         n_arc = c.execute("SELECT COUNT(*) FROM intentions_equipes "
                           "WHERE equipe_id=? AND statut='archivee'", (eid,)).fetchone()[0]
-        en_attente = c.execute("""SELECT id, texte, auteur_nom, anonyme, statut,
-                                         date_soumission, date_statut
+        en_attente = c.execute("""SELECT id, texte, auteur_nom, auteur_contact, anonyme,
+                                         statut, date_soumission, date_statut
                                   FROM intentions_equipes
                                   WHERE equipe_id=? AND statut != 'archivee'
                                   ORDER BY date_soumission DESC, id DESC""",
                                (eid,)).fetchall()
-        archivees = c.execute("""SELECT id, texte, auteur_nom, anonyme,
+        archivees = c.execute("""SELECT id, texte, auteur_nom, auteur_contact, anonyme,
                                         date_soumission, date_statut
                                  FROM intentions_equipes
                                  WHERE equipe_id=? AND statut='archivee'
@@ -70,12 +76,14 @@ def _onglet_intentions_equipe(eid):
     if not en_attente:
         st.info("Aucune intention en attente : la boîte de réception est vide. "
                 "Les fidèles les confient depuis « 🙏 Vos intentions à une "
-                "équipe » de l'Espace de Prière.")
-    for (iid, texte, auteur, anon, statut, dsoum, dstat) in en_attente:
+                "équipe » de l'Espace communautaire.")
+    for (iid, texte, auteur, contact, anon, statut, dsoum, dstat) in en_attente:
         badge = "🆕" if statut == 'recue' else "🕊️"
         qui = "Anonyme" if anon else (auteur or "Membre")
         with st.expander(f"{badge} {dsoum} — {qui}"):
             st.write(texte)
+            if not anon and (contact or "").strip():
+                st.caption("📞 Contact : " + str(contact).strip())
             if statut == 'en_priere':
                 st.caption("🕊️ En prière depuis le " + str(dstat or dsoum))
             else:
@@ -103,9 +111,11 @@ def _onglet_intentions_equipe(eid):
     if archivees:
         st.markdown("---")
         with st.expander(f"🗄️ Archives des intentions ({len(archivees)})"):
-            for (iid, texte, auteur, anon, dsoum, dstat) in archivees:
+            for (iid, texte, auteur, contact, anon, dsoum, dstat) in archivees:
                 qui = "Anonyme" if anon else (auteur or "Membre")
                 st.markdown("**" + str(dsoum) + " — " + qui + "**")
+                if not anon and (contact or "").strip():
+                    st.caption("📞 Contact : " + str(contact).strip())
                 st.write(texte)
                 if st.button("🗑️ Supprimer définitivement", key=f"int_del_{iid}"):
                     c.execute("DELETE FROM intentions_equipes WHERE id=?", (iid,))
@@ -498,4 +508,3 @@ def show_equipe():
                             else: st.info("Un transféré ou un défunt ne peut pas être réintégré.")
         else: 
             st.info("Aucune archive.")
-
