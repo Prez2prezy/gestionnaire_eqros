@@ -649,9 +649,14 @@ def afficher_historique_suivi(equipe_id, filtre_type="Tous"):
 
 
 def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
-    t1, t2, t3 = st.tabs(["🎂 Anniversaires", "📢 Rappels réabonnement", "📿 Espace de prière"])
-
-    with t1:
+    # v7.8.14 — SÉLECTEUR PERSISTANT : les onglets simples perdaient la main à
+    # chaque widget modifié (p.ex. l'année des rappels ramenait aux
+    # Anniversaires). Le radio retient la section active toute la session.
+    _lbl_wa = ["🎂 Anniversaires", "📢 Rappels réabonnement", "📿 Espace de prière"]
+    _wa_actif = st.radio("Section", _lbl_wa, key="wa_onglet", horizontal=True,
+                         label_visibility="collapsed")
+    st.markdown("---")
+    if _wa_actif == _lbl_wa[0]:
         # Confidentialité : filtrage par équipe OU paroisse
         query = '''SELECT m.nom, m.prenom, m.whatsapp, e.nom_equipe, p.nom, m.date_naissance
                    FROM membres m JOIN equipes e ON m.equipe_id=e.id JOIN paroisses p ON m.paroisse_id=p.id
@@ -671,7 +676,7 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
                 st.markdown("---")
         else: st.info("🎉 Aucun anniversaire aujourd'hui")
 
-    with t2:
+    elif _wa_actif == _lbl_wa[1]:
         # Défaut = année PASTORALE (pas civile) : évite les faux rappels de janvier à août
         annee_defaut = get_periode_pastorale()[0]
         annee = st.number_input("Année de début", 2020, date.today().year + 1, min(annee_defaut, date.today().year + 1), key="rappel_whats")
@@ -694,7 +699,7 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
                 st.markdown("---")
         else: st.success(f"🎉 Tous à jour pour {periode_affichage(annee)} !")
 
-    with t3:
+    else:
         base_url = URL_ESPACE_SPIRITUEL
 
         st.markdown("#### 🌐 Lien Public (Pour tout le monde)")
@@ -1256,25 +1261,49 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
     _mois_fe_lbl = st.selectbox("Mois pastoral du feuillet", MOIS_NOMS, key="fe_mois")
     _mois_fe = MOIS_NOMS.index(_mois_fe_lbl) + 1
 
-    # v7.8.13 — 10 colonnes : image_url (photo du TITRE, bande d'en-tête),
-    # image_url2/pos_image2 (photo du corps n°1), image_url3/pos_image3
-    # (photo du corps n°2) — replis sur les schémas anciens, normalisés à 10.
+    # v7.8.14 — MIGRATION PHOTOS (une fois par session) : 3 colonnes ajoutées à
+    # feuillet_sections — image_titre (photo de la BANDE du titre) + image_url2
+    # et pos_image2 (2e photo du corps). L'ancien schéma reste lisible.
+    if "fe_mig_7814" not in st.session_state:
+        st.session_state["fe_mig_7814"] = True
+        for _alt in ("ALTER TABLE feuillet_sections ADD COLUMN image_titre TEXT",
+                     "ALTER TABLE feuillet_sections ADD COLUMN image_url2 TEXT",
+                     "ALTER TABLE feuillet_sections ADD COLUMN pos_image2 TEXT"):
+            try:
+                c.execute(_alt)
+                commit_and_sync()
+            except Exception:
+                pass
+
+    # v7.8.14 — positions des photos du CORPS (la position « centrée » de
+    # v7.8.11 disparaît) + correspondance des anciennes valeurs stockées.
+    _POS_COINS = ("haut_droite", "haut_gauche", "bas_droite", "bas_gauche")
+    _POS_LEGACY = {"haut": "haut_gauche", "droite": "haut_droite", "gauche": "haut_gauche"}
+
+    def _pos_img_stockee(v):
+        _v = (str(v).strip() if v else "")
+        if _v in _POS_COINS:
+            return _v
+        return _POS_LEGACY.get(_v)
+
     try:
         _secs_fe = {r[0]: r for r in c.execute(
             """SELECT ordre, titre, contenu, lecteur, image_url, pos_image,
-                      image_url2, pos_image2, image_url3, pos_image3
-               FROM feuillet_sections
+                      image_titre, image_url2, pos_image2 FROM feuillet_sections
                WHERE annee_debut=? AND mois=?""", (_annee_fe, _mois_fe)).fetchall()}
     except Exception:
+        # replis : ancien schéma avec/sans pos_image (lignes complétées à 9 cases)
         try:
-            _secs_fe = {}
-            for _r in c.execute(
-                """SELECT ordre, titre, contenu, lecteur, image_url, pos_image
-                   FROM feuillet_sections
-                   WHERE annee_debut=? AND mois=?""", (_annee_fe, _mois_fe)).fetchall():
-                _secs_fe[_r[0]] = tuple(_r) + (None,) * 4
+            _secs_fe = {r[0]: r + (None, None, None) for r in c.execute(
+                """SELECT ordre, titre, contenu, lecteur, image_url, pos_image FROM feuillet_sections
+                   WHERE annee_debut=? AND mois=?""", (_annee_fe, _mois_fe)).fetchall()}
         except Exception:
-            _secs_fe = {}
+            try:
+                _secs_fe = {r[0]: r + (None, None, None, None) for r in c.execute(
+                    """SELECT ordre, titre, contenu, lecteur, image_url FROM feuillet_sections
+                       WHERE annee_debut=? AND mois=?""", (_annee_fe, _mois_fe)).fetchall()}
+            except Exception:
+                _secs_fe = {}
 
     # Selectbox sur la VALEUR STABLE (l'ordre, un entier). Le badge ✅/⬜ est
     # de l'affichage pur (format_func) : aucune extraction depuis un libellé.
@@ -1319,60 +1348,62 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
             default=_parser_lecteurs(_ex_fe[3]) if _ex_fe else [],
             format_func=lambda x: LIBELLES_LECTEURS.get(x, x),
             key=f"fe_lecteurs_{_ctx_fe}")
-        # v7.8.13 — DEUX CATÉGORIES DE PHOTOS (demande user) :
-        #   a) photo du TITRE : elle vit dans la BANDE d'en-tête, 1/4 à
-        #      l'extrême droite (le titre occupe les 3/4 gauches) ;
-        #   b) photos DU CORPS : 2 maximum, chacune en haut/bas ×
-        #      gauche/droite (~1/4 de la page, le texte habille).
-        # Fini la photo centrée au-dessus du texte (position jugée
-        # problématique) — l'image s'affiche TOUJOURS telle quelle
-        # (object-fit:contain, pas de rognage).
-        _pos_lbl_fe = {"haut-droite": "🡕 Haut droite — le texte habille à gauche",
-                       "haut-gauche": "🡖 Haut gauche — le texte habille à droite",
-                       "bas-droite": "🡘 Bas droite — le texte habille à gauche",
-                       "bas-gauche": "🡗 Bas gauche — le texte habille à droite"}
-        st.markdown("**🖼️ Photo du titre** (bande d'en-tête — 1/4 à droite)")
-        _img_fe = st.text_input("🔗 Lien d'image de la bande du titre (imgbb — facultatif)",
-                                value=(_ex_fe[4] or "") if _ex_fe and len(_ex_fe) > 4 else "",
+        # v7.8.14 — PHOTOS SELON LA NOUVELLE SPÉCIFICATION (remplace le choix
+        # « centrée / droite / gauche » de v7.8.11, jugé problématique) :
+        #  a. photo du TITRE — la page ouvre sur une BANDE : le titre occupe les
+        #     ¾ à gauche, la photo le quart restant à l'extrême droite ;
+        #  b. photos du CORPS — 2 maximum, chacune en haut gauche/droite ou bas
+        #     gauche/droite (~¼ de page), texte habillé, proportions d'origine.
+        st.caption("🖼️ **a. Photo du titre** : bande du titre — titre sur les ¾ à gauche, "
+                   "photo sur le quart droit (sans photo : emplacement pointillé 📷). "
+                   "**b. Photos du corps** : 2 maximum, en haut/bas à gauche/droite "
+                   "(~¼ de page, texte habillé, proportions conservées).")
+        _img_titre_fe = st.text_input(
+            "🖼️ Photo du TITRE — bande du titre (imgbb — facultatif)",
+            value=(_ex_fe[6] or "") if _ex_fe and len(_ex_fe) > 6 and _ex_fe[6] else "",
+            key=f"fe_imgtitre_{_ctx_fe}")
+        _img_fe = st.text_input("🔗 Photo du CORPS n°1 (imgbb — facultatif)",
+                                value=(_ex_fe[4] or "") if _ex_fe else "",
                                 key=f"fe_img_{_ctx_fe}")
-        st.markdown("**🖼️ Photos dans le corps du texte** (2 maximum — ~1/4 de page)")
-        _img2_fe = st.text_input("🔗 Photo du corps — n° 1 (imgbb — facultatif)",
-                                 value=(_ex_fe[6] or "") if _ex_fe and len(_ex_fe) > 6 else "",
-                                 key=f"fe_img2_{_ctx_fe}")
-        _pos_def2_fe = (_ex_fe[7] if _ex_fe and len(_ex_fe) > 7 and _ex_fe[7] in _pos_lbl_fe
-                        else "haut-droite")
-        _pos2_fe = st.selectbox(
-            "🡕 Position de la photo du corps n° 1",
-            list(_pos_lbl_fe), index=list(_pos_lbl_fe).index(_pos_def2_fe),
+        _pos_lbl_fe = {"haut_droite": "🡕 Haut droite",
+                       "haut_gauche": "🡖 Haut gauche",
+                       "bas_droite": "🡘 Bas droite",
+                       "bas_gauche": "🡗 Bas gauche"}
+        _pos_def_fe = _pos_img_stockee(_ex_fe[5]) if _ex_fe and len(_ex_fe) > 5 else None
+        _pos_img_fe = st.selectbox(
+            "↗️ Position de la photo du corps n°1",
+            list(_pos_lbl_fe),
+            index=(list(_pos_lbl_fe).index(_pos_def_fe) if _pos_def_fe in _POS_COINS else 0),
+            format_func=lambda x: _pos_lbl_fe[x], key=f"fe_pos_{_ctx_fe}")
+        _img2_fe = st.text_input(
+            "🔗 Photo du CORPS n°2 (facultatif — 2 maximum dans le texte)",
+            value=(_ex_fe[7] or "") if _ex_fe and len(_ex_fe) > 7 and _ex_fe[7] else "",
+            key=f"fe_img2_{_ctx_fe}")
+        _pos2_def_fe = _pos_img_stockee(_ex_fe[8]) if _ex_fe and len(_ex_fe) > 8 else None
+        _pos2_img_fe = st.selectbox(
+            "↘️ Position de la photo du corps n°2",
+            list(_pos_lbl_fe),
+            index=(list(_pos_lbl_fe).index(_pos2_def_fe) if _pos2_def_fe in _POS_COINS else 3),
             format_func=lambda x: _pos_lbl_fe[x], key=f"fe_pos2_{_ctx_fe}")
-        _img3_fe = st.text_input("🔗 Photo du corps — n° 2 (imgbb — facultatif)",
-                                 value=(_ex_fe[8] or "") if _ex_fe and len(_ex_fe) > 8 else "",
-                                 key=f"fe_img3_{_ctx_fe}")
-        _pos_def3_fe = (_ex_fe[9] if _ex_fe and len(_ex_fe) > 9 and _ex_fe[9] in _pos_lbl_fe
-                        else "haut-gauche")
-        _pos3_fe = st.selectbox(
-            "🡕 Position de la photo du corps n° 2",
-            list(_pos_lbl_fe), index=list(_pos_lbl_fe).index(_pos_def3_fe),
-            format_func=lambda x: _pos_lbl_fe[x], key=f"fe_pos3_{_ctx_fe}")
         if st.form_submit_button("💾 Enregistrer cette section", width="stretch"):
             _lecteur_st = (",".join(sorted(set(_lecteurs_sel), key=_ordre_canonique.index))
                            if _lecteurs_sel else None)
-            _vals_fe = (_titre_fe.strip(), _contenu_fe.strip(), _lecteur_st,
-                        _img_fe.strip() or None,
-                        _img2_fe.strip() or None, _pos2_fe,
-                        _img3_fe.strip() or None, _pos3_fe)
             if _ex_fe:
-                c.execute("""UPDATE feuillet_sections
-                             SET titre=?, contenu=?, lecteur=?, image_url=?,
-                                 image_url2=?, pos_image2=?, image_url3=?, pos_image3=?
+                c.execute("""UPDATE feuillet_sections SET titre=?, contenu=?, lecteur=?, image_url=?, pos_image=?,
+                             image_titre=?, image_url2=?, pos_image2=?
                              WHERE annee_debut=? AND mois=? AND ordre=?""",
-                          _vals_fe + (_annee_fe, _mois_fe, _ord_fe))
+                          (_titre_fe.strip(), _contenu_fe.strip(), _lecteur_st,
+                           _img_fe.strip() or None, _pos_img_fe,
+                           _img_titre_fe.strip() or None,
+                           _img2_fe.strip() or None, _pos2_img_fe,
+                           _annee_fe, _mois_fe, _ord_fe))
             else:
-                c.execute("""INSERT INTO feuillet_sections
-                             (annee_debut, mois, ordre, titre, contenu, lecteur,
-                              image_url, image_url2, pos_image2, image_url3, pos_image3)
+                c.execute("""INSERT INTO feuillet_sections (annee_debut, mois, ordre, titre, contenu, lecteur, image_url, pos_image, image_titre, image_url2, pos_image2)
                              VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                          (_annee_fe, _mois_fe, _ord_fe) + _vals_fe)
+                          (_annee_fe, _mois_fe, _ord_fe, _titre_fe.strip(), _contenu_fe.strip(),
+                           _lecteur_st, _img_fe.strip() or None, _pos_img_fe,
+                           _img_titre_fe.strip() or None,
+                           _img2_fe.strip() or None, _pos2_img_fe))
             commit_and_sync()
             st.success(f"Section « {_titre_fe.strip()} » enregistrée ! ✅")
 
@@ -1387,11 +1418,13 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
                    "besoin, puis enregistrez la section. ✅")
     if not _ex_fe:
         _prev_fe = None
+        # v7.8.14 — ordre de lecture stabilisé :
+        # 0 titre · 1 contenu · 2 lecteur · 3 image_url · 4 pos_image ·
+        # 5 image_titre · 6 image_url2 · 7 pos_image2 · 8 annee_debut · 9 mois
         try:
             _prev_fe = c.execute(
-                """SELECT titre, contenu, lecteur, image_url,
-                          image_url2, pos_image2, image_url3, pos_image3,
-                          annee_debut, mois
+                """SELECT titre, contenu, lecteur, image_url, pos_image,
+                          image_titre, image_url2, pos_image2, annee_debut, mois
                    FROM feuillet_sections
                    WHERE ordre=?
                      AND (annee_debut < ? OR (annee_debut = ? AND mois < ?))
@@ -1400,12 +1433,27 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
                 (_ord_fe, _annee_fe, _annee_fe, _mois_fe)).fetchone()
         except Exception:
             _prev_fe = None
+        if _prev_fe is None:
+            try:
+                _r7 = c.execute(
+                    """SELECT titre, contenu, lecteur, image_url, pos_image, annee_debut, mois
+                       FROM feuillet_sections
+                       WHERE ordre=?
+                         AND (annee_debut < ? OR (annee_debut = ? AND mois < ?))
+                         AND TRIM(COALESCE(contenu, '')) != ''
+                       ORDER BY annee_debut DESC, mois DESC LIMIT 1""",
+                    (_ord_fe, _annee_fe, _annee_fe, _mois_fe)).fetchone()
+            except Exception:
+                _r7 = None
+            if _r7:
+                _prev_fe = (_r7[0], _r7[1], _r7[2], _r7[3], _r7[4],
+                            None, None, None, _r7[5], _r7[6])
         if _prev_fe:
             # Année civile d'un mois pastoral : sept.-déc. (1-4) = année de
             # début ; janv.-août (5-12) = année de début + 1.
-            # v7.8.13 — indices CORRIGÉS (l'ancien [4] pointait pos_image au
-            # lieu de annee_debut : l'info affichait une année fausse).
-            _an_civ = _prev_fe[8] if (_prev_fe[9] or 0) <= 4 else (_prev_fe[8] or 0) + 1
+            # v7.8.14 — CORRECTION : l'année était lue à l'index de pos_image
+            # (4) au lieu de annee_debut — le rappel affichait n'importe quoi.
+            _an_civ = _prev_fe[8] if _prev_fe[9] <= 4 else _prev_fe[8] + 1
             st.info(f"♻️ « {_titres_fe[_ord_fe]} » a déjà été saisi pour "
                     f"{MOIS_NOMS[_prev_fe[9]-1]} {_an_civ} — les rubriques "
                     "invariables ne se saisissent qu'UNE fois.")
@@ -1415,24 +1463,28 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
                 _ex2 = c.execute("""SELECT id FROM feuillet_sections
                                     WHERE annee_debut=? AND mois=? AND ordre=?""",
                                  (_annee_fe, _mois_fe, _ord_fe)).fetchone()
-                _copie_fe = tuple(_prev_fe[:8])
                 if _ex2:
                     c.execute("""UPDATE feuillet_sections
-                                 SET titre=?, contenu=?, lecteur=?, image_url=?,
-                                     image_url2=?, pos_image2=?, image_url3=?, pos_image3=?
+                                 SET titre=?, contenu=?, lecteur=?, image_url=?, pos_image=?,
+                                     image_titre=?, image_url2=?, pos_image2=?
                                  WHERE annee_debut=? AND mois=? AND ordre=?""",
-                              _copie_fe + (_annee_fe, _mois_fe, _ord_fe))
+                              (_prev_fe[0], _prev_fe[1], _prev_fe[2], _prev_fe[3], _prev_fe[4],
+                               _prev_fe[5], _prev_fe[6], _prev_fe[7],
+                               _annee_fe, _mois_fe, _ord_fe))
                 else:
                     c.execute("""INSERT INTO feuillet_sections
-                                 (annee_debut, mois, ordre, titre, contenu, lecteur,
-                                  image_url, image_url2, pos_image2, image_url3, pos_image3)
-                                 VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                              (_annee_fe, _mois_fe, _ord_fe) + _copie_fe)
+                                 (annee_debut, mois, ordre, titre, contenu,
+                                  lecteur, image_url, pos_image,
+                                  image_titre, image_url2, pos_image2) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                              (_annee_fe, _mois_fe, _ord_fe, _prev_fe[0],
+                               _prev_fe[1], _prev_fe[2], _prev_fe[3], _prev_fe[4],
+                               _prev_fe[5], _prev_fe[6], _prev_fe[7]))
                 commit_and_sync()
                 # v7.8.10 — purge des clés CONTEXTUELLES du triplet courant :
                 # le rerun recrée les champs depuis la base (texte repris).
-                for _k in ("fe_titre", "fe_contenu", "fe_lecteurs",
-                           "fe_img", "fe_img2", "fe_img3", "fe_pos2", "fe_pos3"):
+                # v7.8.14 — les clés des nouvelles photos sont purgées aussi.
+                for _k in ("fe_titre", "fe_contenu", "fe_lecteurs", "fe_img",
+                           "fe_pos", "fe_imgtitre", "fe_img2", "fe_pos2"):
                     st.session_state.pop(f"{_k}_{_ctx_fe}", None)
                 st.session_state["fe_reprise_ok"] = True
                 st.rerun()
@@ -1647,10 +1699,63 @@ def gerer_feuillet_mensuel():
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     annee_debut INTEGER, mois INTEGER,
                     ordre INTEGER, titre TEXT, contenu TEXT,
-                    lecteur TEXT, image_url TEXT)""")
+                    lecteur TEXT, image_url TEXT,
+                    pos_image TEXT, image_titre TEXT,
+                    image_url2 TEXT, pos_image2 TEXT)""")
     commit_and_sync()
     themes = c.execute("SELECT id, annee_debut, texte_theme, mystere_principal, "
                        "actif, affiche_url FROM themes_pastoraux ORDER BY annee_debut DESC").fetchall()
     MOIS_NOMS = ["Septembre", "Octobre", "Novembre", "Décembre", "Janvier", "Février",
                  "Mars", "Avril", "Mai", "Juin", "Juillet", "Août"]
     _bloc_feuillet_diocese(themes, MOIS_NOMS)
+
+
+def injecter_icone_pwa(espace=False):
+    """v7.8.14 — FAVICON + PWA DYNAMIQUES : 📿 pour les Espaces de Prière
+    (?espace=… et page réponse membre ?e=…), 🔑 pour l'Administration (connexion
+    + rôles diocèse / paroisse / équipe / communication). L'icône Streamlit
+    disparaît des DEUX côtés : le favicon de l'onglet ET le manifeste
+    d'installation (icône de l'app posée sur l'écran d'accueil du téléphone)
+    sont remplacés par nos icônes servies depuis /app/static/. L'échange
+    📿 ↔ 🔑 suit automatiquement la partie ouverte, à chaque chargement."""
+    if espace:
+        _ico32, _ico180 = "/app/static/icon_espace_32.png", "/app/static/icon_espace_180.png"
+        _manif = "/app/static/manifest_espace.json"
+        _lib = "Rosaire — Espaces de prière"
+    else:
+        _ico32, _ico180 = "/app/static/icon_admin_32.png", "/app/static/icon_admin_180.png"
+        _manif = "/app/static/manifest_admin.json"
+        _lib = "Rosaire — Administration"
+    _js = """
+    <script>
+    (function(){
+      var d = null;
+      try { d = window.parent.document; } catch(e) { d = document; }
+      if (!d || !d.head) { return; }
+      var ICO32 = '%ICO32%', ICO180 = '%ICO180%', MANIF = '%MANIF%', LIB = '%LIB%';
+      function lien(rel, href, sizes){
+        var l = d.querySelector('link[rel="' + rel + '"]');
+        if (!l) { l = d.createElement('link'); l.rel = rel; d.head.appendChild(l); }
+        if (sizes) { l.setAttribute('sizes', sizes); } else { l.removeAttribute('sizes'); }
+        l.href = href;
+      }
+      lien('icon', ICO32, '32x32');
+      lien('shortcut icon', ICO32, '32x32');
+      lien('apple-touch-icon', ICO180, '180x180');
+      var m = d.querySelector('link[rel="manifest"]');
+      if (!m) { m = d.createElement('link'); m.rel = 'manifest'; d.head.appendChild(m); }
+      m.href = MANIF;
+      var t = d.querySelector('meta[name="theme-color"]');
+      if (!t) { t = d.createElement('meta'); t.name = 'theme-color'; d.head.appendChild(t); }
+      t.content = '#1A237E';
+      var at = d.querySelector('meta[name="apple-mobile-web-app-title"]');
+      if (!at) { at = d.createElement('meta'); at.name = 'apple-mobile-web-app-title'; d.head.appendChild(at); }
+      at.content = LIB;
+    })();
+    </script>
+    """.replace("%ICO32%", _ico32).replace("%ICO180%", _ico180).replace("%MANIF%", _manif).replace("%LIB%", _lib)
+    try:
+        from streamlit.components.v1 import html as _chtml
+        _chtml(_js, height=0)
+    except Exception:
+        pass
