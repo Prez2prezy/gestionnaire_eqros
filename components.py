@@ -1419,6 +1419,37 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
         st.caption("Sans image, une couverture élégante est générée automatiquement "
                    "(N° du feuillet, mois, thème de l'année). Pour personnaliser : "
                    "collez ici le lien de l'image de couverture du feuillet (imgbb).")
+        # v7.8.12 — le MOIS ciblé et son état de publication sont explicites :
+        # la couverture s'enregistre sur le mois resté dans le sélecteur
+        # (souvent le dernier PUBLIÉ) et la cellule la cherchait ensuite à
+        # l'alerte du mois suivant, non publié — d'où « l'alerte reste
+        # bloquée ». Rappel : l'alerte 🔔 annonce toujours le dernier mois
+        # PUBLIÉ par le diocèse (principe SAS).
+        st.caption("🖼️ Mois ciblé par cette couverture : **N° " + str(_mois_fe)
+                   + " · " + _mois_fe_lbl + " " + str(_annee_fe) + "**")
+        try:
+            _pub_cov = c.execute("""SELECT 1 FROM feuillets_publications
+                                    WHERE annee_debut=? AND mois=?""",
+                                 (_annee_fe, _mois_fe)).fetchone()
+        except Exception:
+            _pub_cov = None
+        if not _pub_cov:
+            _dern_cov = None
+            try:
+                _dern_cov = c.execute("""SELECT annee_debut, mois FROM feuillets_publications
+                                         ORDER BY annee_debut DESC, mois DESC LIMIT 1""").fetchone()
+            except Exception:
+                _dern_cov = None
+            _txt_dern_cov = ""
+            if _dern_cov:
+                _an_civ_d = _dern_cov[0] if _dern_cov[1] <= 4 else _dern_cov[0] + 1
+                _txt_dern_cov = (" — actuellement : N° " + str(_dern_cov[1]) + " · "
+                                 + MOIS_NOMS[_dern_cov[1] - 1] + " " + str(_an_civ_d))
+            st.warning("⚠️ Ce feuillet n'est **pas encore publié** : l'alerte 🔔 du fil "
+                       "d'actualité annonce toujours le dernier feuillet PUBLIÉ par le "
+                       "diocèse" + _txt_dern_cov + ". Après « 📨 Soumettre le feuillet au "
+                       "diocèse » puis validation, l'alerte passera automatiquement à ce "
+                       "mois — avec sa couverture.")
         st.text_input("🔗 Lien de la couverture (imgbb — facultatif)",
                       value=_cov_url, key=f"fe_cov_{_annee_fe}_{_mois_fe}")
         if st.button("💾 Enregistrer la couverture",
