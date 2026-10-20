@@ -314,17 +314,17 @@ def show_communication():
     afficher_messages_flash()  # v7.8.7 : le flash « soumis au diocèse » s'affiche enfin ici
     st.caption("📡 Tout contenu de ce canal est SOUMIS puis validé par le responsable diocésain avant publication. "
                "Les évènements avec Réponse de Communion passent exclusivement par l'agenda (canal des responsables d'équipe).")
-    onglets = st.tabs(["🙏 Prière / Méditation", "📺 Bandes défilantes", "🖼️ Affiches & Bandes-annonces",
-                       "🕯️ Thème pastoral", "🎵 Musique", "📔 Journal des publications"])
-    with onglets[0]:
-        _onglet_priere_meditation()
-    with onglets[1]:
-        _onglet_bandes()
-    with onglets[2]:
-        _onglet_actualites()
-    with onglets[3]:
-        _onglet_theme()
-    with onglets[4]:
-        _onglet_musique()
-    with onglets[5]:
-        _onglet_journal()
+    # v7.8.13 — CORRECTIF « ramène à l'onglet primaire » : st.tabs ne
+    # mémorise PAS l'onglet actif entre les reruns — chaque bouton
+    # (« 💾 Enregistrer la couverture », sélection d'une section ✅…)
+    # renvoyait l'utilisateur au 1er onglet. Remplacé par un radio
+    # horizontal PERSISTANT (clé de widget, même motif que la vue diocèse) :
+    # l'onglet choisi reste affiché après chaque action.
+    _ONGLETS_COMM = ["🙏 Prière / Méditation", "📺 Bandes défilantes",
+                     "🖼️ Affiches & Bandes-annonces", "🕯️ Thème pastoral",
+                     "🎵 Musique", "📔 Journal des publications"]
+    _choix_comm = st.radio("Onglets", _ONGLETS_COMM, horizontal=True,
+                           label_visibility="collapsed", key="radio_comm_onglet")
+    _handlers_comm = [_onglet_priere_meditation, _onglet_bandes, _onglet_actualites,
+                      _onglet_theme, _onglet_musique, _onglet_journal]
+    _handlers_comm[_ONGLETS_COMM.index(_choix_comm)]()
