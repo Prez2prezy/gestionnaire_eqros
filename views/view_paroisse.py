@@ -359,14 +359,18 @@ def show_paroisse():
         if not equipes:
             st.warning("Aucune équipe créée dans cette paroisse. Vous ne pouvez pas gérer le suivi.")
         else:
-            tab_avenir, tab_passe, tab_etat = st.tabs(["📅 Agenda", "📝 Vie de prière des équipes", "📊 Engagement spirituel"])
-            
-            with tab_avenir:
+            # v7.8.14 — SÉLECTEUR PERSISTANT (remplace st.tabs, qui ne garde
+            # aucune mémoire : chaque interaction ramenait à l'onglet primaire).
+            _onglets_par = ["📅 Agenda", "📝 Vie de prière des équipes", "📊 Engagement spirituel"]
+            _suivi_par = st.radio("Section du suivi", _onglets_par, key="par_suivi_onglet",
+                                  horizontal=True, label_visibility="collapsed")
+            st.markdown("---")
+            if _suivi_par == _onglets_par[0]:
                 ajouter_evenement_agenda(paroisse_id=pid, auteur_nom=st.session_state['username'])
                 st.markdown("---")
                 afficher_agenda_complet_universel(paroisse_id=pid)
 
-            with tab_passe:
+            elif _suivi_par == _onglets_par[1]:
                 st.markdown("### 📋 Faire le point des équipes")
                 eq_dict = {eq[1]: eq[0] for eq in equipes}
                 choix_eq = st.selectbox("Sélectionnez l'équipe à consulter", list(eq_dict.keys()), key="suivi_paroisse_eq")
@@ -376,8 +380,8 @@ def show_paroisse():
                 filtre_type = st.selectbox("Filtrer par type d'évènement", types_evenements, key="filtre_hist_par")
                 
                 afficher_historique_suivi(equipe_id=eid, filtre_type=filtre_type)
-                
-            with tab_etat:
+
+            else:
                 eq_dict2 = {eq[1]: eq[0] for eq in equipes}
                 choix_eq2 = st.selectbox("Sélectionnez l'équipe pour voir le bilan", list(eq_dict2.keys()), key="etat_paroisse_eq")
                 eid2 = eq_dict2[choix_eq2]
@@ -408,3 +412,4 @@ def show_paroisse():
                 with st.expander(f"{a[1]} {a[2]} ({a[0]}) – {afficher_situation(a[3])} – {duree} an(s) ({eq_nom})"):
                     st.write(f"Ajouté par : {a[8] or 'Inconnu'}")
                     if a[6]: st.write(f"Commentaire : {a[6]}")
+
