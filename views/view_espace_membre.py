@@ -88,7 +88,7 @@ except (ImportError, AttributeError):
         def _comp_html(body, height=None):
             return None
 from database import c, commit_and_sync
-from services import safe_date, compter_visite, lien_whatsapp
+from services import safe_date, compter_visite, lien_whatsapp, afficher_messages_flash
 from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
 
 
@@ -523,6 +523,42 @@ def _render_theme(compact=False):
         background:#FFFDE7; color:#8d6e08 !important; border-radius:10px;
         padding:12px 10px; text-align:center; font-size:0.9rem;
         margin:4px auto 14px auto; max-width:430px; }
+    /* === v7.8.13 — BANDE DE TITRE (demande 2a) : titre 3/4 à gauche,
+           photo de la rubrique 1/4 à l'extrême droite === */
+    .stApp .stMarkdown .carte-priere .fe-bande-titre { display:flex;
+        align-items:center; gap:10px; margin:0 0 14px 0; }
+    .stApp .stMarkdown .carte-priere .fe-bande-titre .fe-bande-txt {
+        flex:3 1 74%; min-width:0; text-align:center; }
+    .stApp .stMarkdown .carte-priere .fe-bande-titre .fe-bande-pho {
+        flex:1 1 25%; max-width:25%; min-width:0; }
+    .stApp .stMarkdown .carte-priere .fe-bande-titre .fe-photo-cadre {
+        margin:0; width:100%; padding:4px; }
+    .stApp .stMarkdown .carte-priere .fe-bande-titre .fe-photo-cadre .cp-photo {
+        width:100%; height:auto; max-height:150px; object-fit:contain; margin:0; }
+    .stApp .stMarkdown .carte-priere .fe-bande-titre .fe-cadre-vide {
+        padding:10px 6px; font-size:0.72rem; margin:0; max-width:none;
+        height:100%; display:flex; align-items:center; justify-content:center; }
+    /* === v7.8.13 — PHOTOS DU CORPS (demande 2b) : haut/bas × gauche/droite,
+           ~1/4 de la page, 2 maximum === */
+    .stApp .stMarkdown .carte-priere .fe-flot { background:#ffffff;
+        border:1px solid #C9A227; box-shadow:0 3px 10px rgba(0,0,0,.30);
+        border-radius:8px; padding:4px; }
+    .stApp .stMarkdown .carte-priere .fe-flot .cp-photo {
+        width:100%; height:auto; object-fit:contain; margin:0; }
+    .stApp .stMarkdown .carte-priere .fe-flot-hd { float:right;
+        width:27%; max-width:230px; margin:2px 0 10px 14px; }
+    .stApp .stMarkdown .carte-priere .fe-flot-hg { float:left;
+        width:27%; max-width:230px; margin:2px 14px 10px 0; }
+    .stApp .stMarkdown .carte-priere .fe-flot-bd { float:right;
+        width:27%; max-width:230px; margin:8px 0 2px 14px; }
+    .stApp .stMarkdown .carte-priere .fe-flot-bg { float:left;
+        width:27%; max-width:230px; margin:8px 14px 2px 0; }
+    @media (max-width:640px) {
+        .stApp .stMarkdown .carte-priere .fe-flot-hd,
+        .stApp .stMarkdown .carte-priere .fe-flot-bd { margin-left:10px; }
+        .stApp .stMarkdown .carte-priere .fe-flot-hg,
+        .stApp .stMarkdown .carte-priere .fe-flot-bg { margin-right:10px; }
+    }
     @media (max-width:640px) {
         .stApp .stMarkdown .carte-priere .fe-photo-droite,
         .stApp .stMarkdown .carte-priere .fe-photo-gauche { float:none !important;
@@ -890,20 +926,34 @@ MOIS_PASTORAL_NOMS = ["septembre", "octobre", "novembre", "décembre", "janvier"
 def _feuillet_sections(annee_debut, mois_pastoral):
     """Sections du feuillet ayant un contenu, triées par ordre (blindé).
     v7.8.11 — 6e colonne (index 5) = pos_image : position de la photo dans
-    la page du livret (« haut » / « droite » / « gauche », NULL = haut)."""
+    la page du livret. v7.8.13 — 10 colonnes : image_url = photo de la BANDE
+    de titre ; image_url2/pos_image2 (index 6/7) et image_url3/pos_image3
+    (index 8/9) = photos DU CORPS (haut-/bas- × gauche/droite), 2 maximum."""
+    _COLS = 10
     try:
-        rows = c.execute("""SELECT ordre, titre, contenu, lecteur, image_url, pos_image
+        rows = c.execute("""SELECT ordre, titre, contenu, lecteur, image_url, pos_image,
+                                   image_url2, pos_image2, image_url3, pos_image3
                             FROM feuillet_sections
                             WHERE annee_debut=? AND mois=? ORDER BY ordre""",
                          (annee_debut, mois_pastoral)).fetchall()
     except Exception:
         try:
-            rows = c.execute("""SELECT ordre, titre, contenu, lecteur, image_url, NULL
-                                FROM feuillet_sections
-                                WHERE annee_debut=? AND mois=? ORDER BY ordre""",
-                             (annee_debut, mois_pastoral)).fetchall()
+            rows = []
+            for _r in c.execute("""SELECT ordre, titre, contenu, lecteur, image_url, pos_image
+                                   FROM feuillet_sections
+                                   WHERE annee_debut=? AND mois=? ORDER BY ordre""",
+                                (annee_debut, mois_pastoral)).fetchall():
+                rows.append(tuple(_r) + (None,) * (_COLS - len(_r)))
         except Exception:
-            return []
+            try:
+                rows = []
+                for _r in c.execute("""SELECT ordre, titre, contenu, lecteur, image_url
+                                       FROM feuillet_sections
+                                       WHERE annee_debut=? AND mois=? ORDER BY ordre""",
+                                    (annee_debut, mois_pastoral)).fetchall():
+                    rows.append(tuple(_r) + (None,) * (_COLS - len(_r)))
+            except Exception:
+                return []
     return [s for s in rows if s[2]]
 
 
@@ -946,10 +996,13 @@ def _couverture_feuillet_html(annee_debut, mois_pastoral, compact=False,
         else ("20px 18px 8px", "6px 18px 24px", "2.4rem", 46))
     _img_html = ""
     if _img:
+        # v7.8.13 — image affichée TELLE QUELLE (fini le rognage
+        # object-fit:cover) : proportions d'origine conservées (contain),
+        # la couverture scannée se montre en entier.
         _img_html = (
             '<img src="' + html.escape(str(_img)) + '" alt="" '
-            'style="width:calc(100% - ' + str(_wimg) + 'px); max-height:280px; '
-            'object-fit:cover; border-radius:10px; '
+            'style="max-width:calc(100% - ' + str(_wimg) + 'px); max-height:420px; '
+            'width:auto; height:auto; object-fit:contain; border-radius:10px; '
             'border:1px solid rgba(255,215,0,.55); display:block; margin:12px auto 0; '
             'box-shadow:0 4px 14px rgba(0,0,0,.35);">')
     _haut_html = ""
@@ -1125,6 +1178,26 @@ def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"
                       + " · Mois de " + MOIS_PASTORAL_NOMS[mois_pastoral - 1] + " "
                       + str(_annee_civile_feuillet(annee_debut, mois_pastoral)))
 
+    # ---------- v7.8.13 — A− / A+ : TRÈS petits boutons de taille du texte
+    # (en haut du livret, sommaire et pages), mémorisés pour la session ----------
+    if "fe_zoom" not in st.session_state:
+        st.session_state["fe_zoom"] = 1.0
+    _zm = st.session_state["fe_zoom"]
+    if abs(_zm - 1.0) > 0.01:
+        st.markdown('<style>.stApp .stMarkdown .carte-priere { zoom:' + str(_zm)
+                    + "; }</style>", unsafe_allow_html=True)
+    _cz1, _cz2, _cz3 = st.columns([4, 1, 1])
+    with _cz1:
+        st.caption("🔍 " + str(int(round(_zm * 100))) + " %")
+    with _cz2:
+        if st.button("A−", key=pfx + "_zoom_moins", disabled=(_zm <= 0.9)):
+            st.session_state["fe_zoom"] = max(0.9, round(_zm - 0.1, 2))
+            st.rerun()
+    with _cz3:
+        if st.button("A+", key=pfx + "_zoom_plus", disabled=(_zm >= 1.5)):
+            st.session_state["fe_zoom"] = min(1.5, round(_zm + 0.1, 2))
+            st.rerun()
+
     # ---------- SOMMAIRE (page -1) ----------
     if idx < 0:
         # v7.8.10 — la COUVERTURE du livret ouvre la lecture, avant le
@@ -1152,10 +1225,13 @@ def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"
         return
 
     # ---------- UNE PAGE = UNE SECTION ----------
-    _ligne = list(sections[idx]) + [None] * 6
+    _ligne = list(sections[idx])
+    _ligne += [None] * max(0, 10 - len(_ligne))
     ordre, titre, contenu = _ligne[0], _ligne[1], _ligne[2]
     image_url = _ligne[4]
-    pos_image = _ligne[5] if len(_ligne) > 5 else None
+    pos_image = _ligne[5]
+    img_url2, pos_img2 = _ligne[6], _ligne[7]
+    img_url3, pos_img3 = _ligne[8], _ligne[9]
     _titre_page = titre or ("Section " + str(ordre))
 
     if autonome:
@@ -1163,33 +1239,42 @@ def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"
         st.markdown('<div class="flt-barre"><div class="flt-barre-titre">📖 '
                     + html.escape(_titre_page) + "</div></div>", unsafe_allow_html=True)
 
-    # v7.8.11 — CADRE PHOTO sous le titre (demandes n°3 et 4f) : image
-    # encadrée (façon photo papier) ou emplacement pointillé si la section
-    # n'a pas d'image ; POSITION au choix (haut centrée / droite / gauche
-    # avec habillage du texte — demande n°3).
-    _pos_prefixe, _img_url = _parser_pos_photo(image_url)
-    _img_valide = bool(_img_url and str(_img_url).startswith("http"))
-    if _img_valide and pos_image in ("droite", "gauche"):
-        _flottant = pos_image
-    elif _img_valide:
-        _flottant = _pos_prefixe
+    # v7.8.13 — BANDE DE TITRE (demande 2a) : le titre occupe les 3/4 à
+    # gauche, la photo de la rubrique le 1/4 à l'extrême droite. Sans photo,
+    # l'emplacement pointillé « 📷 Photo de la rubrique » tient la place.
+    _pos_prefixe, _img_titre = _parser_pos_photo(image_url)
+    if pos_image in ("droite", "gauche") and not img_url2:
+        # compat v7.8.11 : une photo anciennement positionnée « dans le
+        # texte » devient la 1re photo du corps (haut gauche/droite) ; la
+        # bande de titre garde son emplacement pointillé.
+        img_url2, pos_img2 = image_url, ("haut-" + pos_image)
+        _pos_prefixe, _img_titre = None, None
+    _img_titre_val = bool(_img_titre and str(_img_titre).startswith("http"))
+    if _img_titre_val:
+        _bande_phot = ('<div class="fe-bande-pho"><div class="fe-photo-cadre">'
+                       + '<img src="' + html.escape(str(_img_titre))
+                       + '" alt="" class="cp-photo"></div></div>')
     else:
-        _flottant = None
-    if _img_valide:
-        _classe_fl = (" fe-photo-" + _flottant) if _flottant in ("droite", "gauche") else ""
-        _cadre_photo = ('<div class="fe-photo-cadre' + _classe_fl + '">'
-                        + '<img src="' + html.escape(str(_img_url)) + '" alt="" class="cp-photo"></div>')
-    else:
-        _cadre_photo = '<div class="fe-cadre-vide">📷 Photo de la rubrique</div>'
-        _flottant = None
-    _page_html = ('<div class="cp-titre fe-titre-rubrique" style="text-align:center;">'
-                  + html.escape(_titre_page) + "</div>")
+        _bande_phot = ('<div class="fe-bande-pho">'
+                       + '<div class="fe-cadre-vide">📷 Photo de la rubrique</div></div>')
+    _page_html = ('<div class="fe-bande-titre">'
+                  + '<div class="fe-bande-txt"><div class="cp-titre fe-titre-rubrique" '
+                  'style="text-align:center;">' + html.escape(_titre_page)
+                  + "</div></div>" + _bande_phot + "</div>")
+
+    # v7.8.13 — PHOTOS DU CORPS (demande 2b) : 2 maximum, chacune positionnée
+    # haut/bas × gauche/droite (~1/4 de la page), texte habillé autour.
+    _flot_h, _flot_b = "", ""
+    for _u2, _p2 in ((img_url2, pos_img2), (img_url3, pos_img3)):
+        _r = _flot_html(_u2, _p2)
+        if _r:
+            if _r[0] == "bas":
+                _flot_b += _r[1]
+            else:
+                _flot_h += _r[1]
     _corps_fe = _mise_en_page_feuillet(titre, contenu)
-    if _flottant in ("droite", "gauche"):
-        _page_html += ('<div class="fe-corps">' + _cadre_photo + _corps_fe
-                       + '<div style="clear:both;"></div></div>')
-    else:
-        _page_html += _cadre_photo + _corps_fe
+    _page_html += ('<div class="fe-corps">' + _flot_h + _corps_fe + _flot_b
+                   + '<div style="clear:both;"></div></div>')
     st.markdown(_carte_priere(_trait_debut_page() + _page_html), unsafe_allow_html=True)
     _scroll_top(f"{pfx}{idx}")
 
@@ -1481,6 +1566,28 @@ def _parser_pos_photo(url):
     if _low.startswith("[gauche]"):
         return "gauche", _u[8:].strip()
     return None, _u
+
+
+def _flot_html(url, pos):
+    """v7.8.13 — HTML d'une photo DU CORPS du feuillet, flottante.
+    pos ∈ {haut-droite, haut-gauche, bas-droite, bas-gauche} (compat :
+    droite/gauche → haut ; haut/au-dessus → haut-droite) ; le préfixe
+    [droite]/[gauche] du lien sert de valeur de repli. Retourne le couple
+    (zone, html) avec zone ∈ {'haut','bas'}, ou None si l'URL est
+    inexploitable — l'image garde ses PROPORTIONS (object-fit:contain)."""
+    if not url:
+        return None
+    _pfx, _u = _parser_pos_photo(url)
+    if not _u or not str(_u).startswith("http"):
+        return None
+    _pos = str(pos or _pfx or "haut-droite").strip().lower()
+    _cls = {"haut-droite": "hd", "droite": "hd", "haut": "hd",
+            "au-dessus": "hd", "haut-gauche": "hg", "gauche": "hg",
+            "bas-droite": "bd", "bas-gauche": "bg"}.get(_pos, "hd")
+    _zone = "bas" if _cls in ("bd", "bg") else "haut"
+    _h = ('<div class="fe-flot fe-flot-' + _cls + '">'
+          + '<img src="' + html.escape(str(_u)) + '" alt="" class="cp-photo"></div>')
+    return _zone, _h
 
 
 def _mise_en_page_feuillet(titre, contenu):
@@ -2901,6 +3008,54 @@ def _alerte_feuillet_fil(lien_theme=None):
         st.rerun()
 
 
+def _render_intentions_equipes(pid=None):
+    """🙏 Vos intentions à une équipe (v7.8.13) — le visiteur / le membre
+    confie une intention de prière DIRECTEMENT au responsable de l'équipe de
+    son choix, sans remonter au diocèse (circuit court). L'équipe la porte
+    dans la dizaine du jour, environ un mois, en toute discrétion — le
+    principe de la chaîne : « être une tombe » sur les intentions reçues.
+    Réception : espace Gestionnaire → « 🙏 Intentions » (view_equipe.py)."""
+    if not pid:
+        return  # aucun contexte paroissial → pas d'équipes ciblables
+    try:
+        _eqs = c.execute("""SELECT id, nom_equipe FROM equipes
+                            WHERE paroisse_id=? ORDER BY nom_equipe""",
+                         (pid,)).fetchall()
+    except Exception:
+        return
+    if not _eqs:
+        return
+    with st.expander("🙏 Vos intentions à une équipe"):
+        st.caption("Confiez une intention de prière au responsable de l'équipe de votre "
+                   "choix : son équipe la portera dans la dizaine du jour, environ un mois. "
+                   "En toute discrétion — le principe de la chaîne : « être une tombe » sur "
+                   "les intentions reçues.")
+        _eq_choisie = st.selectbox("Équipe destinataire", _eqs,
+                                   format_func=lambda e: e[1],
+                                   key="intention_equipe_select")
+        _auteur = st.text_input("Votre prénom et nom (facultatif — anonyme sinon)",
+                                key="intention_auteur")
+        _txt = st.text_area("🕊️ Votre intention de prière", height=110,
+                            key="intention_texte",
+                            placeholder="Ex. : pour la santé de mon père, pour mon travail…")
+        if st.button("🕊️ Confier cette intention à l'équipe",
+                     key="intention_envoyer", type="primary", width="stretch"):
+            if not (_txt or "").strip():
+                st.error("Écrivez d'abord votre intention de prière.")
+            else:
+                c.execute("""INSERT INTO intentions_equipes
+                             (equipe_id, paroisse_id, auteur_nom, texte, statut, date_soumission)
+                             VALUES (?,?,?,?, 'recue', ?)""",
+                          (_eq_choisie[0], pid, (_auteur or "").strip() or None,
+                           _txt.strip(), date.today().isoformat()))
+                commit_and_sync()
+                st.session_state["flash_success"] = (
+                    f"🙏 Votre intention a été confiée à l'équipe « {_eq_choisie[1]} ». "
+                    "Son responsable l'a reçue : elle sera portée en prière dans la "
+                    "dizaine du jour. Que Dieu vous bénisse !")
+                st.rerun()
+
+
 def _render_fil_actualites(pid=None, lien_theme=None):
     """v7.6 — fil du jour BLINDÉ : la ligne est complétée à 5 cases avant
     tout accès par index. LOT C5 : dernière publication VISIBLE du contexte.
@@ -2949,6 +3104,9 @@ def _render_fil_actualites(pid=None, lien_theme=None):
         st.info("Aucun contenu spirituel n'a encore été publié.")
 
     _render_coin_affiche(pid)
+    # v7.8.13 — « 🙏 Vos intentions à une équipe » JUSTE AVANT « 📰 Actualités
+    # de la Paroisse » (demande user) : circuit court, écrit au responsable.
+    _render_intentions_equipes(pid)
     _render_actualites_paroisse(pid)
 
 
@@ -3027,6 +3185,9 @@ def show_espace_membre(matloc_membre=None):
     # v7.8 — lien profond « Ouvrir le livret » (?flt=1&fa=&fm=) AVANT tout
     # affichage : il positionne la session et force un rerun propre.
     _traiter_lien_profond_livret()
+    # v7.8.13 — le flash (ex. « 🙏 votre intention a été confiée… ») s'affiche
+    # aussi dans l'Espace de Prière (mécanisme commun afficher_messages_flash).
+    afficher_messages_flash()
     livre_ouvert = (st.session_state.get("diz_ouvert", False)
                     or st.session_state.get("flt_ouvert", False))
 
@@ -3318,4 +3479,3 @@ def show_espace_membre(matloc_membre=None):
                          + (f"&p={pid_m}" if pid_m else "") + "&nav=1&r=1")
         _render_fil_actualites(pid=pid_m, lien_theme=_lien_theme_m)
         _render_actualites(pid=pid_m)
-
