@@ -54,6 +54,40 @@ def _nom_paroisse(pid):
     return r[0] if r else None
 
 
+def _deja_publie(s):
+    """v7.9.0 — cette soumission a-t-elle DÉJÀ été publiée ? Détecte les
+    soumissions restées « attente » alors que leur contenu a déjà rejoint
+    les tables publiques (clic double, commit Hrana perdu, publication
+    programmée...). Retourne (booléen, libellé de la table cible)."""
+    try:
+        _t, _titre = s[1], (s[2] or "").strip()
+        if _t in ("priere", "meditation", "audio", "annonce_defilante", "actualite"):
+            _ex = c.execute("""SELECT 1 FROM espace_spirituel
+                               WHERE type_contenu=? AND TRIM(COALESCE(titre,''))=?
+                               LIMIT 1""", (_t, _titre)).fetchone()
+            return (bool(_ex), "Espace de Prière")
+        if _t == "evenement":
+            _ex = c.execute("""SELECT 1 FROM evenements
+                               WHERE TRIM(COALESCE(type_evenement,''))=?
+                                 AND COALESCE(date_evenement,'')=?
+                               LIMIT 1""", (_titre, s[7] or "")).fetchone()
+            return (bool(_ex), "Agenda des évènements")
+        if _t == "theme_pastoral":
+            _ex = c.execute("""SELECT 1 FROM themes_pastoraux
+                               WHERE TRIM(COALESCE(texte_theme,''))=? LIMIT 1""",
+                            ((s[3] or "").strip(),)).fetchone()
+            return (bool(_ex), "Thème pastoral")
+        if _t == "feuillet":
+            _an, _mois = int(s[7] or 0), int(s[8] or 0)
+            _ex = c.execute("""SELECT 1 FROM feuillets_publications
+                               WHERE annee_debut=? AND mois=? LIMIT 1""",
+                            (_an, _mois)).fetchone()
+            return (bool(_ex), "Feuillet mensuel")
+    except Exception:
+        return (False, "")
+    return (False, "")
+
+
 def _notifier(soumission, action):
     try:
         if action == "publie":
@@ -79,10 +113,21 @@ def show_validation_communication():
                               FROM soumissions_comm WHERE statut='attente'
                               ORDER BY id ASC""").fetchall()
 
-    st.markdown(f"### 🟡 En attente de validation ({len(en_attente)})")
-    if not en_attente:
+    # v7.9.0 — Séparation des VRAIES nouveautés et des soumissions dont le
+    # contenu a DÉJÀ été publié (elles n'ont jamais dû rester ici) : le
+    # compteur redevient exact et rien n'est republié en doublon.
+    _doublons = [s for s in en_attente if _deja_publie(s)[0]]
+    _vrais = [s for s in en_attente if not _deja_publie(s)[0]]
+
+    if _doublons:
+        st.warning("🧹 " + str(len(_doublons)) + " soumission(s) « en attente » ont en réalité "
+                   "DÉJÀ ÉTÉ PUBLIÉES (clic double ou micro-coupure au moment de la validation). "
+                   "Elles n'attendent que d'être rangées — republier créerait un doublon.")
+
+    st.markdown(f"### 🟡 En attente de validation ({len(_vrais)})")
+    if not _vrais:
         st.info("Aucune soumission en attente. La cellule n'a rien préparé pour l'instant.")
-    for s in en_attente:
+    for s in _vrais:
         libelle = LIBELLES.get(s[1], s[1])
         with st.expander(f"{libelle} — {s[2] or '(sans titre)'} ({s[9]})"):
             if s[3]:
@@ -278,8 +323,17 @@ def show_validation_communication():
                                   (s[2], s[7], s[8], s[4], s[6], "Service Communication",
                                    s[10] if len(s) > 10 else None))
                     if _ok:
-                        c.execute("UPDATE soumissions_comm SET statut='publie' WHERE id=?", (s[0],))
+                        _cur = c.execute("UPDATE soumissions_comm SET statut='publie' WHERE id=?", (s[0],))
                         commit_and_sync()
+                        # v7.9.0 — preuve du rangement : si la mise à jour
+                        # n'a touché AUCUNE ligne (micro-coupure Turso), on
+                        # le DIT au lieu d'afficher un succès mensonger.
+                        if (_cur.rowcount or 0) == 0:
+                            st.error("⚠️ La publication a réussi mais le rangement de la "
+                                     "soumission n'a pas pu être enregistré : elle "
+                                     "réapparaîtra ci-dessous comme « déjà publiée ». "
+                                     "Utilisez alors « ✅ Marquer comme publié ».")
+                            st.stop()
                         _notifier(s, "publie")
                         st.session_state["flash_success"] = "Contenu publié ! La communauté en profite dès maintenant. ✅"
                         st.rerun()
@@ -305,6 +359,26 @@ def show_validation_communication():
                         st.rerun()
 
     st.markdown("---")
+    # ---------- v7.9.0 : DÉJÀ PUBLIÉS — À RANGER ----------
+    if _doublons:
+        st.markdown(f"### 🧹 Déjà publiés — à ranger ({len(_doublons)})")
+        st.caption("Ces contenus figurent déjà dans l'Espace de Prière (ou l'agenda). "
+                   "Aucun danger à les marquer : RIEN n'est republié, seule la liste "
+                   "d'attente est nettoyée.")
+        for s in _doublons:
+            _tbl = _deja_publie(s)[1]
+            libelle = LIBELLES.get(s[1], s[1])
+            with st.expander(f"✅ {libelle} — {s[2] or '(sans titre)'} ({s[9]}) — déjà dans {_tbl}"):
+                if s[3]:
+                    st.markdown("**Texte :**")
+                    st.markdown(s[3])
+                if st.button("✅ Marquer comme publié (sans republier)", key=f"mark_{s[0]}",
+                             type="primary", use_container_width=True):
+                    c.execute("UPDATE soumissions_comm SET statut='publie' WHERE id=?", (s[0],))
+                    commit_and_sync()
+                    st.session_state["flash_success"] = "Rangé ! La file d'attente est exacte à nouveau. 🧹"
+                    st.rerun()
+        st.markdown("---")
     # ---------- v7.8.8 : PUBLICATIONS PROGRAMMÉES ----------
     _programmees = []
     try:
