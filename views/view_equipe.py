@@ -14,7 +14,10 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
 def _assurer_table_intentions_eq():
     """v7.8.14 — création douce de la table des intentions confiées aux équipes
     (statut : 'recue' → 'en_priere' → 'archivee').
-    v7.8.15 — colonne auteur_contact (WhatsApp / adresse mail du fidèle)."""
+    v7.8.15 — colonne auteur_contact (WhatsApp / adresse mail du fidèle).
+    v7.8.16 — migration douce de TOUTES les colonnes récentes (bases distantes
+    créées par une version antérieure : Turso / Streamlit Cloud — correctif de
+    « table intentions_equipes has no column named anonyme »)."""
     try:
         c.execute("""CREATE TABLE IF NOT EXISTS intentions_equipes (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,10 +29,11 @@ def _assurer_table_intentions_eq():
                         statut TEXT DEFAULT 'recue',
                         date_soumission TEXT,
                         date_statut TEXT)""")
-        try:
-            c.execute("ALTER TABLE intentions_equipes ADD COLUMN auteur_contact TEXT")
-        except Exception:
-            pass  # colonne déjà présente
+        for _col in ("auteur_contact TEXT", "anonyme INTEGER DEFAULT 0"):
+            try:
+                c.execute("ALTER TABLE intentions_equipes ADD COLUMN " + _col)
+            except Exception:
+                pass  # colonne déjà présente
         commit_and_sync()
     except Exception:
         pass
@@ -508,3 +512,4 @@ def show_equipe():
                             else: st.info("Un transféré ou un défunt ne peut pas être réintégré.")
         else: 
             st.info("Aucune archive.")
+
