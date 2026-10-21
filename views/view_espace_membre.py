@@ -75,18 +75,10 @@ from datetime import date
 # hauteur minimale de 1 px (les scripts y exécutent bien
 # window.parent.document) ; repli components.html sur les anciennes
 # versions de Streamlit dépourvues de st.iframe.
-try:
-    from streamlit import iframe as _st_iframe
-
-    def _comp_html(body, height=None):
-        _h = height if isinstance(height, int) and height > 0 else 1
-        return _st_iframe(body, height=_h)
-except (ImportError, AttributeError):
-    try:
-        from streamlit.components.v1 import html as _comp_html
-    except ImportError:
-        def _comp_html(body, height=None):
-            return None
+# v7.8.16 — ce mécanisme est CENTRALISÉ dans stcompat.py (même code pour
+# app.py, components.py et cette vue) : les avertissements « Please replace
+# st.components.v1.html with st.iframe » disparaissent des journaux Cloud.
+from stcompat import comp_html as _comp_html
 from database import c, commit_and_sync
 from services import safe_date, compter_visite, lien_whatsapp
 from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
@@ -2301,7 +2293,13 @@ def _render_mini_lecteur(pid=None):
     ⚠️ L'iframe se repositionne LUI-MÊME en position fixe dans la page
     parente via window.frameElement (même origine — motif _mesure_entete).
     Ne rend RIEN (iframe escamotée) sans lecture récente."""
-    pistes, _yt = _pistes_du_contexte(pid)
+    # v7.8.16 — barre décorative : une micro-coupure vers la base (Turso,
+    # « connection closed », http error…) escamote simplement la barre au lieu
+    # de faire planter toute la page de l'Espace de Prière.
+    try:
+        pistes, _yt = _pistes_du_contexte(pid)
+    except Exception:
+        return
     if not pistes:
         return
     pistes_json = json.dumps(pistes).replace("</", "<\\/")
@@ -3025,7 +3023,12 @@ def _alerte_feuillet_fil(lien_theme=None):
 def _assurer_table_intentions():
     """v7.8.14 — table des intentions confiées aux équipes (création douce).
     statut : 'recue' → 'en_priere' → 'archivee' (côté responsable d'équipe).
-    v7.8.15 — colonne auteur_contact (WhatsApp / adresse mail du fidèle)."""
+    v7.8.15 — colonne auteur_contact (WhatsApp / adresse mail du fidèle).
+    v7.8.16 — migration douce de TOUTES les colonnes récentes : sur les bases
+    distantes créées par une version antérieure (Turso / Streamlit Cloud),
+    la table existe sans elles — l'ALTER idempotent répare la structure sans
+    toucher aux données (correctif de « table intentions_equipes has no
+    column named anonyme »)."""
     try:
         c.execute("""CREATE TABLE IF NOT EXISTS intentions_equipes (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3037,10 +3040,11 @@ def _assurer_table_intentions():
                         statut TEXT DEFAULT 'recue',
                         date_soumission TEXT,
                         date_statut TEXT)""")
-        try:
-            c.execute("ALTER TABLE intentions_equipes ADD COLUMN auteur_contact TEXT")
-        except Exception:
-            pass  # colonne déjà présente
+        for _col in ("auteur_contact TEXT", "anonyme INTEGER DEFAULT 0"):
+            try:
+                c.execute("ALTER TABLE intentions_equipes ADD COLUMN " + _col)
+            except Exception:
+                pass  # colonne déjà présente
         commit_and_sync()
     except Exception:
         pass
@@ -3186,27 +3190,39 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                     _eq = equipes[_i]
                     _auteur = None if _anon else (
                         (_nom or "").strip() or "Visiteur de l’Espace de Prière")
-                    c.execute("""INSERT INTO intentions_equipes
-                                 (equipe_id, texte, auteur_nom, auteur_contact, anonyme,
-                                  statut, date_soumission)
-                                 VALUES (?, ?, ?, ?, ?, 'recue', ?)""",
-                              (_eq[0], _txt.strip(), _auteur, (_contact or "").strip(),
-                               1 if _anon else 0, date.today().isoformat()))
-                    commit_and_sync()
-                    st.session_state["int_gen"] = _gen + 1  # champs renaissent vides
-                    for _b in ("int_nom", "int_contact", "int_txt", "int_anon", "int_rgpd"):
-                        st.session_state.pop(_b + "_" + str(_gen), None)
-                    st.session_state["flash_success"] = (
-                        "🙏 Votre intention a été confiée à l’équipe « " + str(_eq[1])
-                        + " ». Elle arrive directement au responsable — elle sera portée "
-                        "en prière, en toute confidentialité.")
-                    st.rerun()
+                    # v7.8.16 — envoi blindé : une micro-coupure vers la base
+                    # (Turso) affiche un message doux et CONSERVE la saisie au
+                    # lieu de faire planter toute la page ; le fidèle peut
+                    # réessayer d'un clic sans rien retaper.
+                    _err_envoi = False
+                    try:
+                        c.execute("""INSERT INTO intentions_equipes
+                                     (equipe_id, texte, auteur_nom, auteur_contact, anonyme,
+                                      statut, date_soumission)
+                                     VALUES (?, ?, ?, ?, ?, 'recue', ?)""",
+                                  (_eq[0], _txt.strip(), _auteur, (_contact or "").strip(),
+                                   1 if _anon else 0, date.today().isoformat()))
+                        commit_and_sync()
+                    except Exception:
+                        _err_envoi = True
+                        st.error("⚠️ L’envoi n’a pas pu aboutir (connexion instable "
+                                 "vers la base de données). Merci de réessayer dans "
+                                 "quelques instants — votre saisie est conservée.")
+                    if not _err_envoi:
+                        st.session_state["int_gen"] = _gen + 1  # champs renaissent vides
+                        for _b in ("int_nom", "int_contact", "int_txt", "int_anon", "int_rgpd"):
+                            st.session_state.pop(_b + "_" + str(_gen), None)
+                        st.session_state["flash_success"] = (
+                            "🙏 Votre intention a été confiée à l’équipe « " + str(_eq[1])
+                            + " ». Elle arrive directement au responsable — elle sera portée "
+                            "en prière, en toute confidentialité.")
+                        st.rerun()
         # ── Mini-script (dernier élément du cadre, remonte au container bordé)
         # : pose le cadre doré + la classe .int-cadre-or (CSS ci-dessus). Comme
         # injecter_icone_pwa : tourne à chaque rerun, iframe invisible.
+        # v7.8.16 — via stcompat (st.iframe) : height=0 est borné à 1 px.
         try:
-            from streamlit.components.v1 import html as _chtml_int
-            _chtml_int(
+            _comp_html(
                 "<script>(function(){"
                 "var d=window.parent.document;"
                 "var m=d.getElementById('int-or-marker'); if(!m) return;"
@@ -3651,3 +3667,4 @@ def show_espace_membre(matloc_membre=None):
                                auteur_nom=((membre[1] or "") + " " + (membre[2] or "")).strip(),
                                intentions=False)  # v7.8.15 : retiré côté Membre
         _render_actualites(pid=pid_m)
+
