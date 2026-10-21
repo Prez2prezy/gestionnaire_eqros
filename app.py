@@ -1,6 +1,9 @@
 import os
 import streamlit as st
-from streamlit.components.v1 import html as _comp_html
+# v7.8.16 — fin des avertissements « Please replace st.components.v1.html
+# with st.iframe » : rendu HTML centralisé dans stcompat.py (st.iframe si
+# disponible, repli components.v1.html sur les anciennes versions).
+from stcompat import comp_html as _comp_html
 from database import c, commit_and_sync
 from services import (hash_password, verifier_mot_de_passe,
                       migrer_hash_si_legacy, definir_mot_de_passe,
