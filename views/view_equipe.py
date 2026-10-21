@@ -3,7 +3,7 @@ import pandas as pd
 import io
 import logging
 from datetime import date
-from database import c, commit_and_sync, verifier_reparer_intentions
+from database import c, commit_and_sync, verifier_reparer_intentions, jours_depuis
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
@@ -81,7 +81,12 @@ def _onglet_intentions_equipe(eid):
             if not anon and (contact or "").strip():
                 st.caption("📞 Contact : " + str(contact).strip())
             if statut == 'en_priere':
-                st.caption("🕊️ En prière depuis le " + str(dstat or dsoum))
+                # v7.9.0 — règle des 20 mystères rappelée au responsable.
+                _j = jours_depuis(dstat or dsoum)
+                st.caption("🕊️ En prière depuis le " + str(dstat or dsoum) + " — J+"
+                           + str(_j) + "/20 (minimum 20 jours — 20 mystères — sinon "
+                           "jusqu’à la prochaine prière mensuelle)"
+                           + (" ✅ à archiver à la prochaine prière mensuelle" if _j >= 20 else ""))
             else:
                 st.caption("🆕 Reçue le " + str(dsoum))
             b1, b2 = st.columns(2)
@@ -504,4 +509,3 @@ def show_equipe():
                             else: st.info("Un transféré ou un défunt ne peut pas être réintégré.")
         else: 
             st.info("Aucune archive.")
-
