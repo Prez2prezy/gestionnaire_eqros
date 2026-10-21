@@ -3195,7 +3195,7 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                         for _b in ("int_nom", "int_contact", "int_txt", "int_anon", "int_rgpd"):
                             st.session_state.pop(_b + "_" + str(_gen), None)
                         st.session_state["flash_success"] = (
-                            "🙏 Votre intention a été confiée à l’équipe « " + str(_eq[1])
+                            "🙏 Votre intention a été confiée à l’« " + str(_eq[1])
                             + " ». Elle arrive directement au responsable — elle sera portée "
                             "en prière, en toute confidentialité.")
                         st.rerun()
