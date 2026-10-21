@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
 import io
+import logging
 from datetime import date
-from database import c, commit_and_sync
+from database import c, commit_and_sync, verifier_reparer_intentions
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
@@ -15,28 +16,12 @@ def _assurer_table_intentions_eq():
     """v7.8.14 — création douce de la table des intentions confiées aux équipes
     (statut : 'recue' → 'en_priere' → 'archivee').
     v7.8.15 — colonne auteur_contact (WhatsApp / adresse mail du fidèle).
-    v7.8.16 — migration douce de TOUTES les colonnes récentes (bases distantes
-    créées par une version antérieure : Turso / Streamlit Cloud — correctif de
-    « table intentions_equipes has no column named anonyme »)."""
-    try:
-        c.execute("""CREATE TABLE IF NOT EXISTS intentions_equipes (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        equipe_id INTEGER NOT NULL,
-                        texte TEXT NOT NULL,
-                        auteur_nom TEXT,
-                        auteur_contact TEXT,
-                        anonyme INTEGER DEFAULT 0,
-                        statut TEXT DEFAULT 'recue',
-                        date_soumission TEXT,
-                        date_statut TEXT)""")
-        for _col in ("auteur_contact TEXT", "anonyme INTEGER DEFAULT 0"):
-            try:
-                c.execute("ALTER TABLE intentions_equipes ADD COLUMN " + _col)
-            except Exception:
-                pass  # colonne déjà présente
-        commit_and_sync()
-    except Exception:
-        pass
+    v7.8.17 — pont vers la RÉPARATION CENTRALISÉE (database.verifier_reparer_
+    intentions) : sonde de lecture + ALTER doux de CHAQUE colonne attendue +
+    reconnexion si le cache de statements est périmé — les bases distantes
+    créées par un brouillon antérieur peuvent manquer de n'importe quelle
+    colonne (correctif de « Impossible de lire les intentions »)."""
+    verifier_reparer_intentions()
 
 
 def _onglet_intentions_equipe(eid):
@@ -69,8 +54,15 @@ def _onglet_intentions_equipe(eid):
                                  WHERE equipe_id=? AND statut='archivee'
                                  ORDER BY date_statut DESC, id DESC""",
                               (eid,)).fetchall()
-    except Exception:
-        st.error("Impossible de lire les intentions pour le moment.")
+    except Exception as _e:
+        # v7.8.17 — JOURNALISE l'erreur réelle (le except muet rendait le
+        # diagnostic impossible) puis message doux côté responsable.
+        logging.getLogger(__name__).warning(
+            f"Onglet intentions (équipe {eid}) : lecture impossible — {_e!r}")
+        st.error("Impossible de lire les intentions pour le moment. "
+                 "Si le problème persiste après un rafraîchissement, notez "
+                 "l'heure : l'erreur réelle est inscrite dans les journaux "
+                 "de l'application.")
         return
     m1, m2, m3 = st.columns(3)
     m1.metric("🆕 Reçues", n_rec)
