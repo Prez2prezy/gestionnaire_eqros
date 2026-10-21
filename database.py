@@ -70,7 +70,18 @@ class CursorWrapper:
                 return self.cursor.execute(query, tuple(params) if params else ())
             except Exception as e:
                 msg = str(e).lower()
-                if "stream not found" in msg or "connection reset" in msg:
+                # v7.8.16 — micro-coupures Hrana/Turso élargies : outre
+                # « stream not found » et « connection reset », on rattrape
+                # désormais « connection closed before message completed »,
+                # les erreurs http transitoires et les dépassements de délai
+                # (observés en production Streamlit Cloud, où ils faisaient
+                # planter la page entière). Après 3 tentatives + reconnexion,
+                # l'erreur remonte normalement.
+                if ("stream not found" in msg or "connection reset" in msg
+                        or "connection closed" in msg
+                        or "connection terminated" in msg
+                        or "http error" in msg
+                        or "timeout" in msg or "timed out" in msg):
                     time.sleep(1)
                     global conn
                     try:
@@ -188,16 +199,21 @@ def init_tables_and_migrations():
     c.execute("""CREATE TABLE IF NOT EXISTS feuillets_couvertures (
                     annee_debut INTEGER, mois INTEGER, image_url TEXT,
                     UNIQUE(annee_debut, mois))""")
-    # v7.8.13 — « 🙏 Vos intentions à une équipe » : le visiteur / membre
-    # confie une intention DIRECTEMENT au responsable d'une équipe (sans
-    # passer par le diocèse). La chaîne de prière de l'équipe la porte dans
-    # la dizaine du jour, en toute discrétion (« être une tombe »).
-    # statut : recue / prie / archive.
+    # v7.8.16 — intentions confiées aux équipes : la table est créée ICI aussi
+    # (elle ne l'était qu'à la volée dans les vues). Sur les bases distantes
+    # créées par une version antérieure (Turso / Streamlit Cloud), la table
+    # existe SANS les colonnes récentes — les ALTER idempotents ci-dessous
+    # réparent la structure au démarrage, sans toucher aux données.
     c.execute("""CREATE TABLE IF NOT EXISTS intentions_equipes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    equipe_id INTEGER, paroisse_id INTEGER,
-                    auteur_nom TEXT, texte TEXT,
-                    statut TEXT DEFAULT 'recue', date_soumission TEXT)""")
+                    equipe_id INTEGER NOT NULL,
+                    texte TEXT NOT NULL,
+                    auteur_nom TEXT,
+                    auteur_contact TEXT,
+                    anonyme INTEGER DEFAULT 0,
+                    statut TEXT DEFAULT 'recue',
+                    date_soumission TEXT,
+                    date_statut TEXT)""")
     commit_and_sync()
 
     # --- 2. DONNÉES PAR DÉFAUT ---
@@ -242,15 +258,11 @@ def init_tables_and_migrations():
     safe_migrate("ALTER TABLE espace_spirituel ADD COLUMN lieu TEXT")
     # v7.8.11 — position de la photo dans la page du livret (haut/droite/gauche)
     safe_migrate("ALTER TABLE feuillet_sections ADD COLUMN pos_image TEXT")
-    # v7.8.13 — photos du feuillet en 2 catégories (demande user) :
-    #   a) image_url                = photo de la BANDE DE TITRE (1/4 à droite) ;
-    #   b) image_url2 + pos_image2  = 1re photo DU CORPS du texte ;
-    #      image_url3 + pos_image3  = 2e photo DU CORPS (2 maximum), positions
-    #      « haut-droite / haut-gauche / bas-droite / bas-gauche ».
-    safe_migrate("ALTER TABLE feuillet_sections ADD COLUMN image_url2 TEXT")
-    safe_migrate("ALTER TABLE feuillet_sections ADD COLUMN pos_image2 TEXT")
-    safe_migrate("ALTER TABLE feuillet_sections ADD COLUMN image_url3 TEXT")
-    safe_migrate("ALTER TABLE feuillet_sections ADD COLUMN pos_image3 TEXT")
+    # v7.8.16 — intentions_equipes : colonnes récentes ajoutées rétroactivement
+    # (correctif de l'erreur « table intentions_equipes has no column named
+    # anonyme » observée sur la base de production Streamlit Cloud/Turso).
+    safe_migrate("ALTER TABLE intentions_equipes ADD COLUMN auteur_contact TEXT")
+    safe_migrate("ALTER TABLE intentions_equipes ADD COLUMN anonyme INTEGER DEFAULT 0")
     # v7.8.11 — publications de feuillets : dédoublonnage puis index UNIQUE.
     # Les bases créées avant la contrainte UNIQUE(annee_debut, mois)
     # pouvaient accumuler des lignes jumelles à chaque republication, ce qui
