@@ -1755,7 +1755,9 @@ def injecter_icone_pwa(espace=False):
     </script>
     """.replace("%ICO32%", _ico32).replace("%ICO180%", _ico180).replace("%MANIF%", _manif).replace("%LIB%", _lib)
     try:
-        from streamlit.components.v1 import html as _chtml
+        # v7.8.16 — stcompat : st.iframe (fin de la dépréciation
+        # components.v1.html) ; repli automatique sur anciennes versions.
+        from stcompat import comp_html as _chtml
         _chtml(_js, height=0)
     except Exception:
         pass
