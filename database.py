@@ -306,3 +306,76 @@ try:
     setup_database()
 except Exception as e:
     logger.error(f"Erreur critique lors de l'initialisation de la DB: {e}")
+
+
+# ======================================================================
+# v7.8.17 — RÉPARATION CENTRALISÉE de la table intentions_equipes
+# ======================================================================
+# Les bases distantes (Turso / Streamlit Cloud) créées par un brouillon
+# antérieur à la v7.8.14 peuvent manquer de N'IMPORTE QUELLE colonne — et
+# le `except` muet de l'onglet équipe masquait l'erreur réelle (aucune trace
+# dans les journaux). Cette fonction, appelée par les 2 vues avant toute
+# lecture/écriture des intentions :
+#   1. SONDE la lecture complète (exactement celle des vues) ;
+#   2. en cas d'échec : crée la table si absente + ALTER doux de CHAQUE
+#      colonne attendue (idempotent, « duplicate column » ignoré) ;
+#   3. re-sonde ; si ça échoue encore, RECRÉE la connexion partagée (cache
+#      de statements préparés périmé après ALTER) et sonde une 3e fois ;
+#   4. JOURNALISE chaque incident — fini les erreurs invisibles.
+_COLONNES_INTENTIONS = (
+    "equipe_id INTEGER",
+    "texte TEXT",
+    "auteur_nom TEXT",
+    "auteur_contact TEXT",
+    "anonyme INTEGER DEFAULT 0",
+    "statut TEXT DEFAULT 'recue'",
+    "date_soumission TEXT",
+    "date_statut TEXT",
+)
+_SELECT_INTENTIONS = ("SELECT id, equipe_id, texte, auteur_nom, auteur_contact, "
+                      "anonyme, statut, date_soumission, date_statut "
+                      "FROM intentions_equipes LIMIT 1")
+
+
+def verifier_reparer_intentions():
+    """Sonde la table intentions_equipes et la répare si nécessaire (v7.8.17).
+    Ne fait RIEN (1 seule petite lecture) quand tout est en ordre."""
+    try:
+        c.execute(_SELECT_INTENTIONS).fetchone()
+        return  # lecture OK : rien à faire
+    except Exception as e_probe:
+        logger.warning(f"intentions_equipes : sonde en échec ({e_probe}) — réparation")
+    # --- Réparation structurelle ---
+    try:
+        c.execute("""CREATE TABLE IF NOT EXISTS intentions_equipes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        equipe_id INTEGER NOT NULL,
+                        texte TEXT NOT NULL,
+                        auteur_nom TEXT,
+                        auteur_contact TEXT,
+                        anonyme INTEGER DEFAULT 0,
+                        statut TEXT DEFAULT 'recue',
+                        date_soumission TEXT,
+                        date_statut TEXT)""")
+        for _col in _COLONNES_INTENTIONS:
+            try:
+                c.execute("ALTER TABLE intentions_equipes ADD COLUMN " + _col)
+            except Exception as e_col:
+                if "duplicate column" not in str(e_col).lower():
+                    logger.warning(f"intentions_equipes : ALTER « {_col} » ignoré ({e_col})")
+        commit_and_sync()
+    except Exception as e_rep:
+        logger.error(f"intentions_equipes : réparation impossible ({e_rep})")
+        return
+    # --- Re-sonde ; cache périmé → reconnexion partagée puis 3e sonde ---
+    try:
+        c.execute(_SELECT_INTENTIONS).fetchone()
+    except Exception as e2:
+        logger.warning(f"intentions_equipes : sonde encore en échec ({e2}) — reconnexion partagée")
+        global conn
+        try:
+            conn, _ = create_connection()
+            c.cursor = conn.cursor()
+            c.execute(_SELECT_INTENTIONS).fetchone()
+        except Exception as e3:
+            logger.error(f"intentions_equipes : toujours en échec après reconnexion ({e3})")
