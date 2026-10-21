@@ -3651,4 +3651,3 @@ def show_espace_membre(matloc_membre=None):
                                auteur_nom=((membre[1] or "") + " " + (membre[2] or "")).strip(),
                                intentions=False)  # v7.8.15 : retiré côté Membre
         _render_actualites(pid=pid_m)
-
