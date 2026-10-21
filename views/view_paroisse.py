@@ -3,7 +3,9 @@ import streamlit as st
 import pandas as pd
 import io
 from datetime import date
-from database import c, commit_and_sync
+from database import (c, commit_and_sync, verifier_reparer_intentions,
+                      intention_du_prochain, get_parametre, set_parametre,
+                      INTENTIONS_UNIVERSELLES, jours_depuis)
 from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, supprimer_photo,
                       archiver_membre, safe_date, afficher_situation, sans_accents, 
                       enregistrer_abonnement, verifier_abonnement, periode_affichage, 
@@ -11,6 +13,139 @@ from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, su
                       synchroniser_menu_session, lire_menu_session)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, afficher_historique_suivi, 
                         afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales)
+
+def _onglet_coins_intentions(pid, equipes):
+    """🙏 COINS DES INTENTIONS (v7.9.0) — 4e onglet de « 📌 Suivi et Agenda »
+    côté paroisse : le BILAN de toutes les intentions confiées aux équipes
+    (reçues / prises en charge / archivées) et le RÉGLAGE de la chaîne de
+    prière universelle (1er choix : reçues · 2e : prises en charge · 3e :
+    intentions universelles). C'est ce réglage qui nourrit la dernière
+    intention (« Intention du prochain ») du livret « 🕯️ Un jour, une
+    dizaine ».
+    NB rappelé : une intention prise en charge dure au minimum 20 jours
+    (20 mystères), sinon jusqu'à la prochaine prière mensuelle."""
+    verifier_reparer_intentions()
+    ids_eq = [e[0] for e in equipes]
+    _ph = ",".join("?" * len(ids_eq)) if ids_eq else "NULL"
+    _prm = list(ids_eq)
+    try:
+        n_rec = c.execute(f"SELECT COUNT(*) FROM intentions_equipes "
+                          f"WHERE equipe_id IN ({_ph}) AND statut='recue'", _prm).fetchone()[0]
+        n_pri = c.execute(f"SELECT COUNT(*) FROM intentions_equipes "
+                          f"WHERE equipe_id IN ({_ph}) AND statut='en_priere'", _prm).fetchone()[0]
+        n_arc = c.execute(f"SELECT COUNT(*) FROM intentions_equipes "
+                          f"WHERE equipe_id IN ({_ph}) AND statut='archivee'", _prm).fetchone()[0]
+    except Exception:
+        st.error("Impossible de lire les intentions pour le moment — la base "
+                 "distante se réparera automatiquement au prochain "
+                 "rafraîchissement (l'erreur réelle est journalisée).")
+        return
+
+    # ---------- A. BILAN GÉNÉRAL ----------
+    st.markdown("### 🧾 Bilan des intentions confiées aux équipes")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("🆕 Reçues", n_rec)
+    m2.metric("🕊️ Prises en charge", n_pri)
+    m3.metric("🗄️ Archivées", n_arc)
+    st.caption("🕊️ Principe « être une tombe » : les intentions se portent en prière, "
+               "elles ne se racontent pas et ne sortent jamais de l’équipe. Cette page "
+               "en fait le bilan sans jamais les commenter. " +
+               "**NB : une intention prise en charge dure au minimum 20 jours "
+               "(20 mystères), sinon jusqu’à la prochaine prière mensuelle.**")
+
+    # ---------- B. BILAN PAR ÉQUIPE ----------
+    if not ids_eq:
+        st.info("Aucune équipe dans cette paroisse : les fidèles ne peuvent "
+                "confier d'intention nulle part pour l'instant.")
+    else:
+        lignes = c.execute(f"""SELECT id, equipe_id, texte, auteur_nom, anonyme,
+                                       statut, date_soumission, date_statut
+                                FROM intentions_equipes
+                                WHERE equipe_id IN ({_ph})
+                                ORDER BY date_soumission DESC, id DESC""", _prm).fetchall()
+        noms_eq = {e[0]: e[1] for e in equipes}
+        for eid in ids_eq:
+            _les = [l for l in lignes if l[1] == eid]
+            _rec = sum(1 for l in _les if l[5] == 'recue')
+            _pri = sum(1 for l in _les if l[5] == 'en_priere')
+            _arc = sum(1 for l in _les if l[5] == 'archivee')
+            with st.expander(f"👥 {noms_eq.get(eid, '?')} — 🆕 {_rec} · 🕊️ {_pri} · 🗄️ {_arc}"):
+                if not _les:
+                    st.caption("Aucune intention confiée à cette équipe pour l'instant.")
+                for (iid, _eqi, texte, auteur, anon, statut, dsoum, dstat) in _les:
+                    qui = "Anonyme" if anon else (auteur or "Fidèle")
+                    if statut == 'recue':
+                        _j = jours_depuis(dsoum)
+                        badge = f"🆕 Reçue le {dsoum} (J+{_j})"
+                    elif statut == 'en_priere':
+                        _j = jours_depuis(dstat or dsoum)
+                        badge = (f"🕊️ En prière depuis le {dstat or dsoum} — J+{_j}/20"
+                                 + (" ✅ 20 mystères accomplis : à archiver à la "
+                                    "prochaine prière mensuelle" if _j >= 20
+                                    else " (min. 20 jours / 20 mystères)"))
+                    else:
+                        badge = f"🗄️ Archivée (prise en charge {dstat or dsoum})"
+                    st.markdown(f"**{badge}** — *{qui}* (équipe « {noms_eq.get(eid, '?')} »)")
+                    st.write(texte)
+                    st.markdown("---")
+
+    # ---------- C. LA CHAÎNE DE PRIÈRE UNIVERSELLE ----------
+    st.markdown("### 📿 La chaîne de prière universelle")
+    st.caption("Dans le livret « 🕯️ Un jour, une dizaine », la dernière intention de chaque "
+               "mystère (« Intention du prochain dans la chaine de prière ») est DEVENUE "
+               "DYNAMIQUE : elle porte une vraie intention confiée par un fidèle. Choisissez "
+               "ici ce que les visiteurs et membres priéront demain. La chaîne est "
+               "UNIVERSELLE : elle puise dans les intentions confiées à toutes les équipes. "
+               "🤫 Règle d’or : un visiteur ne peut jamais prier SA propre intention — "
+               "son jour de naissance l’en empêche discrètement.")
+    _mode = get_parametre("chaine_mode", "recues")
+    _choix_txt = {"recues": "1️⃣ Les intentions RECUES (la plus ancienne d’abord : chaque "
+                           "intention attend son tour dans la chaîne)",
+                  "en_priere": "2️⃣ Les intentions PRISES EN CHARGE (celles que les équipes "
+                               "portent déjà en prière)",
+                  "universelle": "3️⃣ Les intentions universelles de l’Église (choix fixes ou "
+                                 "rotation quotidienne)"}
+    _mode_nouveau = st.radio("Quelle source nourrit l’intention du prochain ?",
+                             list(_choix_txt.keys()), index=list(_choix_txt.keys()).index(_mode)
+                             if _mode in _choix_txt else 0,
+                             format_func=lambda k: _choix_txt[k],
+                             key="chaine_mode_choix")
+    _univ_nouveau = None
+    if _mode_nouveau == "universelle":
+        _opts = list(INTENTIONS_UNIVERSELLES) + \
+                ["🔄 Rotation quotidienne des trois intentions"]
+        _val = get_parametre("chaine_universelle", INTENTIONS_UNIVERSELLES[0])
+        if _val == "rotation":
+            _idx_u = len(_opts) - 1
+        elif _val in INTENTIONS_UNIVERSELLES:
+            _idx_u = list(INTENTIONS_UNIVERSELLES).index(_val)
+        else:
+            _idx_u = 0
+        _univ_nouveau = st.selectbox("Quelle intention universelle ?", _opts, index=_idx_u,
+                                     key="chaine_univ_choix")
+    if st.button("💾 Enregistrer le choix de la chaîne", type="primary",
+                 key="chaine_save"):
+        set_parametre("chaine_mode", _mode_nouveau)
+        if _mode_nouveau == "universelle":
+            set_parametre("chaine_universelle",
+                          "rotation" if (_univ_nouveau or "").startswith("🔄")
+                          else _univ_nouveau)
+        # Pas de st.rerun() ici : le message reste visible ET l'aperçu
+        # ci-dessous (rendu après) reflète immédiatement le nouveau choix.
+        st.success("✅ Choix enregistré : le livret « 🕯️ Un jour, une dizaine » porte "
+                   "désormais cette intention (l'aperçu ci-dessous est à jour).")
+
+    # ---------- D. APERÇU (ce que verra le visiteur) ----------
+    _txt_prochain = intention_du_prochain(jour_visiteur=None)
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+        ' border:1px solid #FFD700; border-radius:12px; padding:14px 16px; margin:8px 0;">'
+        '<div style="color:#FFD000; font-size:0.85rem; font-weight:600;">👁️ Aperçu — ce que le '
+        'visiteur lira dans « 🕯️ Un jour, une dizaine »</div>'
+        '<div style="color:#ffffff; font-size:1rem; margin-top:6px; line-height:1.7;">'
+        '🕯️ Vierge Marie, mère de Dieu, intercède : <b>' + _txt_prochain.replace("<", "&lt;") + '</b></div></div>',
+        unsafe_allow_html=True)
+
 
 def generer_identifiant_equipe(nom_paroisse, nom_commune, nom_equipe, paroisse_id):
     nom_propre = nom_paroisse.lower()
@@ -361,7 +496,11 @@ def show_paroisse():
         else:
             # v7.8.14 — SÉLECTEUR PERSISTANT (remplace st.tabs, qui ne garde
             # aucune mémoire : chaque interaction ramenait à l'onglet primaire).
-            _onglets_par = ["📅 Agenda", "📝 Vie de prière des équipes", "📊 Engagement spirituel"]
+            # v7.9.0 — 4e onglet : « 🙏 Coins des Intentions » (bilan des
+            # intentions confiées aux équipes + réglage de la chaîne de
+            # prière universelle).
+            _onglets_par = ["📅 Agenda", "📝 Vie de prière des équipes",
+                            "📊 Engagement spirituel", "🙏 Coins des Intentions"]
             _suivi_par = st.radio("Section du suivi", _onglets_par, key="par_suivi_onglet",
                                   horizontal=True, label_visibility="collapsed")
             st.markdown("---")
@@ -381,12 +520,16 @@ def show_paroisse():
                 
                 afficher_historique_suivi(equipe_id=eid, filtre_type=filtre_type)
 
+            elif _suivi_par == _onglets_par[3]:
+                # v7.9.0 — 🙏 Coins des Intentions : bilan des intentions
+                # confiées aux équipes + réglage de la chaîne de prière.
+                _onglet_coins_intentions(pid, equipes)
+
             else:
                 eq_dict2 = {eq[1]: eq[0] for eq in equipes}
                 choix_eq2 = st.selectbox("Sélectionnez l'équipe pour voir le bilan", list(eq_dict2.keys()), key="etat_paroisse_eq")
                 eid2 = eq_dict2[choix_eq2]
                 afficher_etat_presences_globales(equipe_id=eid2)
-
     elif menu == "💬 WhatsApp":
         st.markdown(f'<h2 style="color:#1A237E;">💬 Messages WhatsApp - {nom_p}</h2>', unsafe_allow_html=True)
         afficher_whatsapp_tabs(equipe_id=None)
@@ -412,4 +555,3 @@ def show_paroisse():
                 with st.expander(f"{a[1]} {a[2]} ({a[0]}) – {afficher_situation(a[3])} – {duree} an(s) ({eq_nom})"):
                     st.write(f"Ajouté par : {a[8] or 'Inconnu'}")
                     if a[6]: st.write(f"Commentaire : {a[6]}")
-
