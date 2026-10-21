@@ -3147,10 +3147,10 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
             if _k("int_nom") not in st.session_state and (auteur_nom or "").strip():
                 st.session_state[_k("int_nom")] = auteur_nom
             _nom = st.text_input("Nom et Prénom *", key=_k("int_nom"), max_chars=80,
-                                 placeholder="Ex : Jean DUPONT")
+                                 placeholder="Ex : N'guess KONÉ")
             _contact = st.text_input("Contact WhatsApp / Adresse mail *",
                                      key=_k("int_contact"), max_chars=120,
-                                     placeholder="Ex : +225 07 00 00 00 00 ou jean@exemple.com")
+                                     placeholder="Ex : +225 07 00 00 00 00 ou nguekon@exemple.com")
             _txt = st.text_area("Intention de prière *", key=_k("int_txt"), height=110,
                                 max_chars=600,
                                 placeholder="Pour la santé de…, pour ma famille…, "
