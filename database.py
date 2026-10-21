@@ -4,6 +4,7 @@ import time
 import hashlib
 import secrets
 import logging
+from datetime import date
 
 # Configuration du logging pour éviter d'utiliser st.error dans la base de données
 logging.basicConfig(level=logging.ERROR)
@@ -211,9 +212,16 @@ def init_tables_and_migrations():
                     auteur_nom TEXT,
                     auteur_contact TEXT,
                     anonyme INTEGER DEFAULT 0,
+                    jour_naissance INTEGER,
                     statut TEXT DEFAULT 'recue',
                     date_soumission TEXT,
                     date_statut TEXT)""")
+    # v7.9.0 — réglages de l'application (choix de l'« intention du prochain »
+    # dans la chaîne de prière universelle, etc.). Petite table clé/valeur
+    # créée ici pour exister dès le 1er démarrage sur TOUTES les bases.
+    c.execute("""CREATE TABLE IF NOT EXISTS parametres (
+                    cle TEXT PRIMARY KEY,
+                    valeur TEXT)""")
     commit_and_sync()
 
     # --- 2. DONNÉES PAR DÉFAUT ---
@@ -263,6 +271,9 @@ def init_tables_and_migrations():
     # anonyme » observée sur la base de production Streamlit Cloud/Turso).
     safe_migrate("ALTER TABLE intentions_equipes ADD COLUMN auteur_contact TEXT")
     safe_migrate("ALTER TABLE intentions_equipes ADD COLUMN anonyme INTEGER DEFAULT 0")
+    # v7.9.0 — jour de naissance du fidèle (clé discrète de la chaîne de
+    # prière : il garantit qu'un visiteur ne prie jamais SA propre intention).
+    safe_migrate("ALTER TABLE intentions_equipes ADD COLUMN jour_naissance INTEGER")
     # v7.8.11 — publications de feuillets : dédoublonnage puis index UNIQUE.
     # Les bases créées avant la contrainte UNIQUE(annee_debut, mois)
     # pouvaient accumuler des lignes jumelles à chaque republication, ce qui
@@ -328,12 +339,13 @@ _COLONNES_INTENTIONS = (
     "auteur_nom TEXT",
     "auteur_contact TEXT",
     "anonyme INTEGER DEFAULT 0",
+    "jour_naissance INTEGER",
     "statut TEXT DEFAULT 'recue'",
     "date_soumission TEXT",
     "date_statut TEXT",
 )
 _SELECT_INTENTIONS = ("SELECT id, equipe_id, texte, auteur_nom, auteur_contact, "
-                      "anonyme, statut, date_soumission, date_statut "
+                      "anonyme, jour_naissance, statut, date_soumission, date_statut "
                       "FROM intentions_equipes LIMIT 1")
 
 
@@ -354,6 +366,7 @@ def verifier_reparer_intentions():
                         auteur_nom TEXT,
                         auteur_contact TEXT,
                         anonyme INTEGER DEFAULT 0,
+                        jour_naissance INTEGER,
                         statut TEXT DEFAULT 'recue',
                         date_soumission TEXT,
                         date_statut TEXT)""")
@@ -379,3 +392,101 @@ def verifier_reparer_intentions():
             c.execute(_SELECT_INTENTIONS).fetchone()
         except Exception as e3:
             logger.error(f"intentions_equipes : toujours en échec après reconnexion ({e3})")
+
+
+# ======================================================================
+# v7.9.0 — LA CHAÎNE DE PRIÈRE UNIVERSELLE
+# ======================================================================
+# Le fidèle qui confie une intention devient « le prochain » de celui qui
+# prie : dans « 🕯️ Un jour, une dizaine », la dernière intention de chaque
+# mystère (« Intention du prochain dans la chaine de prière ») devient
+# DYNAMIQUE et porte une vraie intention.
+#
+# Le choix de la source est fait par la paroisse (onglet « 🙏 Coins des
+# Intentions » de « 📌 Suivi et Agenda ») et mémorisé dans la table
+# `parametres` :
+#   chaine_mode       = 'recues' (1er choix) | 'en_priere' (2e) | 'universelle' (3e)
+#   chaine_universelle= texte choisi parmi INTENTIONS_UNIVERSELLES, ou
+#                       'rotation' (rotation quotidienne des trois)
+#
+# Règle d'or : « Un visiteur ne doit pas pouvoir prier son intention » —
+# le jour de naissance saisi à la soumission (colonne jour_naissance) sert
+# de clé discrète : quand le visiteur égrène sa dizaine (même jour saisi au
+# livret), ses PROPRES intentions sont écartées du tirage.
+INTENTIONS_UNIVERSELLES = (
+    "La Paix dans le monde",
+    "Le Sacrement de la réconciliation",
+    "La gestion juste et durable de la ressource vitale : l’eau",
+)
+
+_REGLE_20_JOURS = ("NB : une intention prise en charge reste en prière au minimum "
+                   "20 jours (20 mystères), sinon jusqu’à la prochaine prière mensuelle.")
+
+
+def get_parametre(cle, defaut=None):
+    """Lit un réglage dans la table parametres (v7.9.0). Tolérant : base
+    ancienne sans table → valeur par défaut."""
+    try:
+        r = c.execute("SELECT valeur FROM parametres WHERE cle=?", (cle,)).fetchone()
+        return r[0] if r and r[0] is not None else defaut
+    except Exception:
+        return defaut
+
+
+def set_parametre(cle, valeur):
+    """Écrit (upsert) un réglage dans la table parametres (v7.9.0)."""
+    c.execute("""CREATE TABLE IF NOT EXISTS parametres (
+                    cle TEXT PRIMARY KEY,
+                    valeur TEXT)""")
+    c.execute("INSERT INTO parametres (cle, valeur) VALUES (?, ?) "
+              "ON CONFLICT(cle) DO UPDATE SET valeur=excluded.valeur", (cle, str(valeur)))
+    commit_and_sync()
+
+
+def intention_du_prochain(jour_visiteur=None):
+    """Retourne le TEXTE de l'« intention du prochain » à porter dans la
+    dizaine du jour (v7.9.0), selon le choix enregistré par la paroisse :
+      1er choix  → la plus ancienne intention RECUE pas encore prise en charge ;
+      2e choix   → la plus ancienne intention PRISE EN CHARGE (en prière) ;
+      3e choix   → une intention universelle de l'Église (fixe ou rotation
+                   quotidienne).
+    La chaîne est UNIVERSELLE : elle puise dans les intentions confiées à
+    toutes les équipes, quel que soit le contexte paroissial du visiteur.
+    jour_visiteur = jour de naissance du lecteur (1-31) : ses propres
+    intentions lui sont masquées — personne ne prie sa propre intention.
+    En cas d'intention indisponible, la chaîne ne se casse jamais : elle
+    retombe sur « La Paix dans le monde »."""
+    _secours = INTENTIONS_UNIVERSELLES[0]
+    try:
+        mode = get_parametre("chaine_mode", "recues")
+        if mode == "universelle":
+            choix = get_parametre("chaine_universelle", INTENTIONS_UNIVERSELLES[0])
+            if choix == "rotation":
+                # rotation quotidienne (jour de l'année) : les trois intentions
+                # universelles se relaient chaque jour.
+                return INTENTIONS_UNIVERSELLES[date.today().timetuple().tm_yday % 3]
+            return choix if choix in INTENTIONS_UNIVERSELLES else _secours
+        statut = "en_priere" if mode == "en_priere" else "recue"
+        lignes = c.execute("""SELECT texte, jour_naissance FROM intentions_equipes
+                              WHERE statut=? AND TRIM(COALESCE(texte,'')) != ''
+                              ORDER BY date_soumission ASC, id ASC""", (statut,)).fetchall()
+        for _txt, _jn in lignes:
+            # La règle d'or : le lecteur ne prie jamais sa propre intention.
+            if jour_visiteur is not None and _jn is not None and int(_jn) == int(jour_visiteur):
+                continue
+            return str(_txt).strip()
+    except Exception as e:
+        logger.warning(f"intention_du_prochain : tirage impossible ({e!r}) — secours")
+    return _secours
+
+
+def jours_depuis(d_iso):
+    """Nombre de jours écoulés depuis une date ISO (tolérant : None/illisible → 0)."""
+    try:
+        d = safe_date(d_iso) if "safe_date" in globals() else None
+        if d is None:
+            from datetime import date as _d
+            d = _d.fromisoformat(str(d_iso))
+        return max(0, (date.today() - d).days) if d else 0
+    except Exception:
+        return 0
