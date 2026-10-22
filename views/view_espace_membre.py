@@ -80,7 +80,8 @@ from datetime import date
 # st.components.v1.html with st.iframe » disparaissent des journaux Cloud.
 from stcompat import comp_html as _comp_html
 from database import (c, commit_and_sync, verifier_reparer_intentions,
-                      intention_du_prochain)
+                      intention_du_prochain, intention_du_prochain_detail,
+                      contact_en_priere, prise_en_charge_automatique)
 from services import safe_date, compter_visite, lien_whatsapp
 from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
 
@@ -88,11 +89,15 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # ====================================================================
 # NAVIGATION
 # ====================================================================
-RUBRIQUES_MEMBRE = ["🏠 Actualités", "🕯️ Thème", "📿 Rosaire", "📅 Mes évènements", "📖 Archives"]
-RUBRIQUES_PUBLIC = ["🏠 Actualités", "📿 Rosaire", "🕯️ Thème", "📖 Archives"]
+RUBRIQUES_MEMBRE = ["🏠 Actualités", "🕯️ Thème", "🖼️ Galerie +", "📿 Rosaire", "📅 Mes évènements", "📖 Archives"]
+RUBRIQUES_PUBLIC = ["🏠 Actualités", "📿 Rosaire", "🕯️ Thème", "🖼️ Galerie +", "📖 Archives"]
 SOUS_RUBRIQUES = {
     "🕯️ Thème": ["🔭 Vue d'ensemble", "🎓 Enseignements", "💬 Discussions"],
     "📿 Rosaire": ["Le Rosaire chez les Équipiers", "Le Rosaire thématique"],
+    # v7.9.1 — nouvelle rubrique « 🖼️ Galerie + » : souvenirs (photos des
+    # évènements) et témoignages (grâces reçues). Insérée APRÈS « 🕯️ Thème »
+    # pour que les liens ?r=1 / ?r=2 (Thème) codés en dur restent valables.
+    "🖼️ Galerie +": ["Souvenirs", "Témoignages"],
     "📖 Archives": ["🙏 Prières", "📖 Méditations", "🎵 Musiques"],
 }
 
@@ -1725,6 +1730,23 @@ def _est_intention_chaine(ligne):
     return "intention du prochain" in l
 
 
+def _ligne_chaine(jour_visiteur=None):
+    """v7.9.1 — la ligne dynamique du livret, au MODÈLE demandé :
+      « 🕯️ Vierge Marie, mère de Dieu, intercède pour {Prénom - Nom du
+        visiteur} : {son intention} » ;
+      « … intercède pour cet anonyme : {intention} » (intention anonyme) ;
+      « … intercède : {intention universelle} » (3ᵉ choix de la chaîne).
+    Le tirage dépend du N° méd. du lecteur (jour de naissance) et reste
+    stable au sein d'une fenêtre de 20 jours (intention_du_prochain_detail) :
+    les visiteurs du jour reçoivent les intentions de leurs prochains selon
+    leurs N° méd. et méditent avec, sur 20 jours."""
+    _txt, _qui = intention_du_prochain_detail(jour_visiteur=jour_visiteur)
+    if _qui:
+        return ("🕯️ Vierge Marie, mère de Dieu, intercède pour " + _qui
+                + " : " + _txt)
+    return "🕯️ Vierge Marie, mère de Dieu, intercède : " + _txt
+
+
 def _render_page_rosaire_eyquem():
     """📿 Rosaire → Le Rosaire complet en Équipe (v7.7.4).
     v7.9.0 — la dernière intention de chaque mystère (« Intention du prochain
@@ -1749,9 +1771,10 @@ def _render_page_rosaire_eyquem():
         st.markdown(_rendre_intro_eyquem("INTRODUCTION", afficher_titres=False, trait_debut=True), unsafe_allow_html=True)
 
     # ---------- B-E. LES 20 MYSTÈRES ----------
-    # v7.9.0 — l'intention du prochain est tirée UNE fois pour tout le
-    # livret (le lecteur ne prie jamais sa propre intention).
-    _chaine = intention_du_prochain(jour_visiteur=st.session_state.get("diz_jrnais"))
+    # v7.9.0/7.9.1 — l'intention du prochain est tirée UNE fois pour tout le
+    # livret (le lecteur ne prie jamais sa propre intention) ; la ligne
+    # suit le modèle « intercède pour {qui} : {intention} ».
+    _chaine = _ligne_chaine(st.session_state.get("diz_jrnais"))
     for nom_type, debut, fin, resume in GROUPES_CHAPELETS:
         couleur_forte = COULEURS_TYPES.get(nom_type.lower(), "#9E9E9E")
         couleur_claire = COULEURS_CLAIRES.get(nom_type.lower(), "#e8eaf6")
@@ -1780,9 +1803,9 @@ def _render_page_rosaire_eyquem():
                                  '<div class="cp-para">' + html.escape(_lien_txt).replace("\n", "<br>") + "</div>")
             _intentions = ('<div class="cp-accent" style="--c:' + couleur_forte + ';">Intentions</div>'
                            + "".join(
-                               _diz_txt("🕯️ Vierge Marie, mère de Dieu, intercède : "
-                                        + (_chaine if _est_intention_chaine(_l)
-                                           else _l.strip().lstrip("*").strip()),
+                               _diz_txt(_chaine if _est_intention_chaine(_l)
+                                        else "🕯️ Vierge Marie, mère de Dieu, intercède : "
+                                             + _l.strip().lstrip("*").strip(),
                                         "#1a1a1a", gras=_est_intention_chaine(_l))
                                for _l in (m.get("intentions") or "").split("\n") if _l.strip()))
             _fruits = ('<div class="cp-accent" style="--c:' + couleur_forte + ';">Fruits du mystère</div>'
@@ -2554,12 +2577,14 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
     if not mysteres_jour:
         return
 
-    # v7.9.0 — l'intention du prochain (chaîne de prière universelle) est
+    # v7.9.0/7.9.1 — l'intention du prochain (chaîne de prière universelle) est
     # tirée UNE fois pour tout le livre ; pour le visiteur, son jour de
     # naissance écarte ses PROPRES intentions du tirage (personne ne prie
-    # la sienne). Côté membre, pas d'identité de chaîne : aucune exclusion.
-    _chaine = intention_du_prochain(
-        jour_visiteur=(st.session_state.get("diz_jrnais") if not est_membre else None))
+    # la sienne) et son N° méd. désigne l'intention de SON prochain, stable
+    # sur la fenêtre de 20 jours. Côté membre, pas d'identité de chaîne :
+    # aucune exclusion. La ligne suit le modèle « intercède pour {qui} : … ».
+    _chaine = _ligne_chaine(
+        st.session_state.get("diz_jrnais") if not est_membre else None)
 
     if st.session_state.get("diz_num") != num:
         st.session_state["diz_num"] = num
@@ -2578,7 +2603,8 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
             '<div style="display:inline-block; margin-top:12px; background:rgba(255,215,0,0.14);'
             ' border:1px solid #FFD700; border-radius:20px; padding:5px 16px; max-width:94%;'
             ' color:#FFD000; font-size:0.8rem; line-height:1.6;">🕯️ Au cœur de votre dizaine :'
-            ' l\u2019intention du prochain — LA CHAÎNE DE PRIÈRE UNIVERSELLE</div>')
+            ' l\u2019intention du prochain, à porter pendant 20 jours (20 mystères)'
+            ' — LA CHAÎNE DE PRIÈRE UNIVERSELLE</div>')
         st.markdown(
             f'<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
             f' padding:24px; border-radius:15px; text-align:center; margin:10px;'
@@ -2664,13 +2690,12 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
                 l = ligne.strip().lstrip("*").strip()
                 if not l:
                     continue
-                # v7.9.0 — la ligne « Intention du prochain dans la chaine de
-                # prière » devient DYNAMIQUE (chaîne de prière universelle),
-                # mise en gras pour se distinguer des intentions fixes.
+                # v7.9.0/7.9.1 — la ligne « Intention du prochain dans la chaine de
+                # prière » devient DYNAMIQUE au modèle demandé (intercède pour
+                # {Prénom Nom} / cet anonyme), mise en gras pour se distinguer
+                # des intentions fixes.
                 if _est_intention_chaine(l):
-                    intentions_html += _diz_txt(
-                        "🕯️ Vierge Marie, mère de Dieu, intercède : " + _chaine,
-                        "#1a1a1a", gras=True)
+                    intentions_html += _diz_txt(_chaine, "#1a1a1a", gras=True)
                 else:
                     intentions_html += _diz_txt("🕯️ Vierge Marie, mère de Dieu, intercède : " + l, "#1a1a1a")
             fruits_html = "".join(
@@ -3061,6 +3086,76 @@ def _alerte_feuillet_fil(lien_theme=None):
         st.rerun()
 
 
+def _render_page_galerie(sub):
+    """🖼️ GALERIE + (v7.9.1) — nouvelle rubrique de l'Espace de Prière avec
+    2 sous-rubriques :
+      • « Souvenirs » — les photos de notre marche ensemble (pèlerinages,
+        prières mensuelles, moments d'équipe) ;
+      • « Témoignages » — les grâces reçues, racontées par ceux qui les vivent.
+    Le diocèse publie et retire (menu « 🖼️ Galerie + » du portail gestionnaire) ;
+    ici la communauté lit. 🤫 Le principe « être une tombe » des intentions
+    n'est pas touché : un témoignage n'entre ici qu'avec l'accord de celui
+    qui le vit."""
+    _rub = "souvenirs" if sub == "Souvenirs" else "temoignages"
+    if _rub == "souvenirs":
+        _titre, _sous = ("🏞️ Souvenirs",
+                         "Les photos de notre marche ensemble — pèlerinages, prières "
+                         "mensuelles, moments d’équipe.")
+        _vide = ("🏞️ Aucun souvenir publié pour l’instant. Les photos des évènements "
+                 "paraîtront ici dès leur publication par le diocèse.")
+    else:
+        _titre, _sous = ("💬 Témoignages",
+                         "« Rendez grâce en toute occasion » — les grâces reçues, "
+                         "racontées par ceux qui les vivent.")
+        _vide = ("💬 Aucun témoignage publié pour l’instant. Les grâces reçues "
+                 "racontées paraîtront ici, avec l’accord de ceux qui les vivent.")
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+        ' padding:16px; border-radius:15px; text-align:center; margin:10px;'
+        ' border:1px solid #FFD700;">'
+        '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold;">'
+        '🖼️ Galerie + — ' + html.escape(_titre) + '</div>'
+        '<div style="color:#e8eaf6 !important; font-size:0.85rem; margin-top:5px;">'
+        + html.escape(_sous) + '</div></div>', unsafe_allow_html=True)
+    try:
+        items = c.execute(
+            """SELECT titre, texte, image_url, date_event, lieu, auteur_nom, date_publication
+               FROM galerie_plus WHERE rubrique=?
+               ORDER BY COALESCE(date_event, date_publication) DESC, id DESC""",
+            (_rub,)).fetchall()
+    except Exception:
+        items = []
+    if not items:
+        st.info(_vide)
+        return
+    for (titre, texte, img, devt, lieu, auteur, dpub) in items:
+        _meta = []
+        _d = safe_date(devt or dpub)
+        if _d:
+            _meta.append("📅 " + _d.strftime("%d/%m/%Y"))
+        if (lieu or "").strip():
+            _meta.append("📍 " + str(lieu).strip())
+        if (auteur or "").strip():
+            _meta.append("✍️ " + str(auteur).strip())
+        _corps = ""
+        if img and str(img).strip().startswith("http"):
+            _corps += ('<img src="' + html.escape(str(img).strip()) + '" alt="" '
+                       'style="width:100%; max-width:560px; border-radius:10px; '
+                       'display:block; margin:0 auto 10px auto; border:1px solid #C9A227;">')
+        if (texte or "").strip():
+            _corps += ('<div style="line-height:1.7; color:#1a1a1a; white-space:pre-wrap;">'
+                       + html.escape(str(texte)) + '</div>')
+        st.markdown(
+            '<div style="background:#FFF9C4; border-radius:12px; padding:14px 16px;'
+            ' margin:10px 6px; border-left:6px solid #C9A227;">'
+            '<div style="color:#1A237E; font-weight:bold; font-size:1.02rem;">'
+            + html.escape(titre or "…") + '</div>'
+            + ('<div style="color:#4527a0; font-size:0.8rem; margin:2px 0 8px 0;">'
+               + html.escape(" · ".join(_meta)) + '</div>' if _meta else "")
+            + _corps + '</div>', unsafe_allow_html=True)
+        st.markdown("", unsafe_allow_html=True)
+
+
 def _assurer_table_intentions():
     """v7.8.14 — table des intentions confiées aux équipes (création douce).
     statut : 'recue' → 'en_priere' → 'archivee' (côté responsable d'équipe).
@@ -3219,6 +3314,13 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                                 max_chars=600,
                                 placeholder="Pour la santé de…, pour ma famille…, "
                                             "pour les vocations…")
+            # v7.9.1 — retour de la case d'anonymat (demande user) : l'auteur
+            # non signé reste inconnu du responsable (« Anonyme »), mais son
+            # contact est quand même enregistré — c'est lui qui porte la règle
+            # d'unicité (un numéro = une seule intention prise en charge).
+            _anon = st.checkbox(
+                "🕊️ Rester anonyme (le responsable verra « Anonyme »)",
+                key=_k("int_anon"))
             _rgpd = st.checkbox(
                 "En envoyant cette intention, j’accepte que certaines données techniques "
                 "soient utilisées à des fins de sécurité et de lutte contre les envois "
@@ -3227,19 +3329,22 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
             with st.expander("🔒 Politique de confidentialité"):
                 st.caption("Vos nom et contact servent uniquement à identifier votre intention "
                            "auprès du responsable d’équipe (et, s’il le souhaite, à vous répondre). "
-                           "Ils ne sont jamais publiés, ni partagés, ni utilisés à des fins "
-                           "commerciales. Votre jour de naissance sert uniquement de clé "
-                           "discrète dans la chaîne de prière universelle : il n’identifie "
-                           "personne et garantit simplement que vous n’y prierez jamais votre "
-                           "propre intention. Des traces techniques minimales (date, session) "
+                           "Ils ne sont jamais partagés ni utilisés à des fins commerciales. "
+                           "v7.9.1 — dans la chaîne de prière universelle, votre intention est "
+                           "présentée par votre nom (« Vierge Marie, mère de Dieu, intercède pour "
+                           "votre nom : … ») SAUF si vous cochez « 🕊️ Rester anonyme » : le livret "
+                           "dira alors « intercède pour cet anonyme ». Votre jour de naissance sert "
+                           "uniquement de clé discrète dans la chaîne de prière universelle : il "
+                           "n’identifie personne et garantit simplement que vous n’y prierez jamais "
+                           "votre propre intention. Des traces techniques minimales (date, session) "
                            "peuvent être conservées pour la sécurité et la lutte contre les "
                            "envois automatisés (spam). Vous pouvez demander la suppression de "
                            "votre intention à tout moment auprès du responsable de l’équipe.")
             if st.form_submit_button("📨 Confier cette intention", type="primary",
                                      width="stretch"):
                 _manque = []
-                if not (_nom or "").strip():
-                    _manque.append("votre nom et prénom")
+                if not (_nom or "").strip() and not _anon:
+                    _manque.append("votre nom et prénom (ou cochez « 🕊️ Rester anonyme »)")
                 if not (_contact or "").strip():
                     _manque.append("un contact (WhatsApp ou adresse mail)")
                 if _jour is None:
@@ -3250,12 +3355,21 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                     _manque.append("l’acceptation (case ☑) de la politique de confidentialité")
                 if _manque:
                     st.warning("Il manque : " + " ; ".join(_manque) + ".")
+                # v7.9.1 — UNICITÉ PAR NUMÉRO : un même numéro de téléphone ne
+                # peut pas porter 2 intentions prises en charge en même temps.
+                elif contact_en_priere(_contact):
+                    st.warning("📿 Ce contact porte déjà une intention PRISE EN "
+                               "CHARGE (en prière pour 20 jours). Un même numéro "
+                               "ne peut confier qu’une seule intention à la fois — "
+                               "vous pourrez en confier une nouvelle dès que la "
+                               "première sera archivée à la prière mensuelle.")
                 else:
                     _i = st.session_state.get("int_eq_choix")
                     if not isinstance(_i, int) or not (0 <= _i < len(equipes)):
                         _i = 0
                     _eq = equipes[_i]
-                    _auteur = (_nom or "").strip() or "Visiteur de l’Espace de Prière"
+                    _auteur = ("Anonyme" if _anon
+                               else (_nom or "").strip() or "Visiteur de l’Espace de Prière")
                     # v7.8.16 — envoi blindé : une micro-coupure vers la base
                     # (Turso) affiche un message doux et CONSERVE la saisie au
                     # lieu de faire planter toute la page ; le fidèle peut
@@ -3266,8 +3380,9 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                                      (equipe_id, texte, auteur_nom, auteur_contact, anonyme,
                                       jour_naissance, statut, date_soumission)
                                      VALUES (?, ?, ?, ?, ?, ?, 'recue', ?)""",
-                                  (_eq[0], _txt.strip(), _auteur, (_contact or "").strip(),
-                                   0, int(_jour), date.today().isoformat()))
+                                  (_eq[0], _txt.strip(), None if _anon else _auteur,
+                                   (_contact or "").strip(),
+                                   1 if _anon else 0, int(_jour), date.today().isoformat()))
                         commit_and_sync()
                     except Exception:
                         _err_envoi = True
@@ -3284,11 +3399,11 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                         st.session_state["diz_jrnais"] = int(_jour)
                         st.session_state["int_derniere"] = int(_jour)
                         st.session_state["flash_success"] = (
-                            "🙏 Votre intention a été confiée à l’équipe « " + str(_eq[1])
-                            + " ». Elle arrive directement au responsable — elle sera portée "
+                            "🙏 Votre intention a été confiée à " + str(_eq[1])
+                            + ". Elle arrive directement au responsable — elle sera portée "
                             "en prière, en toute confidentialité. 📿 À vous maintenant : "
-                            "égrenez votre dizaine pour porter le prochain — c’est LA CHAÎNE "
-                            "DE PRIÈRE UNIVERSELLE.")
+                            "égrenez une dizaine et porter en prière votre prochain — c’est LA "
+                            "CHAÎNE DE PRIÈRE UNIVERSELLE.")
                         st.rerun()
         # ── Mini-script (dernier élément du cadre, remonte au container bordé)
         # : pose le cadre doré + la classe .int-cadre-or (CSS ci-dessus). Comme
@@ -3578,6 +3693,9 @@ def show_espace_membre(matloc_membre=None):
                                             "Cet espace accueillera les cadres de discussions thématiques. Il est en préparation.")
             else:
                 _render_page_theme_ensemble()
+        elif rub == "🖼️ Galerie +":
+            # v7.9.1 — souvenirs (photos) et témoignages (grâces reçues).
+            _render_page_galerie(sub)
         else:
             _depliant_mouvement(st.session_state.get("paroisse_origine"))
             _render_dizaine_du_jour(est_membre=False)
@@ -3728,6 +3846,11 @@ def show_espace_membre(matloc_membre=None):
                                         "Cet espace accueillera les cadres de discussions thématiques. Il est en préparation.")
         else:
             _render_page_theme_ensemble()
+
+    elif rub == "🖼️ Galerie +":
+        # v7.9.1 — souvenirs (photos) et témoignages (grâces reçues),
+        # identiques pour les membres et les visiteurs.
+        _render_page_galerie(sub)
 
     else:
         _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
