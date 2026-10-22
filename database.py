@@ -4,7 +4,7 @@ import time
 import hashlib
 import secrets
 import logging
-from datetime import date
+from datetime import date, datetime
 
 # Configuration du logging pour éviter d'utiliser st.error dans la base de données
 logging.basicConfig(level=logging.ERROR)
@@ -236,6 +236,23 @@ def init_tables_and_migrations():
                     lieu TEXT,
                     auteur_nom TEXT,
                     date_publication TEXT)""")
+    # v7.9.2 — JOURNAL DES DIZAINES : le pointage « ✅ J'ai égrené ma
+    # dizaine aujourd'hui » (fin du livre « 🕯️ Un jour, une dizaine »).
+    # Un membre est identifié par son matloc (1 pointage/jour, contrainte
+    # UNIQUE) ; un visiteur n'a pas d'identité fiable : il est compté
+    # comme un « passage » (type='visiteur', jrnais = jour de naissance
+    # saisi au livret, sans contrainte d'unicité).
+    c.execute("""CREATE TABLE IF NOT EXISTS dizaines_journal (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    matloc TEXT,
+                    nom TEXT,
+                    type TEXT DEFAULT 'membre',
+                    jrnais INTEGER,
+                    equipe_id INTEGER,
+                    paroisse_id INTEGER,
+                    jour TEXT,
+                    heure TEXT,
+                    UNIQUE(matloc, jour))""")
     commit_and_sync()
 
     # --- 2. DONNÉES PAR DÉFAUT ---
@@ -636,3 +653,150 @@ def jours_depuis(d_iso):
         return max(0, (date.today() - d).days) if d else 0
     except Exception:
         return 0
+
+
+# ======================================================================
+# v7.9.2 — LA CHAÎNE EN DIRECT : JOURNAL DES DIZAINES
+# ======================================================================
+# « Y a-t-il une possibilité de savoir si un membre / un visiteur fait sa
+# dizaine ? » — OUI : le pointage « ✅ J'ai égrené ma dizaine aujourd'hui »
+# en fin de livre (« 🕯️ Un jour, une dizaine ») enregistre la participation
+# du jour. Principe d'honnêteté : le pointage part du LIVRE — il atteste
+# d'une dizaine égrenée DANS l'application, pas d'une promesse.
+#
+#   - Membre   : identifié par son matloc → 1 pointage/jour (UNIQUE),
+#                visible à son responsable (qui a fait / qui n'a pas fait).
+#   - Visiteur : aucune identité fiable → 1 « passage » par session et par
+#                jour (comptage global, sans nom).
+
+
+def _assurer_dizaines_journal():
+    """Création douce de dizaines_journal (bases distantes anciennes)."""
+    try:
+        c.execute("SELECT id FROM dizaines_journal LIMIT 1")
+    except Exception:
+        c.execute("""CREATE TABLE IF NOT EXISTS dizaines_journal (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        matloc TEXT,
+                        nom TEXT,
+                        type TEXT DEFAULT 'membre',
+                        jrnais INTEGER,
+                        equipe_id INTEGER,
+                        paroisse_id INTEGER,
+                        jour TEXT,
+                        heure TEXT,
+                        UNIQUE(matloc, jour))""")
+        commit_and_sync()
+
+
+def dizaine_deja_pointee(matloc=None):
+    """1 si ce membre a déjà pointé sa dizaine aujourd'hui, 0 sinon."""
+    if not matloc:
+        return 0
+    try:
+        _assurer_dizaines_journal()
+        return 1 if c.execute(
+            "SELECT 1 FROM dizaines_journal WHERE matloc=? AND jour=? LIMIT 1",
+            (matloc, date.today().isoformat())).fetchone() else 0
+    except Exception as e:
+        logger.warning(f"dizaine_deja_pointee : {e!r}")
+        return 0
+
+
+def pointer_dizaine(matloc=None, nom=None, jrnais=None, equipe_id=None,
+                    paroisse_id=None, est_membre=True):
+    """Enregistre la dizaine du jour (v7.9.2). Retourne (statut, message)
+    avec statut dans {'ok', 'deja', 'erreur'} — le même membre ne peut
+    pointer qu'UNE fois par jour (UNIQUE(matloc, jour)). Les visiteurs
+    (est_membre=False) sont comptés comme passages sans nom."""
+    try:
+        _assurer_dizaines_journal()
+        _jour = date.today().isoformat()
+        if est_membre:
+            if not matloc:
+                return ("erreur", "Membre non identifié.")
+            if dizaine_deja_pointee(matloc):
+                return ("deja", "Votre dizaine d'aujourd'hui est déjà pointée. 📿")
+            c.execute("""INSERT INTO dizaines_journal
+                         (matloc, nom, type, jrnais, equipe_id, paroisse_id, jour, heure)
+                         VALUES (?, ?, 'membre', NULL, ?, ?, ?, ?)""",
+                      (matloc, nom or None, equipe_id, paroisse_id, _jour,
+                       datetime.now().strftime("%H:%M")))
+        else:
+            c.execute("""INSERT INTO dizaines_journal
+                         (matloc, nom, type, jrnais, equipe_id, paroisse_id, jour, heure)
+                         VALUES (NULL, NULL, 'visiteur', ?, ?, ?, ?, ?)""",
+                      (jrnais, equipe_id, paroisse_id, _jour,
+                       datetime.now().strftime("%H:%M")))
+        commit_and_sync()
+        return ("ok", "Pointée ! Votre dizaine d'aujourd'hui est enregistrée. 📿✨")
+    except Exception as e:
+        logger.warning(f"pointer_dizaine : {e!r}")
+        return ("erreur", "Le pointage n'a pas pu être enregistré — réessayez.")
+
+
+def stats_dizaines_jour(jour=None, equipe_id=None):
+    """Comptages du jour (v7.9.2) : (membres, visiteurs, liste_membres).
+    equipe_id filtre les membres sur une équipe (les visiteurs restent
+    globaux — ils n'appartiennent à aucune équipe)."""
+    _jour = jour or date.today().isoformat()
+    try:
+        _assurer_dizaines_journal()
+        _ph, _prm = ("AND equipe_id=?", [equipe_id]) if equipe_id else ("", [])
+        _mbrs = c.execute(f"""SELECT nom, matloc, heure FROM dizaines_journal
+                              WHERE type='membre' AND jour=? {_ph}
+                              ORDER BY heure ASC""", (_jour, *_prm)).fetchall()
+        _vis = c.execute("SELECT COUNT(*) FROM dizaines_journal "
+                         "WHERE type='visiteur' AND jour=?", (_jour,)).fetchone()[0]
+        return (len(_mbrs), _vis, _mbrs)
+    except Exception as e:
+        logger.warning(f"stats_dizaines_jour : {e!r}")
+        return (0, 0, [])
+
+
+def serie_dizaines(nb_jours=7, equipe_id=None):
+    """[(jour, membres, visiteurs)] des N derniers jours (v7.9.2), le plus
+    ancien d'abord — pour la courbe des responsables."""
+    try:
+        _assurer_dizaines_journal()
+        _ph, _prm = ("AND equipe_id=?", [equipe_id]) if equipe_id else ("", [])
+        _deb = date.fromordinal(date.today().toordinal() - nb_jours + 1).isoformat()
+        rows = c.execute(f"""SELECT jour,
+                             SUM(CASE WHEN type='membre' THEN 1 ELSE 0 END),
+                             SUM(CASE WHEN type='visiteur' THEN 1 ELSE 0 END)
+                             FROM dizaines_journal WHERE jour>=? {_ph}
+                             GROUP BY jour ORDER BY jour ASC""",
+                          (_deb, *_prm)).fetchall()
+        _map = {r[0]: (r[1] or 0, r[2] or 0) for r in rows}
+        _serie = []
+        for _i in range(nb_jours):
+            _d = date.fromordinal(date.today().toordinal() - nb_jours + 1 + _i).isoformat()
+            _mv, _vv = _map.get(_d, (0, 0))
+            _serie.append((_d, _mv, _vv))
+        return _serie
+    except Exception as e:
+        logger.warning(f"serie_dizaines : {e!r}")
+        return [(date.fromordinal(date.today().toordinal() - nb_jours + 1 + i).isoformat(), 0, 0)
+                for i in range(nb_jours)]
+
+
+def compteur_dizaines_mois(matloc):
+    """Nombre de dizaines pointées CE MOIS par un membre (v7.9.2) + série
+    des derniers jours consécutifs (flamme 📿)."""
+    try:
+        _assurer_dizaines_journal()
+        _deb = date.today().replace(day=1).isoformat()
+        _n = c.execute("SELECT COUNT(*) FROM dizaines_journal "
+                       "WHERE matloc=? AND jour>=?", (matloc, _deb)).fetchone()[0]
+        _flamme = 0
+        for _i in range(0, 60):
+            _d = date.fromordinal(date.today().toordinal() - _i).isoformat()
+            if c.execute("SELECT 1 FROM dizaines_journal WHERE matloc=? AND jour=? LIMIT 1",
+                         (matloc, _d)).fetchone():
+                _flamme += 1
+            else:
+                break
+        return (_n, _flamme)
+    except Exception as e:
+        logger.warning(f"compteur_dizaines_mois : {e!r}")
+        return (0, 0)
