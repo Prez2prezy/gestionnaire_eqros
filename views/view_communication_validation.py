@@ -39,6 +39,12 @@ def _assurer_colonnes_cible():
         c.execute("SELECT date_publication_prevue FROM soumissions_comm LIMIT 1")
     except Exception:
         safe_migrate("ALTER TABLE soumissions_comm ADD COLUMN date_publication_prevue TEXT")
+    # v7.9.2 — traçabilité des décisions (qui a publié, quand)
+    for _col in ("date_decision", "auteur_decision"):
+        try:
+            c.execute(f"SELECT {_col} FROM soumissions_comm LIMIT 1")
+        except Exception:
+            safe_migrate(f"ALTER TABLE soumissions_comm ADD COLUMN {_col} TEXT")
     # Affiches du thème et des sous-thèmes (auto-réparation)
     for _t in ("themes_pastoraux", "sous_themes"):
         try:
@@ -189,12 +195,20 @@ def show_validation_communication():
             # Publier maintenant OU programmer : le contenu reste invisible
             # jusqu'à la date/heure choisie, puis est publié automatiquement
             # (réveil au chargement de l'app — Abidjan = UTC, pas de décalage).
+            # v7.9.2 — aperçu LIVE de l'échéance choisie avant de cliquer :
+            # fini les programmations au mauvais jour par inadvertance.
             with st.expander("🗓️ Programmer la publication (au lieu de publier maintenant)"):
                 _d_prog = st.date_input("Date de publication", value=date.today(), key=f"dp_{s[0]}")
                 _h_prog = st.time_input("Heure de publication", value=time(8, 0), key=f"hp_{s[0]}")
-                st.caption("Le contenu rejoindra l'Espace de Prière à cette date et heure, sans nouveau "
+                _dt_aper = datetime.combine(_d_prog, _h_prog)
+                _j_aper = (_dt_aper.date() - date.today()).days
+                st.caption("→ **Résumé :** publication le "
+                           + _dt_aper.strftime("%d/%m/%Y à %H:%M") + " ("
+                           + ("aujourd'hui" if _j_aper == 0 else "dans " + str(_j_aper) + " jour(s)")
+                           + "). Le contenu rejoindra l'Espace de Prière à cette date et heure, sans nouveau "
                            "clic (publication automatique dès qu'une page de l'application est ouverte "
-                           "après l'échéance — heure du serveur, Abidjan = UTC).")
+                           "après l'échéance — heure du serveur, Abidjan = UTC). « ✅ Publier » ci-dessous "
+                           "RESTE une publication immédiate : utilisez le bouton de ce cadre pour programmer.")
                 if st.button("🗓️ Programmer la publication", key=f"prog_{s[0]}", type="primary",
                              use_container_width=True):
                     _dt = datetime.combine(_d_prog, _h_prog)
@@ -202,7 +216,7 @@ def show_validation_communication():
                         st.error("La date/heure choisie est déjà passée : choisissez un moment futur.")
                     else:
                         c.execute("""UPDATE soumissions_comm SET statut='programme',
-                                     date_publication_prevue=? WHERE id=?""",
+                                     date_publication_prevue=?, auteur_decision=NULL WHERE id=?""",
                                   (_dt.strftime("%Y-%m-%d %H:%M"), s[0]))
                         commit_and_sync()
                         try:
@@ -212,9 +226,12 @@ def show_validation_communication():
                                 + html.escape(s[2] or "(sans titre)"))
                         except Exception:
                             pass
+                        _j_flash = (_dt.date() - date.today()).days
                         st.session_state["flash_success"] = (
                             "Publication programmée pour le "
-                            + _dt.strftime("%d/%m/%Y à %H:%M") + ". 🗓️")
+                            + _dt.strftime("%d/%m/%Y à %H:%M")
+                            + (" (dans " + str(_j_flash) + " jour(s))" if _j_flash else " (aujourd'hui)")
+                            + ". Rien ne sera publié avant cette heure — le suivi est dans « 🗓️ Programmées ». 🗓️")
                         st.rerun()
 
             c_pub, c_ref = st.columns(2)
@@ -323,7 +340,11 @@ def show_validation_communication():
                                   (s[2], s[7], s[8], s[4], s[6], "Service Communication",
                                    s[10] if len(s) > 10 else None))
                     if _ok:
-                        _cur = c.execute("UPDATE soumissions_comm SET statut='publie' WHERE id=?", (s[0],))
+                        # v7.9.2 — traçabilité : la décision manuelle est datée
+                        _cur = c.execute("""UPDATE soumissions_comm SET statut='publie',
+                                            date_decision=?, auteur_decision=? WHERE id=?""",
+                                         (datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                          "👤 diocèse — clic « ✅ Publier »", s[0]))
                         commit_and_sync()
                         # v7.9.0 — preuve du rangement : si la mise à jour
                         # n'a touché AUCUNE ligne (micro-coupure Turso), on
@@ -374,7 +395,10 @@ def show_validation_communication():
                     st.markdown(s[3])
                 if st.button("✅ Marquer comme publié (sans republier)", key=f"mark_{s[0]}",
                              type="primary", use_container_width=True):
-                    c.execute("UPDATE soumissions_comm SET statut='publie' WHERE id=?", (s[0],))
+                    c.execute("""UPDATE soumissions_comm SET statut='publie',
+                                 date_decision=?, auteur_decision=? WHERE id=?""",
+                              (datetime.now().strftime("%Y-%m-%d %H:%M"),
+                               "👤 diocèse — rangement « déjà publié » (rien republié)", s[0]))
                     commit_and_sync()
                     st.session_state["flash_success"] = "Rangé ! La file d'attente est exacte à nouveau. 🧹"
                     st.rerun()
@@ -395,21 +419,36 @@ def show_validation_communication():
                    "dans une soumission en attente pour la diffuser à une date/heure choisie.")
     for s in _programmees:
         libelle = LIBELLES.get(s[1], s[1])
-        with st.expander(f"🗓️ {libelle} — {s[2] or '(sans titre)'} → le {s[11]}"):
+        # v7.9.2 — compte à rebours visible : l'échéance SE VOIT, et le
+        # contenu ne peut pas partir avant (double verrou côté réveil).
+        _j_avant, _h_avant = None, None
+        try:
+            _dt_prev = datetime.strptime(str(s[11]), "%Y-%m-%d %H:%M")
+            _delta = _dt_prev - datetime.now()
+            _j_avant = max(0, _delta.days)
+            _h_avant = max(0, _delta.seconds // 3600)
+        except (ValueError, TypeError):
+            pass
+        _cd = (f" ⏳ dans {_j_avant} j {_h_avant} h" if _j_avant is not None else "")
+        with st.expander(f"🗓️ {libelle} — {s[2] or '(sans titre)'} → le {s[11]}{_cd}"):
             if s[3]:
                 st.markdown("**Texte :**")
                 st.markdown(s[3])
             if s[4]:
                 try: st.image(s[4], width=300)
                 except Exception: pass
-            st.info(f"⏰ Publication automatique prévue le **{s[11]}** "
-                    "(dès qu'une page de l'application est ouverte après cette heure).")
+            st.info(f"⏰ Publication automatique prévue le **{s[11]}**{_cd} "
+                    "(dès qu'une page de l'application est ouverte après cette heure). "
+                    "Aucun contenu ne part AVANT cette échéance.")
             ca, cb = st.columns(2)
             with ca:
                 if st.button("▶️ Publier maintenant", key=f"pnow_{s[0]}",
                              type="primary", use_container_width=True):
                     if publier_soumission(s):
-                        c.execute("UPDATE soumissions_comm SET statut='publie' WHERE id=?", (s[0],))
+                        c.execute("""UPDATE soumissions_comm SET statut='publie',
+                                     date_decision=?, auteur_decision=? WHERE id=?""",
+                                  (datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                   "👤 diocèse — clic « ▶️ Publier maintenant » (programmation annulée)", s[0]))
                         commit_and_sync()
                         _notifier(s, "publie")
                         st.session_state["flash_success"] = "Contenu publié immédiatement (programmation annulée). ✅"
@@ -425,7 +464,8 @@ def show_validation_communication():
 
     st.markdown("---")
     st.markdown("### 📔 Historique des décisions")
-    historique = c.execute("""SELECT id, type_contenu, titre, statut, motif_refus, date_soumission
+    historique = c.execute("""SELECT id, type_contenu, titre, statut, motif_refus, date_soumission,
+                                     date_decision, auteur_decision
                               FROM soumissions_comm WHERE statut IN ('publie','refuse')
                               ORDER BY id DESC LIMIT 30""").fetchall()
     if not historique:
@@ -433,10 +473,20 @@ def show_validation_communication():
     for h in historique:
         libelle = LIBELLES.get(h[1], h[1])
         marqueur = "✅" if h[3] == "publie" else "❌"
+        # v7.9.2 — la décision est DATÉE et SIGNÉE : on voit si la publication
+        # a été faite au clic du diocèse ou à l'échéance programmée.
+        _detail_dec = ""
+        if h[3] == "publie" and (h[6] or h[7]):
+            _detail_dec = " — publiée le " + (h[6] or "?")
+            if h[7]:
+                _detail_dec += " · " + str(h[7])
         with st.expander(f"{marqueur} {libelle} — {h[2] or '(sans titre)'} ({h[5]})"):
-            st.write("Décision : **publiée**" if h[3] == "publie" else "Décision : **refusée**")
-            if h[3] == "refuse" and h[4]:
-                st.error("Motif : " + h[4])
+            if h[3] == "publie":
+                st.write("Décision : **publiée**" + _detail_dec)
+            else:
+                st.write("Décision : **refusée**")
+                if h[4]:
+                    st.error("Motif : " + h[4])
 
     # --- v7.8.5 : la « 🕯️ Gestion du thème » quitte le SAS ---
     st.markdown("---")
