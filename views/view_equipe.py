@@ -3,7 +3,8 @@ import pandas as pd
 import io
 import logging
 from datetime import date
-from database import c, commit_and_sync, verifier_reparer_intentions, jours_depuis
+from database import (c, commit_and_sync, verifier_reparer_intentions, jours_depuis,
+                      prise_en_charge_automatique)
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
@@ -29,12 +30,20 @@ def _onglet_intentions_equipe(eid):
     Agenda » : la boîte de réception du responsable. Compteur, 🕊️ Prise en
     prière, 🗄️ Archiver, principe « être une tombe » rappelé."""
     _assurer_table_intentions_eq()
+    # v7.9.1 — RÈGLE DU LENDEMAIN : le balayage tourne à chaque ouverture de
+    # l'onglet — une intention reçue hier (ou avant) passe automatiquement
+    # « en prière » pour 20 jours, sans action du responsable (qui garde le
+    # bouton pour une prise en charge IMMÉDIATE le jour même).
+    prise_en_charge_automatique()
     st.caption("🙏 Les intentions confiées à votre équipe depuis l’**Espace "
                "communautaire** (« 🙏 Vos intentions à une équipe », juste avant "
                "📰 Actualités de la Paroisse) arrivent ICI, directement à vous. "
                "🤫 **Principe « être une tombe »** : elles ne se racontent pas, "
                "ne se commentent pas et ne sortent jamais de l’équipe — elles se "
-               "portent en prière, puis s’archivent.")
+               "portent en prière, puis s’archivent. "
+               "⏱️ *v7.9.1 : chaque intention reçue passe automatiquement « en "
+               "prière » le lendemain de sa réception, pour 20 jours (20 mystères) — "
+               "le bouton 🕊️ sert aux prises en charge immédiates du jour même.*")
     try:
         n_rec = c.execute("SELECT COUNT(*) FROM intentions_equipes "
                           "WHERE equipe_id=? AND statut='recue'", (eid,)).fetchone()[0]
