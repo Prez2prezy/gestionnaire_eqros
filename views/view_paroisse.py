@@ -4,8 +4,10 @@ import pandas as pd
 import io
 from datetime import date
 from database import (c, commit_and_sync, verifier_reparer_intentions,
-                      intention_du_prochain, get_parametre, set_parametre,
-                      INTENTIONS_UNIVERSELLES, jours_depuis)
+                      intention_du_prochain, intention_du_prochain_detail,
+                      get_parametre, set_parametre,
+                      INTENTIONS_UNIVERSELLES, jours_depuis,
+                      prise_en_charge_automatique)
 from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, supprimer_photo,
                       archiver_membre, safe_date, afficher_situation, sans_accents, 
                       enregistrer_abonnement, verifier_abonnement, periode_affichage, 
@@ -23,8 +25,13 @@ def _onglet_coins_intentions(pid, equipes):
     intention (« Intention du prochain ») du livret « 🕯️ Un jour, une
     dizaine ».
     NB rappelé : une intention prise en charge dure au minimum 20 jours
-    (20 mystères), sinon jusqu'à la prochaine prière mensuelle."""
+    (20 mystères), sinon jusqu'à la prochaine prière mensuelle.
+    v7.9.1 — RÈGLE DU LENDEMAIN : le balayage `prise_en_charge_automatique`
+    tourne ici — toute intention reçue passe « en prière » le lendemain de
+    sa réception (date_statut = réception + 1), pour 20 jours. Un même
+    numéro ne porte jamais 2 intentions prises en charge."""
     verifier_reparer_intentions()
+    prise_en_charge_automatique()
     ids_eq = [e[0] for e in equipes]
     _ph = ",".join("?" * len(ids_eq)) if ids_eq else "NULL"
     _prm = list(ids_eq)
@@ -49,9 +56,16 @@ def _onglet_coins_intentions(pid, equipes):
     m3.metric("🗄️ Archivées", n_arc)
     st.caption("🕊️ Principe « être une tombe » : les intentions se portent en prière, "
                "elles ne se racontent pas et ne sortent jamais de l’équipe. Cette page "
-               "en fait le bilan sans jamais les commenter. " +
+               "en fait le bilan sans jamais les commenter. "
                "**NB : une intention prise en charge dure au minimum 20 jours "
                "(20 mystères), sinon jusqu’à la prochaine prière mensuelle.**")
+    # v7.9.1 — la règle du lendemain, expliquée au gestionnaire paroissial.
+    st.info("⏱️ **v7.9.1 — Règle du lendemain :** chaque intention reçue passe "
+            "automatiquement « 🕊️ Prise en charge » **le lendemain de sa réception**, "
+            "pour 20 jours (20 mystères) — sans aucune action manuelle. Un même "
+            "numéro de téléphone ne peut porter qu’**une seule** intention prise en "
+            "charge à la fois : les intentions suivantes du même numéro attendent "
+            "l’archivage de la première.")
 
     # ---------- B. BILAN PAR ÉQUIPE ----------
     if not ids_eq:
@@ -136,15 +150,141 @@ def _onglet_coins_intentions(pid, equipes):
                    "désormais cette intention (l'aperçu ci-dessous est à jour).")
 
     # ---------- D. APERÇU (ce que verra le visiteur) ----------
-    _txt_prochain = intention_du_prochain(jour_visiteur=None)
+    # v7.9.1 — aperçu au NOUVEAU MODÈLE demandé : « intercède pour {Prénom
+    # Nom} : … », « intercède pour cet anonyme : … », « intercède : … »
+    # (universelle). Le texte est échappé (aucun HTML ne passe).
+    _txt_prochain, _qui_prochain = intention_du_prochain_detail(jour_visiteur=None)
+    _ligne_apercu = (("🕯️ Vierge Marie, mère de Dieu, intercède pour " + _qui_prochain
+                      + " : " + _txt_prochain) if _qui_prochain
+                     else ("🕯️ Vierge Marie, mère de Dieu, intercède : " + _txt_prochain))
     st.markdown(
         '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
         ' border:1px solid #FFD700; border-radius:12px; padding:14px 16px; margin:8px 0;">'
         '<div style="color:#FFD000; font-size:0.85rem; font-weight:600;">👁️ Aperçu — ce que le '
         'visiteur lira dans « 🕯️ Un jour, une dizaine »</div>'
         '<div style="color:#ffffff; font-size:1rem; margin-top:6px; line-height:1.7;">'
-        '🕯️ Vierge Marie, mère de Dieu, intercède : <b>' + _txt_prochain.replace("<", "&lt;") + '</b></div></div>',
+        + _ligne_apercu.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        + '</div></div>',
         unsafe_allow_html=True)
+    st.caption("🧭 Chaque visiteur reçoit l’intention de SON prochain selon son N° méd. "
+               "(jour de naissance) et la médite sur sa fenêtre de 20 jours ; "
+               "personne ne prie jamais sa propre intention.")
+
+
+def _tableau_de_bord_paroisse(pid, nom_p):
+    """🚦 TABLEAU DE BORD (v7.9.1) — 2e onglet de « 📊 Statistiques - {paroisse} » :
+    la vue d'ensemble en un coup d'œil — effectifs, abonnements de l'année
+    pastorale en cours, intentions (règle du lendemain + 20 mystères),
+    prochaine prière, fréquentation de l'Espace communautaire et santé de
+    chaque équipe. Lecture seule : rien ne se modifie ici."""
+    annee_cours = get_periode_pastorale()[0]
+
+    # ---- Intentions (balayage « lendemain » au passage, sans jamais casser)
+    verifier_reparer_intentions()
+    prise_en_charge_automatique()
+    ids_eq = [e[0] for e in c.execute("SELECT id FROM equipes WHERE paroisse_id=?", (pid,)).fetchall()]
+    _ph = ",".join("?" * len(ids_eq)) if ids_eq else "NULL"
+    _prm = list(ids_eq)
+    try:
+        n_rec = c.execute(f"SELECT COUNT(*) FROM intentions_equipes WHERE equipe_id IN ({_ph}) AND statut='recue'", _prm).fetchone()[0]
+        n_pri = c.execute(f"SELECT COUNT(*) FROM intentions_equipes WHERE equipe_id IN ({_ph}) AND statut='en_priere'", _prm).fetchone()[0]
+        n_arc = c.execute(f"SELECT COUNT(*) FROM intentions_equipes WHERE equipe_id IN ({_ph}) AND statut='archivee'", _prm).fetchone()[0]
+        _dstat = c.execute(f"SELECT date_statut FROM intentions_equipes WHERE equipe_id IN ({_ph}) AND statut='en_priere'", _prm).fetchall()
+    except Exception:
+        n_rec = n_pri = n_arc = 0
+        _dstat = []
+    n_fin = sum(1 for (ds,) in _dstat if (jours_depuis(ds) >= 20))
+
+    # ---- Effectifs & abonnements
+    nb_eq = len(ids_eq)
+    nb_mbr = c.execute("SELECT COUNT(*) FROM membres WHERE paroisse_id=? AND statut='actif'", (pid,)).fetchone()[0]
+    stats_abo = c.execute("""SELECT COUNT(m.id), SUM(CASE WHEN a.annee_debut=? AND a.statut='paye' THEN 1 ELSE 0 END)
+                             FROM membres m LEFT JOIN abonnements a ON m.id = a.membre_id AND a.annee_debut=?
+                             WHERE m.paroisse_id=? AND m.statut='actif'""", (annee_cours, annee_cours, pid)).fetchone()
+    total_abo = int(stats_abo[0]) if stats_abo and stats_abo[0] else 0
+    payes_abo = int(stats_abo[1]) if stats_abo and stats_abo[1] else 0
+    taux = str(round(payes_abo / total_abo * 100)) + "%" if total_abo else "0%"
+
+    # ---- Prochaine prière (agenda des équipes de la paroisse)
+    try:
+        _evt = c.execute(f"""SELECT e.date_evenement, e.type_evenement, e.lieu
+                             FROM evenements e JOIN evenement_equipes ee ON e.id = ee.evenement_id
+                             WHERE ee.equipe_id IN ({_ph}) AND e.date_evenement >= ?
+                             ORDER BY e.date_evenement ASC LIMIT 1""",
+                         (*ids_eq, date.today().isoformat())).fetchone() if ids_eq else None
+    except Exception:
+        _evt = None
+
+    # ---- Fréquentation : scans du QR paroissial (30 derniers jours)
+    _il_y_a_30 = (date.today().toordinal() - 30)
+    try:
+        n_vis = c.execute("SELECT COUNT(*) FROM visites_paroisse WHERE paroisse_id=?", (pid,)).fetchone()[0]
+        n_vis_30 = 0
+        for (_dv,) in c.execute("SELECT date_visite FROM visites_paroisse WHERE paroisse_id=?", (pid,)).fetchall():
+            _d = safe_date(_dv)
+            if _d and _d.toordinal() >= _il_y_a_30:
+                n_vis_30 += 1
+    except Exception:
+        n_vis = n_vis_30 = 0
+
+    st.markdown("### 🚦 Tableau de bord — " + str(nom_p))
+    st.caption("Tout ce qui compte, en un coup d'œil · année pastorale " + str(annee_cours)
+               + " (" + periode_affichage(annee_cours) + ")")
+    r1 = st.columns(4)
+    r1[0].metric("👥 Équipes", nb_eq)
+    r1[1].metric("👤 Membres actifs", nb_mbr)
+    r1[2].metric("💰 Abonnements payés", f"{payes_abo}/{total_abo}")
+    r1[3].metric("📈 Recouvrement", taux)
+    r2 = st.columns(4)
+    r2[0].metric("🆕 Intentions reçues", n_rec)
+    r2[1].metric("🕊️ En prière", n_pri)
+    r2[2].metric("🗄️ Archivées", n_arc)
+    r2[3].metric("⏰ 20 mystères accomplis", n_fin,
+                 delta="à archiver à la prière mensuelle" if n_fin else None,
+                 delta_color="off")
+    if n_fin:
+        st.warning("🕊️ **" + str(n_fin) + "** intention(s) en prière ont dépassé les "
+                   "20 mystères : à archiver à la prochaine prière mensuelle "
+                   "(onglet « 🙏 Coins des Intentions » du 📌 Suivi).")
+    if n_rec:
+        st.info("🆕 **" + str(n_rec) + "** intention(s) reçue(s) aujourd'hui : elles passeront "
+                "automatiquement « 🕊️ Prises en charge » demain (règle du lendemain, 20 jours).")
+
+    _c_evt, _c_vis = st.columns(2)
+    with _c_evt:
+        st.markdown("#### 📅 Prochaine prière")
+        if _evt:
+            _d = safe_date(_evt[0])
+            _j = (_d - date.today()).days if _d else None
+            _delai = ("🔴 aujourd'hui" if _j == 0 else "🟠 demain"
+                      if _j == 1 else f"📅 dans {_j} jours") if _j is not None else ""
+            st.success(f"✨ **{_evt[1] or 'Prière'}** — {_d.strftime('%d/%m/%Y') if _d else _evt[0]} {_delai}\n\n📍 {_evt[2] or 'lieu à définir'}")
+        else:
+            st.info("Aucun évènement à venir dans l'agenda des équipes.")
+    with _c_vis:
+        st.markdown("#### 🌐 Espace communautaire")
+        st.metric("🔳 Arrivées via le QR paroissial (30 jours)", n_vis_30)
+        st.caption(f"Depuis l'origine : {n_vis} arrivée(s) comptée(s) à votre paroisse.")
+
+    # ---- Santé par équipe
+    st.markdown("#### 🧭 Santé des équipes")
+    _lignes = []
+    for (eid, enom) in c.execute("SELECT id, nom_equipe FROM equipes WHERE paroisse_id=? ORDER BY nom_equipe", (pid,)).fetchall():
+        _m = c.execute("SELECT COUNT(*) FROM membres WHERE equipe_id=? AND statut='actif'", (eid,)).fetchone()[0]
+        _p = c.execute("""SELECT COUNT(*) FROM membres m LEFT JOIN abonnements a
+                          ON m.id = a.membre_id AND a.annee_debut=?
+                          WHERE m.equipe_id=? AND m.statut='actif' AND a.statut='paye'""",
+                       (annee_cours, eid)).fetchone()[0]
+        try:
+            _i = c.execute("SELECT COUNT(*) FROM intentions_equipes WHERE equipe_id=? AND statut='en_priere'", (eid,)).fetchone()[0]
+        except Exception:
+            _i = 0
+        _lignes.append({"Équipe": enom, "Membres actifs": _m,
+                        f"Abonnés {annee_cours}": _p, "🕊️ Intentions en prière": _i})
+    if _lignes:
+        st.dataframe(pd.DataFrame(_lignes), width="stretch", hide_index=True)
+    else:
+        st.info("Aucune équipe : créez la première depuis « 👥 Mes équipes ».")
 
 
 def generer_identifiant_equipe(nom_paroisse, nom_commune, nom_equipe, paroisse_id):
@@ -436,9 +576,15 @@ def show_paroisse():
 
     elif menu == "📊 Statistiques":
         st.markdown(f'<h2 style="color:#1A237E;">📊 Statistiques - {nom_p}</h2>', unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        c1.metric("Équipes", c.execute("SELECT COUNT(*) FROM equipes WHERE paroisse_id=?", (pid,)).fetchone()[0])
-        c2.metric("Membres actifs", c.execute("SELECT COUNT(*) FROM membres WHERE paroisse_id=? AND statut='actif'", (pid,)).fetchone()[0])
+        # v7.9.1 — 2ᵉ onglet « 🚦 Tableau de bord » : la vue d'ensemble
+        # (effectifs, abonnements, intentions, prochaine prière, fréquentation).
+        _t_stats, _t_bord = st.tabs(["📈 Vue d'ensemble", "🚦 Tableau de bord"])
+        with _t_stats:
+            c1, c2 = st.columns(2)
+            c1.metric("Équipes", c.execute("SELECT COUNT(*) FROM equipes WHERE paroisse_id=?", (pid,)).fetchone()[0])
+            c2.metric("Membres actifs", c.execute("SELECT COUNT(*) FROM membres WHERE paroisse_id=? AND statut='actif'", (pid,)).fetchone()[0])
+        with _t_bord:
+            _tableau_de_bord_paroisse(pid, nom_p)
 
     elif menu == "📅 Abonnements":
         st.markdown(f'<h2 style="color:#1A237E;">💰 État des abonnements - {nom_p}</h2>', unsafe_allow_html=True)
@@ -555,3 +701,4 @@ def show_paroisse():
                 with st.expander(f"{a[1]} {a[2]} ({a[0]}) – {afficher_situation(a[3])} – {duree} an(s) ({eq_nom})"):
                     st.write(f"Ajouté par : {a[8] or 'Inconnu'}")
                     if a[6]: st.write(f"Commentaire : {a[6]}")
+
