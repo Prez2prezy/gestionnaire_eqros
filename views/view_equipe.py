@@ -4,11 +4,15 @@ import io
 import logging
 from datetime import date
 from database import (c, commit_and_sync, verifier_reparer_intentions, jours_depuis,
-                      prise_en_charge_automatique, stats_dizaines_jour, serie_dizaines)
+                      prise_en_charge_automatique, stats_dizaines_jour, serie_dizaines,
+                      _assurer_table_reserve, reserve_compteur, reserve_lignes,
+                      ajouter_intention_reserve, retirer_intention_reserve,
+                      OBJECTIF_RESERVE)
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
-                      get_max_membres, synchroniser_menu_session, lire_menu_session)
+                      get_max_membres, synchroniser_menu_session, lire_menu_session,
+                      afficher_messages_flash)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, 
                         afficher_historique_suivi, afficher_whatsapp_tabs, widget_type_abonnement, 
                         enregistrer_presence_equipe, afficher_etat_presences_globales)
@@ -22,9 +26,9 @@ def _bloc_dizaines_equipe(eid):
     de chaque membre. Les visiteurs (passages anonymes) restent globaux."""
     st.markdown("#### 📿 Chaîne des dizaines — aujourd'hui")
     st.caption("Le pointage est volontaire : chaque équipier le fait en fin de « 🕯️ Un jour, "
-               "une dizaine » (bouton « ✅ J'ai égrené ma dizaine aujourd'hui »). Il atteste "
-               "d'une dizaine égrenée dans l'application — le contenu de la prière, lui, "
-               "reste personnel.")
+               "une dizaine » (bouton « ✅ J'ai égrené ma dizaine aujourd'hui », ou « ✕ "
+               "Terminer » en fin de mystère — v7.9.3). Il atteste d'une dizaine égrenée "
+               "dans l'application — le contenu de la prière, lui, reste personnel.")
     _mbr, _vis, _liste = stats_dizaines_jour(equipe_id=eid)
     _total_eq = c.execute("SELECT COUNT(*) FROM membres WHERE equipe_id=? AND statut='actif'",
                           (eid,)).fetchone()[0]
@@ -67,6 +71,99 @@ def _assurer_table_intentions_eq():
     créées par un brouillon antérieur peuvent manquer de n'importe quelle
     colonne (correctif de « Impossible de lire les intentions »)."""
     verifier_reparer_intentions()
+
+
+def _bloc_reserve_equipe(eid):
+    """📚 RÉSERVE D'INTENTIONS PAR N° MÉD. (v7.9.3) — pour CHACUN des 20 N°
+    de méditation, 20 intentions préparées À L'AVANCE. « Ça sera l'affaire
+    des responsables d'équipe et paroissial : ils pourront ajouter les
+    intentions de leurs membres. » Le responsable ajoute ici les intentions
+    de SES membres — le N° méd. du membre désigne l'emplacement de la
+    réserve ; le visiteur du jour reçoit, selon SON N° méd., une intention
+    de cet emplacement et la médite sur 20 jours."""
+    _assurer_table_reserve()
+    # v7.9.3 — la confirmation d'un ajout (flash posé par le formulaire)
+    # s'affiche ici, en tête du bloc, APRÈS le rerun.
+    afficher_messages_flash()
+    st.markdown("---")
+    st.markdown("### 📚 Réserve d'intentions — 20 intentions par N° méd.")
+    st.caption("Les visiteurs du jour reçoivent les intentions de leurs prochains "
+               "selon leur N° méd. (1-20) et les méditent sur 20 jours. Il faut donc "
+               "AU PRÉALABLE 20 intentions pour chacun des 20 N° — c'est l'affaire du "
+               "responsable d'équipe : il ajoute ici les intentions de ses membres. "
+               "Compteurs toutes équipes confondues (la chaîne est universelle). "
+               "🤫 Comme toujours : être une tombe.")
+    _cpt = reserve_compteur()
+    _total = sum(_cpt.values())
+    _grille = "".join(
+        '<div style="min-width:62px; flex:1 0 62px; background:'
+        + ("#1b2a5e" if _cpt[n] else "#121a45")
+        + '; border:1px solid '
+        + ("#FFD700" if _cpt[n] >= OBJECTIF_RESERVE else ("#3a4585" if _cpt[n] else "#27306b"))
+        + '; border-radius:9px; padding:6px 4px; text-align:center;">'
+        + '<div style="color:' + ("#FFD000" if _cpt[n] else "#5a6398")
+        + '; font-weight:bold; font-size:0.95rem;">' + str(n).zfill(2) + '</div>'
+        + '<div style="color:' + ("#e8eaf6" if _cpt[n] else "#5a6398")
+        + '; font-size:0.72rem;">' + str(_cpt[n]) + "/" + str(OBJECTIF_RESERVE) + '</div></div>'
+        for n in range(1, 21))
+    st.markdown('<div style="display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 4px 0;">'
+                + _grille + '</div>', unsafe_allow_html=True)
+    if _total >= 20 * OBJECTIF_RESERVE:
+        st.success("🎯 Objectif atteint : " + str(_total)
+                   + " intentions en réserve (20 par N° méd.) — la chaîne ne tombera pas à sec.")
+    else:
+        st.caption("🎯 Objectif : " + str(OBJECTIF_RESERVE)
+                   + " intentions par N° méd. (400 au total) — réserve actuelle : "
+                   + str(_total) + ".")
+    membres = c.execute("""SELECT id, nom, prenom, numero_meditation FROM membres
+                           WHERE equipe_id=? AND statut='actif' ORDER BY nom""",
+                        (eid,)).fetchall()
+    with st.expander("➕ Ajouter une intention à la réserve"):
+        if not membres:
+            st.info("Ajoutez d'abord vos membres (« 👤 Mes membres ») : chaque intention "
+                    "de la réserve est portée par un membre, selon son N° méd.")
+        else:
+            with st.form("form_reserve_eq", clear_on_submit=True):
+                _sel = st.selectbox(
+                    "Membre (son N° méd. désigne l'emplacement de la réserve)",
+                    list(range(len(membres))),
+                    format_func=lambda i: (
+                        f"{membres[i][1]} {membres[i][2]}"
+                        + (f" — N° méd. {membres[i][3]}" if membres[i][3]
+                           else " — ⚠️ sans N° méd. (renseignez-le dans 👤 Mes membres)")))
+                _txt = st.text_area("Intention de prière *", height=90, max_chars=500,
+                                    placeholder="Pour la santé de…, pour ma famille…, "
+                                                "pour les vocations…")
+                if st.form_submit_button("➕ Ajouter à la réserve", type="primary"):
+                    _m = membres[_sel]
+                    try:
+                        _num = int(str(_m[3]).strip()) if _m[3] else None
+                    except (TypeError, ValueError):
+                        _num = None
+                    if _num is None or not (1 <= _num <= 20):
+                        st.warning("⚠️ " + str(_m[1]) + " " + str(_m[2])
+                                   + " n'a pas de N° méditation valide (1-20). "
+                                     "Renseignez-le d'abord dans « 👤 Mes membres ».")
+                    else:
+                        _ok, _msg = ajouter_intention_reserve(
+                            _num, _txt,
+                            auteur_nom=(str(_m[1]) + " " + str(_m[2])).strip(),
+                            equipe_id=eid)
+                        if _ok:
+                            st.session_state["flash_success"] = _msg
+                            st.rerun()
+                        st.warning(_msg)
+    _lignes = reserve_lignes(equipe_id=eid)
+    if _lignes:
+        with st.expander(f"🗂️ Intentions en réserve de l'équipe ({len(_lignes)})"):
+            for (rid, num, texte, auteur, _eqi, daj) in _lignes:
+                st.markdown(f"**N° méd. {int(num):02d}** — *{auteur or 'Membre'}*"
+                            + (f" · ajoutée le {daj}" if daj else ""))
+                st.write(texte)
+                if st.button("🗑️ Retirer de la réserve", key=f"res_del_{rid}"):
+                    retirer_intention_reserve(rid, equipe_id=eid)
+                    st.rerun()
+                st.markdown("---")
 
 
 def _onglet_intentions_equipe(eid):
@@ -176,6 +273,9 @@ def _onglet_intentions_equipe(eid):
                     commit_and_sync()
                     st.rerun()
                 st.markdown("---")
+    # v7.9.3 — la RÉSERVE : 20 intentions par N° méd., préparées d'avance
+    # par le responsable (les intentions de ses membres).
+    _bloc_reserve_equipe(eid)
 
 
 def show_equipe():
