@@ -222,6 +222,20 @@ def init_tables_and_migrations():
     c.execute("""CREATE TABLE IF NOT EXISTS parametres (
                     cle TEXT PRIMARY KEY,
                     valeur TEXT)""")
+    # v7.9.1 — GALERIE + : souvenirs (photos des évènements, pèlerinages,
+    # moments d'équipe) et témoignages (grâces reçues). Publiée par le
+    # diocèse, lue par toute la communauté dans la rubrique « 🖼️ Galerie + »
+    # des Espaces de Prière.
+    c.execute("""CREATE TABLE IF NOT EXISTS galerie_plus (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    rubrique TEXT,
+                    titre TEXT,
+                    texte TEXT,
+                    image_url TEXT,
+                    date_event TEXT,
+                    lieu TEXT,
+                    auteur_nom TEXT,
+                    date_publication TEXT)""")
     commit_and_sync()
 
     # --- 2. DONNÉES PAR DÉFAUT ---
@@ -274,6 +288,17 @@ def init_tables_and_migrations():
     # v7.9.0 — jour de naissance du fidèle (clé discrète de la chaîne de
     # prière : il garantit qu'un visiteur ne prie jamais SA propre intention).
     safe_migrate("ALTER TABLE intentions_equipes ADD COLUMN jour_naissance INTEGER")
+    # v7.9.1 — Galerie + (souvenirs / témoignages) : la table est aussi
+    # (re)créée doucement ici, pour les bases distantes antérieures.
+    try:
+        c.execute("""CREATE TABLE IF NOT EXISTS galerie_plus (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        rubrique TEXT, titre TEXT, texte TEXT,
+                        image_url TEXT, date_event TEXT, lieu TEXT,
+                        auteur_nom TEXT, date_publication TEXT)""")
+        commit_and_sync()
+    except Exception:
+        pass
     # v7.8.11 — publications de feuillets : dédoublonnage puis index UNIQUE.
     # Les bases créées avant la contrainte UNIQUE(annee_debut, mois)
     # pouvaient accumuler des lignes jumelles à chaque republication, ce qui
@@ -443,20 +468,31 @@ def set_parametre(cle, valeur):
     commit_and_sync()
 
 
-def intention_du_prochain(jour_visiteur=None):
-    """Retourne le TEXTE de l'« intention du prochain » à porter dans la
+def intention_du_prochain_detail(jour_visiteur=None):
+    """Retourne (TEXTE, QUI) de l'« intention du prochain » à porter dans la
     dizaine du jour (v7.9.0), selon le choix enregistré par la paroisse :
-      1er choix  → la plus ancienne intention RECUE pas encore prise en charge ;
-      2e choix   → la plus ancienne intention PRISE EN CHARGE (en prière) ;
+      1er choix  → les intentions RECUES pas encore prises en charge ;
+      2e choix   → les intentions PRISES EN CHARGE (en prière) ;
       3e choix   → une intention universelle de l'Église (fixe ou rotation
                    quotidienne).
     La chaîne est UNIVERSELLE : elle puise dans les intentions confiées à
     toutes les équipes, quel que soit le contexte paroissial du visiteur.
     jour_visiteur = jour de naissance du lecteur (1-31) : ses propres
     intentions lui sont masquées — personne ne prie sa propre intention.
+    QUI (v7.9.1) donne la personne INTERCÉDÉE, telle que le livret l'affiche :
+      None        → intention universelle (« intercède : … ») ;
+      'cet anonyme' → intention anonyme (« intercède pour cet anonyme : … ») ;
+      'Prénom Nom'  → intention signée (« intercède pour Prénom Nom : … »).
+    v7.9.1 — tirage SELON LE N° MÉD. du lecteur : chaque visiteur reçoit
+    l'intention placée à son rang dans la file, au sein d'une fenêtre de
+    20 jours (le cycle) — il retrouve la même intention à chaque dizaine de
+    la période et deux N° méd. différents portent des intentions différentes
+    dès que la file le permet. « Les visiteurs du jour reçoivent les
+    intentions de leurs prochains selon leurs N° méd. et méditent avec,
+    sur 20 jours. »
     En cas d'intention indisponible, la chaîne ne se casse jamais : elle
-    retombe sur « La Paix dans le monde »."""
-    _secours = INTENTIONS_UNIVERSELLES[0]
+    retombe sur « La Paix dans le monde » (QUI = None)."""
+    _secours = (INTENTIONS_UNIVERSELLES[0], None)
     try:
         mode = get_parametre("chaine_mode", "recues")
         if mode == "universelle":
@@ -464,20 +500,130 @@ def intention_du_prochain(jour_visiteur=None):
             if choix == "rotation":
                 # rotation quotidienne (jour de l'année) : les trois intentions
                 # universelles se relaient chaque jour.
-                return INTENTIONS_UNIVERSELLES[date.today().timetuple().tm_yday % 3]
-            return choix if choix in INTENTIONS_UNIVERSELLES else _secours
+                return (INTENTIONS_UNIVERSELLES[date.today().timetuple().tm_yday % 3], None)
+            return ((choix if choix in INTENTIONS_UNIVERSELLES else _secours[0]), None)
         statut = "en_priere" if mode == "en_priere" else "recue"
-        lignes = c.execute("""SELECT texte, jour_naissance FROM intentions_equipes
+        lignes = c.execute("""SELECT texte, jour_naissance, auteur_nom, anonyme
+                              FROM intentions_equipes
                               WHERE statut=? AND TRIM(COALESCE(texte,'')) != ''
                               ORDER BY date_soumission ASC, id ASC""", (statut,)).fetchall()
-        for _txt, _jn in lignes:
+        admissibles = []
+        for _txt, _jn, _nom, _anon in lignes:
             # La règle d'or : le lecteur ne prie jamais sa propre intention.
             if jour_visiteur is not None and _jn is not None and int(_jn) == int(jour_visiteur):
                 continue
-            return str(_txt).strip()
+            if _anon:
+                qui = "cet anonyme"
+            else:
+                qui = str(_nom or "").strip() or "notre prochain"
+            admissibles.append((str(_txt).strip(), qui))
+        if admissibles:
+            if jour_visiteur is not None and len(admissibles) > 1:
+                # Fenêtre glissante de 20 jours : le rang du lecteur (N° méd.)
+                # désigne SON intention, stable pendant toute la période.
+                _cycle = (date.today() - date(2024, 1, 1)).days // 20
+                _i = (int(jour_visiteur) - 1 + _cycle) % len(admissibles)
+            else:
+                _i = 0
+            return admissibles[_i]
     except Exception as e:
         logger.warning(f"intention_du_prochain : tirage impossible ({e!r}) — secours")
     return _secours
+
+
+def intention_du_prochain(jour_visiteur=None):
+    """TEXTE seul de l'intention du prochain (v7.9.0, compat) — voir
+    intention_du_prochain_detail() pour la version (texte, qui) v7.9.1."""
+    return intention_du_prochain_detail(jour_visiteur)[0]
+
+
+# ======================================================================
+# v7.9.1 — RÈGLE DU LENDEMAIN + UNICITÉ PAR NUMÉRO
+# ======================================================================
+# « Les visiteurs du jour ont leurs intentions prises en charge au
+# lendemain de la réception, pour 20 jours » — le balayage tourne au fil
+# des pages (onglet équipe, onglet paroisse) et bascule chaque intention
+# reçue J en « en prière » à J+1, date_statut étant datée AU LENDEMAIN
+# (le décompte J+X/20 ne dépend pas du moment du balayage).
+#
+# « Un même numéro de téléphone ne peut avoir 2 intentions prises en
+# charge » — vérifié à la soumission ET au balayage : un contact qui porte
+# déjà une intention « en prière » n'en voit pas une seconde basculer
+# (elle attend l'archivage de la première).
+
+
+def _contact_cle(contact):
+    """Clé de comparaison d'un contact (v7.9.1) : espaces/tirets/points retirés,
+    indicatif +225 / 00 225 unifié, casse minuscule — « +225 07 00 11 11 22 »
+    et « 0700111122 » sont le même numéro."""
+    _k = "".join(str(contact or "").split()).replace("-", "").replace(".", "")
+    _k = _k.replace("(", "").replace(")", "").lower()
+    if _k.startswith("+"):
+        _k = _k[1:]
+    if _k.startswith("00"):
+        _k = _k[2:]
+    if _k.startswith("225"):
+        _k = _k[3:]
+    return _k
+
+
+def contact_en_priere(contact):
+    """RÈGLE D'UNICITÉ (v7.9.1) : retourne 1 si ce contact porte déjà une
+    intention « en prière » (prise en charge), 0 sinon (libre)."""
+    cle = _contact_cle(contact)
+    if not cle:
+        return 0
+    try:
+        if not c.execute("SELECT COUNT(*) FROM intentions_equipes "
+                         "WHERE statut='en_priere'").fetchone()[0]:
+            return 0
+        for (ct,) in c.execute("SELECT auteur_contact FROM intentions_equipes "
+                               "WHERE statut='en_priere' AND auteur_contact IS NOT NULL").fetchall():
+            if _contact_cle(ct) == cle:
+                return 1
+    except Exception as e:
+        logger.warning(f"contact_en_priere : {e!r}")
+    return 0
+
+
+def prise_en_charge_automatique():
+    """RÈGLE DU LENDEMAIN (v7.9.1) : bascule en « en prière » toute intention
+    reçue dont le lendemain de la réception est atteint ou dépassé, pour
+    20 jours (20 mystères) ; date_statut = date_soumission + 1 jour. La
+    règle d'unicité s'applique aussi ici : un contact qui porte déjà une
+    intention en prière n'en voit pas une seconde basculer — elle attendra
+    l'archivage de la première. Tolérante : toute erreur est journalisée
+    sans jamais casser la page qui l'appelle."""
+    try:
+        _auj = date.today().isoformat()
+        _deja = {_contact_cle(ct) for (ct,) in c.execute(
+            "SELECT auteur_contact FROM intentions_equipes "
+            "WHERE statut='en_priere' AND auteur_contact IS NOT NULL").fetchall()}
+        _deja.discard("")
+        _attente = c.execute("""SELECT id, auteur_contact FROM intentions_equipes
+                                WHERE statut='recue'
+                                  AND date_soumission IS NOT NULL
+                                  AND TRIM(date_soumission) != ''
+                                  AND date(date_soumission, '+1 day') <= ?
+                                ORDER BY date_soumission ASC, id ASC""",
+                             (_auj,)).fetchall()
+        _vus = set()
+        _n = 0
+        for _iid, _ct in _attente:
+            _cle = _contact_cle(_ct)
+            if _cle and (_cle in _deja or _cle in _vus):
+                continue  # unicité : ce contact porte déjà son intention
+            c.execute("UPDATE intentions_equipes SET statut='en_priere', "
+                      "date_statut=date(date_soumission, '+1 day') WHERE id=?", (_iid,))
+            if _cle:
+                _vus.add(_cle)
+            _n += 1
+        if _n:
+            commit_and_sync()
+            logger.info(f"prise_en_charge_automatique : {_n} intention(s) "
+                        "passée(s) « en prière » (règle du lendemain)")
+    except Exception as e:
+        logger.warning(f"prise_en_charge_automatique : {e!r}")
 
 
 def jours_depuis(d_iso):
