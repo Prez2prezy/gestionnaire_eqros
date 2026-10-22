@@ -103,6 +103,15 @@ SOUS_RUBRIQUES = {
     "📖 Archives": ["🙏 Prières", "📖 Méditations", "🎵 Musiques"],
 }
 
+# v7.9.3 — FIL D'ACTUALITÉ ALLÉGÉ : l'Accueil ne garde qu'UNE section, celle
+# qui correspond à nos attentes — la prière/méditation DU JOUR (couronnée de
+# l'alerte feuillet). « 🙏 Vos intentions à une équipe » est REMONTÉE juste
+# avant « 🕯️ Un jour, une dizaine » (harmonisée avec cette dernière) et les
+# blocs 📣 Coin Affiche, 📰 Actualités de la Paroisse et 📰 Actualités du
+# diocèse quittent le fil. METTRE À False pour réafficher l'ancien fil
+# complet (tout le code d'origine est conservé, rien n'est supprimé).
+FIL_ALLEGEE = True
+
 def _lire_nav(rubriques):
     """Rubrique/sous-rubrique lues dans l'URL (?r=..&s=..). Navigation par
     LIENS HTML purs : aucun pont JS fragile."""
@@ -176,6 +185,21 @@ def _scroll_top(cle):
                    "</script>", height=0)
     except Exception:
         pass
+
+
+def _scroll_top_si_nouvelle_page(cle, rub, sub):
+    """v7.9.3 — LES PAGES REMONTENT À LEUR OUVERTURE (comme nous l'avons
+    fait pour les feuillets) : quand la rubrique/sous-rubrique affichée
+    CHANGE — c'est-à-dire à l'ouverture d'une page — la lecture repart DU
+    HAUT (même mécanisme « nonce » que _scroll_top). Les interactions DANS
+    la page (expander, bouton, formulaire) ne repositionnent PAS l'écran :
+    seul le changement de page déclenche le retour en haut."""
+    _cle_prec = "nav_page_prec_" + str(cle)
+    _actuel = (str(rub), str(sub or ""))
+    if st.session_state.get(_cle_prec) != _actuel:
+        st.session_state[_cle_prec] = _actuel
+        _scroll_top("nav" + str(cle) + re.sub(r"\W", "", str(rub))
+                    + re.sub(r"\W", "", str(sub or "")))
 
 
 def _liens_meme_onglet(cle):
@@ -379,7 +403,10 @@ def _render_theme(compact=False):
     .sticky-header { position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
         background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px 0 16px; }
     .header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; }
-    .logo-bloc { width: 190px; text-align: center; }
+    /* v7.9.3 — entête un PEU plus compacte (pages remontées à l'affichage,
+    comme les feuillets) : logo réduit de 190 à 170 px — la hauteur de
+    l'entête mesurée par _mesure_entete suit automatiquement. */
+    .logo-bloc { width: 170px; text-align: center; }
     .logo-bloc img { width: 100%; height: auto; border-radius: 10px; display: block; margin: 0 auto; }
     .logo-titre-svg { display: block; width: 100%; margin-top: 6px; }
     .bande-defilante { overflow: hidden; white-space: nowrap;
@@ -394,13 +421,13 @@ def _render_theme(compact=False):
         .bande-defilante-inner { animation: none; padding: 8px 15px; }
     }
     @media (max-width: 640px) {
-        .logo-bloc { width: 150px; }
+        .logo-bloc { width: 136px; }
         .block-container { padding-top: """ + str(secours_2) + """px !important; }
         [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
         [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { min-width: 0 !important; }
     }
     @media (max-width: 360px) {
-        .logo-bloc { width: 138px; }
+        .logo-bloc { width: 126px; }
         .block-container { padding-top: """ + str(secours_3) + """px !important; }
     }
     /* === TITRES DORÉS/BLEUS GEORGIA — classes haute spécificité (battent le thème) === */
@@ -2519,6 +2546,33 @@ def _render_mini_lecteur(pid=None):
         pass
 
 
+def _pointage_incognito(est_membre=False, matloc=None, nom_membre=None,
+                        equipe_id=None, paroisse_id=None, jrnais=None):
+    """v7.9.3 — LE POINTAGE INCOGNITO DU BOUTON « ✕ TERMINER » : chaque
+    mystère du livre a sa fin (la page GLORIA PATRI) ; le bouton « ✕
+    Terminer » qui y figure — « utile à notre cause incognito : en cliquant
+    dessus, il est pointé » — note la dizaine SANS demander qui prie. Le
+    membre est pointé par son MatLoc (1 fois/jour), le visiteur compte un
+    passage anonyme (1 par session/jour). Une seule tentative, aucune
+    erreur affichée : le livre se ferme dans tous les cas — le pointage
+    explicite « ✅ J'ai égrené ma dizaine aujourd'hui » reste en fin de
+    livre avec ses compteurs (flamme, mois)."""
+    try:
+        if est_membre:
+            if matloc and not dizaine_deja_pointee(matloc):
+                pointer_dizaine(matloc=matloc, nom=nom_membre,
+                                equipe_id=equipe_id, paroisse_id=paroisse_id,
+                                est_membre=True)
+        elif jrnais:
+            _cle_j = "diz_pointee_visiteur_" + date.today().isoformat()
+            if not st.session_state.get(_cle_j):
+                pointer_dizaine(jrnais=jrnais, paroisse_id=paroisse_id,
+                                est_membre=False)
+                st.session_state[_cle_j] = True
+    except Exception:
+        pass  # cause incognito : jamais de plantage pour un pointage
+
+
 def _rendre_pointage_dizaine(est_membre=False, matloc=None, nom_membre=None,
                              equipe_id=None, paroisse_id=None, jrnais=None):
     """v7.9.2 — LE POINTAGE DE LA CHAÎNE : « ✅ J'ai égrené ma dizaine
@@ -2526,7 +2580,9 @@ def _rendre_pointage_dizaine(est_membre=False, matloc=None, nom_membre=None,
     une dizaine »). Il répond à la question « sait-on si un membre / un
     visiteur fait sa dizaine ? » : oui, désormais — le membre est pointé
     par son MatLoc (1 fois/jour, visible par son responsable), le visiteur
-    compte un « passage » (aucune identité exigée, 1 par session/jour)."""
+    compte un « passage » (aucune identité exigée, 1 par session/jour).
+    v7.9.3 — le bouton « ✕ Terminer » de CHAQUE mystère (page Gloria)
+    pointe aussi, en toute discrétion (voir _pointage_incognito)."""
     st.markdown('<div style="margin:14px 6px 0 6px; background:linear-gradient(135deg,#E8EAF6 0%,#F3E5F5 100%);'
                 ' border:1px solid #C5CAE9; border-radius:12px; padding:14px 16px;">'
                 '<div style="color:#1A237E; font-weight:bold; font-size:1rem;">📿 La chaîne compte sur vous</div>'
@@ -2794,13 +2850,23 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
     _scroll_top(f"p{idx}")
 
     # --- v7.9.2 : POINTAGE DE LA DIZAINE (dernière page du livre) ---
-    if page["t"] == "outro":
+    # v7.9.3 — le livre du jour contient UN mystère : sa fin est la page
+    # GLORIA (l'outro « Salve Regina » ne s'ajoute que le jour du mystère
+    # N° 20). Le pointage explicite s'affiche donc sur la VRAIE dernière
+    # page — outro ou gloria finale — chaque jour, pas seulement les jours
+    # « N° 20 » ; le bouton « ✕ Terminer » pointe en plus, incognito.
+    if page["t"] == "outro" or (page["t"] == "gloria" and idx == len(pages) - 1):
         _rendre_pointage_dizaine(est_membre=est_membre, matloc=matloc,
                                  nom_membre=nom_membre, equipe_id=equipe_id,
                                  paroisse_id=paroisse_id,
                                  jrnais=st.session_state.get("diz_jrnais"))
 
     # --- Navigation : ON NE RECULE PAS quand on égrène une dizaine ☺️ ---
+    # v7.9.3 — CHAQUE MYSTÈRE A SA FIN (la page GLORIA PATRI, « dernière
+    # page » du mystère) : un bouton « ✕ Terminer » y figure désormais À
+    # CÔTÉ de « Suivant ▶ ». Le cliquer note la dizaine en toute discrétion
+    # (cause incognito — « en cliquant dessus, il est pointé ») et referme
+    # le livre : celui qui s'arrête après un seul mystère est compté aussi.
     c_av, c_term = st.columns(2)
     with c_av:
         if idx < len(pages) - 1:
@@ -2808,7 +2874,29 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
                 st.session_state["diz_page"] = idx + 1
                 st.rerun()
         else:
+            # Dernière page (outro) : « ✕ Terminer » pointe aussi, sans bruit.
             if st.button("✕ Terminer", key=f"diz_end_{idx}", width="stretch"):
+                _pointage_incognito(est_membre=est_membre, matloc=matloc,
+                                    nom_membre=nom_membre, equipe_id=equipe_id,
+                                    paroisse_id=paroisse_id,
+                                    jrnais=st.session_state.get("diz_jrnais"))
+                st.session_state["flash_success"] = (
+                    "📿 Votre dizaine est comptée dans la chaîne — merci ! "
+                    "La chaîne continue. 🕊️")
+                st.session_state["diz_ouvert"] = False
+                st.session_state["diz_page"] = 0
+                st.rerun()
+    with c_term:
+        if page["t"] == "gloria" and idx < len(pages) - 1:
+            if st.button("✕ Terminer", key=f"diz_fin_{idx}", width="stretch",
+                         help="Fin du mystère : votre dizaine du jour est notée "
+                              "discrètement et le livre se ferme."):
+                _pointage_incognito(est_membre=est_membre, matloc=matloc,
+                                    nom_membre=nom_membre, equipe_id=equipe_id,
+                                    paroisse_id=paroisse_id,
+                                    jrnais=st.session_state.get("diz_jrnais"))
+                st.session_state["flash_success"] = (
+                    "📿 Votre dizaine est comptée dans la chaîne — merci ! 🕊️")
                 st.session_state["diz_ouvert"] = False
                 st.session_state["diz_page"] = 0
                 st.rerun()
@@ -3021,8 +3109,9 @@ def _depliant_mouvement(paroisse_id=None):
         'Voulez-vous rejoindre une équipe ?</div>'
         '<div style="color:#4527a0 !important; font-size:0.92rem; line-height:1.6; margin-top:6px;">Adressez-vous au '
         + _etiquette + ' <b style="color:#1A237E !important;">' + html.escape((str(_resp).strip() if _resp else "") or "du Mouvement")
-        + '</b>.<br>La dizaine du jour vous attend juste en dessous de ce dépliant : entrez votre jour de naissance '
-        'et priez avec nous. 🕊️</div>' + _bouton + '</div>')
+        + '</b>.<br>Juste en dessous : confiez votre intention à une équipe '
+        '(« 🙏 Vos intentions à une équipe »), puis entrez votre jour de naissance '
+        'dans « 🕯️ Un jour, une dizaine » et priez avec nous. 🕊️</div>' + _bouton + '</div>')
     _blocs.append('</div>')
     _corps = "".join(_blocs)
 
@@ -3236,11 +3325,9 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
     """🙏 VOS INTENTIONS À UNE ÉQUIPE (v7.8.15) — présenté COMME LE DÉPLIANT :
     UN SEUL CADRE DORÉ (fond bleu nuit #121a45, liseré or #FFD700) englobant
     la bannière, les badges, l'expanseur « Choix de l'équipe » et tous les
-    champs (les champs ont un liséré doré), JUSTE AVANT « 📰 Actualités de la
-    Paroisse » — et UNIQUEMENT dans l'Espace communautaire (v7.8.15 : retiré
-    côté vue Membre). Champs : Nom et Prénom*, Contact WhatsApp / Adresse
-    mail*, Jour de naissance (1-31)*, Intention de prière* ; case
-    d'acceptation (anti-spam) obligatoire.
+    champs (les champs ont un liséré doré). Champs : Nom et Prénom*, Contact
+    WhatsApp / Adresse mail*, Jour de naissance (1-31)*, Intention de
+    prière* ; case d'acceptation (anti-spam) obligatoire.
     v7.9.0 — LA CHAÎNE DE PRIÈRE UNIVERSELLE : plus de case d'anonymat (le
     fidèle signe son intention) ; le JOUR DE NAISSANCE devient la clé
     discrète de la chaîne (il garantit que le fidèle ne priera jamais SA
@@ -3248,7 +3335,12 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
     appel « 📿 Prier ma dizaine maintenant » ouvre directement le livret pour
     porter l'intention du prochain. L'intention arrive DIRECTEMENT au
     responsable de l'équipe (onglet « 🙏 » de « 📌 Suivi et Agenda »), sans
-    passer par le fil public ni par le diocèse."""
+    passer par le fil public ni par le diocèse.
+    v7.9.3 — REMONTÉE + HARMONISATION : la rubrique quitte le fil
+    d'actualité et se place JUSTE AVANT « 🕯️ Un jour, une dizaine » ; sa
+    bannière reprend EXACTEMENT le langage visuel de cette dernière
+    (dégradé #1A237E→#283593, liseré or 2 px, mêmes marges) pour un Accueil
+    homogène."""
     if not pid:
         return
     _assurer_table_intentions()
@@ -3284,22 +3376,24 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
         '</style>', unsafe_allow_html=True)
     with st.container(border=True):
         st.markdown('<div id="int-or-marker"></div>', unsafe_allow_html=True)
-        # ── BANNIÈRE (langage du dépliant) — tout est DANS le cadre doré
+        # ── BANNIÈRE (v7.9.3 — harmonisée avec « 🕯️ Un jour, une dizaine » :
+        # même dégradé #1A237E→#283593, même liseré or de 2 px, même titre
+        # dpl-titre-g) — tout est DANS le cadre doré
         st.markdown(
-            '<div style="background:linear-gradient(135deg,#1A237E 0%,#4527a0 100%);'
-            ' border:1px solid #FFD700; border-radius:12px; padding:14px 12px;'
+            '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+            ' border:2px solid #FFD700; border-radius:15px; padding:16px;'
             ' text-align:center; margin:2px 4px 10px 4px;">'
             '<div class="dpl-titre-g" style="font-size:clamp(1.05rem, 4.5vw, 1.25rem);">'
             '🙏 Vos intentions à une équipe</div>'
             '<div style="color:#ffffff; font-size:clamp(0.85rem, 3.6vw, 1rem);'
             ' margin-top:6px; line-height:1.6;">'
             'Confie à Notre Dame du Rosaire ton intention de prière<br>'
-            'par le canal d’une équipe</div>'
+            'par le canal d\u2019une équipe</div>'
             '<div style="display:inline-block; margin-top:9px; background:rgba(255,215,0,0.14);'
             ' border:1px solid #FFD700; border-radius:20px; padding:6px 16px; max-width:94%;'
             ' color:#FFD000; font-size:0.78rem; line-height:1.65;">🤫 « Tu es le prochain'
-            ' de l’équipe qui prie pour toi. En retour, va dans « 🕯️ Un jour, une dizaine »'
-            ' et confie ton prochain à la Vierge Marie : c’est LA CHAÎNE DE PRIÈRE'
+            ' de l\u2019équipe qui prie pour toi. En retour, va dans « 🕯️ Un jour, une dizaine »'
+            ' et confie ton prochain à la Vierge Marie : c\u2019est LA CHAÎNE DE PRIÈRE'
             ' UNIVERSELLE »</div></div>',
             unsafe_allow_html=True)
         _idx_def = 0
@@ -3498,7 +3592,11 @@ def _render_fil_actualites(pid=None, lien_theme=None, equipe_membre_id=None,
     diocèse vient de publier le feuillet mensuel de prière.
     v7.8.15 — « 🙏 Vos intentions à une équipe » est réservée à l'Espace
     COMMUNAUTAIRE : intentions=False côté vue Membre (elle ne s'y affiche
-    plus)."""
+    plus).
+    v7.9.3 — FIL ALLÉGÉ (FIL_ALLEGEE=True) : le fil ne garde plus que la
+    section attendue — la prière/méditation DU JOUR. Le Coin Affiche, la
+    rubrique intentions (remontée AVANT « 🕯️ Un jour, une dizaine ») et les
+    Actualités de la Paroisse ne s'affichent plus ici (code conservé)."""
     _alerte_feuillet_fil(lien_theme)
 
     cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
@@ -3541,13 +3639,17 @@ def _render_fil_actualites(pid=None, lien_theme=None, equipe_membre_id=None,
     else:
         st.info("Aucun contenu spirituel n'a encore été publié.")
 
-    _render_coin_affiche(pid)
-    # v7.8.15 — « 🙏 Vos intentions à une équipe » JUSTE AVANT les actualités
-    # de la paroisse — ESPACE COMMUNAUTAIRE UNIQUEMENT (retirée côté Membre).
-    if intentions:
-        _render_intentions_equipes(pid=pid, equipe_membre_id=equipe_membre_id,
-                                   auteur_nom=auteur_nom)
-    _render_actualites_paroisse(pid)
+    # v7.9.3 — FIL D'ACTUALITÉ ALLÉGÉ : une seule section reste dans le fil
+    # (la prière/méditation du jour, ci-dessus). Le reste est conservé mais
+    # masqué — repasser FIL_ALLEGEE à False pour retrouver l'ancien fil.
+    if not FIL_ALLEGEE:
+        _render_coin_affiche(pid)
+        # v7.8.15 — « 🙏 Vos intentions à une équipe » JUSTE AVANT les actualités
+        # de la paroisse — ESPACE COMMUNAUTAIRE UNIQUEMENT (retirée côté Membre).
+        if intentions:
+            _render_intentions_equipes(pid=pid, equipe_membre_id=equipe_membre_id,
+                                       auteur_nom=auteur_nom)
+        _render_actualites_paroisse(pid)
 
 
 def _render_actualites_paroisse(pid=None):
@@ -3618,10 +3720,74 @@ def _enregistrer_presence(membre_id, evt_id, choix):
     st.rerun()
 
 
+def _render_pied_de_page():
+    """🔒 PIED DE PAGE DU SITE (v7.9.3) — présent sur TOUTES les pages des
+    Espaces de Prière (communautaire, membre, livre ouvert) : la signature
+    du Mouvement et la « 🔒 Politique de confidentialité » complète, en
+    <details> HTML pur (aucun JS nécessaire, repliable). Le mode écoute
+    dédié (?musique=1), pensé comme un simple lecteur de secours, en est
+    exempté."""
+    if st.query_params.get("musique") == "1":
+        return
+    st.markdown('<style>'
+                '.pdp-eq76 { margin:26px 10px 18px 10px; border-top:2px solid #FFD700;'
+                ' background:#0d1338; border:1px solid #27306b; border-radius:14px;'
+                ' padding:14px 16px 12px 16px; }'
+                '.pdp-eq76 summary { cursor:pointer; list-style:none; text-align:center;'
+                ' color:#FFD000; font-weight:bold; font-size:0.98rem; padding:4px 0 2px 0;'
+                ' font-family:Georgia, serif; }'
+                '.pdp-eq76 summary::-webkit-details-marker { display:none; }'
+                '.pdp-eq76 .pdp-corps { color:#c7cdf5; font-size:0.85rem; line-height:1.75;'
+                ' margin-top:10px; }'
+                '.pdp-eq76 .pdp-corps b { color:#e8eaf6; }'
+                '.pdp-eq76 .pdp-signature { text-align:center; color:#9fa6d8;'
+                ' font-size:0.78rem; margin-top:12px; line-height:1.7; }'
+                '</style>', unsafe_allow_html=True)
+    st.markdown(
+        '<details class="pdp-eq76">'
+        '<summary>🔒 Politique de confidentialité</summary>'
+        '<div class="pdp-corps">'
+        '<b>1 · Ce que nous recueillons.</b> Les intentions confiées à une équipe '
+        'enregistrent le nom (sauf si vous cochez « 🕊️ Rester anonyme »), un contact '
+        '(WhatsApp ou adresse mail) et le jour de naissance — cette dernière donnée '
+        'sert uniquement de clé discrète dans la chaîne de prière universelle : elle '
+        'n’identifie personne et garantit seulement que vous n’y prierez jamais votre '
+        'propre intention. Le pointage de dizaine (boutons « ✅ J’ai égrené ma dizaine '
+        'aujourd’hui » et « ✕ Terminer ») note seulement la participation du jour : '
+        'le membre par son matricule (MatLoc), le visiteur en simple passage anonyme — '
+        'jamais le contenu de votre prière.<br>'
+        '<b>2 · Ce que nous en faisons.</b> Vos données servent exclusivement à la vie '
+        'de prière du Mouvement : identifier votre intention auprès du responsable '
+        'd’équipe (et, s’il le souhaite, vous répondre), compter les participations et '
+        'assurer la sécurité de l’espace (lutte contre les envois automatisés — spam). '
+        'Elles ne sont ni vendues, ni partagées, ni utilisées à des fins commerciales. '
+        '🤫 Principe « être une tombe » : les intentions se portent en prière, elles ne '
+        'se racontent pas et ne sortent jamais de l’équipe.<br>'
+        '<b>3 · Vos droits.</b> Vous pouvez demander à tout moment la suppression de '
+        'votre intention ou de vos données auprès du responsable de votre équipe ou du '
+        'responsable paroissial ; la demande est honorée dans les meilleurs délais. Des '
+        'traces techniques minimales (date, session) peuvent être conservées pour la '
+        'sécurité de l’espace.'
+        '</div>'
+        '<div class="pdp-signature">'
+        '📿 LES ÉQUIPES DU ROSAIRE — Diocèse de Grand-Bassam · Espace de Prière<br>'
+        '🕯️ Un jour, une dizaine — LA CHAÎNE DE PRIÈRE UNIVERSELLE · v7.9.3'
+        '</div>'
+        '</details>', unsafe_allow_html=True)
+
+
 # ====================================================================
 # PAGE PRINCIPALE
 # ====================================================================
 def show_espace_membre(matloc_membre=None):
+    """Point d'entrée de l'Espace de Prière (v7.9.3) : le corps de page
+    (_corps_espace_membre, code d'origine inchangé), PUIS le pied de page
+    du site — présent sur toutes les pages, y compris le livre ouvert."""
+    _corps_espace_membre(matloc_membre)
+    _render_pied_de_page()
+
+
+def _corps_espace_membre(matloc_membre=None):
     # v7.8 — lien profond « Ouvrir le livret » (?flt=1&fa=&fm=) AVANT tout
     # affichage : il positionne la session et force un rerun propre.
     _traiter_lien_profond_livret()
@@ -3730,6 +3896,9 @@ def show_espace_membre(matloc_membre=None):
             _render_dizaine_du_jour(est_membre=False)
             return
 
+        # v7.9.3 — la page ouverte commence EN HAUT de l'écran (feuillets)
+        _scroll_top_si_nouvelle_page("pub", rub, sub)
+
         # v7.7.2 — le badge de bienvenue n'apparaît QUE sur l'accueil
         if rub == "🏠 Actualités":
             st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
@@ -3762,13 +3931,20 @@ def show_espace_membre(matloc_membre=None):
             _render_page_galerie(sub)
         else:
             _depliant_mouvement(st.session_state.get("paroisse_origine"))
+            # v7.9.3 — « 🙏 Vos intentions à une équipe » REMONTÉE : elle
+            # précède désormais « 🕯️ Un jour, une dizaine » (et lui est
+            # harmonisée). Le livre ouvert la masque pour garder l'écran
+            # tout à la prière ; le CTA « Prier ma dizaine » reste opérationnel.
+            if not st.session_state.get("diz_ouvert"):
+                _render_intentions_equipes(pid=pid_pub)
             _render_dizaine_du_jour(est_membre=False)
             if st.session_state.get("diz_ouvert"):
                 return
             _lien_theme_pub = ("?espace=1&nav=1&r=2"
                                + (f"&p={pid_pub}" if pid_pub else ""))
             _render_fil_actualites(pid=pid_pub, lien_theme=_lien_theme_pub)
-            _render_actualites(pid=pid_pub)
+            if not FIL_ALLEGEE:
+                _render_actualites(pid=pid_pub)
         return
 
     # ================= ÉTAT 2 : VUE MEMBRE =================
@@ -3814,6 +3990,9 @@ def show_espace_membre(matloc_membre=None):
                                 nom_membre=((membre[1] or "") + " " + (membre[2] or "")).strip(),
                                 equipe_id=membre[10], paroisse_id=membre[11])
         return
+
+    # v7.9.3 — la page ouverte commence EN HAUT de l'écran (feuillets)
+    _scroll_top_si_nouvelle_page("mbr", rub, sub)
 
     with st.popover("👤 Mon profil"):
         if membre[6]:
@@ -3932,4 +4111,6 @@ def show_espace_membre(matloc_membre=None):
                                equipe_membre_id=membre[10],
                                auteur_nom=((membre[1] or "") + " " + (membre[2] or "")).strip(),
                                intentions=False)  # v7.8.15 : retiré côté Membre
-        _render_actualites(pid=pid_m)
+        if not FIL_ALLEGEE:  # v7.9.3 — fil allégé : la carte du jour uniquement
+            _render_actualites(pid=pid_m)
+
