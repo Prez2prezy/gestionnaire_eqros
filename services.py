@@ -5,11 +5,14 @@ import string
 import io
 import unicodedata
 import urllib.parse
+import logging
 import requests
 import pandas as pd
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from PIL import Image
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 
 import database                       # module (référence conn toujours à jour)
 from database import c, commit_and_sync
@@ -456,18 +459,64 @@ def stats_visites_pivot(nb_jours=30):
 
 
 # ============================================================
-# PUBLICATIONS PROGRAMMÉES (v7.8.8)
+# PUBLICATIONS PROGRAMMÉES (v7.8.8, durci v7.9.2)
 # Le diocèse valide en choisissant « publier maintenant » OU une date.
 # Streamlit n'a pas de tâche de fond : chaque chargement de page sert
 # de réveil (lazy cron) et publie ce qui est arrivé à échéance.
+#
+# v7.9.2 — après le signalement « des publications programmées publiées
+# avant l'échéance », le réveil est BLINDÉ et DEVENU TRANSPARENT :
+#   1. double protection temporelle — le filtre SQL string-safe ET un
+#      re-parsing Python de date_publication_prevue (une ligne au format
+#      inattendu est JAMAILS publiée, elle est journalisée et sautée) ;
+#   2. réclamation anti-course — deux sessions ouvertes en même temps ne
+#      peuvent plus publier chacune leur copie (l'UPDATE de réclamation
+#      doit toucher EXACTEMENT 1 ligne) ;
+#   3. auto-réparation — une réclamation bloquée par un crash est rendue
+#      à la file après 10 minutes ;
+#   4. traçabilité — date_decision + auteur_decision enregistrent QUI a
+#      publié QUAND (clic diocèse ou automatisme), affichés dans
+#      « 📔 Historique des décisions ».
 # ============================================================
-def _migrer_colonne_programmation():
-    """Colonne date_publication_prevue (YYYY-MM-DD HH:MM) sur soumissions_comm."""
+AUTEUR_DECISION_AUTO = "⏰ publication automatique — programmation respectée"
+AUTEUR_DECISION_ECHEC = "⏰ publication automatique — ÉCHOUÉE (contenu incomplet ?) — à relire"
+
+
+def _migrer_colonnes_programmation():
+    """Colonnes de programmation + traçabilité (v7.9.2) sur soumissions_comm :
+    date_publication_prevue (YYYY-MM-DD HH:MM), date_decision, auteur_decision.
+    Chaque colonne est REVÉRIFIÉE après migration : si elle manque encore
+    (verrou d'une transaction en cours, micro-coupure), c'est journalisé —
+    le prochain réveil refera la tentative (idempotent)."""
     try:
         c.execute("SELECT date_publication_prevue FROM soumissions_comm LIMIT 1")
     except Exception:
         database.safe_migrate(
             "ALTER TABLE soumissions_comm ADD COLUMN date_publication_prevue TEXT")
+    for _col in ("date_decision", "auteur_decision"):
+        try:
+            c.execute(f"SELECT {_col} FROM soumissions_comm LIMIT 1")
+        except Exception:
+            database.safe_migrate(f"ALTER TABLE soumissions_comm ADD COLUMN {_col} TEXT")
+            try:
+                c.execute(f"SELECT {_col} FROM soumissions_comm LIMIT 1")
+            except Exception as e_verif:
+                logger.warning(f"publications programmées : colonne {_col} toujours "
+                               f"absente, nouvelle tentative au prochain réveil ({e_verif!r})")
+
+
+def _lire_prevue(txt):
+    """Re-parse robuste de date_publication_prevue (v7.9.2). Retourne un
+    datetime, ou None si le format est inattendu — dans ce cas la ligne
+    n'est JAMAIS publiée automatiquement (principe : ne rien diffuser
+    qu'on ne sait pas dater)."""
+    _t = str(txt or "").strip()
+    for _fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M"):
+        try:
+            return datetime.strptime(_t, _fmt)
+        except (ValueError, TypeError):
+            continue
+    return None
 
 
 def publier_soumission(s):
@@ -575,40 +624,75 @@ def publier_soumission(s):
 def executer_publications_programmees():
     """v7.8.8 — RÉVEIL : publie les soumissions « programme » dont l'heure
     prévue est atteinte (lazy cron — appelé au chargement de l'application).
-    Silencieux : ne lève jamais d'exception vers l'interface."""
+    Durci v7.9.2 : réclamation anti-course (une seule session publie),
+    re-vérification Python de l'échéance (aujourd'hui < date_publication_prevue
+    → la ligne est laissée en place, JAMAIS publiée avant l'heure),
+    auto-réparation des réclamations bloquées, traçabilité de la décision,
+    et AUCUNE exception ne remonte vers la page qui l'appelle."""
     try:
-        _migrer_colonne_programmation()
-        _maint = datetime.now().strftime("%Y-%m-%d %H:%M")
+        _migrer_colonnes_programmation()
+        _maint_s = datetime.now().strftime("%Y-%m-%d %H:%M")
+        # Auto-réparation : une réclamation datée de plus de 10 minutes
+        # (crash entre la réclamation et la publication) retourne à la file.
+        _limite = (datetime.now() - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M")
+        c.execute("""UPDATE soumissions_comm SET statut='programme'
+                     WHERE statut='prog_auto_en_cours'
+                       AND date_decision IS NOT NULL AND date_decision <= ?""",
+                  (_limite,))
         rows = c.execute("""SELECT id, type_contenu, titre, contenu_texte, image_url,
                                    fichier_url, video_url, date_evenement, lieu,
-                                   date_soumission, paroisse_cible
+                                   date_soumission, paroisse_cible, date_publication_prevue
                             FROM soumissions_comm
                             WHERE statut='programme'
                               AND date_publication_prevue IS NOT NULL
                               AND date_publication_prevue <= ?
                             ORDER BY date_publication_prevue ASC""",
-                         (_maint,)).fetchall()
+                         (_maint_s,)).fetchall()
+        # 2e verrou — re-parse Python : aucun format inattendu ne part.
+        rows = [r for r in rows if _lire_prevue(r[11]) is not None]
         if not rows:
             return
-    except Exception:
+    except Exception as e:
+        logger.warning(f"publications programmées : balayage impossible ({e!r})")
         return
+    _maint_s2 = datetime.now().strftime("%Y-%m-%d %H:%M")
     _n = 0
     for s in rows:
-        if publier_soumission(s):
-            c.execute("UPDATE soumissions_comm SET statut='publie' WHERE id=?", (s[0],))
-            _n += 1
-            try:
-                envoyer_notification_telegram(
-                    "🗓️ <b>Diocèse</b> — publication programmée EFFECTUÉE à l'heure dite : "
-                    + (s[2] or "(sans titre)"))
-            except Exception:
-                pass
-        else:
-            # Échec technique (feuillet sans section, année illisible…) :
-            # retour au SAS plutôt qu'un blocage invisible.
-            c.execute("""UPDATE soumissions_comm SET statut='attente',
-                         motif_refus='Publication programmée échouée (contenu incomplet ?) — à relire.',
-                         date_publication_prevue=NULL WHERE id=?""", (s[0],))
+        try:
+            # RÉCLAMATION anti-course : la mise à jour doit toucher
+            # EXACTEMENT 1 ligne ; sinon une autre session l'a prise.
+            _cur = c.execute("""UPDATE soumissions_comm
+                                SET statut='prog_auto_en_cours', date_decision=?
+                                WHERE id=? AND statut='programme'
+                                  AND date_publication_prevue IS NOT NULL
+                                  AND date_publication_prevue <= ?""",
+                             (_maint_s2, s[0], _maint_s2))
+            if (_cur.rowcount or 0) != 1:
+                continue
+            if publier_soumission(s):
+                c.execute("""UPDATE soumissions_comm SET statut='publie',
+                             auteur_decision=? WHERE id=?""",
+                          (AUTEUR_DECISION_AUTO, s[0]))
+                _n += 1
+                try:
+                    envoyer_notification_telegram(
+                        "🗓️ <b>Diocèse</b> — publication programmée EFFECTUÉE à l'heure dite : "
+                        + (s[2] or "(sans titre)"))
+                except Exception:
+                    pass
+            else:
+                # Échec technique (feuillet sans section, année illisible…) :
+                # retour au SAS plutôt qu'un blocage invisible.
+                c.execute("""UPDATE soumissions_comm SET statut='attente',
+                             motif_refus='Publication programmée échouée (contenu incomplet ?) — à relire.',
+                             date_publication_prevue=NULL, auteur_decision=? WHERE id=?""",
+                          (AUTEUR_DECISION_ECHEC, s[0]))
+        except Exception as e:
+            # Une ligne en échec ne doit JAMAIS casser le balayage (ni la page).
+            logger.warning(f"publications programmées : #{s[0]} — {e!r}")
     if _n:
-        commit_and_sync()
+        try:
+            commit_and_sync()
+        except Exception as e:
+            logger.warning(f"publications programmées : commit ({e!r})")
 
