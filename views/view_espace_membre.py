@@ -81,7 +81,8 @@ from datetime import date
 from stcompat import comp_html as _comp_html
 from database import (c, commit_and_sync, verifier_reparer_intentions,
                       intention_du_prochain, intention_du_prochain_detail,
-                      contact_en_priere, prise_en_charge_automatique)
+                      contact_en_priere, prise_en_charge_automatique,
+                      pointer_dizaine, dizaine_deja_pointee, compteur_dizaines_mois)
 from services import safe_date, compter_visite, lien_whatsapp
 from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
 
@@ -89,14 +90,15 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # ====================================================================
 # NAVIGATION
 # ====================================================================
-RUBRIQUES_MEMBRE = ["🏠 Actualités", "🕯️ Thème", "🖼️ Galerie +", "📿 Rosaire", "📅 Mes évènements", "📖 Archives"]
+RUBRIQUES_MEMBRE = ["🏠 Actualités", "🕯️ Thème", "📿 Rosaire", "📅 Mes évènements", "🖼️ Galerie +", "📖 Archives"]
 RUBRIQUES_PUBLIC = ["🏠 Actualités", "📿 Rosaire", "🕯️ Thème", "🖼️ Galerie +", "📖 Archives"]
 SOUS_RUBRIQUES = {
     "🕯️ Thème": ["🔭 Vue d'ensemble", "🎓 Enseignements", "💬 Discussions"],
     "📿 Rosaire": ["Le Rosaire chez les Équipiers", "Le Rosaire thématique"],
-    # v7.9.1 — nouvelle rubrique « 🖼️ Galerie + » : souvenirs (photos des
-    # évènements) et témoignages (grâces reçues). Insérée APRÈS « 🕯️ Thème »
-    # pour que les liens ?r=1 / ?r=2 (Thème) codés en dur restent valables.
+    # v7.9.2 — « 🖼️ Galerie + » déplacée ENTRE « 📅 Mes évènements » et
+    # « 📖 Archives » (demande user). Le public garde son ordre d'origine.
+    # Les liens codés en dur ?r=1 (🕯️ Thème) restent valables : l'index
+    # de Thème ne bouge pas dans les deux listes.
     "🖼️ Galerie +": ["Souvenirs", "Témoignages"],
     "📖 Archives": ["🙏 Prières", "📖 Méditations", "🎵 Musiques"],
 }
@@ -2517,7 +2519,62 @@ def _render_mini_lecteur(pid=None):
         pass
 
 
-def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
+def _rendre_pointage_dizaine(est_membre=False, matloc=None, nom_membre=None,
+                             equipe_id=None, paroisse_id=None, jrnais=None):
+    """v7.9.2 — LE POINTAGE DE LA CHAÎNE : « ✅ J'ai égrené ma dizaine
+    aujourd'hui », affiché sur la DERNIÈRE page du livre (« 🕯️ Un jour,
+    une dizaine »). Il répond à la question « sait-on si un membre / un
+    visiteur fait sa dizaine ? » : oui, désormais — le membre est pointé
+    par son MatLoc (1 fois/jour, visible par son responsable), le visiteur
+    compte un « passage » (aucune identité exigée, 1 par session/jour)."""
+    st.markdown('<div style="margin:14px 6px 0 6px; background:linear-gradient(135deg,#E8EAF6 0%,#F3E5F5 100%);'
+                ' border:1px solid #C5CAE9; border-radius:12px; padding:14px 16px;">'
+                '<div style="color:#1A237E; font-weight:bold; font-size:1rem;">📿 La chaîne compte sur vous</div>'
+                '<div style="color:#3949AB; font-size:0.88rem; margin-top:4px;">'
+                'Marquez votre dizaine du jour : votre responsable voit la chaîne vivre — '
+                'sans jamais lire le contenu de votre prière.</div></div>',
+                unsafe_allow_html=True)
+    if est_membre:
+        _deja = dizaine_deja_pointee(matloc)
+        if _deja:
+            try:
+                _mois, _flamme = compteur_dizaines_mois(matloc)
+            except Exception:
+                _mois, _flamme = 0, 0
+            st.success("📿 Dizaine d'aujourd'hui pointée — merci ! "
+                       + (f"🔥 {_flamme} jour(s) consécutif(s) · " if _flamme > 1 else "")
+                       + (f" {_mois} dizaine(s) ce mois." if _mois else ""))
+        else:
+            if st.button("✅ J'ai égrené ma dizaine aujourd'hui",
+                         key="diz_pointage_m", width="stretch", type="primary"):
+                _st, _msg = pointer_dizaine(matloc=matloc, nom=nom_membre,
+                                            equipe_id=equipe_id, paroisse_id=paroisse_id,
+                                            est_membre=True)
+                if _st == "ok":
+                    st.session_state["flash_success"] = _msg
+                    st.rerun()
+                st.warning(_msg)
+            st.caption("🕯️ Le pointage enregistre votre participation du jour — "
+                       "jamais le contenu de votre prière.")
+    else:
+        _cle_j = "diz_pointee_visiteur_" + date.today().isoformat()
+        if st.session_state.get(_cle_j):
+            st.success("📿 Merci ! Votre dizaine du jour est comptée dans la chaîne.")
+        else:
+            if st.button("✅ J'ai égrené ma dizaine aujourd'hui",
+                         key="diz_pointage_v", width="stretch", type="primary"):
+                _st, _msg = pointer_dizaine(jrnais=jrnais, paroisse_id=paroisse_id,
+                                            est_membre=False)
+                if _st != "erreur":
+                    st.session_state[_cle_j] = True
+                    st.rerun()
+                st.warning(_msg)
+            st.caption("🕯️ Vous priez en visiteur : votre passage du jour est compté "
+                       "anonymement dans la chaîne.")
+
+
+def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=None,
+                            nom_membre=None, equipe_id=None, paroisse_id=None):
     """La dizaine du jour — UNIQUEMENT sur l'Accueil. Livre = page autonome."""
     st.markdown("---")
 
@@ -2735,6 +2792,13 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False):
 
     st.markdown(html_page, unsafe_allow_html=True)
     _scroll_top(f"p{idx}")
+
+    # --- v7.9.2 : POINTAGE DE LA DIZAINE (dernière page du livre) ---
+    if page["t"] == "outro":
+        _rendre_pointage_dizaine(est_membre=est_membre, matloc=matloc,
+                                 nom_membre=nom_membre, equipe_id=equipe_id,
+                                 paroisse_id=paroisse_id,
+                                 jrnais=st.session_state.get("diz_jrnais"))
 
     # --- Navigation : ON NE RECULE PAS quand on égrène une dizaine ☺️ ---
     c_av, c_term = st.columns(2)
@@ -3745,7 +3809,10 @@ def show_espace_membre(matloc_membre=None):
             # v7.8 — livret mensuel en autonomie (logo + carte espace)
             _render_feuillet_autonome()
             return
-        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
+        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True,
+                                matloc=membre[3],
+                                nom_membre=((membre[1] or "") + " " + (membre[2] or "")).strip(),
+                                equipe_id=membre[10], paroisse_id=membre[11])
         return
 
     with st.popover("👤 Mon profil"):
@@ -3853,7 +3920,10 @@ def show_espace_membre(matloc_membre=None):
         _render_page_galerie(sub)
 
     else:
-        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True)
+        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True,
+                                matloc=membre[3],
+                                nom_membre=((membre[1] or "") + " " + (membre[2] or "")).strip(),
+                                equipe_id=membre[10], paroisse_id=membre[11])
         if st.session_state.get("diz_ouvert"):
             return
         _lien_theme_m = ("?espace=1&matloc=" + str(matloc_membre)
