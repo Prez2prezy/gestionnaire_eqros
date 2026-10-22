@@ -253,6 +253,19 @@ def init_tables_and_migrations():
                     jour TEXT,
                     heure TEXT,
                     UNIQUE(matloc, jour))""")
+    # v7.9.3 — RÉSERVE D'INTENTIONS PAR N° MÉD. : pour CHACUN des 20 N° de
+    # méditation, les responsables d'équipe et paroissiaux préparent À
+    # L'AVANCE 20 intentions (celles de leurs membres). Le visiteur du jour
+    # reçoit, selon SON N° méd., l'intention placée à cet emplacement de la
+    # réserve et la médite sur 20 jours — la chaîne ne tombe jamais à sec.
+    c.execute("""CREATE TABLE IF NOT EXISTS intentions_reserve (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    numero_med INTEGER NOT NULL,
+                    texte TEXT NOT NULL,
+                    auteur_nom TEXT,
+                    equipe_id INTEGER,
+                    paroisse_id INTEGER,
+                    date_ajout TEXT)""")
     commit_and_sync()
 
     # --- 2. DONNÉES PAR DÉFAUT ---
@@ -519,6 +532,20 @@ def intention_du_prochain_detail(jour_visiteur=None):
                 # universelles se relaient chaque jour.
                 return (INTENTIONS_UNIVERSELLES[date.today().timetuple().tm_yday % 3], None)
             return ((choix if choix in INTENTIONS_UNIVERSELLES else _secours[0]), None)
+        # v7.9.3 — LA RÉSERVE PAR N° MÉD. : les responsables préparent À
+        # L'AVANCE 20 intentions par N° méd. (les intentions de leurs
+        # membres). Si l'emplacement du N° du lecteur est nourri, le lecteur
+        # reçoit UNE intention de CETTE réserve (rotation tous les 20 jours)
+        # — « les visiteurs du jour reçoivent les intentions de leurs
+        # prochains selon leurs N° méd. ». La file des soumissions reste le
+        # secours : quand la réserve est vide, le tirage v7.9.1 s'applique.
+        if jour_visiteur is not None:
+            try:
+                _res = intention_reserve_pour_numero(jour_visiteur)
+                if _res and str(_res[0] or "").strip():
+                    return (str(_res[0]).strip(), _res[1])
+            except Exception as e:
+                logger.warning(f"intention_du_prochain : réserve N° méd. ({e!r})")
         statut = "en_priere" if mode == "en_priere" else "recue"
         lignes = c.execute("""SELECT texte, jour_naissance, auteur_nom, anonyme
                               FROM intentions_equipes
@@ -800,3 +827,157 @@ def compteur_dizaines_mois(matloc):
     except Exception as e:
         logger.warning(f"compteur_dizaines_mois : {e!r}")
         return (0, 0)
+
+
+# ======================================================================
+# v7.9.3 — LA RÉSERVE D'INTENTIONS PAR N° MÉD.
+# ======================================================================
+# « Les visiteurs du jour reçoivent les intentions de leurs prochains selon
+# leurs N° méd. et méditent avec sur 20 jours : il est capital d'avoir AU
+# PRÉALABLE 20 intentions pour chacun des N° méd. Ça sera l'affaire des
+# responsables d'équipe et paroissial : ils ajoutent les intentions de leurs
+# membres. » — la table intentions_reserve stocke, pour chaque N° méd.
+# (1-20), les intentions préparées d'avance ; l'« intention du prochain »
+# du livret puise D'ABORD dans la réserve du N° du lecteur (rotation à
+# chaque fenêtre de 20 jours), la file des soumissions restant le secours
+# (comportement v7.9.1 conservé quand la réserve est vide).
+
+OBJECTIF_RESERVE = 20   # intentions par N° méd.
+
+
+def _assurer_table_reserve():
+    """Création douce de intentions_reserve (bases distantes anciennes)."""
+    try:
+        c.execute("SELECT id FROM intentions_reserve LIMIT 1")
+    except Exception:
+        try:
+            c.execute("""CREATE TABLE IF NOT EXISTS intentions_reserve (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            numero_med INTEGER NOT NULL,
+                            texte TEXT NOT NULL,
+                            auteur_nom TEXT,
+                            equipe_id INTEGER,
+                            paroisse_id INTEGER,
+                            date_ajout TEXT)""")
+            commit_and_sync()
+        except Exception as e:
+            logger.warning(f"_assurer_table_reserve : {e!r}")
+
+
+def _numero_med_normale(jour):
+    """Jour de naissance (1-31) → N° méd. (1-20), même règle que le livret
+    (« Un jour, une dizaine ») : au-delà de 20, on retranche 20. None sinon."""
+    try:
+        _n = int(jour)
+    except (TypeError, ValueError):
+        return None
+    if _n > 20:
+        _n -= 20
+    return _n if 1 <= _n <= 20 else None
+
+
+def ajouter_intention_reserve(numero_med, texte, auteur_nom=None,
+                              equipe_id=None, paroisse_id=None):
+    """Ajoute une intention à la réserve d'un N° méd. (v7.9.3).
+    Retourne (ok, message) — le message est prêt à être affiché."""
+    _assurer_table_reserve()
+    _num = _numero_med_normale(numero_med)
+    if _num is None:
+        return (False, "Le N° méd. doit être un chiffre entre 1 et 20.")
+    _txt = str(texte or "").strip()
+    if not _txt:
+        return (False, "Le texte de l'intention est obligatoire.")
+    if len(_txt) > 500:
+        return (False, "L'intention est trop longue (500 caractères maximum).")
+    try:
+        c.execute("""INSERT INTO intentions_reserve
+                     (numero_med, texte, auteur_nom, equipe_id, paroisse_id, date_ajout)
+                     VALUES (?, ?, ?, ?, ?, ?)""",
+                  (_num, _txt, (str(auteur_nom).strip() or None) if auteur_nom else None,
+                   equipe_id, paroisse_id, date.today().isoformat()))
+        commit_and_sync()
+        return (True, "📚 Intention ajoutée à la réserve du N° méd. " + str(_num) + ".")
+    except Exception as e:
+        logger.warning(f"ajouter_intention_reserve : {e!r}")
+        return (False, "L'ajout n'a pas pu aboutir — réessayez dans un instant.")
+
+
+def retirer_intention_reserve(rid, equipe_id=None):
+    """Retire une intention de la réserve (v7.9.3). Si equipe_id est fourni,
+    le retrait est refusé pour une ligne d'une autre équipe (prudence).
+    Retourne True uniquement si une ligne a VRAIMENT été supprimée."""
+    _assurer_table_reserve()
+    try:
+        if equipe_id is not None:
+            _eq = c.execute("SELECT equipe_id FROM intentions_reserve WHERE id=?",
+                            (rid,)).fetchone()
+            if not _eq or _eq[0] != equipe_id:
+                return False
+        cur = c.execute("DELETE FROM intentions_reserve WHERE id=?", (rid,))
+        commit_and_sync()
+        return bool(getattr(cur, "rowcount", 0))
+    except Exception as e:
+        logger.warning(f"retirer_intention_reserve : {e!r}")
+        return False
+
+
+def reserve_compteur():
+    """{N° méd. (1-20) : nombre d'intentions en réserve} (v7.9.3) — les
+    20 emplacements existent TOUJOURS (compteur à 0 quand vide)."""
+    _d = {n: 0 for n in range(1, 21)}
+    try:
+        _assurer_table_reserve()
+        for _num, _n in c.execute("""SELECT numero_med, COUNT(*) FROM intentions_reserve
+                                     GROUP BY numero_med""").fetchall():
+            if 1 <= int(_num) <= 20:
+                _d[int(_num)] = _n
+    except Exception as e:
+        logger.warning(f"reserve_compteur : {e!r}")
+    return _d
+
+
+def reserve_lignes(equipe_id=None, paroisse_id=None, limite=300):
+    """Intentions en réserve, les plus récentes d'abord (v7.9.3) :
+    (id, numero_med, texte, auteur_nom, equipe_id, date_ajout)."""
+    _assurer_table_reserve()
+    _cond, _prm = [], []
+    if equipe_id is not None:
+        _cond.append("equipe_id=?")
+        _prm.append(equipe_id)
+    if paroisse_id is not None:
+        _cond.append("paroisse_id=?")
+        _prm.append(paroisse_id)
+    _where = ("WHERE " + " AND ".join(_cond)) if _cond else ""
+    try:
+        return c.execute(f"""SELECT id, numero_med, texte, auteur_nom, equipe_id,
+                                    date_ajout FROM intentions_reserve {_where}
+                              ORDER BY id DESC LIMIT {int(limite)}""",
+                         tuple(_prm)).fetchall()
+    except Exception as e:
+        logger.warning(f"reserve_lignes : {e!r}")
+        return []
+
+
+def intention_reserve_pour_numero(numero_med, cycle=None):
+    """TIRAGE DANS LA RÉSERVE (v7.9.3) : retourne (texte, QUI) de l'intention
+    placée au N° méd. du lecteur, ou None si cet emplacement est vide.
+    La rotation suit la même fenêtre glissante de 20 jours que la chaîne :
+    le lecteur retrouve la même intention sur toute la période, puis la
+    réserve passe à la suivante (c'est le sens du stock de 20 par N°)."""
+    _num = _numero_med_normale(numero_med)
+    if _num is None:
+        return None
+    try:
+        _assurer_table_reserve()
+        rows = c.execute("""SELECT texte, auteur_nom FROM intentions_reserve
+                            WHERE numero_med=? ORDER BY id ASC""", (_num,)).fetchall()
+        if not rows:
+            return None
+        if cycle is None:
+            cycle = (date.today() - date(2024, 1, 1)).days // 20
+        _i = int(cycle) % len(rows)
+        _qui = str(rows[_i][1] or "").strip() or "notre prochain"
+        return (str(rows[_i][0]).strip(), _qui)
+    except Exception as e:
+        logger.warning(f"intention_reserve_pour_numero : {e!r}")
+        return None
