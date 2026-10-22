@@ -103,7 +103,7 @@ def show_diocese():
 
     _rubriques_dio = [
         "🏛️ Voir diocèse", "🏘️ Créer paroisses", "📋 Gérer paroisses",
-        "📅 Abonnements", "📌 Suivi", "🕊️ Espace spirituel", "💬 WhatsApp",
+        "📅 Abonnements", "📌 Suivi", "🕊️ Espace spirituel", "🖼️ Galerie +", "💬 WhatsApp",
         "🔍 Rechercher matricule", "🔐 Gérer les accès", "📊 Statistiques", "📥 Export Excel",
         "📦 Archives", "🗑️ Réinitialiser"
     ]
@@ -573,6 +573,90 @@ def show_diocese():
                                 st.session_state.pop("confirm_sup_autres", None)
                                 st.rerun()
 
+    elif menu == "🖼️ Galerie +":
+        # v7.9.1 — GALERIE + : la nouvelle rubrique de l'Espace de Prière.
+        # 2 sous-rubriques : « 🏞️ Souvenirs » (photos des évènements) et
+        # « 💬 Témoignages » (grâces reçues). Le diocèse publie et retire ;
+        # toute la communauté lit (visiteurs et membres).
+        st.markdown('<h2 style="color:#1A237E;">🖼️ Galerie + — Souvenirs & Témoignages</h2>', unsafe_allow_html=True)
+        afficher_messages_flash()
+        st.caption("La rubrique « 🖼️ Galerie + » de l'Espace de Prière accueille 2 sous-rubriques : "
+                   "**🏞️ Souvenirs** (les photos de notre marche ensemble — pèlerinages, prières "
+                   "mensuelles, moments d'équipe) et **💬 Témoignages** (les grâces reçues, avec "
+                   "l'accord de ceux qui les vivent). Vous publiez ici ; la communauté lit là.")
+        _vue_gal = st.radio("Sous-rubrique", ["🏞️ Souvenirs", "💬 Témoignages"],
+                            key="dio_galerie_vue", horizontal=True, label_visibility="collapsed")
+        _rub_gal = "souvenirs" if _vue_gal.startswith("🏞") else "temoignages"
+
+        with st.form("form_galerie_plus", clear_on_submit=True):
+            _t_gal = st.text_input("Titre *",
+                                   placeholder="Ex : Pèlerinage diocésain à Assinie"
+                                   if _rub_gal == "souvenirs" else
+                                   "Ex : Guérison de mon fils après 3 ans de prière")
+            _c_gal1, _c_gal2 = st.columns(2)
+            with _c_gal1:
+                _d_gal = st.date_input("Date de l'évènement (optionnelle)", value=None,
+                                       min_value=date(2015, 1, 1), max_value=date.today())
+                _l_gal = st.text_input("Lieu (optionnel)", placeholder="Ex : Assinie-Mafia")
+            with _c_gal2:
+                _a_gal = st.text_input("Signé par (optionnel)",
+                                       placeholder="Ex : Équipe Sainte Marie" if _rub_gal == "souvenirs"
+                                       else "Ex : Marie, paroisse Saint-Joseph")
+                _i_gal = st.text_input("Lien de la photo (optionnel — https://…, ex. imgbb)",
+                                       placeholder="https://i.ibb.co/…")
+            _x_gal = st.text_area("Texte" + (" *" if _rub_gal == "temoignages" else " (optionnel)"),
+                                  height=110,
+                                  placeholder="Un mot qui raconte le moment…" if _rub_gal == "souvenirs"
+                                  else "Racontez la grâce reçue, avec sobriété et reconnaissance…")
+            if st.form_submit_button("📢 Publier dans la Galerie +", type="primary", width="stretch"):
+                if not _t_gal.strip() or (_rub_gal == "temoignages" and not _x_gal.strip()):
+                    st.error("Titre requis (et, pour un témoignage, le texte aussi).")
+                elif _i_gal.strip() and not _i_gal.strip().startswith("http"):
+                    st.error("Le lien de la photo doit commencer par https://")
+                else:
+                    c.execute("""INSERT INTO galerie_plus
+                                 (rubrique, titre, texte, image_url, date_event, lieu,
+                                  auteur_nom, date_publication)
+                                 VALUES (?,?,?,?,?,?,?,?)""",
+                              (_rub_gal, _t_gal.strip(), _x_gal.strip() or None,
+                               _i_gal.strip() or None,
+                               _d_gal.isoformat() if _d_gal else None,
+                               _l_gal.strip() or None, _a_gal.strip() or None,
+                               date.today().isoformat()))
+                    commit_and_sync()
+                    st.session_state["flash_success"] = (
+                        "✅ Publié dans « 🖼️ Galerie + → "
+                        + ("🏞️ Souvenirs" if _rub_gal == "souvenirs" else "💬 Témoignages")
+                        + " » — visible immédiatement dans l'Espace de Prière.")
+                    st.rerun()
+
+        _publies = c.execute("""SELECT id, titre, image_url, date_event, lieu, auteur_nom, date_publication
+                                FROM galerie_plus WHERE rubrique=?
+                                ORDER BY COALESCE(date_event, date_publication) DESC, id DESC""",
+                             (_rub_gal,)).fetchall()
+        st.markdown("---")
+        _lbl_gal = "🏞️ Souvenirs publiés" if _rub_gal == "souvenirs" else "💬 Témoignages publiés"
+        st.markdown(f"#### {_lbl_gal} ({len(_publies)})")
+        if not _publies:
+            st.info("Aucun élément publié pour l'instant dans cette sous-rubrique.")
+        for (gid, gtitre, gimg, gdevt, glieu, gauteur, gdpub) in _publies:
+            _c_txt, _c_btn = st.columns([10, 2])
+            with _c_txt:
+                _d_aff = gdevt or gdpub
+                st.write(f"📌 **{gtitre}** — {_d_aff or 'sans date'}"
+                         + (f" · 📍 {glieu}" if glieu else "")
+                         + (f" · ✍️ {gauteur}" if gauteur else ""))
+                if gimg:
+                    st.caption("🖼️ " + str(gimg))
+            with _c_btn:
+                if st.button("🗑️", key=f"gal_del_{gid}"):
+                    if gimg and str(gimg).startswith("http"):
+                        supprimer_photo(gimg)
+                    c.execute("DELETE FROM galerie_plus WHERE id=?", (gid,))
+                    commit_and_sync()
+                    st.session_state["flash_success"] = "Élément retiré de la Galerie +. 🗑️"
+                    st.rerun()
+
     elif menu == "💬 WhatsApp":
         st.markdown(f'<h2 style="color:#1A237E;">💬 Messages WhatsApp - {nom_dio}</h2>', unsafe_allow_html=True)
         afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None)
@@ -746,4 +830,3 @@ def show_diocese():
                 commit_and_sync()
                 st.session_state["flash_success"] = "Toutes les données ont été supprimées. 🗑️"
                 st.rerun()
-
