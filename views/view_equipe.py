@@ -4,7 +4,7 @@ import io
 import logging
 from datetime import date
 from database import (c, commit_and_sync, verifier_reparer_intentions, jours_depuis,
-                      prise_en_charge_automatique)
+                      prise_en_charge_automatique, stats_dizaines_jour, serie_dizaines)
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
@@ -12,6 +12,50 @@ from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, 
                         afficher_historique_suivi, afficher_whatsapp_tabs, widget_type_abonnement, 
                         enregistrer_presence_equipe, afficher_etat_presences_globales)
+
+
+def _bloc_dizaines_equipe(eid):
+    """📿 LA CHAÎNE EN DIRECT (v7.9.2) — bloc en tête de l'onglet
+    « 📊 Engagement spirituel » : le responsable voit QUI a égrené sa
+    dizaine aujourd'hui (pointage volontaire en fin de livre), qui
+    n'a pas encore pointé, la série des 7 derniers jours et le mois
+    de chaque membre. Les visiteurs (passages anonymes) restent globaux."""
+    st.markdown("#### 📿 Chaîne des dizaines — aujourd'hui")
+    st.caption("Le pointage est volontaire : chaque équipier le fait en fin de « 🕯️ Un jour, "
+               "une dizaine » (bouton « ✅ J'ai égrené ma dizaine aujourd'hui »). Il atteste "
+               "d'une dizaine égrenée dans l'application — le contenu de la prière, lui, "
+               "reste personnel.")
+    _mbr, _vis, _liste = stats_dizaines_jour(equipe_id=eid)
+    _total_eq = c.execute("SELECT COUNT(*) FROM membres WHERE equipe_id=? AND statut='actif'",
+                          (eid,)).fetchone()[0]
+    r_d = st.columns(4)
+    r_d[0].metric("📿 Dizaines pointées aujourd'hui", f"{_mbr}/{_total_eq}")
+    r_d[1].metric("🔥 Passages visiteurs", _vis,
+                  delta="communauté (toutes paroisses)" if _vis else None,
+                  delta_color="off")
+    _pct = str(round(_mbr / _total_eq * 100)) + "%" if _total_eq else "0%"
+    r_d[2].metric("📈 Participation de l'équipe", _pct)
+    _ser = serie_dizaines(7, equipe_id=eid)
+    _somme7 = sum(x[1] for x in _ser)
+    r_d[3].metric("🗓️ Sur 7 jours", _somme7,
+                  delta="dizaines membres cumulées", delta_color="off")
+    _fait = {x[1] for x in _liste}
+    _c_fait, _c_att = st.columns(2)
+    with _c_fait:
+        st.success("✅ **Ont pointé aujourd'hui :** "
+                   + (", ".join(f"**{n or 'Membre'}**" for (n, m, h) in _liste)
+                      if _liste else "personne pour l'instant"))
+    with _c_att:
+        _restants = [f"**{m[1]} {m[2]}**" for m in c.execute(
+            """SELECT id, nom, prenom FROM membres WHERE equipe_id=? AND statut='actif'
+               ORDER BY nom""", (eid,)).fetchall() if f"{m[1]} {m[2]}" not in _fait]
+        st.info("⏳ **Pas encore pointé aujourd'hui :** "
+                + (", ".join(_restants) if _restants else "toute l'équipe est à jour 🎉"))
+    with st.expander("🗓️ Série des 7 derniers jours (équipe)"):
+        st.dataframe(pd.DataFrame(
+            [{"Jour": date.fromisoformat(iso).strftime("%d/%m"), "📿 Membres": mv, "🔥 Visiteurs": vv}
+             for (iso, mv, vv) in _ser]),
+            width="stretch", hide_index=True)
 
 def _assurer_table_intentions_eq():
     """v7.8.14 — création douce de la table des intentions confiées aux équipes
@@ -442,6 +486,10 @@ def show_equipe():
         elif _suivi_actif == _onglets_suivi[2]:
             enregistrer_presence_equipe(equipe_id=eid)
         else:
+            # v7.9.2 — le bloc « 📿 Chaîne des dizaines » ouvre l'onglet
+            # 📊 Engagement spirituel, avant le détail des présences.
+            _bloc_dizaines_equipe(eid)
+            st.markdown("---")
             afficher_etat_presences_globales(equipe_id=eid)
 
     elif menu == "💬 WhatsApp":
@@ -518,3 +566,4 @@ def show_equipe():
                             else: st.info("Un transféré ou un défunt ne peut pas être réintégré.")
         else: 
             st.info("Aucune archive.")
+
