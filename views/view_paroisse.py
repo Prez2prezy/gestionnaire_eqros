@@ -7,7 +7,8 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       intention_du_prochain, intention_du_prochain_detail,
                       get_parametre, set_parametre,
                       INTENTIONS_UNIVERSELLES, jours_depuis,
-                      prise_en_charge_automatique)
+                      prise_en_charge_automatique, stats_dizaines_jour,
+                      _assurer_dizaines_journal)
 from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, supprimer_photo,
                       archiver_membre, safe_date, afficher_situation, sans_accents, 
                       enregistrer_abonnement, verifier_abonnement, periode_affichage, 
@@ -250,6 +251,32 @@ def _tableau_de_bord_paroisse(pid, nom_p):
         st.info("🆕 **" + str(n_rec) + "** intention(s) reçue(s) aujourd'hui : elles passeront "
                 "automatiquement « 🕊️ Prises en charge » demain (règle du lendemain, 20 jours).")
 
+    # ---- v7.9.2 : LA CHAÎNE DES DIZAINES (pointage volontaire en fin de livre)
+    try:
+        _assurer_dizaines_journal()
+        _dz_m = c.execute(f"""SELECT COUNT(*) FROM dizaines_journal
+                              WHERE type='membre' AND jour=?
+                                AND equipe_id IN ({_ph})""",
+                          (date.today().isoformat(), *ids_eq)).fetchone()[0] if ids_eq else 0
+    except Exception:
+        _dz_m = 0
+    try:
+        _dz_v = stats_dizaines_jour()[1]   # visiteurs (communauté, toutes paroisses)
+    except Exception:
+        _dz_v = 0
+    r3 = st.columns(4)
+    r3[0].metric("📿 Dizaines pointées aujourd'hui", _dz_m,
+                 delta="membres des équipes · pointage volontaire", delta_color="off")
+    r3[1].metric("🔥 Passages visiteurs (chaîne)", _dz_v,
+                 delta="communauté, toutes paroisses", delta_color="off")
+    with r3[2]:
+        with st.expander("ℹ️ Comment lire les dizaines ?"):
+            st.caption("Chaque équipier (ou visiteur) qui termine « 🕯️ Un jour, "
+                       "une dizaine » dans l'Espace de Prière peut appuyer sur "
+                       "« ✅ J'ai égrené ma dizaine aujourd'hui ». Le membre est "
+                       "pointé 1 fois/jour (son équipe le voit), le visiteur compte "
+                       "un passage anonyme.")
+
     _c_evt, _c_vis = st.columns(2)
     with _c_evt:
         st.markdown("#### 📅 Prochaine prière")
@@ -279,8 +306,13 @@ def _tableau_de_bord_paroisse(pid, nom_p):
             _i = c.execute("SELECT COUNT(*) FROM intentions_equipes WHERE equipe_id=? AND statut='en_priere'", (eid,)).fetchone()[0]
         except Exception:
             _i = 0
+        try:
+            _dz_eq = stats_dizaines_jour(equipe_id=eid)[0]
+        except Exception:
+            _dz_eq = 0
         _lignes.append({"Équipe": enom, "Membres actifs": _m,
-                        f"Abonnés {annee_cours}": _p, "🕊️ Intentions en prière": _i})
+                        f"Abonnés {annee_cours}": _p, "🕊️ Intentions en prière": _i,
+                        "📿 Dizaines aujourd'hui": _dz_eq})
     if _lignes:
         st.dataframe(pd.DataFrame(_lignes), width="stretch", hide_index=True)
     else:
