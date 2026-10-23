@@ -348,7 +348,9 @@ def show_diocese():
                     st.error("Tous les champs sont requis")
 
     elif menu == "📋 Gérer paroisses":
-        st.markdown('<h2 style="color:#1A237E;">📋 Consultation des paroisses</h2>', unsafe_allow_html=True)
+        _n_par = c.execute("SELECT COUNT(*) FROM paroisses").fetchone()[0]
+        st.markdown('<h2 style="color:#1A237E;">📋 Consultation des paroisses — '
+                    + str(_n_par) + ' paroisse(s)</h2>', unsafe_allow_html=True)
         afficher_messages_flash()
 
         for state in ['show_equipes', 'show_equipiers', 'show_membres_equipe']:
@@ -402,8 +404,8 @@ def show_diocese():
 
                 if st.session_state.get('show_equipes') == pid:
                     st.markdown("---")
-                    st.markdown(f"#### 👥 Équipes de {nom}")
                     equipes = c.execute("SELECT id, nom_equipe, responsable, bureau FROM equipes WHERE paroisse_id=? ORDER BY nom_equipe", (pid,)).fetchall()
+                    st.markdown(f"#### 👥 Équipes de {nom} — {len(equipes)} équipe(s)")
                     if not equipes: st.info("Aucune équipe dans cette paroisse")
                     else:
                         for eq in equipes:
