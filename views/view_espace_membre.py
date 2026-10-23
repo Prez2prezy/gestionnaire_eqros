@@ -2646,6 +2646,15 @@ def _rendre_pointage_dizaine(est_membre=False, matloc=None, nom_membre=None,
 def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=None,
                             nom_membre=None, equipe_id=None, paroisse_id=None):
     """La dizaine du jour — UNIQUEMENT sur l'Accueil. Livre = page autonome."""
+    # v7.9.6 — « J'ai honoré mon engagement de ce jour » REFERME LA CARTE
+    # ENTIÈRE, comme « 📌 Marquer comme lue » referme la sienne : bannière
+    # « 📿 Ta dizaine du jour », bouton « 📿 Égrener la dizaine » et le
+    # bouton lui-même s'effacent jusqu'à demain. Le livre déjà ouvert
+    # reste prioritaire (on ne ferme pas une lecture en cours).
+    if (not st.session_state.get("diz_ouvert")
+            and st.session_state.get("engagement_honore_" + date.today().isoformat())):
+        return
+
     st.markdown("---")
 
     st.session_state.pop("nettoyage_diz", None)
@@ -2751,9 +2760,11 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
             st.session_state.pop("flt_ouvert", None)  # v7.8 : un seul livre ouvert à la fois
             st.rerun()
         # v7.9.4 — AU RETOUR DE LA MÉDITATION : « J'ai honoré mon engagement
-        # de ce jour » s'affiche juste après « 📿 Égrener la dizaine » — il
-        # agit comme « 📌 Marquer comme lue » : un clic, et il s'efface
-        # jusqu'à demain (rien d'autre ne change, aucun commentaire).
+        # de ce jour » s'affiche juste après « 📿 Égrener la dizaine ».
+        # v7.9.6 — un clic REFERME LA CARTE ENTIÈRE (bannière + « 📿 Égrener
+        # la dizaine » + le bouton) jusqu'à demain, exactement comme
+        # « 📌 Marquer comme lue » — la garde en tête de fonction s'en charge
+        # au rendu suivant (aucun commentaire affiché).
         _cle_eng = "engagement_honore_" + date.today().isoformat()
         if not st.session_state.get(_cle_eng):
             _fait_auj = False
@@ -2912,7 +2923,11 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
                                     nom_membre=nom_membre, equipe_id=equipe_id,
                                     paroisse_id=paroisse_id,
                                     jrnais=st.session_state.get("diz_jrnais"))
-                st.session_state["flash_success"] = _msg_dizaine_capitale(est_membre, matloc)
+                # v7.9.6 — la sortie incognito reste discrète : une ligne
+                # courte, sans compteur — le remerciement complet (avec le
+                # compteur du mois) appartient au seul bouton « ✅ Merci
+                # Sainte Mère… » de la dernière page.
+                st.session_state["flash_success"] = "📿 À demain! 🕊️"
                 st.session_state["diz_ouvert"] = False
                 st.session_state["diz_page"] = 0
                 st.rerun()
@@ -2923,7 +2938,8 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
                                     nom_membre=nom_membre, equipe_id=equipe_id,
                                     paroisse_id=paroisse_id,
                                     jrnais=st.session_state.get("diz_jrnais"))
-                st.session_state["flash_success"] = _msg_dizaine_capitale(est_membre, matloc)
+                # v7.9.6 — discrétion identique à la sortie de fin de livre.
+                st.session_state["flash_success"] = "📿 À demain! 🕊️"
                 st.session_state["diz_ouvert"] = False
                 st.session_state["diz_page"] = 0
                 st.rerun()
@@ -3797,7 +3813,7 @@ def _render_pied_de_page():
         '</div>'
         '<div class="pdp-signature">'
         '📿 LES ÉQUIPES DU ROSAIRE — Diocèse de Grand-Bassam · Espace de Prière<br>'
-        '🕯️ Un jour, une dizaine — LA CHAÎNE DE PRIÈRE UNIVERSELLE · v7.9.5'
+        '🕯️ Un jour, une dizaine — LA CHAÎNE DE PRIÈRE UNIVERSELLE · v7.9.6'
         '</div>'
         '</details>', unsafe_allow_html=True)
 
