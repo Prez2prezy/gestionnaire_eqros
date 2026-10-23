@@ -81,7 +81,8 @@ from datetime import date
 from stcompat import comp_html as _comp_html
 from database import (c, commit_and_sync, verifier_reparer_intentions,
                       intention_du_prochain, intention_du_prochain_detail,
-                      contact_en_priere, prise_en_charge_automatique,
+                      contact_en_priere, date_intention_en_priere,
+                      prise_en_charge_automatique, verser_intention_du_jour,
                       pointer_dizaine, dizaine_deja_pointee, compteur_dizaines_mois)
 from services import safe_date, compter_visite, lien_whatsapp
 from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
@@ -1759,7 +1760,7 @@ def _est_intention_chaine(ligne):
     return "intention du prochain" in l
 
 
-def _ligne_chaine(jour_visiteur=None):
+def _ligne_chaine(jour_visiteur=None, matloc=None):
     """v7.9.1 — la ligne dynamique du livret, au MODÈLE demandé :
       « 🕯️ Vierge Marie, mère de Dieu, intercède pour {Prénom - Nom du
         visiteur} : {son intention} » ;
@@ -1768,8 +1769,12 @@ def _ligne_chaine(jour_visiteur=None):
     Le tirage dépend du N° méd. du lecteur (jour de naissance) et reste
     stable au sein d'une fenêtre de 20 jours (intention_du_prochain_detail) :
     les visiteurs du jour reçoivent les intentions de leurs prochains selon
-    leurs N° méd. et méditent avec, sur 20 jours."""
-    _txt, _qui = intention_du_prochain_detail(jour_visiteur=jour_visiteur)
+    leurs N° méd. et méditent avec, sur 20 jours.
+    v7.9.4 — le membre transmet son MatLoc : son intention lui est
+    ATTACHÉE sur sa période désignée (membre), comme sur 20 jours pour
+    le visiteur."""
+    _txt, _qui = intention_du_prochain_detail(jour_visiteur=jour_visiteur,
+                                              matloc=matloc)
     if _qui:
         return ("🕯️ Vierge Marie, mère de Dieu, intercède pour " + _qui
                 + " : " + _txt)
@@ -2573,51 +2578,62 @@ def _pointage_incognito(est_membre=False, matloc=None, nom_membre=None,
         pass  # cause incognito : jamais de plantage pour un pointage
 
 
+def _msg_dizaine_capitale(est_membre=False, matloc=None):
+    """v7.9.4 — le remerciement qui suit la dizaine du jour : « Ta dizaine
+    est capitale pour la chaîne — Merci pour ta fidélité! — X dizaine(s)
+    ce mois — À demain! 🕊️ » (le compteur du mois est montré au membre ;
+    le visiteur, lui, prie en toute simplicité)."""
+    _txt = "📿 Ta dizaine est capitale pour la chaîne — Merci pour ta fidélité!"
+    if est_membre and matloc:
+        try:
+            _mois, _fl = compteur_dizaines_mois(matloc)
+            _txt += " — " + str(_mois) + " dizaine(s) ce mois"
+        except Exception:
+            pass
+    return _txt + " — À demain! 🕊️"
+
+
 def _rendre_pointage_dizaine(est_membre=False, matloc=None, nom_membre=None,
                              equipe_id=None, paroisse_id=None, jrnais=None):
-    """v7.9.2 — LE POINTAGE DE LA CHAÎNE : « ✅ J'ai égrené ma dizaine
-    aujourd'hui », affiché sur la DERNIÈRE page du livre (« 🕯️ Un jour,
-    une dizaine »). Il répond à la question « sait-on si un membre / un
-    visiteur fait sa dizaine ? » : oui, désormais — le membre est pointé
-    par son MatLoc (1 fois/jour, visible par son responsable), le visiteur
-    compte un « passage » (aucune identité exigée, 1 par session/jour).
+    """v7.9.2 — LE POINTAGE DE LA CHAÎNE, affiché sur la DERNIÈRE page du
+    livre (« 🕯️ Un jour, une dizaine »). Il répond à la question « sait-on
+    si un membre / un visiteur fait sa dizaine ? » : oui, désormais — le
+    membre est pointé par son MatLoc (1 fois/jour, visible par son
+    responsable), le visiteur compte un « passage » (aucune identité
+    exigée, 1 par session/jour).
     v7.9.3 — le bouton « ✕ Terminer » de CHAQUE mystère (page Gloria)
-    pointe aussi, en toute discrétion (voir _pointage_incognito)."""
+    pointe aussi, en toute discrétion (voir _pointage_incognito).
+    v7.9.4 — TON COMPLICEL : « La chaîne compte sur Toi » — ta présence
+    du jour et ta gratitude envers La Vierge Marie ; les mentions de
+    mécanisme disparaissent (jamais l'impression d'une surveillance)."""
     st.markdown('<div style="margin:14px 6px 0 6px; background:linear-gradient(135deg,#E8EAF6 0%,#F3E5F5 100%);'
                 ' border:1px solid #C5CAE9; border-radius:12px; padding:14px 16px;">'
-                '<div style="color:#1A237E; font-weight:bold; font-size:1rem;">📿 La chaîne compte sur vous</div>'
+                '<div style="color:#1A237E; font-weight:bold; font-size:1rem;">📿 La chaîne compte sur Toi</div>'
                 '<div style="color:#3949AB; font-size:0.88rem; margin-top:4px;">'
-                'Marquez votre dizaine du jour : votre responsable voit la chaîne vivre — '
-                'sans jamais lire le contenu de votre prière.</div></div>',
+                'Marque ta présence du jour et ta gratitude envers La Vierge Marie '
+                'pour l\'écoute</div></div>',
                 unsafe_allow_html=True)
     if est_membre:
         _deja = dizaine_deja_pointee(matloc)
         if _deja:
-            try:
-                _mois, _flamme = compteur_dizaines_mois(matloc)
-            except Exception:
-                _mois, _flamme = 0, 0
-            st.success("📿 Dizaine d'aujourd'hui pointée — merci ! "
-                       + (f"🔥 {_flamme} jour(s) consécutif(s) · " if _flamme > 1 else "")
-                       + (f" {_mois} dizaine(s) ce mois." if _mois else ""))
+            st.success(_msg_dizaine_capitale(est_membre=True, matloc=matloc))
         else:
-            if st.button("✅ J'ai égrené ma dizaine aujourd'hui",
+            if st.button("✅ Merci Sainte Mère pour ton aide de ce jour!",
                          key="diz_pointage_m", width="stretch", type="primary"):
                 _st, _msg = pointer_dizaine(matloc=matloc, nom=nom_membre,
                                             equipe_id=equipe_id, paroisse_id=paroisse_id,
                                             est_membre=True)
                 if _st == "ok":
-                    st.session_state["flash_success"] = _msg
+                    st.session_state["flash_success"] = _msg_dizaine_capitale(
+                        est_membre=True, matloc=matloc)
                     st.rerun()
                 st.warning(_msg)
-            st.caption("🕯️ Le pointage enregistre votre participation du jour — "
-                       "jamais le contenu de votre prière.")
     else:
         _cle_j = "diz_pointee_visiteur_" + date.today().isoformat()
         if st.session_state.get(_cle_j):
-            st.success("📿 Merci ! Votre dizaine du jour est comptée dans la chaîne.")
+            st.success(_msg_dizaine_capitale())
         else:
-            if st.button("✅ J'ai égrené ma dizaine aujourd'hui",
+            if st.button("✅ Merci Sainte Mère pour ton aide de ce jour!",
                          key="diz_pointage_v", width="stretch", type="primary"):
                 _st, _msg = pointer_dizaine(jrnais=jrnais, paroisse_id=paroisse_id,
                                             est_membre=False)
@@ -2625,8 +2641,6 @@ def _rendre_pointage_dizaine(est_membre=False, matloc=None, nom_membre=None,
                     st.session_state[_cle_j] = True
                     st.rerun()
                 st.warning(_msg)
-            st.caption("🕯️ Vous priez en visiteur : votre passage du jour est compté "
-                       "anonymement dans la chaîne.")
 
 
 def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=None,
@@ -2697,7 +2711,8 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
     # sur la fenêtre de 20 jours. Côté membre, pas d'identité de chaîne :
     # aucune exclusion. La ligne suit le modèle « intercède pour {qui} : … ».
     _chaine = _ligne_chaine(
-        st.session_state.get("diz_jrnais") if not est_membre else None)
+        st.session_state.get("diz_jrnais") if not est_membre else None,
+        matloc=matloc if est_membre else None)
 
     if st.session_state.get("diz_num") != num:
         st.session_state["diz_num"] = num
@@ -2735,6 +2750,23 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
             st.session_state["diz_page"] = 0
             st.session_state.pop("flt_ouvert", None)  # v7.8 : un seul livre ouvert à la fois
             st.rerun()
+        # v7.9.4 — AU RETOUR DE LA MÉDITATION : « J'ai honoré mon engagement
+        # de ce jour » s'affiche juste après « 📿 Égrener la dizaine » — il
+        # agit comme « 📌 Marquer comme lue » : un clic, et il s'efface
+        # jusqu'à demain (rien d'autre ne change, aucun commentaire).
+        _cle_eng = "engagement_honore_" + date.today().isoformat()
+        if not st.session_state.get(_cle_eng):
+            _fait_auj = False
+            if est_membre:
+                _fait_auj = bool(dizaine_deja_pointee(matloc))
+            else:
+                _fait_auj = bool(st.session_state.get(
+                    "diz_pointee_visiteur_" + date.today().isoformat()))
+            if _fait_auj:
+                if st.button("J'ai honoré mon engagement de ce jour",
+                             key="diz_engagement", width="stretch"):
+                    st.session_state[_cle_eng] = True
+                    st.rerun()
         return
 
     # ---------- LE LIVRE ----------
@@ -2880,23 +2912,18 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
                                     nom_membre=nom_membre, equipe_id=equipe_id,
                                     paroisse_id=paroisse_id,
                                     jrnais=st.session_state.get("diz_jrnais"))
-                st.session_state["flash_success"] = (
-                    "📿 Votre dizaine est comptée dans la chaîne — merci ! "
-                    "La chaîne continue. 🕊️")
+                st.session_state["flash_success"] = _msg_dizaine_capitale(est_membre, matloc)
                 st.session_state["diz_ouvert"] = False
                 st.session_state["diz_page"] = 0
                 st.rerun()
     with c_term:
         if page["t"] == "gloria" and idx < len(pages) - 1:
-            if st.button("✕ Terminer", key=f"diz_fin_{idx}", width="stretch",
-                         help="Fin du mystère : votre dizaine du jour est notée "
-                              "discrètement et le livre se ferme."):
+            if st.button("✕ Terminer", key=f"diz_fin_{idx}", width="stretch"):
                 _pointage_incognito(est_membre=est_membre, matloc=matloc,
                                     nom_membre=nom_membre, equipe_id=equipe_id,
                                     paroisse_id=paroisse_id,
                                     jrnais=st.session_state.get("diz_jrnais"))
-                st.session_state["flash_success"] = (
-                    "📿 Votre dizaine est comptée dans la chaîne — merci ! 🕊️")
+                st.session_state["flash_success"] = _msg_dizaine_capitale(est_membre, matloc)
                 st.session_state["diz_ouvert"] = False
                 st.session_state["diz_page"] = 0
                 st.rerun()
@@ -3482,22 +3509,9 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
             _rgpd = st.checkbox(
                 "En envoyant cette intention, j’accepte que certaines données techniques "
                 "soient utilisées à des fins de sécurité et de lutte contre les envois "
-                "automatisés (spam). Voir la politique de confidentialité ci-dessous.",
+                "automatisés (spam) — voir la politique de confidentialité, en pied "
+                "de page.",
                 key=_k("int_rgpd"))
-            with st.expander("🔒 Politique de confidentialité"):
-                st.caption("Vos nom et contact servent uniquement à identifier votre intention "
-                           "auprès du responsable d’équipe (et, s’il le souhaite, à vous répondre). "
-                           "Ils ne sont jamais partagés ni utilisés à des fins commerciales. "
-                           "v7.9.1 — dans la chaîne de prière universelle, votre intention est "
-                           "présentée par votre nom (« Vierge Marie, mère de Dieu, intercède pour "
-                           "votre nom : … ») SAUF si vous cochez « 🕊️ Rester anonyme » : le livret "
-                           "dira alors « intercède pour cet anonyme ». Votre jour de naissance sert "
-                           "uniquement de clé discrète dans la chaîne de prière universelle : il "
-                           "n’identifie personne et garantit simplement que vous n’y prierez jamais "
-                           "votre propre intention. Des traces techniques minimales (date, session) "
-                           "peuvent être conservées pour la sécurité et la lutte contre les "
-                           "envois automatisés (spam). Vous pouvez demander la suppression de "
-                           "votre intention à tout moment auprès du responsable de l’équipe.")
             if st.form_submit_button("📨 Confier cette intention", type="primary",
                                      width="stretch"):
                 _manque = []
@@ -3515,12 +3529,18 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                     st.warning("Il manque : " + " ; ".join(_manque) + ".")
                 # v7.9.1 — UNICITÉ PAR NUMÉRO : un même numéro de téléphone ne
                 # peut pas porter 2 intentions prises en charge en même temps.
+                # v7.9.4 — le message parle au cœur (date + Matthieu 7.12) :
+                # ni leçon, ni mécanisme — la chaîne ne se brise pas.
                 elif contact_en_priere(_contact):
-                    st.warning("📿 Ce contact porte déjà une intention PRISE EN "
-                               "CHARGE (en prière pour 20 jours). Un même numéro "
-                               "ne peut confier qu’une seule intention à la fois — "
-                               "vous pourrez en confier une nouvelle dès que la "
-                               "première sera archivée à la prière mensuelle.")
+                    _d_emit = date_intention_en_priere(_contact)
+                    _depuis = _d_emit.strftime("%d/%m/%Y") if _d_emit else ""
+                    st.warning("📿 Tu es déjà porté(e) en prière"
+                               + (f" depuis le {_depuis}" if _depuis else "")
+                               + ". Ne brise pas la CHAÎNE DE PRIÈRE. Continue de méditer "
+                               "ta dizaine à CAUSE DE TON PROCHAIN.\n\n"
+                               "Matthieu 7.12 : « Faites pour les autres tout ce que vous "
+                               "voudriez qu’ils fassent pour vous, car c’est là tout "
+                               "l’enseignement de la Loi et des prophètes.»")
                 else:
                     _i = st.session_state.get("int_eq_choix")
                     if not isinstance(_i, int) or not (0 <= _i < len(equipes)):
@@ -3542,6 +3562,12 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                                    (_contact or "").strip(),
                                    1 if _anon else 0, int(_jour), date.today().isoformat()))
                         commit_and_sync()
+                        # v7.9.4 — LA ZONE DU JOUR : l'intention confiée aujourd'hui
+                        # y est recueillie ; elle entrera en réserve au lendemain.
+                        verser_intention_du_jour(_txt.strip(), auteur_nom=None if _anon else _auteur,
+                                                 auteur_contact=(_contact or "").strip(),
+                                                 anonyme=_anon, jour_naissance=int(_jour),
+                                                 equipe_id=_eq[0])
                     except Exception:
                         _err_envoi = True
                         st.error("⚠️ L’envoi n’a pas pu aboutir (connexion instable "
@@ -3771,7 +3797,7 @@ def _render_pied_de_page():
         '</div>'
         '<div class="pdp-signature">'
         '📿 LES ÉQUIPES DU ROSAIRE — Diocèse de Grand-Bassam · Espace de Prière<br>'
-        '🕯️ Un jour, une dizaine — LA CHAÎNE DE PRIÈRE UNIVERSELLE · v7.9.3'
+        '🕯️ Un jour, une dizaine — LA CHAÎNE DE PRIÈRE UNIVERSELLE · v7.9.4'
         '</div>'
         '</details>', unsafe_allow_html=True)
 
@@ -4113,4 +4139,3 @@ def _corps_espace_membre(matloc_membre=None):
                                intentions=False)  # v7.8.15 : retiré côté Membre
         if not FIL_ALLEGEE:  # v7.9.3 — fil allégé : la carte du jour uniquement
             _render_actualites(pid=pid_m)
-
