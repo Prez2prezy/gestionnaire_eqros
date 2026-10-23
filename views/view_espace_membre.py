@@ -3797,7 +3797,7 @@ def _render_pied_de_page():
         '</div>'
         '<div class="pdp-signature">'
         '📿 LES ÉQUIPES DU ROSAIRE — Diocèse de Grand-Bassam · Espace de Prière<br>'
-        '🕯️ Un jour, une dizaine — LA CHAÎNE DE PRIÈRE UNIVERSELLE · v7.9.4'
+        '🕯️ Un jour, une dizaine — LA CHAÎNE DE PRIÈRE UNIVERSELLE · v7.9.5'
         '</div>'
         '</details>', unsafe_allow_html=True)
 
