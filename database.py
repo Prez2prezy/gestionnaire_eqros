@@ -255,9 +255,13 @@ def init_tables_and_migrations():
                     UNIQUE(matloc, jour))""")
     # v7.9.3 — RÉSERVE D'INTENTIONS PAR N° MÉD. : pour CHACUN des 20 N° de
     # méditation, les responsables d'équipe et paroissiaux préparent À
-    # L'AVANCE 20 intentions (celles de leurs membres). Le visiteur du jour
+    # L'AVANCE les intentions (celles de leurs membres). Le visiteur du jour
     # reçoit, selon SON N° méd., l'intention placée à cet emplacement de la
     # réserve et la médite sur 20 jours — la chaîne ne tombe jamais à sec.
+    # v7.9.4 — UNE intention par N° méd. : la colonne `active` distingue
+    # l'intention en place (1) de celles qu'elle a remplacées (0, historique) ;
+    # `qui` porte le nom tel que le livret l'affiche, `jour_naissance`
+    # conserve la règle d'or (personne ne prie sa propre intention).
     c.execute("""CREATE TABLE IF NOT EXISTS intentions_reserve (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     numero_med INTEGER NOT NULL,
@@ -265,7 +269,37 @@ def init_tables_and_migrations():
                     auteur_nom TEXT,
                     equipe_id INTEGER,
                     paroisse_id INTEGER,
-                    date_ajout TEXT)""")
+                    date_ajout TEXT,
+                    active INTEGER DEFAULT 1,
+                    qui TEXT,
+                    jour_naissance INTEGER)""")
+    # v7.9.4 — LA ZONE DU JOUR : toutes les intentions confiées dans la
+    # journée y sont recueillies d'abord ; le LENDEMAIN, chacune entre dans
+    # la réserve (traitee=1, date_traitement posé).
+    c.execute("""CREATE TABLE IF NOT EXISTS intentions_du_jour (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    texte TEXT NOT NULL,
+                    auteur_nom TEXT,
+                    auteur_contact TEXT,
+                    anonyme INTEGER DEFAULT 0,
+                    jour_naissance INTEGER,
+                    equipe_id INTEGER,
+                    paroisse_id INTEGER,
+                    date_reception TEXT NOT NULL,
+                    traitee INTEGER DEFAULT 0,
+                    date_traitement TEXT)""")
+    # v7.9.4 — L'ATTACHEMENT DE L'INTENTION DU PROCHAIN : l'intention reçue
+    # reste LA SIENNE pendant sa période (membre : période désignée ;
+    # visiteur : 20 jours), même si la réserve se renouvelle — cle = 'M:…'
+    # (membre, par MatLoc) ou 'J:…' (visiteur, par N° méd.).
+    c.execute("""CREATE TABLE IF NOT EXISTS attributions_prochain (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cle TEXT NOT NULL,
+                    numero_med INTEGER,
+                    texte TEXT NOT NULL,
+                    qui TEXT,
+                    date_debut TEXT NOT NULL,
+                    date_fin TEXT)""")
     commit_and_sync()
 
     # --- 2. DONNÉES PAR DÉFAUT ---
@@ -498,7 +532,7 @@ def set_parametre(cle, valeur):
     commit_and_sync()
 
 
-def intention_du_prochain_detail(jour_visiteur=None):
+def intention_du_prochain_detail(jour_visiteur=None, matloc=None):
     """Retourne (TEXTE, QUI) de l'« intention du prochain » à porter dans la
     dizaine du jour (v7.9.0), selon le choix enregistré par la paroisse :
       1er choix  → les intentions RECUES pas encore prises en charge ;
@@ -513,17 +547,20 @@ def intention_du_prochain_detail(jour_visiteur=None):
       None        → intention universelle (« intercède : … ») ;
       'cet anonyme' → intention anonyme (« intercède pour cet anonyme : … ») ;
       'Prénom Nom'  → intention signée (« intercède pour Prénom Nom : … »).
-    v7.9.1 — tirage SELON LE N° MÉD. du lecteur : chaque visiteur reçoit
-    l'intention placée à son rang dans la file, au sein d'une fenêtre de
-    20 jours (le cycle) — il retrouve la même intention à chaque dizaine de
-    la période et deux N° méd. différents portent des intentions différentes
-    dès que la file le permet. « Les visiteurs du jour reçoivent les
-    intentions de leurs prochains selon leurs N° méd. et méditent avec,
-    sur 20 jours. »
+    v7.9.1 — tirage SELON LE N° MÉD. du lecteur : chaque lecteur reçoit
+    l'intention placée à son rang, au sein d'une fenêtre de 20 jours.
+    v7.9.4 — LA RÉSERVE SEULE NOURRIT LE TIRAGE (les responsables y placent
+    UNE intention par N° méd. ; les intentions confiées dans la journée
+    l'entretiennent chaque lendemain, au hasard) et L'INTENTION REÇUE
+    S'ATTACHE à son lecteur (matloc du membre, ou N° méd. du visiteur) :
+    il la retrouve à chaque dizaine de SA période — 20 jours, ou période
+    désignée du membre — même si la réserve se renouvelle entre-temps.
     En cas d'intention indisponible, la chaîne ne se casse jamais : elle
     retombe sur « La Paix dans le monde » (QUI = None)."""
     _secours = (INTENTIONS_UNIVERSELLES[0], None)
     try:
+        # v7.9.4 — les intentions de la veille entrent d'abord en réserve
+        traiter_intentions_du_jour()
         mode = get_parametre("chaine_mode", "recues")
         if mode == "universelle":
             choix = get_parametre("chaine_universelle", INTENTIONS_UNIVERSELLES[0])
@@ -532,17 +569,29 @@ def intention_du_prochain_detail(jour_visiteur=None):
                 # universelles se relaient chaque jour.
                 return (INTENTIONS_UNIVERSELLES[date.today().timetuple().tm_yday % 3], None)
             return ((choix if choix in INTENTIONS_UNIVERSELLES else _secours[0]), None)
-        # v7.9.3 — LA RÉSERVE PAR N° MÉD. : les responsables préparent À
-        # L'AVANCE 20 intentions par N° méd. (les intentions de leurs
-        # membres). Si l'emplacement du N° du lecteur est nourri, le lecteur
-        # reçoit UNE intention de CETTE réserve (rotation tous les 20 jours)
-        # — « les visiteurs du jour reçoivent les intentions de leurs
-        # prochains selon leurs N° méd. ». La file des soumissions reste le
-        # secours : quand la réserve est vide, le tirage v7.9.1 s'applique.
+        # v7.9.4 — L'ATTACHEMENT D'ABORD : l'intention déjà reçue reste LA
+        # SIENNE pendant toute sa période (membre : période désignée ;
+        # visiteur : 20 jours), quel que soit le renouvellement de la réserve.
+        _cle = None
+        if matloc:
+            _cle = "M:" + str(matloc)
+        elif jour_visiteur is not None:
+            _n = _numero_med_normale(jour_visiteur)
+            _cle = ("J:" + str(_n)) if _n else None
+        if _cle:
+            _att = prochain_attache(_cle)
+            if _att and str(_att[0] or "").strip():
+                return (_att[0], _att[1])
+        # LA RÉSERVE (v7.9.3, affinée v7.9.4) : l'intention placée au N° méd.
+        # du lecteur — la règle d'or l'y protège aussi de la sienne.
         if jour_visiteur is not None:
             try:
-                _res = intention_reserve_pour_numero(jour_visiteur)
+                _res = intention_reserve_pour_numero(jour_visiteur,
+                                                     jour_exclu=jour_visiteur)
                 if _res and str(_res[0] or "").strip():
+                    if _cle:
+                        attribuer_prochain(_cle, _res[0], _res[1],
+                                           numero_med=_numero_med_normale(jour_visiteur))
                     return (str(_res[0]).strip(), _res[1])
             except Exception as e:
                 logger.warning(f"intention_du_prochain : réserve N° méd. ({e!r})")
@@ -569,6 +618,9 @@ def intention_du_prochain_detail(jour_visiteur=None):
                 _i = (int(jour_visiteur) - 1 + _cycle) % len(admissibles)
             else:
                 _i = 0
+            if _cle:
+                attribuer_prochain(_cle, admissibles[_i][0], admissibles[_i][1],
+                                   numero_med=_numero_med_normale(jour_visiteur))
             return admissibles[_i]
     except Exception as e:
         logger.warning(f"intention_du_prochain : tirage impossible ({e!r}) — secours")
@@ -743,7 +795,7 @@ def pointer_dizaine(matloc=None, nom=None, jrnais=None, equipe_id=None,
             if not matloc:
                 return ("erreur", "Membre non identifié.")
             if dizaine_deja_pointee(matloc):
-                return ("deja", "Votre dizaine d'aujourd'hui est déjà pointée. 📿")
+                return ("deja", "📿 Merci Sainte Mère pour ton aide de ce jour! — À demain! 🕊️")
             c.execute("""INSERT INTO dizaines_journal
                          (matloc, nom, type, jrnais, equipe_id, paroisse_id, jour, heure)
                          VALUES (?, ?, 'membre', NULL, ?, ?, ?, ?)""",
@@ -756,7 +808,7 @@ def pointer_dizaine(matloc=None, nom=None, jrnais=None, equipe_id=None,
                       (jrnais, equipe_id, paroisse_id, _jour,
                        datetime.now().strftime("%H:%M")))
         commit_and_sync()
-        return ("ok", "Pointée ! Votre dizaine d'aujourd'hui est enregistrée. 📿✨")
+        return ("ok", "📿 Ta dizaine est capitale pour la chaîne — Merci pour ta fidélité! — À demain! 🕊️")
     except Exception as e:
         logger.warning(f"pointer_dizaine : {e!r}")
         return ("erreur", "Le pointage n'a pas pu être enregistré — réessayez.")
@@ -830,23 +882,30 @@ def compteur_dizaines_mois(matloc):
 
 
 # ======================================================================
-# v7.9.3 — LA RÉSERVE D'INTENTIONS PAR N° MÉD.
+# v7.9.3 — LA RÉSERVE D'INTENTIONS PAR N° MÉD. · v7.9.4 — UNE PAR N°
 # ======================================================================
 # « Les visiteurs du jour reçoivent les intentions de leurs prochains selon
-# leurs N° méd. et méditent avec sur 20 jours : il est capital d'avoir AU
-# PRÉALABLE 20 intentions pour chacun des N° méd. Ça sera l'affaire des
-# responsables d'équipe et paroissial : ils ajoutent les intentions de leurs
-# membres. » — la table intentions_reserve stocke, pour chaque N° méd.
-# (1-20), les intentions préparées d'avance ; l'« intention du prochain »
-# du livret puise D'ABORD dans la réserve du N° du lecteur (rotation à
-# chaque fenêtre de 20 jours), la file des soumissions restant le secours
-# (comportement v7.9.1 conservé quand la réserve est vide).
+# leurs N° méd. et méditent avec sur 20 jours. Que chacun ait sa dernière
+# intention selon son N° méd. » — v7.9.4 précise le modèle :
+#   • UNE SEULE intention par N° méd. (les 20 emplacements de la réserve) ;
+#   • la réserve nourrit l'« intention du prochain » du livret ;
+#   • les intentions confiées dans la journée sont d'abord recueillies dans
+#     la ZONE DU JOUR (intentions_du_jour) — harmonisées à l'avance ;
+#   • le LENDEMAIN, chacune entre dans la réserve en remplaçant, au HASARD,
+#     l'une des intentions en place (l'ancienne passe active=0, gardée en
+#     historique) — si les demandes abondent, le stock tournant de chaque
+#     N° méd. s'élargit d'autant (quota augmenté) ;
+#   • l'intention reçue S'ATTACHE à son lecteur (attributions_prochain) :
+#     période désignée du membre / 20 jours du visiteur, même si la
+#     réserve se renouvelle entre-temps.
 
-OBJECTIF_RESERVE = 20   # intentions par N° méd.
+OBJECTIF_RESERVE = 1    # v7.9.4 — UNE intention par N° méd.
 
 
 def _assurer_table_reserve():
-    """Création douce de intentions_reserve (bases distantes anciennes)."""
+    """Création douce de intentions_reserve (bases distantes anciennes).
+    v7.9.4 — les colonnes active/qui/jour_naissance sont ajoutées en ALTER
+    doux (idempotent) : une base Cloud née avant v7.9.4 doit rester lisible."""
     try:
         c.execute("SELECT id FROM intentions_reserve LIMIT 1")
     except Exception:
@@ -858,10 +917,147 @@ def _assurer_table_reserve():
                             auteur_nom TEXT,
                             equipe_id INTEGER,
                             paroisse_id INTEGER,
-                            date_ajout TEXT)""")
+                            date_ajout TEXT,
+                            active INTEGER DEFAULT 1,
+                            qui TEXT,
+                            jour_naissance INTEGER)""")
             commit_and_sync()
         except Exception as e:
             logger.warning(f"_assurer_table_reserve : {e!r}")
+    for _col in ("active INTEGER DEFAULT 1", "qui TEXT", "jour_naissance INTEGER"):
+        try:
+            c.execute(f"ALTER TABLE intentions_reserve ADD COLUMN {_col}")
+            commit_and_sync()
+        except Exception:
+            pass  # colonne déjà présente
+
+
+def _assurer_table_du_jour():
+    """Création douce de intentions_du_jour — LA ZONE DU JOUR (v7.9.4) :
+    elle reçoit toutes les intentions confiées dans la journée ; le
+    lendemain, chacune entre dans la réserve (traiter_intentions_du_jour)."""
+    try:
+        c.execute("SELECT id FROM intentions_du_jour LIMIT 1")
+    except Exception:
+        try:
+            c.execute("""CREATE TABLE IF NOT EXISTS intentions_du_jour (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            texte TEXT NOT NULL,
+                            auteur_nom TEXT,
+                            auteur_contact TEXT,
+                            anonyme INTEGER DEFAULT 0,
+                            jour_naissance INTEGER,
+                            equipe_id INTEGER,
+                            paroisse_id INTEGER,
+                            date_reception TEXT NOT NULL,
+                            traitee INTEGER DEFAULT 0,
+                            date_traitement TEXT)""")
+            commit_and_sync()
+        except Exception as e:
+            logger.warning(f"_assurer_table_du_jour : {e!r}")
+
+
+def _assurer_table_attributions():
+    """Création douce de attributions_prochain (v7.9.4) — l'intention du
+    prochain reçue reste attachée à son lecteur pendant sa période."""
+    try:
+        c.execute("SELECT id FROM attributions_prochain LIMIT 1")
+    except Exception:
+        try:
+            c.execute("""CREATE TABLE IF NOT EXISTS attributions_prochain (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            cle TEXT NOT NULL,
+                            numero_med INTEGER,
+                            texte TEXT NOT NULL,
+                            qui TEXT,
+                            date_debut TEXT NOT NULL,
+                            date_fin TEXT)""")
+            commit_and_sync()
+        except Exception as e:
+            logger.warning(f"_assurer_table_attributions : {e!r}")
+
+
+# v7.9.4 — garde-fou : le transfert « zone du jour → réserve » ne tourne
+# qu'une fois par jour et par processus (idempotent de toute façon :
+# seules les lignes traitee=0 reçues AVANT aujourd'hui sont prises).
+_TRAITEMENT_DJ_FAIT_LE = None
+
+
+def verser_intention_du_jour(texte, auteur_nom=None, auteur_contact=None,
+                             anonyme=0, jour_naissance=None,
+                             equipe_id=None, paroisse_id=None):
+    """ZONE DU JOUR (v7.9.4) : recueille une intention confiée aujourd'hui.
+    Appelée à chaque soumission du formulaire « 🙏 Vos intentions à une
+    équipe » — en plus de l'INSERT classique (le travail des responsables
+    reste inchangé). Tolérante : jamais de plantage au fidèle."""
+    _txt = str(texte or "").strip()
+    if not _txt:
+        return False
+    try:
+        _assurer_table_du_jour()
+        c.execute("""INSERT INTO intentions_du_jour
+                     (texte, auteur_nom, auteur_contact, anonyme, jour_naissance,
+                      equipe_id, paroisse_id, date_reception, traitee)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+                  (_txt, (str(auteur_nom).strip() or None) if auteur_nom else None,
+                   (str(auteur_contact).strip() or None) if auteur_contact else None,
+                   1 if anonyme else 0,
+                   int(jour_naissance) if jour_naissance else None,
+                   equipe_id, paroisse_id, date.today().isoformat()))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"verser_intention_du_jour : {e!r}")
+        return False
+
+
+def traiter_intentions_du_jour(force=False):
+    """LE LENDEMAIN (v7.9.4) : chaque intention recueillie la veille (ou
+    avant, non traitée) entre dans la réserve — elle remplace AU HASARD
+    l'intention en place d'un N° méd. (l'ancienne passe active=0 ; si les
+    demandes abondent, les suivantes du même jour élargissent le stock
+    tournant du N° — quota augmenté). Idempotent : ne prend QUE les lignes
+    traitee=0 reçues avant aujourd'hui ; une seule exécution par jour et
+    par processus (garde-fou _TRAITEMENT_DJ_FAIT_LE), silencieuse."""
+    global _TRAITEMENT_DJ_FAIT_LE
+    _auj = date.today().isoformat()
+    if not force and _TRAITEMENT_DJ_FAIT_LE == _auj:
+        return
+    try:
+        _assurer_table_du_jour()
+        _attente = c.execute("""SELECT id, texte, auteur_nom, anonyme,
+                                       jour_naissance, equipe_id, paroisse_id
+                                FROM intentions_du_jour
+                                WHERE traitee=0 AND date_reception < ?
+                                ORDER BY id ASC""", (_auj,)).fetchall()
+        _TRAITEMENT_DJ_FAIT_LE = _auj
+        if not _attente:
+            return
+        import random as _rd
+        _slots = list(range(1, 21))
+        _rd.shuffle(_slots)
+        _remplace = set()
+        for (_zid, _txt, _nom, _anon, _jn, _eqi, _pri) in _attente:
+            _slot = _slots[0]
+            _slots = _slots[1:] + [_slot]     # pioche mélangée : ordre aléatoire
+            if _slot not in _remplace:
+                c.execute("""UPDATE intentions_reserve SET active=0
+                             WHERE numero_med=? AND active=1""", (_slot,))
+                _remplace.add(_slot)
+            c.execute("""INSERT INTO intentions_reserve
+                         (numero_med, texte, auteur_nom, equipe_id, paroisse_id,
+                          date_ajout, active, qui, jour_naissance)
+                         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                      (_slot, _txt, None if _anon else ((str(_nom).strip() or None) if _nom else None),
+                       _eqi, _pri, _auj, "cet anonyme" if _anon else "notre prochain",
+                       int(_jn) if _jn else None))
+            c.execute("""UPDATE intentions_du_jour SET traitee=1, date_traitement=?
+                         WHERE id=?""", (_auj, _zid))
+        commit_and_sync()
+        logger.info(f"traiter_intentions_du_jour : {len(_attente)} intention(s) "
+                    "du jour précédent entrée(s) en réserve")
+    except Exception as e:
+        logger.warning(f"traiter_intentions_du_jour : {e!r}")
 
 
 def _numero_med_normale(jour):
@@ -877,8 +1073,12 @@ def _numero_med_normale(jour):
 
 
 def ajouter_intention_reserve(numero_med, texte, auteur_nom=None,
-                              equipe_id=None, paroisse_id=None):
+                              equipe_id=None, paroisse_id=None,
+                              jour_naissance=None, qui=None):
     """Ajoute une intention à la réserve d'un N° méd. (v7.9.3).
+    v7.9.4 — UNE intention par N° méd. : si l'emplacement est déjà pourvu,
+    l'ajout est refusé avec un message doux (il se renouvelle de lui-même
+    avec les intentions confiées — ou retirez d'abord celle en place).
     Retourne (ok, message) — le message est prêt à être affiché."""
     _assurer_table_reserve()
     _num = _numero_med_normale(numero_med)
@@ -890,11 +1090,23 @@ def ajouter_intention_reserve(numero_med, texte, auteur_nom=None,
     if len(_txt) > 500:
         return (False, "L'intention est trop longue (500 caractères maximum).")
     try:
+        _deja = c.execute("""SELECT id FROM intentions_reserve
+                             WHERE numero_med=? AND active=1 LIMIT 1""",
+                          (_num,)).fetchone()
+        if _deja:
+            return (False, "📿 L'emplacement du N° méd. " + str(_num)
+                           + " est déjà pourvu : chaque N° porte UNE intention. "
+                           "Il se renouvelle au fil des intentions confiées — ou "
+                           "retirez d'abord celle en place (🗑️) si elle doit laisser "
+                           "la place.")
         c.execute("""INSERT INTO intentions_reserve
-                     (numero_med, texte, auteur_nom, equipe_id, paroisse_id, date_ajout)
-                     VALUES (?, ?, ?, ?, ?, ?)""",
+                     (numero_med, texte, auteur_nom, equipe_id, paroisse_id,
+                      date_ajout, active, qui, jour_naissance)
+                     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)""",
                   (_num, _txt, (str(auteur_nom).strip() or None) if auteur_nom else None,
-                   equipe_id, paroisse_id, date.today().isoformat()))
+                   equipe_id, paroisse_id, date.today().isoformat(),
+                   (str(qui).strip() or None) if qui else None,
+                   int(jour_naissance) if jour_naissance else None))
         commit_and_sync()
         return (True, "📚 Intention ajoutée à la réserve du N° méd. " + str(_num) + ".")
     except Exception as e:
@@ -923,12 +1135,14 @@ def retirer_intention_reserve(rid, equipe_id=None):
 
 def reserve_compteur():
     """{N° méd. (1-20) : nombre d'intentions en réserve} (v7.9.3) — les
-    20 emplacements existent TOUJOURS (compteur à 0 quand vide)."""
+    20 emplacements existent TOUJOURS (compteur à 0 quand vide).
+    v7.9.4 — seules les intentions ACTIVES comptent (une par N° en régime
+    normal ; plus si les demandes abondent)."""
     _d = {n: 0 for n in range(1, 21)}
     try:
         _assurer_table_reserve()
         for _num, _n in c.execute("""SELECT numero_med, COUNT(*) FROM intentions_reserve
-                                     GROUP BY numero_med""").fetchall():
+                                     WHERE active=1 GROUP BY numero_med""").fetchall():
             if 1 <= int(_num) <= 20:
                 _d[int(_num)] = _n
     except Exception as e:
@@ -937,20 +1151,21 @@ def reserve_compteur():
 
 
 def reserve_lignes(equipe_id=None, paroisse_id=None, limite=300):
-    """Intentions en réserve, les plus récentes d'abord (v7.9.3) :
+    """Intentions ACTIVES en réserve, les plus récentes d'abord (v7.9.3,
+    filtre active=1 v7.9.4) :
     (id, numero_med, texte, auteur_nom, equipe_id, date_ajout)."""
     _assurer_table_reserve()
-    _cond, _prm = [], []
+    _cond, _prm = ["active=1"], []
     if equipe_id is not None:
         _cond.append("equipe_id=?")
         _prm.append(equipe_id)
     if paroisse_id is not None:
         _cond.append("paroisse_id=?")
         _prm.append(paroisse_id)
-    _where = ("WHERE " + " AND ".join(_cond)) if _cond else ""
     try:
         return c.execute(f"""SELECT id, numero_med, texte, auteur_nom, equipe_id,
-                                    date_ajout FROM intentions_reserve {_where}
+                                    date_ajout FROM intentions_reserve
+                              WHERE {' AND '.join(_cond)}
                               ORDER BY id DESC LIMIT {int(limite)}""",
                          tuple(_prm)).fetchall()
     except Exception as e:
@@ -958,26 +1173,114 @@ def reserve_lignes(equipe_id=None, paroisse_id=None, limite=300):
         return []
 
 
-def intention_reserve_pour_numero(numero_med, cycle=None):
+def intention_reserve_pour_numero(numero_med, cycle=None, jour_exclu=None):
     """TIRAGE DANS LA RÉSERVE (v7.9.3) : retourne (texte, QUI) de l'intention
     placée au N° méd. du lecteur, ou None si cet emplacement est vide.
-    La rotation suit la même fenêtre glissante de 20 jours que la chaîne :
-    le lecteur retrouve la même intention sur toute la période, puis la
-    réserve passe à la suivante (c'est le sens du stock de 20 par N°)."""
+    v7.9.4 — seules les intentions ACTIVES sont tirées (une par N° en régime
+    normal ; stock tournant élargi quand les demandes abondent) et la règle
+    d'or s'applique aussi ici : jour_exclu (jour de naissance du lecteur)
+    écarte l'intention qu'il a lui-même confiée. La rotation suit la fenêtre
+    glissante de 20 jours quand plusieurs intentions coexistent au même N°."""
     _num = _numero_med_normale(numero_med)
     if _num is None:
         return None
     try:
         _assurer_table_reserve()
-        rows = c.execute("""SELECT texte, auteur_nom FROM intentions_reserve
-                            WHERE numero_med=? ORDER BY id ASC""", (_num,)).fetchall()
+        rows = c.execute("""SELECT texte, qui, auteur_nom, jour_naissance
+                            FROM intentions_reserve
+                            WHERE numero_med=? AND active=1
+                            ORDER BY id ASC""", (_num,)).fetchall()
+        if jour_exclu is not None:
+            rows = [r for r in rows
+                    if r[3] is None or int(r[3]) != int(jour_exclu)]
         if not rows:
             return None
         if cycle is None:
             cycle = (date.today() - date(2024, 1, 1)).days // 20
         _i = int(cycle) % len(rows)
-        _qui = str(rows[_i][1] or "").strip() or "notre prochain"
+        _qui = (str(rows[_i][1] or "").strip()
+                or str(rows[_i][2] or "").strip()
+                or "notre prochain")
         return (str(rows[_i][0]).strip(), _qui)
     except Exception as e:
         logger.warning(f"intention_reserve_pour_numero : {e!r}")
         return None
+
+
+# ======================================================================
+# v7.9.4 — L'ATTACHEMENT DE L'INTENTION DU PROCHAIN
+# ======================================================================
+# « L'intention du prochain attribuée à un membre / visiteur s'attache à
+# lui sur la période désignée (membre) ou sur 20 jours (visiteur). » —
+# même si la réserve se renouvelle entre-temps, chacun garde SON intention
+# jusqu'au bout de sa période ; la suivante sera tirée dans la réserve
+# renouvelée. cle = 'M:{matloc}' (membre) ou 'J:{n° méd.}' (visiteur).
+
+DUREE_ATTACHEMENT = 20
+
+
+def prochain_attache(cle):
+    """L'intention actuellement attachée à cette clé (v7.9.4) :
+    (texte, qui) ou None si aucune / période échue."""
+    if not cle:
+        return None
+    try:
+        _assurer_table_attributions()
+        _auj = date.today().isoformat()
+        row = c.execute("""SELECT texte, qui FROM attributions_prochain
+                           WHERE cle=? AND (date_fin IS NULL OR date_fin>=?)
+                           ORDER BY id DESC LIMIT 1""", (cle, _auj)).fetchone()
+        if row and str(row[0] or "").strip():
+            return (str(row[0]).strip(),
+                    (str(row[1] or "").strip() or "notre prochain"))
+    except Exception as e:
+        logger.warning(f"prochain_attache : {e!r}")
+    return None
+
+
+def attribuer_prochain(cle, texte, qui=None, numero_med=None, duree=None):
+    """Attache l'intention reçue à son lecteur (v7.9.4) pour sa période
+    (visiteur : 20 jours ; membre : période désignée — la même fenêtre,
+    la désignation du responsable encadrant). Un nouveau tirage remplace
+    proprement l'ancienne attribution (les vieilles lignes restent en
+    historique). Tolérante : jamais bloquante pour la page."""
+    if not cle:
+        return
+    try:
+        _assurer_table_attributions()
+        _deb = date.today()
+        _fin = _deb.fromordinal(_deb.toordinal()
+                                + (int(duree) if duree else DUREE_ATTACHEMENT) - 1)
+        c.execute("DELETE FROM attributions_prochain WHERE cle=?", (cle,))
+        c.execute("""INSERT INTO attributions_prochain
+                     (cle, numero_med, texte, qui, date_debut, date_fin)
+                     VALUES (?, ?, ?, ?, ?, ?)""",
+                  (cle, numero_med, str(texte or "").strip(),
+                   (str(qui).strip() or None) if qui else None,
+                   _deb.isoformat(), _fin.isoformat()))
+        commit_and_sync()
+    except Exception as e:
+        logger.warning(f"attribuer_prochain : {e!r}")
+
+
+def date_intention_en_priere(contact):
+    """Date d'émission de l'intention « en prière » portée par ce contact
+    (v7.9.4 — pour le message au fidèle qui revient). None si libre."""
+    cle = _contact_cle(contact)
+    if not cle:
+        return None
+    def _parse(s):
+        try:
+            return date.fromisoformat(str(s)[:10])
+        except Exception:
+            return None
+    try:
+        for (ct, d_sub, d_st) in c.execute(
+                """SELECT auteur_contact, date_soumission, date_statut
+                   FROM intentions_equipes
+                   WHERE statut='en_priere' AND auteur_contact IS NOT NULL""").fetchall():
+            if _contact_cle(ct) == cle:
+                return _parse(d_st) or _parse(d_sub)
+    except Exception as e:
+        logger.warning(f"date_intention_en_priere : {e!r}")
+    return None
