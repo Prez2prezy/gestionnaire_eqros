@@ -50,9 +50,13 @@ def _bloc_dizaines_equipe(eid):
                    + (", ".join(f"**{n or 'Membre'}**" for (n, m, h) in _liste)
                       if _liste else "personne pour l'instant"))
     with _c_att:
+        # v7.9.5 — l'appartenance se lit par MatLoc (clé UNIQUE, celle-là même
+        # qui a pointé) : comparer les NOMS laissait chaque équipier déjà
+        # pointé dans la liste « Pas encore » (ex. un responsable voyait le
+        # même nom des deux côtés).
         _restants = [f"**{m[1]} {m[2]}**" for m in c.execute(
-            """SELECT id, nom, prenom FROM membres WHERE equipe_id=? AND statut='actif'
-               ORDER BY nom""", (eid,)).fetchall() if f"{m[1]} {m[2]}" not in _fait]
+            """SELECT id, nom, prenom, matloc FROM membres WHERE equipe_id=? AND statut='actif'
+               ORDER BY nom""", (eid,)).fetchall() if m[3] not in _fait]
         st.info("⏳ **Pas encore pointé aujourd'hui :** "
                 + (", ".join(_restants) if _restants else "toute l'équipe est à jour 🎉"))
     with st.expander("🗓️ Série des 7 derniers jours (équipe)"):
