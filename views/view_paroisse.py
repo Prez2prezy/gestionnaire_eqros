@@ -173,7 +173,7 @@ def _onglet_coins_intentions(pid, equipes):
     st.caption("🧭 Chaque visiteur reçoit l’intention de SON prochain selon son N° méd. "
                "(jour de naissance) et la médite sur sa fenêtre de 20 jours ; "
                "personne ne prie jamais sa propre intention. "
-               "📚 La réserve ci-dessous garantit 20 intentions d’avance pour "
+               "📚 La réserve ci-dessous garantit une intention d’avance pour "
                "chacun des N° méd.")
 
     # ---------- E. RÉSERVE D'INTENTIONS PAR N° MÉD. (v7.9.3) ----------
@@ -182,24 +182,25 @@ def _onglet_coins_intentions(pid, equipes):
 
 def _bloc_reserve_paroisse(pid, equipes):
     """📚 RÉSERVE D'INTENTIONS PAR N° MÉD. (v7.9.3) — volet PAROISSIAL :
-    « il est capital d'avoir au préalable 20 intentions pour chacun des
+    « il est capital d'avoir au préalable une intention pour chacun des
     N° méd. Ça sera l'affaire des responsables d'équipe et paroissial. »
-    Le responsable paroissial ajoute ici les intentions des membres de ses
-    équipes (il choisit l'équipe puis le membre — le N° méd. du membre
-    désigne l'emplacement), en complément du travail des responsables
-    d'équipe. Les compteurs sont GLOBAUX : la chaîne est universelle."""
+    (v7.9.4 — UNE intention par N° méd.) Le responsable paroissial ajoute
+    ici les intentions des membres de ses équipes (il choisit l'équipe puis
+    le membre — le N° méd. du membre désigne l'emplacement), en complément
+    du travail des responsables d'équipe. Les compteurs sont GLOBAUX : la
+    chaîne est universelle."""
     _assurer_table_reserve()
     # v7.9.3 — la confirmation d'un ajout (flash posé par le formulaire)
     # s'affiche ici, en tête du bloc, APRÈS le rerun.
     afficher_messages_flash()
     st.markdown("---")
-    st.markdown("### 📚 Réserve d'intentions — 20 intentions par N° méd.")
-    st.caption("Les visiteurs du jour reçoivent les intentions de leurs prochains "
-               "selon leur N° méd. (1-20) et les méditent sur 20 jours. Il faut donc "
-               "AU PRÉALABLE 20 intentions pour chacun des 20 N° — l'affaire des "
-               "responsables d'équipe ET paroissial, qui ajoutent les intentions de "
-               "leurs membres. Compteurs toutes équipes confondues (la chaîne est "
-               "universelle). 🤫 Comme toujours : être une tombe.")
+    st.markdown("### 📚 Réserve d'intentions — 1 intention par N° méd.")
+    st.caption("Chaque N° méd. (1-20) porte UNE intention : c'est elle que le visiteur "
+               "du jour reçoit selon SON N° méd. et médite pendant 20 jours — chacun "
+               "a ainsi sa propre intention de prochain. Ajoutez ici les intentions "
+               "des membres de vos équipes, une par N° méd. Compteurs toutes équipes "
+               "confondues (la chaîne est universelle). 🤫 Comme toujours : être une "
+               "tombe.")
     _cpt = reserve_compteur()
     _total = sum(_cpt.values())
     _grille = "".join(
@@ -216,11 +217,10 @@ def _bloc_reserve_paroisse(pid, equipes):
     st.markdown('<div style="display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 4px 0;">'
                 + _grille + '</div>', unsafe_allow_html=True)
     if _total >= 20 * OBJECTIF_RESERVE:
-        st.success("🎯 Objectif atteint : " + str(_total)
-                   + " intentions en réserve (20 par N° méd.) — la chaîne ne tombera pas à sec.")
+        st.success("🎯 Objectif atteint : les 20 N° méd. sont pourvus ("
+                   + str(_total) + " intentions en réserve) — la chaîne ne tombera pas à sec.")
     else:
-        st.caption("🎯 Objectif : " + str(OBJECTIF_RESERVE)
-                   + " intentions par N° méd. (400 au total) — réserve actuelle : "
+        st.caption("🎯 Objectif : 1 intention par N° méd. (20 au total) — réserve actuelle : "
                    + str(_total) + ".")
     if not equipes:
         st.info("Aucune équipe dans cette paroisse : la réserve se remplit depuis "
@@ -266,7 +266,10 @@ def _bloc_reserve_paroisse(pid, equipes):
                         if _ok:
                             st.session_state["flash_success"] = _msg
                             st.rerun()
-                        st.warning(_msg)
+                        # v7.9.4 — refus (emplacement déjà pourvu) : flash en
+                        # tête de bloc, visible même l'expander refermé.
+                        st.session_state["flash_warning"] = _msg
+                        st.rerun()
     _lignes = reserve_lignes(paroisse_id=pid)
     if _lignes:
         _noms_eq = {e[0]: e[1] for e in equipes}
@@ -383,7 +386,7 @@ def _tableau_de_bord_paroisse(pid, nom_p):
         with st.expander("ℹ️ Comment lire les dizaines ?"):
             st.caption("Chaque équipier (ou visiteur) qui termine « 🕯️ Un jour, "
                        "une dizaine » dans l'Espace de Prière peut appuyer sur "
-                       "« ✅ J'ai égrené ma dizaine aujourd'hui ». Le membre est "
+                       "« ✅ Merci Sainte Mère pour ton aide de ce jour! ». Le membre est "
                        "pointé 1 fois/jour (son équipe le voit), le visiteur compte "
                        "un passage anonyme.")
 
@@ -536,7 +539,11 @@ def show_paroisse():
                 st.rerun()
 
     elif menu == "👥 Mes équipes":
-        st.markdown(f'<h2 style="color:#1A237E;">👥 Équipes de {nom_p}</h2>', unsafe_allow_html=True)
+        _n_eq = c.execute("SELECT COUNT(*) FROM equipes WHERE paroisse_id=?", (pid,)).fetchone()[0]
+        _n_mb = c.execute("SELECT COUNT(*) FROM membres WHERE paroisse_id=? AND statut='actif'",
+                          (pid,)).fetchone()[0]
+        st.markdown(f'<h2 style="color:#1A237E;">👥 Équipes de {nom_p} — {_n_eq} équipe(s) '
+                    f'· {_n_mb} membre(s)</h2>', unsafe_allow_html=True)
         if st.button("➕ Créer une équipe"): st.session_state['show_eq_form'] = True
         if st.session_state.get('show_eq_form'):
             with st.form("f_eq"):
@@ -843,4 +850,3 @@ def show_paroisse():
                 with st.expander(f"{a[1]} {a[2]} ({a[0]}) – {afficher_situation(a[3])} – {duree} an(s) ({eq_nom})"):
                     st.write(f"Ajouté par : {a[8] or 'Inconnu'}")
                     if a[6]: st.write(f"Commentaire : {a[6]}")
-
