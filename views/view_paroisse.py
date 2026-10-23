@@ -8,12 +8,15 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       get_parametre, set_parametre,
                       INTENTIONS_UNIVERSELLES, jours_depuis,
                       prise_en_charge_automatique, stats_dizaines_jour,
-                      _assurer_dizaines_journal)
+                      _assurer_dizaines_journal, _assurer_table_reserve,
+                      reserve_compteur, reserve_lignes,
+                      ajouter_intention_reserve, retirer_intention_reserve,
+                      OBJECTIF_RESERVE)
 from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, supprimer_photo,
                       archiver_membre, safe_date, afficher_situation, sans_accents, 
                       enregistrer_abonnement, verifier_abonnement, periode_affichage, 
                       generer_matricule_unique, get_periode_pastorale, lien_whatsapp, URL_ESPACE_SPIRITUEL,
-                      synchroniser_menu_session, lire_menu_session)
+                      synchroniser_menu_session, lire_menu_session, afficher_messages_flash)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, afficher_historique_suivi, 
                         afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales)
 
@@ -169,7 +172,114 @@ def _onglet_coins_intentions(pid, equipes):
         unsafe_allow_html=True)
     st.caption("🧭 Chaque visiteur reçoit l’intention de SON prochain selon son N° méd. "
                "(jour de naissance) et la médite sur sa fenêtre de 20 jours ; "
-               "personne ne prie jamais sa propre intention.")
+               "personne ne prie jamais sa propre intention. "
+               "📚 La réserve ci-dessous garantit 20 intentions d’avance pour "
+               "chacun des N° méd.")
+
+    # ---------- E. RÉSERVE D'INTENTIONS PAR N° MÉD. (v7.9.3) ----------
+    _bloc_reserve_paroisse(pid, equipes)
+
+
+def _bloc_reserve_paroisse(pid, equipes):
+    """📚 RÉSERVE D'INTENTIONS PAR N° MÉD. (v7.9.3) — volet PAROISSIAL :
+    « il est capital d'avoir au préalable 20 intentions pour chacun des
+    N° méd. Ça sera l'affaire des responsables d'équipe et paroissial. »
+    Le responsable paroissial ajoute ici les intentions des membres de ses
+    équipes (il choisit l'équipe puis le membre — le N° méd. du membre
+    désigne l'emplacement), en complément du travail des responsables
+    d'équipe. Les compteurs sont GLOBAUX : la chaîne est universelle."""
+    _assurer_table_reserve()
+    # v7.9.3 — la confirmation d'un ajout (flash posé par le formulaire)
+    # s'affiche ici, en tête du bloc, APRÈS le rerun.
+    afficher_messages_flash()
+    st.markdown("---")
+    st.markdown("### 📚 Réserve d'intentions — 20 intentions par N° méd.")
+    st.caption("Les visiteurs du jour reçoivent les intentions de leurs prochains "
+               "selon leur N° méd. (1-20) et les méditent sur 20 jours. Il faut donc "
+               "AU PRÉALABLE 20 intentions pour chacun des 20 N° — l'affaire des "
+               "responsables d'équipe ET paroissial, qui ajoutent les intentions de "
+               "leurs membres. Compteurs toutes équipes confondues (la chaîne est "
+               "universelle). 🤫 Comme toujours : être une tombe.")
+    _cpt = reserve_compteur()
+    _total = sum(_cpt.values())
+    _grille = "".join(
+        '<div style="min-width:62px; flex:1 0 62px; background:'
+        + ("#1b2a5e" if _cpt[n] else "#121a45")
+        + '; border:1px solid '
+        + ("#FFD700" if _cpt[n] >= OBJECTIF_RESERVE else ("#3a4585" if _cpt[n] else "#27306b"))
+        + '; border-radius:9px; padding:6px 4px; text-align:center;">'
+        + '<div style="color:' + ("#FFD000" if _cpt[n] else "#5a6398")
+        + '; font-weight:bold; font-size:0.95rem;">' + str(n).zfill(2) + '</div>'
+        + '<div style="color:' + ("#e8eaf6" if _cpt[n] else "#5a6398")
+        + '; font-size:0.72rem;">' + str(_cpt[n]) + "/" + str(OBJECTIF_RESERVE) + '</div></div>'
+        for n in range(1, 21))
+    st.markdown('<div style="display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 4px 0;">'
+                + _grille + '</div>', unsafe_allow_html=True)
+    if _total >= 20 * OBJECTIF_RESERVE:
+        st.success("🎯 Objectif atteint : " + str(_total)
+                   + " intentions en réserve (20 par N° méd.) — la chaîne ne tombera pas à sec.")
+    else:
+        st.caption("🎯 Objectif : " + str(OBJECTIF_RESERVE)
+                   + " intentions par N° méd. (400 au total) — réserve actuelle : "
+                   + str(_total) + ".")
+    if not equipes:
+        st.info("Aucune équipe dans cette paroisse : la réserve se remplit depuis "
+                "les équipes (responsables d'équipe) ou dès qu'une équipe existera.")
+        return
+    with st.expander("➕ Ajouter une intention à la réserve"):
+        _eq_sel = st.selectbox("Équipe du membre", list(range(len(equipes))),
+                               format_func=lambda i: equipes[i][1],
+                               key="res_par_eq")
+        _eq_id = equipes[_eq_sel][0]
+        _membres = c.execute("""SELECT id, nom, prenom, numero_meditation FROM membres
+                                WHERE equipe_id=? AND statut='actif' ORDER BY nom""",
+                             (_eq_id,)).fetchall()
+        if not _membres:
+            st.info("Cette équipe n'a pas encore de membre actif.")
+        else:
+            with st.form("form_reserve_par", clear_on_submit=True):
+                _sel = st.selectbox(
+                    "Membre (son N° méd. désigne l'emplacement de la réserve)",
+                    list(range(len(_membres))),
+                    format_func=lambda i: (
+                        f"{_membres[i][1]} {_membres[i][2]}"
+                        + (f" — N° méd. {_membres[i][3]}" if _membres[i][3]
+                           else " — ⚠️ sans N° méd. (à renseigner par le responsable d'équipe)")))
+                _txt = st.text_area("Intention de prière *", height=90, max_chars=500,
+                                    placeholder="Pour la santé de…, pour ma famille…, "
+                                                "pour les vocations…")
+                if st.form_submit_button("➕ Ajouter à la réserve", type="primary"):
+                    _m = _membres[_sel]
+                    try:
+                        _num = int(str(_m[3]).strip()) if _m[3] else None
+                    except (TypeError, ValueError):
+                        _num = None
+                    if _num is None or not (1 <= _num <= 20):
+                        st.warning("⚠️ " + str(_m[1]) + " " + str(_m[2])
+                                   + " n'a pas de N° méditation valide (1-20). "
+                                     "Le responsable d'équipe doit d'abord le renseigner.")
+                    else:
+                        _ok, _msg = ajouter_intention_reserve(
+                            _num, _txt,
+                            auteur_nom=(str(_m[1]) + " " + str(_m[2])).strip(),
+                            equipe_id=_eq_id, paroisse_id=pid)
+                        if _ok:
+                            st.session_state["flash_success"] = _msg
+                            st.rerun()
+                        st.warning(_msg)
+    _lignes = reserve_lignes(paroisse_id=pid)
+    if _lignes:
+        _noms_eq = {e[0]: e[1] for e in equipes}
+        with st.expander(f"🗂️ Intentions en réserve de la paroisse ({len(_lignes)})"):
+            for (rid, num, texte, auteur, eqi, daj) in _lignes:
+                st.markdown(f"**N° méd. {int(num):02d}** — *{auteur or 'Membre'}*"
+                            + (f" · équipe « {_noms_eq.get(eqi, '?')} »" if eqi else "")
+                            + (f" · ajoutée le {daj}" if daj else ""))
+                st.write(texte)
+                if st.button("🗑️ Retirer de la réserve", key=f"res_del_par_{rid}"):
+                    retirer_intention_reserve(rid)
+                    st.rerun()
+                st.markdown("---")
 
 
 def _tableau_de_bord_paroisse(pid, nom_p):
