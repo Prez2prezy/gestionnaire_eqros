@@ -1717,7 +1717,11 @@ def injecter_icone_pwa(espace=False):
     disparaît des DEUX côtés : le favicon de l'onglet ET le manifeste
     d'installation (icône de l'app posée sur l'écran d'accueil du téléphone)
     sont remplacés par nos icônes servies depuis /app/static/. L'échange
-    📿 ↔ 🔑 suit automatiquement la partie ouverte, à chaque chargement."""
+    📿 ↔ 🔑 suit automatiquement la partie ouverte, à chaque chargement.
+    v7.9.7 — le raccourci devient une vraie app : métas plein écran
+    (mobile-web-app-capable / apple-mobile-web-app-capable / status-bar)
+    et MÉMOIRE DU FIDÈLE — le raccourci ouvert sans matloc retrouve le
+    dernier lien personnel (localStorage navigateur, côté espace seul)."""
     if espace:
         _ico32, _ico180 = "/app/static/icon_espace_32.png", "/app/static/icon_espace_180.png"
         _manif = "/app/static/manifest_espace.json"
@@ -1751,9 +1755,50 @@ def injecter_icone_pwa(espace=False):
       var at = d.querySelector('meta[name="apple-mobile-web-app-title"]');
       if (!at) { at = d.createElement('meta'); at.name = 'apple-mobile-web-app-title'; d.head.appendChild(at); }
       at.content = LIB;
+      var mw = d.querySelector('meta[name="mobile-web-app-capable"]');
+      if (!mw) { mw = d.createElement('meta'); mw.name = 'mobile-web-app-capable'; d.head.appendChild(mw); }
+      mw.content = 'yes';
+      var aw = d.querySelector('meta[name="apple-mobile-web-app-capable"]');
+      if (!aw) { aw = d.createElement('meta'); aw.name = 'apple-mobile-web-app-capable'; d.head.appendChild(aw); }
+      aw.content = 'yes';
+      var sb = d.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+      if (!sb) { sb = d.createElement('meta'); sb.name = 'apple-mobile-web-app-status-bar-style'; d.head.appendChild(sb); }
+      sb.content = 'default';
     })();
     </script>
     """.replace("%ICO32%", _ico32).replace("%ICO180%", _ico180).replace("%MANIF%", _manif).replace("%LIB%", _lib)
+    # v7.9.7 — MÉMOIRE DU FIDÈLE (espaces de prière SEULEMENT) : le raccourci
+    # « Ajouter à l'écran d'accueil » ouvre start_url SANS matloc ; le
+    # navigateur retient le dernier lien personnel ouvert (?espace=1&matloc=…)
+    # et le restitue à l'ouverture suivante — le fidèle retrouve SON espace
+    # comme une vraie app. Un lien avec matloc rafraîchit la mémoire.
+    # 100 % navigateur (localStorage local) : rien côté serveur, aucune
+    # trace, aucune migration — et l'administration n'a AUCUNE mémoire.
+    if espace:
+        _js += """
+    <script>
+    (function(){
+      var f = null;
+      try { f = window.parent; } catch(e) { return; }
+      if (!f || !f.localStorage) { return; }
+      var q = null;
+      try { q = new URLSearchParams(f.location.search); } catch(e) { return; }
+      if (q.get('espace') !== '1') { return; }
+      var ml = (q.get('matloc') || '').trim().toUpperCase();
+      if (ml) {
+        try { f.localStorage.setItem('rosaire_matloc', ml); } catch(e) {}
+        return;
+      }
+      var memo = '';
+      try { memo = (f.localStorage.getItem('rosaire_matloc') || '').trim().toUpperCase(); } catch(e) {}
+      if (!memo) { return; }
+      var u = null;
+      try { u = new URL(f.location.href); } catch(e) { return; }
+      u.searchParams.set('matloc', memo);
+      try { f.location.replace(u.toString()); } catch(e) {}
+    })();
+    </script>
+    """
     try:
         # v7.8.16 — stcompat : st.iframe (fin de la dépréciation
         # components.v1.html) ; repli automatique sur anciennes versions.
