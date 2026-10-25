@@ -1725,11 +1725,15 @@ def injecter_icone_pwa(espace=False):
     if espace:
         _ico32, _ico180 = "/app/static/icon_espace_32.png", "/app/static/icon_espace_180.png"
         _manif = "/app/static/manifest_espace.json"
-        _lib = "Rosaire — Espaces de prière"
+        # v7.9.8 — le raccourci porte le BON nom : le titre d'onglet était le
+        # même des DEUX côtés (« Gestionnaire des Équipes du Rosaire… »),
+        # Chrome nommant le raccourci d'après le titre → tous les liens
+        # s'appelaient pareil. Titres courts et distincts par côté.
+        _lib = "Rosaire"
     else:
         _ico32, _ico180 = "/app/static/icon_admin_32.png", "/app/static/icon_admin_180.png"
         _manif = "/app/static/manifest_admin.json"
-        _lib = "Rosaire — Administration"
+        _lib = "Rosaire Admin"
     _js = """
     <script>
     (function(){
@@ -1755,6 +1759,7 @@ def injecter_icone_pwa(espace=False):
       var at = d.querySelector('meta[name="apple-mobile-web-app-title"]');
       if (!at) { at = d.createElement('meta'); at.name = 'apple-mobile-web-app-title'; d.head.appendChild(at); }
       at.content = LIB;
+      d.title = LIB;   // v7.9.8 — le raccourci hérite du titre d'onglet, distinct par côté
       var mw = d.querySelector('meta[name="mobile-web-app-capable"]');
       if (!mw) { mw = d.createElement('meta'); mw.name = 'mobile-web-app-capable'; d.head.appendChild(mw); }
       mw.content = 'yes';
