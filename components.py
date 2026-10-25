@@ -1722,9 +1722,15 @@ def injecter_icone_pwa(espace=False):
     (mobile-web-app-capable / apple-mobile-web-app-capable / status-bar)
     et MÉMOIRE DU FIDÈLE — le raccourci ouvert sans matloc retrouve le
     dernier lien personnel (localStorage navigateur, côté espace seul)."""
+    # v7.9.9 — cache-busting du manifeste : le navigateur retient le
+    # manifeste par URL ; une adresse qui évolue à chaque version l'invite à
+    # relire les bons noms et les bonnes icônes au prochain
+    # « Ajouter à l'écran d'accueil » (les raccourcis déjà posés gardent
+    # leur visage : on les supprime puis on les repose après déploiement).
+    _ver_pwa = "799"
     if espace:
         _ico32, _ico180 = "/app/static/icon_espace_32.png", "/app/static/icon_espace_180.png"
-        _manif = "/app/static/manifest_espace.json"
+        _manif = "/app/static/manifest_espace.json?v=" + _ver_pwa
         # v7.9.8 — le raccourci porte le BON nom : le titre d'onglet était le
         # même des DEUX côtés (« Gestionnaire des Équipes du Rosaire… »),
         # Chrome nommant le raccourci d'après le titre → tous les liens
@@ -1732,7 +1738,7 @@ def injecter_icone_pwa(espace=False):
         _lib = "Rosaire"
     else:
         _ico32, _ico180 = "/app/static/icon_admin_32.png", "/app/static/icon_admin_180.png"
-        _manif = "/app/static/manifest_admin.json"
+        _manif = "/app/static/manifest_admin.json?v=" + _ver_pwa
         _lib = "Rosaire Admin"
     _js = """
     <script>
