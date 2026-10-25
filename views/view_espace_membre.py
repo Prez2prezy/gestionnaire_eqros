@@ -90,7 +90,12 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.9.8"
+_VERSION_APPLI = "v7.9.9"
+
+# v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
+# apparaît dans la barre de copyright du pied de page (même disposition que
+# le site du Mouvement) ; vide, elle reste discrètement absente.
+LIEN_FACEBOOK = ""
 
 
 # ====================================================================
@@ -3768,59 +3773,125 @@ def _enregistrer_presence(membre_id, evt_id, choix):
 
 
 def _render_pied_de_page():
-    """🔒 PIED DE PAGE DU SITE (v7.9.3) — présent sur TOUTES les pages des
-    Espaces de Prière (communautaire, membre, livre ouvert) : la signature
-    du Mouvement et la « 🔒 Politique de confidentialité » complète, en
-    <details> HTML pur (aucun JS nécessaire, repliable). Le mode écoute
-    dédié (?musique=1), pensé comme un simple lecteur de secours, en est
-    exempté."""
+    """🟣 PIED DE PAGE DU SITE (v7.9.3, refondu v7.9.9) — présent sur TOUTES
+    les pages des Espaces de Prière (communautaire, membre, livre ouvert).
+    v7.9.9 — la disposition du site du Mouvement (equipes-rosaire.org) :
+    TROIS colonnes — la marque, le Rosaire en équipe, le contact — sur fond
+    violet nuit (celui du badge « Bienvenue »), menus tirés de l'entête,
+    barre noire de copyright en pied, icône Facebook (si LIEN_FACEBOOK est
+    renseigné). La « 🔒 Politique de confidentialité » complète y demeure,
+    en <details> HTML pur (aucun JS nécessaire, repliable), rejointe par une
+    « 🍪 Politique de cookies ». Le mode écoute dédié (?musique=1), pensé
+    comme un simple lecteur de secours, en est exempté."""
     if st.query_params.get("musique") == "1":
         return
+    _fb = str(LIEN_FACEBOOK or "").strip()
+    _fb_html = ('<a class="pdr-fb" href="' + html.escape(_fb, quote=True) +
+                '" target="_blank" rel="noopener" aria-label="Facebook">f</a>') if _fb else ''
     st.markdown('<style>'
-                '.pdp-eq76 { margin:26px 10px 18px 10px; border-top:2px solid #FFD700;'
-                ' background:#0d1338; border:1px solid #27306b; border-radius:14px;'
-                ' padding:14px 16px 12px 16px; }'
-                '.pdp-eq76 summary { cursor:pointer; list-style:none; text-align:center;'
-                ' color:#FFD000; font-weight:bold; font-size:0.98rem; padding:4px 0 2px 0;'
+                '.pdr-v99 { margin:30px 10px 18px 10px; border-radius:16px; overflow:hidden;'
+                ' background:linear-gradient(165deg, #241042 0%, #3B1177 55%, #4A148C 100%);'
+                ' box-shadow:0 6px 22px rgba(26,10,60,.45); }'
+                '.pdr-v99 .pdr-cols { display:flex; flex-wrap:wrap; gap:8px 26px;'
+                ' padding:22px 20px 14px 20px; }'
+                '.pdr-v99 .pdr-col { flex:1 1 220px; min-width:200px; color:#e6dcf7;'
+                ' font-size:0.86rem; line-height:1.8; }'
+                '.pdr-v99 .pdr-marque { text-align:center; }'
+                '.pdr-v99 .pdr-logo { font-size:2.1rem; line-height:1.2;'
+                ' filter:drop-shadow(0 2px 6px rgba(0,0,0,.4)); }'
+                '.pdr-v99 .pdr-nom { color:#FFFFFF; font-weight:bold; letter-spacing:.06em;'
+                ' font-family:Georgia, serif; font-size:1.02rem; margin-top:4px; }'
+                '.pdr-v99 .pdr-dio { color:#FFD54F; font-size:0.84rem; letter-spacing:.05em; }'
+                '.pdr-v99 .pdr-titre { color:#FFD54F; font-weight:bold; letter-spacing:.08em;'
+                ' font-size:0.8rem; margin:2px 0 8px 0; font-family:Georgia, serif; }'
+                '.pdr-v99 ul.pdr-menu { list-style:none; margin:0 0 12px 0; padding:0; }'
+                '.pdr-v99 ul.pdr-menu li { padding:2px 0; }'
+                '.pdr-v99 p { margin:0 0 12px 0; }'
+                '.pdr-v99 details { margin:0 0 8px 0; }'
+                '.pdr-v99 summary { cursor:pointer; list-style:none; color:#FFD54F;'
+                ' font-size:0.84rem; font-weight:600; padding:3px 0; }'
+                '.pdr-v99 summary::-webkit-details-marker { display:none; }'
+                '.pdr-v99 summary::before { content:"▸ "; color:#FFD54F; }'
+                '.pdr-v99 details[open] summary::before { content:"▾ "; }'
+                '.pdr-v99 .pdr-corps { color:#cfc2ea; font-size:0.8rem; line-height:1.75;'
+                ' margin-top:6px; }'
+                '.pdr-v99 .pdr-corps b { color:#e8eaf6; }'
+                '.pdr-v99 .pdr-bas { background:rgba(5,2,12,.88); padding:10px 16px;'
+                ' display:flex; flex-wrap:wrap; gap:4px 18px; align-items:center;'
+                ' justify-content:space-between; }'
+                '.pdr-v99 .pdr-cop { color:#b9a8e0; font-size:0.76rem; }'
+                '.pdr-v99 .pdr-sig { color:#9fa6d8; font-size:0.72rem; text-align:center;'
+                ' flex:1 1 300px; line-height:1.7; }'
+                '.pdr-v99 .pdr-fb { display:inline-flex; align-items:center; justify-content:center;'
+                ' width:26px; height:26px; border-radius:50%; background:#1877F2; color:#fff;'
+                ' font-weight:bold; font-size:0.9rem; text-decoration:none;'
                 ' font-family:Georgia, serif; }'
-                '.pdp-eq76 summary::-webkit-details-marker { display:none; }'
-                '.pdp-eq76 .pdp-corps { color:#c7cdf5; font-size:0.85rem; line-height:1.75;'
-                ' margin-top:10px; }'
-                '.pdp-eq76 .pdp-corps b { color:#e8eaf6; }'
-                '.pdp-eq76 .pdp-signature { text-align:center; color:#9fa6d8;'
-                ' font-size:0.78rem; margin-top:12px; line-height:1.7; }'
                 '</style>', unsafe_allow_html=True)
     st.markdown(
-        '<details class="pdp-eq76">'
-        '<summary>🔒 Politique de confidentialité</summary>'
-        '<div class="pdp-corps">'
+        '<footer class="pdr-v99">'
+        '<div class="pdr-cols">'
+        '<div class="pdr-col pdr-marque">'
+        '<div class="pdr-logo">📿</div>'
+        '<div class="pdr-nom">LES ÉQUIPES DU ROSAIRE</div>'
+        '<div class="pdr-dio">DIOCÈSE DE GRAND-BASSAM</div>'
+        '<p style="margin-top:10px;">Un jour, une dizaine — la chaîne de prière '
+        'universelle : chacun égrène, chacun porte l&#8217;intention du prochain.</p>'
+        '</div>'
+        '<div class="pdr-col">'
+        '<div class="pdr-titre">LE ROSAIRE EN ÉQUIPE</div>'
+        '<ul class="pdr-menu">'
+        '<li>🕯️ Un jour, une dizaine</li>'
+        '<li>🙏 Vos intentions à une équipe</li>'
+        '<li>📖 Le feuillet mensuel de prière</li>'
+        '<li>🖼️ Galerie + — souvenirs &amp; témoignages</li>'
+        '<li>📅 Les évènements des équipes</li>'
+        '</ul>'
+        '<div class="pdr-titre">NOUS REJOINDRE</div>'
+        '<p>Parle à ton responsable d&#8217;équipe ou au responsable de ta paroisse : '
+        'une place t&#8217;attend dans la chaîne.</p>'
+        '</div>'
+        '<div class="pdr-col">'
+        '<div class="pdr-titre">NOUS CONTACTER</div>'
+        '<p>Contacte les Équipes du Rosaire auprès de ton équipe, de ta paroisse '
+        'ou du bureau diocésain.</p>'
+        '<details><summary>🔒 Politique de confidentialité</summary>'
+        '<div class="pdr-corps">'
         '<b>1 · Ce que nous recueillons.</b> Les intentions confiées à une équipe '
         'enregistrent le nom (sauf si vous cochez « 🕊️ Rester anonyme »), un contact '
         '(WhatsApp ou adresse mail) et le jour de naissance — cette dernière donnée '
         'sert uniquement de clé discrète dans la chaîne de prière universelle : elle '
-        'n’identifie personne et garantit seulement que vous n’y prierez jamais votre '
+        'n&#8217;identifie personne et garantit seulement que vous n&#8217;y prierez jamais votre '
         'propre intention. Le pointage de dizaine (boutons « ✅ J’ai égrené ma dizaine '
         'aujourd’hui » et « ✕ Terminer ») note seulement la participation du jour : '
         'le membre par son matricule (MatLoc), le visiteur en simple passage anonyme — '
         'jamais le contenu de votre prière.<br>'
         '<b>2 · Ce que nous en faisons.</b> Vos données servent exclusivement à la vie '
         'de prière du Mouvement : identifier votre intention auprès du responsable '
-        'd’équipe (et, s’il le souhaite, vous répondre), compter les participations et '
-        'assurer la sécurité de l’espace (lutte contre les envois automatisés — spam). '
+        'd&#8217;équipe (et, s’il le souhaite, vous répondre), compter les participations et '
+        'assurer la sécurité de l&#8217;espace (lutte contre les envois automatisés — spam). '
         'Elles ne sont ni vendues, ni partagées, ni utilisées à des fins commerciales. '
         '🤫 Principe « être une tombe » : les intentions se portent en prière, elles ne '
-        'se racontent pas et ne sortent jamais de l’équipe.<br>'
+        'se racontent pas et ne sortent jamais de l&#8217;équipe.<br>'
         '<b>3 · Vos droits.</b> Vous pouvez demander à tout moment la suppression de '
         'votre intention ou de vos données auprès du responsable de votre équipe ou du '
         'responsable paroissial ; la demande est honorée dans les meilleurs délais. Des '
         'traces techniques minimales (date, session) peuvent être conservées pour la '
-        'sécurité de l’espace.'
+        'sécurité de l&#8217;espace.'
+        '</div></details>'
+        '<details><summary>🍪 Politique de cookies</summary>'
+        '<div class="pdr-corps">L&#8217;Espace de Prière ne dépose aucune trace '
+        'publicitaire : seuls quelques réglages strictement nécessaires à ta visite '
+        'restent dans ton navigateur — jamais ailleurs.</div></details>'
         '</div>'
-        '<div class="pdp-signature">'
-        '📿 LES ÉQUIPES DU ROSAIRE — Diocèse de Grand-Bassam · Espace de Prière<br>'
+        '</div>'
+        '<div class="pdr-bas">'
+        '<div class="pdr-cop">© 2026 Les Équipes du Rosaire — Diocèse de Grand-Bassam</div>'
+        '<div class="pdr-sig">'
         '🕯️ Un jour, une dizaine — LA CHAÎNE DE PRIÈRE UNIVERSELLE · ' + _VERSION_APPLI +
         '</div>'
-        '</details>', unsafe_allow_html=True)
+        + _fb_html +
+        '</div>'
+        '</footer>', unsafe_allow_html=True)
 
 
 # ====================================================================
