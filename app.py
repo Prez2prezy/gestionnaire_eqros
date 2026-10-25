@@ -276,6 +276,11 @@ if 'logged_in' not in st.session_state:
         else:
             st.sidebar.error("Identifiants incorrects.")
 
+    # v7.9.8 — le gestionnaire sous la main : la carte « raccourcis » de la
+    # page de recherche du navigateur n'écrit PAS sur l'écran d'accueil —
+    # seul le menu du navigateur pose la vraie icône.
+    st.sidebar.caption("📲 Garde-le sous la main : menu ⋮ du navigateur → « Ajouter à l'écran d'accueil ».")
+
     # 🔑 Secours « mot de passe oublié » — placé APRÈS le bouton Se connecter
     _reset_token = None
     try:
@@ -331,4 +336,3 @@ elif st.session_state['role'] == 'equipe':
 elif st.session_state['role'] == 'communication':
     from views.view_communication import show_communication
     show_communication()
-
