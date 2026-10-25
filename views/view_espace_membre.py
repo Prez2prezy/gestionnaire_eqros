@@ -52,7 +52,7 @@
 # Hérite de v7.8 : feuillets mensuels (vitrine, livret autonome, alerte fil).
 # Hérite de v7.6 : menu liens HTML purs + ruban hover + ☰ mobile,
 # navigation ?r=&s=, mesure autocorrigée, QR paroissial, lecteur complet.
-# Marqueurs : Ctrl+F → "VERSION 7.6", "_liens_meme_onglet", "· v7.6".
+# Marqueurs : Ctrl+F → "VERSION 7.6", "_liens_meme_onglet", "_VERSION_APPLI".
 # ====================================================================
 import os
 import re
@@ -86,6 +86,11 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       pointer_dizaine, dizaine_deja_pointee, compteur_dizaines_mois)
 from services import safe_date, compter_visite, lien_whatsapp
 from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
+
+# v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
+# encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
+# le pied de page lisent la MÊME constante, mise à jour à chaque version.
+_VERSION_APPLI = "v7.9.8"
 
 
 # ====================================================================
@@ -1889,7 +1894,7 @@ def _render_page_rosaire_theme():
     st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                 ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
                 ' border:2px solid #FFD700;">'
-                '<div style="color:#9fa6d8 !important; font-size:0.85rem;">📿 LE ROSAIRE SELON LE THÈME DE L’ANNÉE · v7.6</div>'
+                '<div style="color:#9fa6d8 !important; font-size:0.85rem;">📿 LE ROSAIRE SELON LE THÈME DE L’ANNÉE · ' + _VERSION_APPLI + '</div>'
                 '<div style="color:#FFD700 !important; font-size:1.1rem; font-weight:bold; margin-top:6px;">« '
                 + html.escape(texte_theme or "") + " »</div></div>", unsafe_allow_html=True)
     manquants = 0
@@ -2751,7 +2756,7 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
             f'<div style="color:#ffffff; font-size:1rem;">{html.escape(titres)}</div>'
             f'{_bann_chaine}'
             f'<div style="color:#9fa6d8; font-size:0.85rem; margin-top:8px;">'
-            f'N° méd. {num} — {date.today().strftime("%d/%m/%Y")} · v7.6</div>'
+            f'N° méd. {num} — {date.today().strftime("%d/%m/%Y")} · {_VERSION_APPLI}</div>'
             f'</div>', unsafe_allow_html=True)
         _scroll_top("cov")
         if st.button("📿 Égrener la dizaine", key="diz_commencer", width="stretch", type="primary"):
@@ -3813,7 +3818,7 @@ def _render_pied_de_page():
         '</div>'
         '<div class="pdp-signature">'
         '📿 LES ÉQUIPES DU ROSAIRE — Diocèse de Grand-Bassam · Espace de Prière<br>'
-        '🕯️ Un jour, une dizaine — LA CHAÎNE DE PRIÈRE UNIVERSELLE · v7.9.7'
+        '🕯️ Un jour, une dizaine — LA CHAÎNE DE PRIÈRE UNIVERSELLE · ' + _VERSION_APPLI +
         '</div>'
         '</details>', unsafe_allow_html=True)
 
@@ -3945,7 +3950,8 @@ def _corps_espace_membre(matloc_membre=None):
         if rub == "🏠 Actualités":
             st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                         '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
-                        '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · v7.6</div></div>', unsafe_allow_html=True)
+                        '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · ' + _VERSION_APPLI + '</div>'
+                        '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-la sous la main : menu ⋮ du navigateur (ou Partager sur iPhone) → « Ajouter à l\'écran d\'accueil »</div></div>', unsafe_allow_html=True)
 
         if rub == "📿 Rosaire":
             if sub == "Le Rosaire thématique":
@@ -4053,7 +4059,7 @@ def _corps_espace_membre(matloc_membre=None):
     if rub == "🏠 Actualités":
         st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                     '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
-                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · v7.6</div></div>', unsafe_allow_html=True)
+                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · ' + _VERSION_APPLI + '</div></div>', unsafe_allow_html=True)
 
     if rub == "📅 Mes évènements":
         if membre[10] is None:
