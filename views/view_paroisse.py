@@ -539,11 +539,12 @@ def show_paroisse():
                 st.rerun()
 
     elif menu == "👥 Mes équipes":
+        # v7.9.9 — le titre ne compte que les équipes (à la demande) :
+        # « 👥 Équipes de {paroisse} — N équipe(s) » (les membres se lisent
+        # paroisse par paroisse, équipe par équipe, dans les listes).
         _n_eq = c.execute("SELECT COUNT(*) FROM equipes WHERE paroisse_id=?", (pid,)).fetchone()[0]
-        _n_mb = c.execute("SELECT COUNT(*) FROM membres WHERE paroisse_id=? AND statut='actif'",
-                          (pid,)).fetchone()[0]
-        st.markdown(f'<h2 style="color:#1A237E;">👥 Équipes de {nom_p} — {_n_eq} équipe(s) '
-                    f'· {_n_mb} membre(s)</h2>', unsafe_allow_html=True)
+        st.markdown(f'<h2 style="color:#1A237E;">👥 Équipes de {nom_p} — {_n_eq} équipe(s)</h2>',
+                    unsafe_allow_html=True)
         if st.button("➕ Créer une équipe"): st.session_state['show_eq_form'] = True
         if st.session_state.get('show_eq_form'):
             with st.form("f_eq"):
