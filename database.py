@@ -1060,6 +1060,96 @@ def traiter_intentions_du_jour(force=False):
         logger.warning(f"traiter_intentions_du_jour : {e!r}")
 
 
+# ======================================================================
+# v7.9.9 — LA ZONE DU JOUR VISIBLE : le traitement AVANT l'affichage
+# ======================================================================
+# « Afin d'harmoniser l'intention du prochain à l'affichage, il est
+# nécessaire de la traiter auparavant. Créer donc une zone qui recevra
+# toutes les intentions du jour. » — la table existait (v7.9.4) ; voici
+# l'écran qui la rend visible : le responsable lit chaque intention le
+# jour même, harmonise son texte (orthographe, dignité, clarté) AVANT
+# l'entrée en réserve, ou l'écarte — et c'est ce texte soigné que la
+# chaîne de prière porte au lecteur. Aucune migration : la table
+# intentions_du_jour suffit (traitee : 0 = en attente, 1 = entrée en
+# réserve, 2 = écartée — le transfert ne prend JAMAIS traitee=2).
+
+
+def intentions_du_jour_attente():
+    """ZONE DU JOUR (v7.9.9) : toutes les intentions pas encore placées en
+    réserve (traitee=0), de la plus récente à la plus ancienne — la matière
+    du travail des responsables. Tolérante : [] si indisponible."""
+    try:
+        _assurer_table_du_jour()
+        return c.execute("""SELECT z.id, z.texte, z.auteur_nom, z.anonyme,
+                                   z.jour_naissance, z.equipe_id, z.paroisse_id,
+                                   z.date_reception
+                            FROM intentions_du_jour z
+                            WHERE z.traitee=0
+                            ORDER BY z.date_reception DESC, z.id DESC""").fetchall()
+    except Exception as e:
+        logger.warning(f"intentions_du_jour_attente : {e!r}")
+        return []
+
+
+def intentions_du_jour_compte():
+    """ZONE DU JOUR (v7.9.9) : (en attente, entrées en réserve aujourd'hui,
+    écartées) — trois chiffres qui résument la journée."""
+    try:
+        _assurer_table_du_jour()
+        _auj = date.today().isoformat()
+        _attente = c.execute("SELECT COUNT(*) FROM intentions_du_jour "
+                             "WHERE traitee=0").fetchone()[0]
+        _reserve = c.execute("SELECT COUNT(*) FROM intentions_du_jour "
+                             "WHERE traitee=1 AND date_traitement=?",
+                             (_auj,)).fetchone()[0]
+        _ecartees = c.execute("SELECT COUNT(*) FROM intentions_du_jour "
+                              "WHERE traitee=2").fetchone()[0]
+        return (_attente, _reserve, _ecartees)
+    except Exception as e:
+        logger.warning(f"intentions_du_jour_compte : {e!r}")
+        return (0, 0, 0)
+
+
+def harmoniser_intention_du_jour(zid, texte):
+    """ZONE DU JOUR (v7.9.9) : harmonise le texte d'une intention EN ATTENTE
+    (traitee=0) — l'entrée en réserve, le lendemain, emportera ce texte
+    soigné, et l'affichage de la chaîne le recevra ainsi. Retourne True si
+    une ligne a bien été mise à jour (id encore en attente)."""
+    _txt = str(texte or "").strip()
+    if not _txt:
+        return False
+    try:
+        _assurer_table_du_jour()
+        c.execute("UPDATE intentions_du_jour SET texte=? "
+                  "WHERE id=? AND traitee=0", (_txt, int(zid)))
+        commit_and_sync()
+        return bool(c.execute("SELECT 1 FROM intentions_du_jour "
+                              "WHERE id=? AND traitee=0 AND texte=?",
+                              (int(zid), _txt)).fetchone())
+    except Exception as e:
+        logger.warning(f"harmoniser_intention_du_jour : {e!r}")
+        return False
+
+
+def ecarter_intention_du_jour(zid):
+    """ZONE DU JOUR (v7.9.9) : écarte une intention de la chaîne — traitee=2
+    la met HORS du transfert (traiter_intentions_du_jour ne prend que
+    traitee=0) : elle ne nourrira jamais la réserve. Gardée en zone pour
+    la mémoire du travail. Retourne True si l'écart a été posé."""
+    try:
+        _assurer_table_du_jour()
+        c.execute("UPDATE intentions_du_jour SET traitee=2, date_traitement=? "
+                  "WHERE id=? AND traitee=0",
+                  (date.today().isoformat(), int(zid)))
+        commit_and_sync()
+        return bool(c.execute("SELECT 1 FROM intentions_du_jour "
+                              "WHERE id=? AND traitee=2",
+                              (int(zid),)).fetchone())
+    except Exception as e:
+        logger.warning(f"ecarter_intention_du_jour : {e!r}")
+        return False
+
+
 def _numero_med_normale(jour):
     """Jour de naissance (1-31) → N° méd. (1-20), même règle que le livret
     (« Un jour, une dizaine ») : au-delà de 20, on retranche 20. None sinon."""
