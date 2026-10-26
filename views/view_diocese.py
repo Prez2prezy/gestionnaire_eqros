@@ -18,11 +18,10 @@ import streamlit as st
 import pandas as pd
 import io
 from datetime import date
-# v7.9.9 — LA ZONE DU JOUR : les intentions confiées dans la journée y sont
-# lues et harmonisées AVANT leur entrée en réserve (affichage de la chaîne).
-from database import (c, commit_and_sync, safe_migrate,
-                      intentions_du_jour_attente, intentions_du_jour_compte,
-                      harmoniser_intention_du_jour, ecarter_intention_du_jour)
+# v7.9.10 — LA ZONE DU JOUR DÉMÉNAGE : « Les intentions c'est une affaire
+# des paroisses et de ses équipes. » L'écran vit désormais dans
+# view_paroisse.py (🙏 Coins des Intentions / 📌 Suivi et Agenda - Paroisse).
+from database import (c, commit_and_sync, safe_migrate)
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation,
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale,
                       supprimer_photo, afficher_messages_flash, lien_whatsapp, URL_ESPACE_SPIRITUEL,
@@ -243,62 +242,6 @@ def _galerie_plus_saisie():
                 st.rerun()
 
 
-# ====================================================================
-# v7.9.9 — LA ZONE DU JOUR : « Afin d'harmoniser l'intention du prochain
-# à l'affichage, il est nécessaire de la traiter auparavant. Créer donc
-# une zone qui recevra toutes les intentions du jour. » — la table
-# intentions_du_jour (v7.9.4) devient un écran : chaque intention est
-# relue le jour même, harmonisée AVANT l'entrée en réserve, ou écartée.
-# ====================================================================
-def _zone_du_jour():
-    st.markdown('<h2 style="color:#4A148C;">🕯️ La zone du jour — intentions confiées</h2>',
-                unsafe_allow_html=True)
-    afficher_messages_flash()
-    st.caption("Chaque intention confiée dans la journée est recueillie ici d'abord. "
-               "Relis-la, harmonise son texte — orthographe, dignité, clarté — AVANT son "
-               "entrée en réserve : c'est ce texte soigné que la chaîne de prière portera "
-               "à l'affichage. Le lendemain, chaque intention rejoint la réserve "
-               "(une par N° méd.).")
-    _noms_eq = {eid: nom for (eid, nom) in c.execute(
-        "SELECT id, nom_equipe FROM equipes").fetchall()}
-    _attente, _reserve_auj, _ecartees = intentions_du_jour_compte()
-    _m1, _m2, _m3 = st.columns(3)
-    _m1.metric("⏳ En attente", _attente)
-    _m2.metric("✅ Entrées en réserve (aujourd'hui)", _reserve_auj)
-    _m3.metric("🌙 Écartées", _ecartees)
-    st.markdown("---")
-    _lignes = intentions_du_jour_attente()
-    if not _lignes:
-        st.info("Aucune intention en attente : la zone du jour est vide, "
-                "la chaîne de prière est alimentée. 🕊️")
-        return
-    for (_zid, _txt, _nom, _anon, _jn, _eqi, _pri, _dt) in _lignes:
-        _qui = "🕊️ Anonyme" if _anon else (str(_nom).strip() or "Notre prochain")
-        _eq = _noms_eq.get(_eqi)
-        _titre = f"🕯️ {_qui} — reçu le {_dt}" + (f" · équipe {_eq}" if _eq else "")
-        with st.expander(_titre):
-            st.markdown('<div style="background:#f8f5fd; border-left:4px solid #4A148C; '
-                        'padding:10px 14px; border-radius:8px; font-style:italic;">'
-                        + html.escape(_txt or "") + '</div>', unsafe_allow_html=True)
-            _nouveau = st.text_area("Texte harmonisé (tel qu'il sera porté par la chaîne)",
-                                    value=_txt, key=f"zj_txt_{_zid}", height=100)
-            _b1, _b2 = st.columns(2)
-            if _b1.button("✨ Harmoniser le texte", key=f"zj_ok_{_zid}", type="primary"):
-                if harmoniser_intention_du_jour(_zid, _nouveau):
-                    st.session_state["flash_success"] = ("Intention harmonisée — "
-                                                         "elle entrera en réserve telle quelle. ✨")
-                    st.rerun()
-                else:
-                    st.error("Harmonisation impossible (texte vide ou intention déjà traitée).")
-            if _b2.button("🌙 Écarter de la chaîne", key=f"zj_ec_{_zid}"):
-                if ecarter_intention_du_jour(_zid):
-                    st.session_state["flash_success"] = ("Intention écartée — elle ne "
-                                                         "rejoindra pas la réserve. 🌙")
-                    st.rerun()
-    st.caption("🤫 Le principe « être une tombe » demeure : ce qui est lu ici se porte "
-               "en prière, ne se raconte pas.")
-
-
 def show_diocese():
     d_info = c.execute("SELECT nom, responsable, bureau FROM diocese WHERE id=?", (1,)).fetchone()
     nom_dio = d_info[0] if d_info else "Diocèse"
@@ -316,7 +259,7 @@ def show_diocese():
 
     _rubriques_dio = [
         "🏛️ Voir diocèse", "🏘️ Créer paroisses", "📋 Gérer paroisses",
-        "📅 Abonnements", "📌 Suivi", "🕯️ Zone du jour", "🕊️ Espace spirituel", "💬 WhatsApp",
+        "📅 Abonnements", "📌 Suivi", "🕊️ Espace spirituel", "💬 WhatsApp",
         "🔍 Rechercher matricule", "🔐 Gérer les accès", "📊 Statistiques", "📥 Export Excel",
         "📦 Archives", "🗑️ Réinitialiser"
     ]
@@ -658,9 +601,6 @@ def show_diocese():
             else:
                 st.info("Aucune paroisse créée.")
 
-    elif menu == "🕯️ Zone du jour":
-        _zone_du_jour()
-
     elif menu == "🕊️ Espace spirituel":
         st.markdown('<h2 style="color:#1A237E;">🕊️ Gestion de l\'Espace Spirituel</h2>', unsafe_allow_html=True)
         st.caption("Le Service Communication prépare les contenus — VOUS seul publiez (onglet 📡). "
@@ -980,3 +920,4 @@ def show_diocese():
                 commit_and_sync()
                 st.session_state["flash_success"] = "Toutes les données ont été supprimées. 🗑️"
                 st.rerun()
+
