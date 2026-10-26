@@ -90,7 +90,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.9.10"
+_VERSION_APPLI = "v7.9.11"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -3775,20 +3775,24 @@ def _enregistrer_presence(membre_id, evt_id, choix):
 
 
 def _render_pied_de_page(matloc_membre=None):
-    """🟣 PIED DE PAGE DU SITE (v7.9.3, refondu v7.9.9, disposition v7.9.10)
-    — présent sur TOUTES les pages des Espaces de Prière (communautaire,
-    membre, livre ouvert). v7.9.10 — la disposition demandée, TROIS colonnes :
+    """🟣 PIED DE PAGE DU SITE (v7.9.3, refondu v7.9.9, disposition v7.9.10,
+    assagi v7.9.11) — présent sur TOUTES les pages des Espaces de Prière
+    (communautaire, membre, livre ouvert). TROIS colonnes :
       • Colonne 1 — 🔒 Politique de confidentialité · 🍪 Politique de cookies ;
-      • Colonne 2 — le logo, LES ÉQUIPES DU ROSAIRE, DIOCÈSE DE GRAND-BASSAM,
+      • Colonne 2 — le LOGO DU MOUVEMENT (le chapelet doré des Équipes du
+        Rosaire, dessiné pour lui — v7.9.11 : ce n'est plus l'icône de
+        l'application), LES ÉQUIPES DU ROSAIRE, DIOCÈSE DE GRAND-BASSAM,
         le nom de la paroisse du fidèle (reconnu discrètement) et
         « Contactez le responsable paroissial » (WhatsApp quand il est
         renseigné) ;
       • Colonne 3 — 🏠 Actualités · 📿 Rosaire · 🕯️ Thème · 🖼️ Galerie + ·
         📖 Archives : les cinq rubriques de l'Espace, dans l'ordre — le même
         menu que l'entête, naviguant dans l'onglet courant.
-    Fond violet nuit du badge « Bienvenue » (le même, du haut jusqu'en bas),
-    barre noire de copyright en pied, icône Facebook (si LIEN_FACEBOOK est
-    renseigné). Le mode écoute dédié (?musique=1) en est exempté."""
+    v7.9.11 — les trois phrases d'appel quittent le pied (la chaîne se
+    montre, elle ne se raconte plus) : il reste l'essentiel. Fond violet
+    nuit du badge « Bienvenue » (du haut jusqu'en bas), barre noire de
+    copyright en pied, icône Facebook (si LIEN_FACEBOOK est renseigné).
+    Le mode écoute dédié (?musique=1) en est exempté."""
     if st.query_params.get("musique") == "1":
         return
     # v7.9.10 — le fidèle est reconnu discrètement (paroisse + responsable) :
@@ -3834,10 +3838,12 @@ def _render_pied_de_page(matloc_membre=None):
         '<li><a class="pdr-rub" href="' + _base_lien + "&r="
         + str(_index_rub[_lib]) + '">' + _lib + '</a></li>'
         for (_lib, _alt) in _rubriques_pied)
-    # v7.9.10 — le logo du Mouvement INCORPORÉ (aucune adresse à manquer) :
+    # v7.9.11 — le LOGO DU MOUVEMENT, INCORPORÉ (aucune adresse à manquer) :
+    # le chapelet doré des Équipes du Rosaire (static/logo_equipes_rosaire.png),
+    # dessiné pour lui — ce n'est plus l'icône de l'application.
     try:
         import base64 as _b64
-        with open(os.path.join("static", "icon_espace_180.png"), "rb") as _f:
+        with open(os.path.join("static", "logo_equipes_rosaire.png"), "rb") as _f:
             _logo_pied = ('<img class="pdr-img" src="data:image/png;base64,'
                           + _b64.b64encode(_f.read()).decode("ascii")
                           + '" alt="Les Équipes du Rosaire" width="64" height="64">')
@@ -3895,8 +3901,6 @@ def _render_pied_de_page(matloc_membre=None):
                 ' display:flex; flex-wrap:wrap; gap:4px 18px; align-items:center;'
                 ' justify-content:space-between; }'
                 '.pdr-v910 .pdr-cop { color:#b9a8e0; font-size:0.76rem; }'
-                '.pdr-v910 .pdr-sig { color:#9fa6d8; font-size:0.72rem; text-align:center;'
-                ' flex:1 1 300px; line-height:1.7; }'
                 '.pdr-v910 .pdr-fb { display:inline-flex; align-items:center; justify-content:center;'
                 ' width:26px; height:26px; border-radius:50%; background:#1877F2; color:#fff;'
                 ' font-weight:bold; font-size:0.9rem; text-decoration:none;'
@@ -3940,21 +3944,14 @@ def _render_pied_de_page(matloc_membre=None):
         '<div class="pdr-nom">LES ÉQUIPES DU ROSAIRE</div>'
         '<div class="pdr-dio">DIOCÈSE DE GRAND-BASSAM</div>'
         + ('<div class="pdr-par">🕯️ ' + html.escape(str(_nom_par)) + '</div>' if _nom_par else '') +
-        '<p style="margin-top:8px;">Un jour, une dizaine — la chaîne de prière '
-        'universelle : chacun égrène, chacun porte l&#8217;intention du prochain.</p>'
-        + _contact_html +
+        _contact_html +
         '</div>'
         '<div class="pdr-col">'
         '<ul class="pdr-menu">' + _menu_pied + '</ul>'
-        '<p>Parle à ton responsable d&#8217;équipe ou au responsable de ta paroisse : '
-        'une place t&#8217;attend dans la chaîne.</p>'
         '</div>'
         '</div>'
         '<div class="pdr-bas">'
         '<div class="pdr-cop">© 2026 Les Équipes du Rosaire — Diocèse de Grand-Bassam</div>'
-        '<div class="pdr-sig">'
-        '🕯️ Un jour, une dizaine — LA CHAÎNE DE PRIÈRE UNIVERSELLE · ' + _VERSION_APPLI +
-        '</div>'
         + _fb_html +
         '</div>'
         '</footer>', unsafe_allow_html=True)
@@ -4304,3 +4301,4 @@ def _corps_espace_membre(matloc_membre=None):
                                intentions=False)  # v7.8.15 : retiré côté Membre
         if not FIL_ALLEGEE:  # v7.9.3 — fil allégé : la carte du jour uniquement
             _render_actualites(pid=pid_m)
+
