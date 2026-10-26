@@ -1,4 +1,5 @@
 import streamlit as st
+import os
 import pandas as pd
 import io
 import html
@@ -1721,15 +1722,42 @@ def injecter_icone_pwa(espace=False):
     v7.9.7 — le raccourci devient une vraie app : métas plein écran
     (mobile-web-app-capable / apple-mobile-web-app-capable / status-bar)
     et MÉMOIRE DU FIDÈLE — le raccourci ouvert sans matloc retrouve le
-    dernier lien personnel (localStorage navigateur, côté espace seul)."""
+    dernier lien personnel (localStorage navigateur, côté espace seul).
+    v7.9.10 — favicon + icône iPhone INCORPORÉS dans la page (data URI :
+    aucun 404, aucun cache possible) et manifeste versionné ?v=7910 ;
+    les pages d'installation static/install_rosaire*.html offrent le bon
+    visage dès le premier octet pour le geste « Ajouter à l'écran d'accueil »."""
     # v7.9.9 — cache-busting du manifeste : le navigateur retient le
     # manifeste par URL ; une adresse qui évolue à chaque version l'invite à
     # relire les bons noms et les bonnes icônes au prochain
     # « Ajouter à l'écran d'accueil » (les raccourcis déjà posés gardent
     # leur visage : on les supprime puis on les repose après déploiement).
-    _ver_pwa = "799"
+    # v7.9.10 — LES VISAGES DEVIENT INCASSABLES : le favicon de l'onglet et
+    # l'icône iPhone ne sont plus des adresses mais des IMAGES INCORPORÉES
+    # (données base64 dans la page elle-même) — rien ne peut les manquer,
+    # ni un dossier hors d'atteinte, ni une mémoire du navigateur. Le
+    # manifeste, lui, reste une adresse versionnée (?v=7910) : c'est lui
+    # qui habille le raccourci Android. Et si le raccourci est posé pendant
+    # l'écran de chargement (avant que la page n'ait son visage), les pages
+    # d'installation livrées dans static/ servent le bon visage DÈS LE
+    # PREMIER OCTET.
+    _ver_pwa = "7910"
+
+    def _icon_data(nom_fichier):
+        """v7.9.10 — l'icône lue sur le disque et INCORPORÉE en base64 :
+        une image embarquée n'a ni adresse, ni cache, ni 404 possible."""
+        try:
+            import base64 as _b64
+            with open(os.path.join("static", nom_fichier), "rb") as _f:
+                return "data:image/png;base64," + _b64.b64encode(_f.read()).decode("ascii")
+        except Exception:
+            return None
+
     if espace:
-        _ico32, _ico180 = "/app/static/icon_espace_32.png", "/app/static/icon_espace_180.png"
+        _ico32 = _icon_data("icon_espace_32.png") \
+            or "/app/static/icon_espace_32.png?v=" + _ver_pwa
+        _ico180 = _icon_data("icon_espace_180.png") \
+            or "/app/static/icon_espace_180.png?v=" + _ver_pwa
         _manif = "/app/static/manifest_espace.json?v=" + _ver_pwa
         # v7.9.8 — le raccourci porte le BON nom : le titre d'onglet était le
         # même des DEUX côtés (« Gestionnaire des Équipes du Rosaire… »),
@@ -1737,7 +1765,10 @@ def injecter_icone_pwa(espace=False):
         # s'appelaient pareil. Titres courts et distincts par côté.
         _lib = "Rosaire"
     else:
-        _ico32, _ico180 = "/app/static/icon_admin_32.png", "/app/static/icon_admin_180.png"
+        _ico32 = _icon_data("icon_admin_32.png") \
+            or "/app/static/icon_admin_32.png?v=" + _ver_pwa
+        _ico180 = _icon_data("icon_admin_180.png") \
+            or "/app/static/icon_admin_180.png?v=" + _ver_pwa
         _manif = "/app/static/manifest_admin.json?v=" + _ver_pwa
         _lib = "Rosaire Admin"
     _js = """
