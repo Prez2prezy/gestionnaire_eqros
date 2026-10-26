@@ -249,9 +249,17 @@ if 'logged_in' not in st.session_state:
         </script>
     """, height=0)
 
-    u = st.sidebar.text_input("Utilisateur", key="login_user")
-    p = st.sidebar.text_input("Mot de passe", type="password", key="login_pass")
-    if st.sidebar.button("Se connecter"):
+    # v7.9.11 — LA CONNEXION D'UNE SEULE PIÈCE : les deux champs forment
+    # désormais UN formulaire — coller l'utilisateur puis le mot de passe
+    # ne déclenche plus de rechargement intermédiaire qui essuyait le
+    # premier champ (« Identifiants incorrects » alors que tout était
+    # pourtant collé). Tout part ensemble, au clic ; la parade AUTOFILL
+    # ci-dessus demeure pour les gestionnaires de mots de passe.
+    with st.sidebar.form("connexion_gestionnaire", clear_on_submit=False):
+        u = st.text_input("Utilisateur", key="login_user")
+        p = st.text_input("Mot de passe", type="password", key="login_pass")
+        _connecter = st.form_submit_button("Se connecter", use_container_width=True)
+    if _connecter:
         row = c.execute("SELECT id, username, password, role, diocese_id, paroisse_id, equipe_id FROM utilisateurs WHERE username=?",
                         ((u or "").strip(),)).fetchone()
         if row and verifier_mot_de_passe(p or "", row[2]):
