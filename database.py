@@ -78,11 +78,20 @@ class CursorWrapper:
                 # (observés en production Streamlit Cloud, où ils faisaient
                 # planter la page entière). Après 3 tentatives + reconnexion,
                 # l'erreur remonte normalement.
+                # v7.9.10 — le rattrapage embrasse le dernier visage des
+                # micro-coupures : le flux rendu au repos trop longtemps
+                # (transaction annulée — SQLITE_BUSY) était le seul à passer
+                # encore au travers ; il est repris comme les autres.
                 if ("stream not found" in msg or "connection reset" in msg
                         or "connection closed" in msg
                         or "connection terminated" in msg
                         or "http error" in msg
-                        or "timeout" in msg or "timed out" in msg):
+                        or "timeout" in msg or "timed out" in msg
+                        or "sqlite_busy" in msg or "busy" in msg
+                        or "idle for too long" in msg
+                        or "rolled back" in msg
+                        or "stream error" in msg
+                        or "hrana" in msg):
                     time.sleep(1)
                     global conn
                     try:
@@ -104,10 +113,21 @@ class CursorWrapper:
 c = CursorWrapper(conn.cursor()) if USE_TURSO else conn.cursor()
 
 def commit_and_sync():
-    try:
-        conn.commit()
-    except Exception as e:
-        logger.error(f"Erreur lors du commit : {e}")
+    """v7.9.10 — le commit rattrape lui aussi les micro-coupures : une
+    première tentative avortée est rejouée une seconde plus tard ; l'échec
+    final reste silencieux et journalisé (l'app ne casse jamais au fidèle)."""
+    for _essai in range(2):
+        try:
+            conn.commit()
+            return
+        except Exception as e:
+            if _essai == 0:
+                try:
+                    time.sleep(1)
+                except Exception:
+                    pass
+                continue
+            logger.error(f"Erreur lors du commit : {e}")
 
 # --- Fonction de migration sécurisée ---
 def safe_migrate(query, error_ignore_phrases=["duplicate column", "duplicate column name"]):
@@ -272,7 +292,9 @@ def init_tables_and_migrations():
                     date_ajout TEXT,
                     active INTEGER DEFAULT 1,
                     qui TEXT,
-                    jour_naissance INTEGER)""")
+                    jour_naissance INTEGER,
+                    publiee INTEGER DEFAULT 1,
+                    date_publication TEXT)""")
     # v7.9.4 — LA ZONE DU JOUR : toutes les intentions confiées dans la
     # journée y sont recueillies d'abord ; le LENDEMAIN, chacune entre dans
     # la réserve (traitee=1, date_traitement posé).
@@ -352,6 +374,12 @@ def init_tables_and_migrations():
     # v7.9.0 — jour de naissance du fidèle (clé discrète de la chaîne de
     # prière : il garantit qu'un visiteur ne prie jamais SA propre intention).
     safe_migrate("ALTER TABLE intentions_equipes ADD COLUMN jour_naissance INTEGER")
+    # v7.9.10 — LE SAS DES INTENTIONS : la réserve gagne les colonnes de la
+    # publication différée. DEFAULT 1 : les intentions déjà en place restent
+    # publiées exactement comme avant ; seules les NOUVELLES venues de la
+    # zone du jour naissent publiee=0, en attendant 00h00 du jour suivant.
+    safe_migrate("ALTER TABLE intentions_reserve ADD COLUMN publiee INTEGER DEFAULT 1")
+    safe_migrate("ALTER TABLE intentions_reserve ADD COLUMN date_publication TEXT")
     # v7.9.1 — Galerie + (souvenirs / témoignages) : la table est aussi
     # (re)créée doucement ici, pour les bases distantes antérieures.
     try:
@@ -561,6 +589,10 @@ def intention_du_prochain_detail(jour_visiteur=None, matloc=None):
     try:
         # v7.9.4 — les intentions de la veille entrent d'abord en réserve
         traiter_intentions_du_jour()
+        # v7.9.10 — le réveil de la publication : les intentions dont
+        # l'heure est venue (00h00 du jour suivant leur entrée en réserve)
+        # deviennent visibles dans la chaîne
+        publier_reserve_due()
         mode = get_parametre("chaine_mode", "recues")
         if mode == "universelle":
             choix = get_parametre("chaine_universelle", INTENTIONS_UNIVERSELLES[0])
@@ -924,7 +956,8 @@ def _assurer_table_reserve():
             commit_and_sync()
         except Exception as e:
             logger.warning(f"_assurer_table_reserve : {e!r}")
-    for _col in ("active INTEGER DEFAULT 1", "qui TEXT", "jour_naissance INTEGER"):
+    for _col in ("active INTEGER DEFAULT 1", "qui TEXT", "jour_naissance INTEGER",
+                 "publiee INTEGER DEFAULT 1", "date_publication TEXT"):
         try:
             c.execute(f"ALTER TABLE intentions_reserve ADD COLUMN {_col}")
             commit_and_sync()
@@ -1018,9 +1051,13 @@ def traiter_intentions_du_jour(force=False):
     demandes abondent, les suivantes du même jour élargissent le stock
     tournant du N° — quota augmenté). Idempotent : ne prend QUE les lignes
     traitee=0 reçues avant aujourd'hui ; une seule exécution par jour et
-    par processus (garde-fou _TRAITEMENT_DJ_FAIT_LE), silencieuse."""
+    par processus (garde-fou _TRAITEMENT_DJ_FAIT_LE), silencieuse.
+    v7.9.10 — LE SAS : l'entrée en réserve n'est PLUS une publication —
+    chaque arrivée naît publiee=0 avec date_publication DEMAIN (00h00 du
+    jour suivant) ; le réveil publier_reserve_due la rendra visible."""
     global _TRAITEMENT_DJ_FAIT_LE
     _auj = date.today().isoformat()
+    _demain = date.fromordinal(date.today().toordinal() + 1).isoformat()
     if not force and _TRAITEMENT_DJ_FAIT_LE == _auj:
         return
     try:
@@ -1046,11 +1083,11 @@ def traiter_intentions_du_jour(force=False):
                 _remplace.add(_slot)
             c.execute("""INSERT INTO intentions_reserve
                          (numero_med, texte, auteur_nom, equipe_id, paroisse_id,
-                          date_ajout, active, qui, jour_naissance)
-                         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                          date_ajout, active, qui, jour_naissance, publiee, date_publication)
+                         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?)""",
                       (_slot, _txt, None if _anon else ((str(_nom).strip() or None) if _nom else None),
                        _eqi, _pri, _auj, "cet anonyme" if _anon else "notre prochain",
-                       int(_jn) if _jn else None))
+                       int(_jn) if _jn else None, _demain))
             c.execute("""UPDATE intentions_du_jour SET traitee=1, date_traitement=?
                          WHERE id=?""", (_auj, _zid))
         commit_and_sync()
@@ -1074,36 +1111,62 @@ def traiter_intentions_du_jour(force=False):
 # réserve, 2 = écartée — le transfert ne prend JAMAIS traitee=2).
 
 
-def intentions_du_jour_attente():
+def intentions_du_jour_attente(equipe_ids=None, paroisse_id=None):
     """ZONE DU JOUR (v7.9.9) : toutes les intentions pas encore placées en
     réserve (traitee=0), de la plus récente à la plus ancienne — la matière
-    du travail des responsables. Tolérante : [] si indisponible."""
+    du travail des responsables. v7.9.10 — SCOPE PAROISSIAL : passer
+    paroisse_id et/ou equipe_ids ne montre que les intentions de la maison
+    (l'OR honore les lignes anciennes dont la paroisse n'était pas notée).
+    Tolérante : [] si indisponible."""
     try:
         _assurer_table_du_jour()
-        return c.execute("""SELECT z.id, z.texte, z.auteur_nom, z.anonyme,
+        _scope, _prm = "", []
+        _parts = []
+        if paroisse_id is not None:
+            _parts.append("z.paroisse_id=?")
+            _prm.append(paroisse_id)
+        if equipe_ids:
+            _ph = ",".join("?" * len(equipe_ids))
+            _parts.append(f"z.equipe_id IN ({_ph})")
+            _prm.extend(equipe_ids)
+        if _parts:
+            _scope = " AND (" + " OR ".join(_parts) + ")"
+        return c.execute(f"""SELECT z.id, z.texte, z.auteur_nom, z.anonyme,
                                    z.jour_naissance, z.equipe_id, z.paroisse_id,
                                    z.date_reception
                             FROM intentions_du_jour z
-                            WHERE z.traitee=0
-                            ORDER BY z.date_reception DESC, z.id DESC""").fetchall()
+                            WHERE z.traitee=0{_scope}
+                            ORDER BY z.date_reception DESC, z.id DESC""",
+                         tuple(_prm)).fetchall()
     except Exception as e:
         logger.warning(f"intentions_du_jour_attente : {e!r}")
         return []
 
 
-def intentions_du_jour_compte():
-    """ZONE DU JOUR (v7.9.9) : (en attente, entrées en réserve aujourd'hui,
-    écartées) — trois chiffres qui résument la journée."""
+def intentions_du_jour_compte(equipe_ids=None, paroisse_id=None):
+    """ZONE DU JOUR (v7.9.9) : (en attente, envoyées en réserve aujourd'hui,
+    écartées) — trois chiffres qui résument la journée. v7.9.10 — scope
+    paroissial : mêmes filtres que intentions_du_jour_attente."""
     try:
         _assurer_table_du_jour()
         _auj = date.today().isoformat()
-        _attente = c.execute("SELECT COUNT(*) FROM intentions_du_jour "
-                             "WHERE traitee=0").fetchone()[0]
-        _reserve = c.execute("SELECT COUNT(*) FROM intentions_du_jour "
-                             "WHERE traitee=1 AND date_traitement=?",
-                             (_auj,)).fetchone()[0]
-        _ecartees = c.execute("SELECT COUNT(*) FROM intentions_du_jour "
-                              "WHERE traitee=2").fetchone()[0]
+        _parts = []
+        _prm = []
+        if paroisse_id is not None:
+            _parts.append("paroisse_id=?")
+            _prm.append(paroisse_id)
+        if equipe_ids:
+            _ph = ",".join("?" * len(equipe_ids))
+            _parts.append(f"equipe_id IN ({_ph})")
+            _prm.extend(equipe_ids)
+        _scope = (" AND (" + " OR ".join(_parts) + ")") if _parts else ""
+        _attente = c.execute(f"SELECT COUNT(*) FROM intentions_du_jour "
+                             f"WHERE traitee=0{_scope}", tuple(_prm)).fetchone()[0]
+        _reserve = c.execute(f"SELECT COUNT(*) FROM intentions_du_jour "
+                             f"WHERE traitee=1 AND date_traitement=?{_scope}",
+                             [_auj] + _prm).fetchone()[0]
+        _ecartees = c.execute(f"SELECT COUNT(*) FROM intentions_du_jour "
+                              f"WHERE traitee=2{_scope}", tuple(_prm)).fetchone()[0]
         return (_attente, _reserve, _ecartees)
     except Exception as e:
         logger.warning(f"intentions_du_jour_compte : {e!r}")
@@ -1148,6 +1211,104 @@ def ecarter_intention_du_jour(zid):
     except Exception as e:
         logger.warning(f"ecarter_intention_du_jour : {e!r}")
         return False
+
+
+# ======================================================================
+# v7.9.10 — LE SAS DES INTENTIONS · LA PUBLICATION À 00h00
+# ======================================================================
+# « Les intentions c'est une affaire des paroisses et de ses équipes.
+# Ramener la Zone du jour dans 🙏 Coins des Intentions / 📌 Suivi et
+# Agenda - Paroisse. C'est le sas des intentions. Aucune intention ne peut
+# être publiée sans y passer. Toutes les intentions reçues y transitent,
+# elles sont traitées puis envoyées vers la réserve immédiatement. La
+# publication se fait à 00h00 du jour suivant. » —
+#   • la zone du jour devient PAROISSIALE (scope paroisse_id / équipes) ;
+#   • « 🕊️ Traiter & envoyer en réserve » part DU SAS, tout de suite ;
+#   • l'arrivée en réserve n'est pas la publication : publiee=0,
+#     date_publication = demain (00h00 du jour suivant) ;
+#   • le réveil publier_reserve_due — appelé à chaque tirage — rend
+#     l'intention visible à l'heure dite. Les intentions déjà en place
+#     (colonnes absentes avant v7.9.10) restent publiées comme avant.
+
+_PUBLICATION_RESERVE_FAIT_LE = None
+
+
+def publier_reserve_due(force=False):
+    """LE RÉVEIL DE LA PUBLICATION (v7.9.10) : rend visibles dans la chaîne
+    les intentions dont l'heure est venue — publiee=0 et date_publication
+    atteinte (00h00 du jour suivant leur entrée en réserve). Paresseux et
+    idempotent : une seule exécution par jour et par processus (sauf
+    force=True), silencieux. Retourne le nombre d'intentions réveillées."""
+    global _PUBLICATION_RESERVE_FAIT_LE
+    _auj = date.today().isoformat()
+    if not force and _PUBLICATION_RESERVE_FAIT_LE == _auj:
+        return 0
+    try:
+        _assurer_table_reserve()
+        _cur = c.execute("""UPDATE intentions_reserve SET publiee=1
+                            WHERE publiee=0 AND date_publication IS NOT NULL
+                            AND date_publication <= ?""", (_auj,))
+        commit_and_sync()
+        _PUBLICATION_RESERVE_FAIT_LE = _auj
+        return int(getattr(_cur, "rowcount", 0) or 0)
+    except Exception as e:
+        logger.warning(f"publier_reserve_due : {e!r}")
+        return 0
+
+
+def envoyer_intention_du_jour_en_reserve(zid, texte=None):
+    """LE SAS (v7.9.10) : envoie IMMÉDIATEMENT une intention de la zone du
+    jour (traitee=0) en réserve, avec le texte harmonisé passé (ou son
+    texte actuel). La publication reste réglée à 00h00 du jour suivant :
+    l'intention naît publiee=0, date_publication=demain — le réveil
+    publier_reserve_due la montrera au fidèle à l'heure dite. L'emplacement
+    (N° méd.) est tiré au hasard : l'intention de longue date cède sa
+    place, celles nées aujourd'hui élargissent le stock tournant.
+    Retourne (ok, message prêt à afficher)."""
+    try:
+        _assurer_table_du_jour()
+        _assurer_table_reserve()
+        _row = c.execute("""SELECT texte, auteur_nom, anonyme, jour_naissance,
+                                   equipe_id, paroisse_id
+                            FROM intentions_du_jour WHERE id=? AND traitee=0""",
+                         (int(zid),)).fetchone()
+        if not _row:
+            return (False, "Intention introuvable ou déjà traitée.")
+        _txt = str(texte if texte is not None else (_row[0] or "")).strip()
+        if not _txt:
+            return (False, "Le texte de l'intention est vide — harmonisez-le "
+                           "ou écartez l'intention.")
+        _anon = int(_row[2] or 0)
+        _auj = date.today()
+        _demain = date.fromordinal(_auj.toordinal() + 1).isoformat()
+        import random as _rd
+        _slot = _rd.randint(1, 20)
+        # v7.9.10 — l'arrivée du jour cède sa place à l'intention en place
+        # (même règle que le lot automatique : 1 active par N° en régime
+        # normal), SAUF aux compagnes nées aujourd'hui du sas (publiee=0,
+        # date_ajout=aujourd'hui) : elles élargissent le stock tournant.
+        c.execute("""UPDATE intentions_reserve SET active=0
+                     WHERE numero_med=? AND active=1
+                       AND NOT (COALESCE(publiee,1)=0 AND date_ajout=?)""",
+                  (_slot, _auj.isoformat()))
+        c.execute("""INSERT INTO intentions_reserve
+                     (numero_med, texte, auteur_nom, equipe_id, paroisse_id,
+                      date_ajout, active, qui, jour_naissance, publiee, date_publication)
+                     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?)""",
+                  (_slot, _txt,
+                   None if _anon else ((str(_row[1]).strip() or None) if _row[1] else None),
+                   _row[4], _row[5], _auj.isoformat(),
+                   "cet anonyme" if _anon else "notre prochain",
+                   int(_row[3]) if _row[3] else None,
+                   _demain))
+        c.execute("UPDATE intentions_du_jour SET traitee=1, date_traitement=? "
+                  "WHERE id=?", (_auj.isoformat(), int(zid)))
+        commit_and_sync()
+        return (True, "🕊️ Intention envoyée en réserve (N° méd. " + str(_slot)
+                       + ") — elle sera publiée à 00h00 demain.")
+    except Exception as e:
+        logger.warning(f"envoyer_intention_du_jour_en_reserve : {e!r}")
+        return (False, "L'envoi n'a pas pu aboutir — réessayez dans un instant.")
 
 
 def _numero_med_normale(jour):
@@ -1276,9 +1437,14 @@ def intention_reserve_pour_numero(numero_med, cycle=None, jour_exclu=None):
         return None
     try:
         _assurer_table_reserve()
+        # v7.9.10 — le réveil puis le filtre : seules les intentions
+        # PUBLIÉES (ou d'avant v7.9.10) nourrissent le tirage — rien ne
+        # s'affiche avant 00h00 du jour suivant son entrée en réserve.
+        publier_reserve_due()
         rows = c.execute("""SELECT texte, qui, auteur_nom, jour_naissance
                             FROM intentions_reserve
                             WHERE numero_med=? AND active=1
+                              AND (publiee IS NULL OR publiee<>0)
                             ORDER BY id ASC""", (_num,)).fetchall()
         if jour_exclu is not None:
             rows = [r for r in rows
