@@ -279,7 +279,12 @@ if 'logged_in' not in st.session_state:
     # v7.9.8 — le gestionnaire sous la main : la carte « raccourcis » de la
     # page de recherche du navigateur n'écrit PAS sur l'écran d'accueil —
     # seul le menu du navigateur pose la vraie icône.
+    # v7.9.10 — la page d'installation porte le bon visage dès le premier
+    # octet : le raccourci posé DEPUIS ELLE ne peut plus porter un autre nom.
     st.sidebar.caption("📲 Garde-le sous la main : menu ⋮ du navigateur → « Ajouter à l'écran d'accueil ».")
+    st.sidebar.markdown('<a href="/app/static/install_rosaire_admin.html" target="_self"'
+                        ' style="text-decoration:none;">📲 Poser le raccourci — page'
+                        ' d&#8217;installation</a>', unsafe_allow_html=True)
 
     # 🔑 Secours « mot de passe oublié » — placé APRÈS le bouton Se connecter
     _reset_token = None
@@ -336,3 +341,4 @@ elif st.session_state['role'] == 'equipe':
 elif st.session_state['role'] == 'communication':
     from views.view_communication import show_communication
     show_communication()
+
