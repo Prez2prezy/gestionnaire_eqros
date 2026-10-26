@@ -383,4 +383,3 @@ def get_lien_mystere(annee_debut, mystere_id):
         return r[0] if r else None
     except Exception:
         return None
-
