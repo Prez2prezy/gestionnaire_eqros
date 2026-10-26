@@ -4,6 +4,7 @@ import time
 import hashlib
 import secrets
 import logging
+import threading
 from datetime import date, datetime
 
 # Configuration du logging pour éviter d'utiliser st.error dans la base de données
@@ -60,74 +61,155 @@ def init_db():
 
 conn, USE_TURSO = init_db()
 
+# === v7.9.11 — LA PAIX DES FILS (la base à l'heure des cinq téléphones) ====
+# Chaque fidèle navigue dans son propre fil d'exécution ; jusque-là, TOUS
+# se partageaient le MÊME curseur : quand plusieurs téléphones visitaient
+# les pages en même temps (formation pastorale, cinq téléphones), les
+# requêtes s'entremêlaient — lectures croisées d'un fil à l'autre,
+# identifiants confondus, transactions rendues au repos (SQLITE_BUSY).
+# Désormais, trois disciplines silencieuses :
+#   ① un VERROU sérialise chaque requête et chaque commit — deux fils ne
+#     parlent plus à la base en même temps ;
+#   ② les lignes sont CAPTURÉES à l'instant de l'exécution : fetchone()
+#     et fetchall() relisent LE résultat de CETTE requête, jamais celui
+#     du voisin ;
+#   ③ lastrowid / rowcount / description se lisent par fil (le dernier
+#     résultat de CHACUN lui appartient).
+# Le rattrapage des micro-coupures Hrana/Turso (v7.8.16, v7.9.10) demeure
+# à l'identique, à l'intérieur du verrou.
+_verrou_db = threading.RLock()      # réentrant : un même fil peut enchaîner
+_tls = threading.local()            # le dernier résultat DE CE fil
+
+
+class ResultatRequete:
+    """Le résultat capturé d'une requête (v7.9.11) : les lignes sont
+    relevées à l'exécution, sous le verrou — fetchone()/fetchall()
+    relisent ces lignes-là, même si un autre fil a exécuté entre-temps."""
+    __slots__ = ("_lignes", "lastrowid", "rowcount", "description")
+
+    def __init__(self, lignes, lastrowid, rowcount, description):
+        self._lignes = lignes
+        self.lastrowid = lastrowid
+        self.rowcount = rowcount
+        self.description = description
+
+    def fetchone(self):
+        return self._lignes[0] if self._lignes else None
+
+    def fetchall(self):
+        return list(self._lignes)
+
+    def fetchmany(self, n=None):
+        return list(self._lignes) if n is None else self._lignes[:n]
+
+    def __iter__(self):
+        return iter(self._lignes)
+
+    def __len__(self):
+        return len(self._lignes)
+
+
 class CursorWrapper:
     def __init__(self, cursor):
         self.cursor = cursor
 
     def execute(self, query, params=None):
-        last_err = None
-        for attempt in range(3):
-            try:
-                return self.cursor.execute(query, tuple(params) if params else ())
-            except Exception as e:
-                msg = str(e).lower()
-                # v7.8.16 — micro-coupures Hrana/Turso élargies : outre
-                # « stream not found » et « connection reset », on rattrape
-                # désormais « connection closed before message completed »,
-                # les erreurs http transitoires et les dépassements de délai
-                # (observés en production Streamlit Cloud, où ils faisaient
-                # planter la page entière). Après 3 tentatives + reconnexion,
-                # l'erreur remonte normalement.
-                # v7.9.10 — le rattrapage embrasse le dernier visage des
-                # micro-coupures : le flux rendu au repos trop longtemps
-                # (transaction annulée — SQLITE_BUSY) était le seul à passer
-                # encore au travers ; il est repris comme les autres.
-                if ("stream not found" in msg or "connection reset" in msg
-                        or "connection closed" in msg
-                        or "connection terminated" in msg
-                        or "http error" in msg
-                        or "timeout" in msg or "timed out" in msg
-                        or "sqlite_busy" in msg or "busy" in msg
-                        or "idle for too long" in msg
-                        or "rolled back" in msg
-                        or "stream error" in msg
-                        or "hrana" in msg):
-                    time.sleep(1)
-                    global conn
-                    try:
-                        conn, _ = create_connection()
-                        self.cursor = conn.cursor()
-                        last_err = e
-                        continue
-                    except Exception as e2:
-                        last_err = e2
-                        continue
-                if "duplicate column" not in msg:
-                    logger.error(f"Erreur SQL : {e}")
-                raise
-        raise Exception(f"Connexion Turso instable : 3 tentatives échouées ({last_err})")
+        with _verrou_db:
+            last_err = None
+            for attempt in range(3):
+                try:
+                    cur = self.cursor.execute(query,
+                                              tuple(params) if params else ())
+                    # v7.9.11 — capture IMMÉDIATE, sous le verrou : les
+                    # lignes et les métadonnées deviennent la propriété de
+                    # CETTE requête (aucun partage avec le fil voisin).
+                    _desc = cur.description
+                    _lignes = list(cur.fetchall()) if _desc is not None else []
+                    _res = ResultatRequete(_lignes, cur.lastrowid,
+                                           cur.rowcount, _desc)
+                    _tls.dernier = _res
+                    return _res
+                except Exception as e:
+                    msg = str(e).lower()
+                    # v7.8.16 — micro-coupures Hrana/Turso élargies : outre
+                    # « stream not found » et « connection reset », on rattrape
+                    # désormais « connection closed before message completed »,
+                    # les erreurs http transitoires et les dépassements de délai
+                    # (observés en production Streamlit Cloud, où ils faisaient
+                    # planter la page entière). Après 3 tentatives + reconnexion,
+                    # l'erreur remonte normalement.
+                    # v7.9.10 — le rattrapage embrasse le dernier visage des
+                    # micro-coupures : le flux rendu au repos trop longtemps
+                    # (transaction annulée — SQLITE_BUSY) était le seul à passer
+                    # encore au travers ; il est repris comme les autres.
+                    if ("stream not found" in msg or "connection reset" in msg
+                            or "connection closed" in msg
+                            or "connection terminated" in msg
+                            or "http error" in msg
+                            or "timeout" in msg or "timed out" in msg
+                            or "sqlite_busy" in msg or "busy" in msg
+                            or "idle for too long" in msg
+                            or "rolled back" in msg
+                            or "stream error" in msg
+                            or "hrana" in msg):
+                        time.sleep(1)
+                        global conn
+                        try:
+                            conn, _ = create_connection()
+                            self.cursor = conn.cursor()
+                            last_err = e
+                            continue
+                        except Exception as e2:
+                            last_err = e2
+                            continue
+                    if "duplicate column" not in msg:
+                        logger.error(f"Erreur SQL : {e}")
+                    raise
+            raise Exception(f"Connexion instable : 3 tentatives échouées ({last_err})")
 
     def __getattr__(self, name):
+        # v7.9.11 — les lectures faites DIRECTEMENT sur `c` (c.fetchone(),
+        # c.fetchall(), c.description, c.lastrowid…) relisent le dernier
+        # résultat DU FIL COURANT ; le reste est délégué au curseur réel.
+        if name in ("fetchone", "fetchall", "fetchmany"):
+            def _relire(*args, **kwargs):
+                _res = getattr(_tls, "dernier", None)
+                if _res is None:
+                    raise RuntimeError("Aucun résultat en mémoire : "
+                                       "appelez c.execute() d'abord.")
+                return getattr(_res, name)(*args, **kwargs)
+            return _relire
+        if name in ("lastrowid", "rowcount", "description"):
+            _res = getattr(_tls, "dernier", None)
+            if _res is not None:
+                return getattr(_res, name)
         return getattr(self.cursor, name)
 
-c = CursorWrapper(conn.cursor()) if USE_TURSO else conn.cursor()
+
+# v7.9.11 — le wrapper veille désormais aussi en local : la même discipline
+# des fils pour les deux mondes (l'essai et le Cloud).
+c = CursorWrapper(conn.cursor())
 
 def commit_and_sync():
     """v7.9.10 — le commit rattrape lui aussi les micro-coupures : une
     première tentative avortée est rejouée une seconde plus tard ; l'échec
-    final reste silencieux et journalisé (l'app ne casse jamais au fidèle)."""
-    for _essai in range(2):
-        try:
-            conn.commit()
-            return
-        except Exception as e:
-            if _essai == 0:
-                try:
-                    time.sleep(1)
-                except Exception:
-                    pass
-                continue
-            logger.error(f"Erreur lors du commit : {e}")
+    final reste silencieux et journalisé (l'app ne casse jamais au fidèle).
+    v7.9.11 — le commit passe par le MÊME verrou que les requêtes : la
+    transaction d'un fil ne peut plus être scellée au beau milieu de
+    celle d'un autre."""
+    with _verrou_db:
+        for _essai in range(2):
+            try:
+                conn.commit()
+                return
+            except Exception as e:
+                if _essai == 0:
+                    try:
+                        time.sleep(1)
+                    except Exception:
+                        pass
+                    continue
+                logger.error(f"Erreur lors du commit : {e}")
 
 # --- Fonction de migration sécurisée ---
 def safe_migrate(query, error_ignore_phrases=["duplicate column", "duplicate column name"]):
@@ -889,6 +971,67 @@ def serie_dizaines(nb_jours=7, equipe_id=None):
         logger.warning(f"serie_dizaines : {e!r}")
         return [(date.fromordinal(date.today().toordinal() - nb_jours + 1 + i).isoformat(), 0, 0)
                 for i in range(nb_jours)]
+
+
+def tableau_pointages_equipe(nb_jours=14, equipe_id=None):
+    """📋 LE TABLEAU DE LA CHAÎNE (v7.9.11) — la grille jour × membre des
+    nb_jours derniers jours : « ✅ » dans la case du membre qui a égrené sa
+    méditation ce jour-là, vide sinon. La ligne du jour vit en tête ; à
+    00h00 elle s'archive d'elle-même et les lignes passées demeurent
+    consultables à souhait (le journal complet est relu, rien n'est
+    jamais effacé). Retourne (jours, membres, grille, totaux) :
+      jours   → [iso, ...] du plus récent au plus ancien ;
+      membres → [(matloc, libellé), ...] des actifs, ordre alphabétique
+                (libellés rendus uniques si deux prénoms se ressemblent) ;
+      grille  → {(jour, matloc), …} — l'ensemble des cases cochées ;
+      totaux  → {matloc: n} — les ✅ de la période, membre par membre."""
+    try:
+        _assurer_dizaines_journal()
+        _fin = date.today()
+        _deb = date.fromordinal(_fin.toordinal() - nb_jours + 1)
+        _ph, _prm = ("AND equipe_id=?", [equipe_id]) if equipe_id else ("", [])
+        _cases = c.execute(f"""SELECT jour, matloc FROM dizaines_journal
+                               WHERE type='membre' AND jour>=? {_ph}""",
+                           (_deb.isoformat(), *_prm)).fetchall()
+        _grille = {(str(r[0]), str(r[1]).upper().strip()) for r in _cases
+                   if r[0] and r[1]}
+        _membres = [(str(m[0]).upper().strip(),
+                     (f"{m[2] or ''} {m[1] or ''}".strip() or "Membre"))
+                    for m in c.execute(
+                        """SELECT matloc, nom, prenom FROM membres
+                           WHERE equipe_id=? AND statut='actif'
+                           ORDER BY nom, prenom""", (equipe_id,)).fetchall()
+                    if m[0]]
+        # libellés uniques (deux prénoms identiques dans la même équipe)
+        _vus, _membres_uniq = {}, []
+        for _mat, _lib in _membres:
+            _n = _vus.get(_lib, 0) + 1
+            _vus[_lib] = _n
+            _membres_uniq.append((_mat, _lib if _n == 1 else f"{_lib} ({_n})"))
+        _jours = [date.fromordinal(_fin.toordinal() - _i).isoformat()
+                  for _i in range(nb_jours)]
+        _totaux = {m: 0 for m, _ in _membres_uniq}
+        for (_j, _m) in _grille:
+            if _m in _totaux:
+                _totaux[_m] += 1
+        return (_jours, _membres_uniq, _grille, _totaux)
+    except Exception as e:
+        logger.warning(f"tableau_pointages_equipe : {e!r}")
+        return ([], [], {}, {})
+
+
+def tableau_pointages_visiteurs(nb_jours=14):
+    """🔥 LE TABLEAU DES VISITEURS (v7.9.11) — les passages anonymes,
+    jour par jour, sur les nb_jours derniers jours. Les visiteurs
+    n'appartiennent à aucune équipe : la comptée demeure globale (elle
+    est la communauté toute entière). Retourne [(jour, n_visiteurs), …]
+    du plus récent au plus ancien."""
+    try:
+        _serie = serie_dizaines(nb_jours)          # (jour, membres, visiteurs)
+        return [(j, vv) for (j, _mv, vv) in reversed(_serie)]
+    except Exception as e:
+        logger.warning(f"tableau_pointages_visiteurs : {e!r}")
+        return []
 
 
 def compteur_dizaines_mois(matloc):
