@@ -1,5 +1,23 @@
 import os
 import streamlit as st
+
+# --- v7.9.12 — LA SENTINELLE DU PAQUET COMPLET ----------------------------
+# Le paquet vit d'un seul souffle : si un versement chez l'hébergeur est
+# arrivé incomplet (un fichier ancien qui survit au milieu des nouveaux,
+# observé le 26 octobre 2026 — les vues nouvelles devant l'ancien cœur),
+# les pages s'emmêlent et le fidèle voit un mur de code. Désormais le cœur
+# se fait reconnaître AVANT tout autre import : si l'un des gestes récents
+# lui manque, la maison affiche sa note douce et s'arrête net — jamais de
+# traceback, ni pour la fondatrice, ni pour les fidèles.
+import database as _coeur_paquet
+_paquet_complet = all(hasattr(_coeur_paquet, _nom) for _nom in (
+    "tableau_pointages_equipe",               # v7.9.11 — le tableau de la chaîne
+    "tableau_pointages_visiteurs",            # v7.9.11 — les passages anonymes
+    "publier_reserve_due",                    # v7.9.10 — le réveil de 00h00
+    "envoyer_intention_du_jour_en_reserve",   # v7.9.10 — le sas des intentions
+))
+# ---------------------------------------------------------------------------
+
 # v7.8.16 — fin des avertissements « Please replace st.components.v1.html
 # with st.iframe » : rendu HTML centralisé dans stcompat.py (st.iframe si
 # disponible, repli components.v1.html sur les anciennes versions).
@@ -15,6 +33,31 @@ from services import (hash_password, verifier_mot_de_passe,
 # L'injection dynamique (injecter_icone_pwa) affine ensuite : 📿 Espaces / 🔑 Admin.
 st.set_page_config(page_title="Gestionnaire des Équipes du Rosaire - Diocèse de Grand-Bassam",
                    page_icon="📿", layout="wide")
+
+# --- v7.9.12 — LA NOTE DOUCE DU VERSEMENT INCOMPLET ------------------------
+# (le drapeau _paquet_complet a été levé tout en haut, avant les imports ;
+#  la note s'affiche APRÈS set_page_config — première commande Streamlit)
+if not _paquet_complet:
+    st.markdown("""
+    <div style="min-height:58vh; display:flex; align-items:center; justify-content:center;">
+      <div style="background:linear-gradient(135deg,#241042 0%,#4A148C 100%);
+                  border-radius:20px; padding:2.6rem 2rem; text-align:center;
+                  border:1px solid rgba(255,255,255,0.14); max-width:540px;
+                  box-shadow:0 18px 50px rgba(20,8,45,0.45); margin:2rem auto;">
+        <div style="font-size:3rem; line-height:1;">🕊️</div>
+        <div style="color:#ffffff; font-size:1.2rem; font-weight:600; margin:0.9rem 0 0.6rem;">
+          Un instant — la maison se pare</div>
+        <div style="color:#eadcff; font-size:0.98rem; line-height:1.65;">
+          Quelque chose de beau se met en place derrière les murs et la
+          préparation n'est pas tout à fait achevée.<br>
+          Reviens nous voir dans quelques minutes : tout sera prêt.</div>
+        <div style="color:#c9b3f2; font-size:0.86rem; margin-top:1.2rem; font-style:italic;">
+          Sainte Marie, veille sur cette maison pendant qu'elle se prépare.</div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
+# ---------------------------------------------------------------------------
 
 # --- v7.8.8 : RÉVEIL des publications programmées (lazy cron) ---
 # Streamlit n'a pas de tâche de fond : chaque chargement de page vérifie
@@ -349,4 +392,3 @@ elif st.session_state['role'] == 'equipe':
 elif st.session_state['role'] == 'communication':
     from views.view_communication import show_communication
     show_communication()
-
