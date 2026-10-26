@@ -5,6 +5,7 @@ import logging
 from datetime import date
 from database import (c, commit_and_sync, verifier_reparer_intentions, jours_depuis,
                       prise_en_charge_automatique, stats_dizaines_jour, serie_dizaines,
+                      tableau_pointages_equipe, tableau_pointages_visiteurs,
                       _assurer_table_reserve, reserve_compteur, reserve_lignes,
                       ajouter_intention_reserve, retirer_intention_reserve,
                       OBJECTIF_RESERVE)
@@ -21,9 +22,17 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
 def _bloc_dizaines_equipe(eid):
     """📿 LA CHAÎNE EN DIRECT (v7.9.2) — bloc en tête de l'onglet
     « 📊 Engagement spirituel » : le responsable voit QUI a égrené sa
-    dizaine aujourd'hui (pointage volontaire en fin de livre), qui
-    n'a pas encore pointé, la série des 7 derniers jours et le mois
-    de chaque membre. Les visiteurs (passages anonymes) restent globaux."""
+    dizaine aujourd'hui (pointage volontaire en fin de livre) et la
+    mémoire des jours passés. Les visiteurs (passages anonymes) restent
+    globaux.
+    v7.9.11 — LE TABLEAU DE LA CHAÎNE, à la demande du fondateur : les
+    deux listes du jour (« ✅ Ont pointé » / « ⏳ Pas encore pointé »)
+    laissent place à une grille jour par jour — les membres en colonnes,
+    « ✅ » dans la case de qui a fait sa méditation, vide sinon. La ligne
+    du jour vit en tête ; à 00h00 elle s'archive toute seule et demeure
+    consultable à souhait, la ligne du nouveau jour s'affiche. Le même
+    tableau sert aux visiteurs (passages anonymes, comptés jour par
+    jour, sans jamais les nommer)."""
     st.markdown("#### 📿 Chaîne des dizaines — aujourd'hui")
     st.caption("Le pointage est volontaire : chaque équipier le fait en fin de « 🕯️ Un jour, "
                "une dizaine » (bouton « ✅ Merci Sainte Mère pour ton aide de ce jour! », ou "
@@ -43,27 +52,47 @@ def _bloc_dizaines_equipe(eid):
     _somme7 = sum(x[1] for x in _ser)
     r_d[3].metric("🗓️ Sur 7 jours", _somme7,
                   delta="dizaines membres cumulées", delta_color="off")
-    _fait = {x[1] for x in _liste}
-    _c_fait, _c_att = st.columns(2)
-    with _c_fait:
-        st.success("✅ **Ont pointé aujourd'hui :** "
-                   + (", ".join(f"**{n or 'Membre'}**" for (n, m, h) in _liste)
-                      if _liste else "personne pour l'instant"))
-    with _c_att:
-        # v7.9.5 — l'appartenance se lit par MatLoc (clé UNIQUE, celle-là même
-        # qui a pointé) : comparer les NOMS laissait chaque équipier déjà
-        # pointé dans la liste « Pas encore » (ex. un responsable voyait le
-        # même nom des deux côtés).
-        _restants = [f"**{m[1]} {m[2]}**" for m in c.execute(
-            """SELECT id, nom, prenom, matloc FROM membres WHERE equipe_id=? AND statut='actif'
-               ORDER BY nom""", (eid,)).fetchall() if m[3] not in _fait]
-        st.info("⏳ **Pas encore pointé aujourd'hui :** "
-                + (", ".join(_restants) if _restants else "toute l'équipe est à jour 🎉"))
-    with st.expander("🗓️ Série des 7 derniers jours (équipe)"):
+
+    # ---- v7.9.11 — LE TABLEAU DE LA CHAÎNE, jour par jour -----------------
+    _periode = st.selectbox("Mémoire du tableau", [7, 14, 30], index=1,
+                            format_func=lambda n: f"{n} derniers jours",
+                            key="chaine_periode_jours")
+    _jours, _membres, _grille, _totaux = tableau_pointages_equipe(
+        _periode, equipe_id=eid)
+    if not _membres:
+        st.info("Aucun membre actif : le tableau attendra la première "
+                "équipe. 🕊️")
+    else:
+        _auj = date.today().isoformat()
+        _jours_fr = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
+        _lignes = []
+        for _j in _jours:
+            _d = date.fromisoformat(_j)
+            _ligne = {"Jour": ("✨ " if _j == _auj else "")
+                      + _d.strftime("%d/%m") + " (" + _jours_fr[_d.weekday()] + ")"}
+            for (_mat, _lib) in _membres:
+                _ligne[_lib] = "✅" if (_j, _mat) in _grille else ""
+            _lignes.append(_ligne)
+        # la ligne des totaux : les ✅ de la période, membre par membre
+        # (en chaîne — le tableau mêle ✅ et nombres sans broncher)
+        _total_l = {"Jour": "📿 Total"}
+        for (_mat, _lib) in _membres:
+            _total_l[_lib] = str(_totaux.get(_mat, 0))
+        _lignes.append(_total_l)
+        st.dataframe(pd.DataFrame(_lignes), width="stretch", hide_index=True)
+        st.caption("La ligne du jour vit en tête (✨) ; à minuit elle "
+                   "s'archive toute seule — les lignes passées demeurent "
+                   "consultables à souhait.")
+    # ---- v7.9.11 — LES VISITEURS, jour par jour (le même tableau) ---------
+    with st.expander("🔥 Les visiteurs, jour par jour"):
+        _visiteurs = tableau_pointages_visiteurs(_periode)
         st.dataframe(pd.DataFrame(
-            [{"Jour": date.fromisoformat(iso).strftime("%d/%m"), "📿 Membres": mv, "🔥 Visiteurs": vv}
-             for (iso, mv, vv) in _ser]),
+            [{"Jour": date.fromisoformat(_j).strftime("%d/%m"),
+              "🔥 Visiteurs": ("✅ ×" + str(_n) if _n > 1 else ("✅" if _n else ""))}
+             for (_j, _n) in _visiteurs]),
             width="stretch", hide_index=True)
+        st.caption("Les visiteurs prient en passants anonymes : le tableau "
+                   "note leurs passages, jour après jour, sans jamais les nommer.")
 
 def _assurer_table_intentions_eq():
     """v7.8.14 — création douce de la table des intentions confiées aux équipes
@@ -670,3 +699,4 @@ def show_equipe():
                             else: st.info("Un transféré ou un défunt ne peut pas être réintégré.")
         else: 
             st.info("Aucune archive.")
+
