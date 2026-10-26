@@ -925,3 +925,4 @@ def show_paroisse():
                 with st.expander(f"{a[1]} {a[2]} ({a[0]}) – {afficher_situation(a[3])} – {duree} an(s) ({eq_nom})"):
                     st.write(f"Ajouté par : {a[8] or 'Inconnu'}")
                     if a[6]: st.write(f"Commentaire : {a[6]}")
+
