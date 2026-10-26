@@ -90,7 +90,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.9.9"
+_VERSION_APPLI = "v7.9.10"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -232,7 +232,7 @@ def _liens_meme_onglet(cle):
     script = (
         "<script>(function(){var d=window.parent.document;var essais=0;"
         "var t=setInterval(function(){essais++;"
-        "var as=d.querySelectorAll('.menu-ligne a,.mob-panneau a');var n=0;"
+        "var as=d.querySelectorAll('.menu-ligne a,.mob-panneau a,.pdr-v910 a');var n=0;"
         "for(var i=0;i<as.length;i++){"
         "if(!as[i].getAttribute('data-self76')){"
         "as[i].setAttribute('data-self76','1');as[i].setAttribute('target','_self');"
@@ -3398,7 +3398,7 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
         return
     _assurer_table_intentions()
     try:
-        equipes = c.execute("""SELECT id, nom_equipe FROM equipes
+        equipes = c.execute("""SELECT id, nom_equipe, paroisse_id FROM equipes
                                WHERE paroisse_id=? ORDER BY nom_equipe""",
                             (pid,)).fetchall()
     except Exception:
@@ -3589,11 +3589,13 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                                    1 if _anon else 0, int(_jour), date.today().isoformat()))
                         commit_and_sync()
                         # v7.9.4 — LA ZONE DU JOUR : l'intention confiée aujourd'hui
-                        # y est recueillie ; elle entrera en réserve au lendemain.
+                        # y est recueillie ; v7.9.10 — le SAS : la paroisse est notée
+                        # sur la ligne (le sas paroissial la reconnaît d'emblée).
                         verser_intention_du_jour(_txt.strip(), auteur_nom=None if _anon else _auteur,
                                                  auteur_contact=(_contact or "").strip(),
                                                  anonyme=_anon, jour_naissance=int(_jour),
-                                                 equipe_id=_eq[0])
+                                                 equipe_id=_eq[0],
+                                                 paroisse_id=(_eq[2] if len(_eq) > 2 else None))
                     except Exception:
                         _err_envoi = True
                         st.error("⚠️ L’envoi n’a pas pu aboutir (connexion instable "
@@ -3772,88 +3774,138 @@ def _enregistrer_presence(membre_id, evt_id, choix):
     st.rerun()
 
 
-def _render_pied_de_page():
-    """🟣 PIED DE PAGE DU SITE (v7.9.3, refondu v7.9.9) — présent sur TOUTES
-    les pages des Espaces de Prière (communautaire, membre, livre ouvert).
-    v7.9.9 — la disposition du site du Mouvement (equipes-rosaire.org) :
-    TROIS colonnes — la marque, le Rosaire en équipe, le contact — sur fond
-    violet nuit (celui du badge « Bienvenue »), menus tirés de l'entête,
+def _render_pied_de_page(matloc_membre=None):
+    """🟣 PIED DE PAGE DU SITE (v7.9.3, refondu v7.9.9, disposition v7.9.10)
+    — présent sur TOUTES les pages des Espaces de Prière (communautaire,
+    membre, livre ouvert). v7.9.10 — la disposition demandée, TROIS colonnes :
+      • Colonne 1 — 🔒 Politique de confidentialité · 🍪 Politique de cookies ;
+      • Colonne 2 — le logo, LES ÉQUIPES DU ROSAIRE, DIOCÈSE DE GRAND-BASSAM,
+        le nom de la paroisse du fidèle (reconnu discrètement) et
+        « Contactez le responsable paroissial » (WhatsApp quand il est
+        renseigné) ;
+      • Colonne 3 — 🏠 Actualités · 📿 Rosaire · 🕯️ Thème · 🖼️ Galerie + ·
+        📖 Archives : les cinq rubriques de l'Espace, dans l'ordre — le même
+        menu que l'entête, naviguant dans l'onglet courant.
+    Fond violet nuit du badge « Bienvenue » (le même, du haut jusqu'en bas),
     barre noire de copyright en pied, icône Facebook (si LIEN_FACEBOOK est
-    renseigné). La « 🔒 Politique de confidentialité » complète y demeure,
-    en <details> HTML pur (aucun JS nécessaire, repliable), rejointe par une
-    « 🍪 Politique de cookies ». Le mode écoute dédié (?musique=1), pensé
-    comme un simple lecteur de secours, en est exempté."""
+    renseigné). Le mode écoute dédié (?musique=1) en est exempté."""
     if st.query_params.get("musique") == "1":
         return
+    # v7.9.10 — le fidèle est reconnu discrètement (paroisse + responsable) :
+    # une seule lecture tolérante, aucune fuite en cas d'imprévu.
+    _nom_par, _wa_par, _pid_par = None, None, None
+    if matloc_membre:
+        try:
+            _row_par = c.execute("""SELECT p.nom, p.whatsapp_responsable, p.id
+                                    FROM membres m
+                                    JOIN paroisses p ON m.paroisse_id = p.id
+                                    WHERE m.matloc=? AND m.statut='actif'
+                                    LIMIT 1""", (str(matloc_membre).upper().strip(),)).fetchone()
+            if _row_par:
+                _nom_par, _wa_par, _pid_par = _row_par[0], _row_par[1], _row_par[2]
+        except Exception:
+            _nom_par, _wa_par, _pid_par = None, None, None
+    # v7.9.10 — la colonne 3 pilote le MÊME menu que l'entête (?r=index) :
+    # l'ordre des cinq rubriques et l'index diffèrent (membre ≠ public).
+    _rubriques_pied = [
+        ("🏠 Actualités", "Actualités"),
+        ("📿 Rosaire", "Rosaire"),
+        ("🕯️ Thème", "Thème"),
+        ("🖼️ Galerie +", "Galerie +"),
+        ("📖 Archives", "Archives"),
+    ]
+    _index_rub = {"🏠 Actualités": 0, "📿 Rosaire": 1, "🕯️ Thème": 2,
+                  "🖼️ Galerie +": 3, "📖 Archives": 4}
+    if _nom_par:
+        _index_rub = {"🏠 Actualités": 0, "📿 Rosaire": 2, "🕯️ Thème": 1,
+                      "🖼️ Galerie +": 4, "📖 Archives": 5}
+    _base_lien = "?espace=1&nav=1"
+    _p_ctx = None
+    if _nom_par:
+        # membre reconnu : le lien emporte SON adresse (matloc + paroisse)
+        # et la colonne 3 suit l'ordre des rubriques membre
+        _base_lien += "&matloc=" + urllib.parse.quote(str(matloc_membre))
+        _p_ctx = _pid_par
+    else:
+        _p_ctx = st.session_state.get("paroisse_origine")
+    if _p_ctx:
+        _base_lien += "&p=" + str(_p_ctx)
+    _menu_pied = "".join(
+        '<li><a class="pdr-rub" href="' + _base_lien + "&r="
+        + str(_index_rub[_lib]) + '">' + _lib + '</a></li>'
+        for (_lib, _alt) in _rubriques_pied)
+    # v7.9.10 — le logo du Mouvement INCORPORÉ (aucune adresse à manquer) :
+    try:
+        import base64 as _b64
+        with open(os.path.join("static", "icon_espace_180.png"), "rb") as _f:
+            _logo_pied = ('<img class="pdr-img" src="data:image/png;base64,'
+                          + _b64.b64encode(_f.read()).decode("ascii")
+                          + '" alt="Les Équipes du Rosaire" width="64" height="64">')
+    except Exception:
+        _logo_pied = '<div class="pdr-logo">📿</div>'
+    # v7.9.10 — « Contactez le responsable paroissial » : WhatsApp quand la
+    # paroisse l'a renseigné, une simple invitation sinon.
+    _wa_chiffres = "".join(_ch for _ch in str(_wa_par or "") if _ch.isdigit())
+    if _wa_chiffres:
+        _contact_html = ('<a class="pdr-contact" href="https://wa.me/' + _wa_chiffres
+                         + '" target="_blank" rel="noopener">📞 Contactez le responsable'
+                         ' paroissial</a>')
+    else:
+        _contact_html = ('<div class="pdr-contact">📞 Contactez le responsable'
+                         ' paroissial</div>')
     _fb = str(LIEN_FACEBOOK or "").strip()
     _fb_html = ('<a class="pdr-fb" href="' + html.escape(_fb, quote=True) +
                 '" target="_blank" rel="noopener" aria-label="Facebook">f</a>') if _fb else ''
     st.markdown('<style>'
-                '.pdr-v99 { margin:30px 10px 18px 10px; border-radius:16px; overflow:hidden;'
+                '.pdr-v910 { margin:30px 10px 18px 10px; border-radius:16px; overflow:hidden;'
                 ' background:linear-gradient(165deg, #241042 0%, #3B1177 55%, #4A148C 100%);'
                 ' box-shadow:0 6px 22px rgba(26,10,60,.45); }'
-                '.pdr-v99 .pdr-cols { display:flex; flex-wrap:wrap; gap:8px 26px;'
+                '.pdr-v910 .pdr-cols { display:flex; flex-wrap:wrap; gap:8px 26px;'
                 ' padding:22px 20px 14px 20px; }'
-                '.pdr-v99 .pdr-col { flex:1 1 220px; min-width:200px; color:#e6dcf7;'
+                '.pdr-v910 .pdr-col { flex:1 1 210px; min-width:190px; color:#e6dcf7;'
                 ' font-size:0.86rem; line-height:1.8; }'
-                '.pdr-v99 .pdr-marque { text-align:center; }'
-                '.pdr-v99 .pdr-logo { font-size:2.1rem; line-height:1.2;'
+                '.pdr-v910 .pdr-col-milieu { text-align:center; }'
+                '.pdr-v910 .pdr-img { width:64px; height:64px; border-radius:14px;'
+                ' box-shadow:0 3px 10px rgba(0,0,0,.4); }'
+                '.pdr-v910 .pdr-logo { font-size:2.1rem; line-height:1.2;'
                 ' filter:drop-shadow(0 2px 6px rgba(0,0,0,.4)); }'
-                '.pdr-v99 .pdr-nom { color:#FFFFFF; font-weight:bold; letter-spacing:.06em;'
-                ' font-family:Georgia, serif; font-size:1.02rem; margin-top:4px; }'
-                '.pdr-v99 .pdr-dio { color:#FFD54F; font-size:0.84rem; letter-spacing:.05em; }'
-                '.pdr-v99 .pdr-titre { color:#FFD54F; font-weight:bold; letter-spacing:.08em;'
-                ' font-size:0.8rem; margin:2px 0 8px 0; font-family:Georgia, serif; }'
-                '.pdr-v99 ul.pdr-menu { list-style:none; margin:0 0 12px 0; padding:0; }'
-                '.pdr-v99 ul.pdr-menu li { padding:2px 0; }'
-                '.pdr-v99 p { margin:0 0 12px 0; }'
-                '.pdr-v99 details { margin:0 0 8px 0; }'
-                '.pdr-v99 summary { cursor:pointer; list-style:none; color:#FFD54F;'
+                '.pdr-v910 .pdr-nom { color:#FFFFFF; font-weight:bold; letter-spacing:.06em;'
+                ' font-family:Georgia, serif; font-size:1.02rem; margin-top:8px; }'
+                '.pdr-v910 .pdr-dio { color:#FFD54F; font-size:0.84rem; letter-spacing:.05em; }'
+                '.pdr-v910 .pdr-par { color:#e6dcf7; font-size:0.84rem; margin-top:2px; }'
+                '.pdr-v910 ul.pdr-menu { list-style:none; margin:0 0 10px 0; padding:0; }'
+                '.pdr-v910 ul.pdr-menu li { padding:3px 0; }'
+                '.pdr-v910 ul.pdr-menu a { color:#e6dcf7; text-decoration:none;'
+                ' font-size:0.88rem; }'
+                '.pdr-v910 ul.pdr-menu a:hover { color:#FFD54F; text-decoration:underline; }'
+                '.pdr-v910 p { margin:0 0 12px 0; }'
+                '.pdr-v910 details { margin:0 0 10px 0; }'
+                '.pdr-v910 summary { cursor:pointer; list-style:none; color:#FFD54F;'
                 ' font-size:0.84rem; font-weight:600; padding:3px 0; }'
-                '.pdr-v99 summary::-webkit-details-marker { display:none; }'
-                '.pdr-v99 summary::before { content:"▸ "; color:#FFD54F; }'
-                '.pdr-v99 details[open] summary::before { content:"▾ "; }'
-                '.pdr-v99 .pdr-corps { color:#cfc2ea; font-size:0.8rem; line-height:1.75;'
+                '.pdr-v910 summary::-webkit-details-marker { display:none; }'
+                '.pdr-v910 summary::before { content:"▸ "; color:#FFD54F; }'
+                '.pdr-v910 details[open] summary::before { content:"▾ "; }'
+                '.pdr-v910 .pdr-corps { color:#cfc2ea; font-size:0.8rem; line-height:1.75;'
                 ' margin-top:6px; }'
-                '.pdr-v99 .pdr-corps b { color:#e8eaf6; }'
-                '.pdr-v99 .pdr-bas { background:rgba(5,2,12,.88); padding:10px 16px;'
+                '.pdr-v910 .pdr-corps b { color:#e8eaf6; }'
+                '.pdr-v910 .pdr-contact { display:inline-block; color:#FFD54F;'
+                ' font-size:0.84rem; text-decoration:none; margin-top:4px; }'
+                '.pdr-v910 a.pdr-contact:hover { text-decoration:underline; }'
+                '.pdr-v910 .pdr-bas { background:rgba(5,2,12,.88); padding:10px 16px;'
                 ' display:flex; flex-wrap:wrap; gap:4px 18px; align-items:center;'
                 ' justify-content:space-between; }'
-                '.pdr-v99 .pdr-cop { color:#b9a8e0; font-size:0.76rem; }'
-                '.pdr-v99 .pdr-sig { color:#9fa6d8; font-size:0.72rem; text-align:center;'
+                '.pdr-v910 .pdr-cop { color:#b9a8e0; font-size:0.76rem; }'
+                '.pdr-v910 .pdr-sig { color:#9fa6d8; font-size:0.72rem; text-align:center;'
                 ' flex:1 1 300px; line-height:1.7; }'
-                '.pdr-v99 .pdr-fb { display:inline-flex; align-items:center; justify-content:center;'
+                '.pdr-v910 .pdr-fb { display:inline-flex; align-items:center; justify-content:center;'
                 ' width:26px; height:26px; border-radius:50%; background:#1877F2; color:#fff;'
                 ' font-weight:bold; font-size:0.9rem; text-decoration:none;'
                 ' font-family:Georgia, serif; }'
                 '</style>', unsafe_allow_html=True)
     st.markdown(
-        '<footer class="pdr-v99">'
+        '<footer class="pdr-v910">'
         '<div class="pdr-cols">'
-        '<div class="pdr-col pdr-marque">'
-        '<div class="pdr-logo">📿</div>'
-        '<div class="pdr-nom">LES ÉQUIPES DU ROSAIRE</div>'
-        '<div class="pdr-dio">DIOCÈSE DE GRAND-BASSAM</div>'
-        '<p style="margin-top:10px;">Un jour, une dizaine — la chaîne de prière '
-        'universelle : chacun égrène, chacun porte l&#8217;intention du prochain.</p>'
-        '</div>'
         '<div class="pdr-col">'
-        '<div class="pdr-titre">LE ROSAIRE EN ÉQUIPE</div>'
-        '<ul class="pdr-menu">'
-        '<li>🕯️ Un jour, une dizaine</li>'
-        '<li>🙏 Vos intentions à une équipe</li>'
-        '<li>📖 Le feuillet mensuel de prière</li>'
-        '<li>🖼️ Galerie + — souvenirs &amp; témoignages</li>'
-        '<li>📅 Les évènements des équipes</li>'
-        '</ul>'
-        '<div class="pdr-titre">NOUS REJOINDRE</div>'
-        '<p>Parle à ton responsable d&#8217;équipe ou au responsable de ta paroisse : '
-        'une place t&#8217;attend dans la chaîne.</p>'
-        '</div>'
-        '<div class="pdr-col">'
-        '<div class="pdr-titre">NOUS CONTACTER</div>'
-        '<p>Contacte les Équipes du Rosaire auprès de ton équipe, de ta paroisse '
-        'ou du bureau diocésain.</p>'
         '<details><summary>🔒 Politique de confidentialité</summary>'
         '<div class="pdr-corps">'
         '<b>1 · Ce que nous recueillons.</b> Les intentions confiées à une équipe '
@@ -3883,6 +3935,20 @@ def _render_pied_de_page():
         'publicitaire : seuls quelques réglages strictement nécessaires à ta visite '
         'restent dans ton navigateur — jamais ailleurs.</div></details>'
         '</div>'
+        '<div class="pdr-col pdr-col-milieu">'
+        + _logo_pied +
+        '<div class="pdr-nom">LES ÉQUIPES DU ROSAIRE</div>'
+        '<div class="pdr-dio">DIOCÈSE DE GRAND-BASSAM</div>'
+        + ('<div class="pdr-par">🕯️ ' + html.escape(str(_nom_par)) + '</div>' if _nom_par else '') +
+        '<p style="margin-top:8px;">Un jour, une dizaine — la chaîne de prière '
+        'universelle : chacun égrène, chacun porte l&#8217;intention du prochain.</p>'
+        + _contact_html +
+        '</div>'
+        '<div class="pdr-col">'
+        '<ul class="pdr-menu">' + _menu_pied + '</ul>'
+        '<p>Parle à ton responsable d&#8217;équipe ou au responsable de ta paroisse : '
+        'une place t&#8217;attend dans la chaîne.</p>'
+        '</div>'
         '</div>'
         '<div class="pdr-bas">'
         '<div class="pdr-cop">© 2026 Les Équipes du Rosaire — Diocèse de Grand-Bassam</div>'
@@ -3900,9 +3966,10 @@ def _render_pied_de_page():
 def show_espace_membre(matloc_membre=None):
     """Point d'entrée de l'Espace de Prière (v7.9.3) : le corps de page
     (_corps_espace_membre, code d'origine inchangé), PUIS le pied de page
-    du site — présent sur toutes les pages, y compris le livre ouvert."""
+    du site — présent sur toutes les pages, y compris le livre ouvert.
+    v7.9.10 — le pied de page connaît le fidèle (paroisse + responsable) :"""
     _corps_espace_membre(matloc_membre)
-    _render_pied_de_page()
+    _render_pied_de_page(matloc_membre)
 
 
 def _corps_espace_membre(matloc_membre=None):
@@ -4022,7 +4089,9 @@ def _corps_espace_membre(matloc_membre=None):
             st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                         '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
                         '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · ' + _VERSION_APPLI + '</div>'
-                        '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-la sous la main : menu ⋮ du navigateur (ou Partager sur iPhone) → « Ajouter à l\'écran d\'accueil »</div></div>', unsafe_allow_html=True)
+                        '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-la sous la main : pose le raccourci depuis la '
+                        '<a href="/app/static/install_rosaire.html" target="_self" style="color:#4A148C; font-weight:bold;">page d\'installation</a>'
+                        ' — menu ⋮ → «&nbsp;Ajouter à l\'écran d\'accueil&nbsp;» (rien à y attendre, elle porte déjà le bon visage).</div></div>', unsafe_allow_html=True)
 
         if rub == "📿 Rosaire":
             if sub == "Le Rosaire thématique":
@@ -4130,7 +4199,10 @@ def _corps_espace_membre(matloc_membre=None):
     if rub == "🏠 Actualités":
         st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                     '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
-                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · ' + _VERSION_APPLI + '</div></div>', unsafe_allow_html=True)
+                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · ' + _VERSION_APPLI + '</div>'
+                    '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-le sous la main : pose le raccourci depuis la '
+                    '<a href="/app/static/install_rosaire.html?espace=1&matloc=' + urllib.parse.quote(str(matloc_membre)) + '" target="_self" style="color:#4A148C; font-weight:bold;">page d\'installation</a>'
+                    ' — menu ⋮ → «&nbsp;Ajouter à l\'écran d\'accueil&nbsp;».</div></div>', unsafe_allow_html=True)
 
     if rub == "📅 Mes évènements":
         if membre[10] is None:
