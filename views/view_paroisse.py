@@ -1,4 +1,5 @@
 import re
+import html
 import streamlit as st
 import pandas as pd
 import io
@@ -11,7 +12,11 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       _assurer_dizaines_journal, _assurer_table_reserve,
                       reserve_compteur, reserve_lignes,
                       ajouter_intention_reserve, retirer_intention_reserve,
-                      OBJECTIF_RESERVE)
+                      OBJECTIF_RESERVE,
+                      # v7.9.10 — LE SAS DES INTENTIONS (la zone du jour
+                      # déménage du diocèse vers la paroisse)
+                      intentions_du_jour_attente, intentions_du_jour_compte,
+                      envoyer_intention_du_jour_en_reserve, ecarter_intention_du_jour)
 from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, supprimer_photo,
                       archiver_membre, safe_date, afficher_situation, sans_accents, 
                       enregistrer_abonnement, verifier_abonnement, periode_affichage, 
@@ -19,6 +24,66 @@ from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, su
                       synchroniser_menu_session, lire_menu_session, afficher_messages_flash)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, afficher_historique_suivi, 
                         afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales)
+
+def _zone_du_jour_paroisse(pid, equipes):
+    """🕯️ ZONE DU JOUR — LE SAS DES INTENTIONS (v7.9.10, déménagée du
+    diocèse vers la paroisse) : « Les intentions c'est une affaire des
+    paroisses et de ses équipes. » Toutes les intentions reçues y
+    transitent ; AUCUNE ne peut être publiée sans y passer : relue ici,
+    harmonisée (orthographe, dignité, clarté), envoyée en réserve
+    IMMÉDIATEMENT — et publiée à 00h00 le jour suivant, heure à laquelle
+    la chaîne de prière la montre au fidèle. Portée : les intentions
+    confiées aux équipes de LA paroisse (et celles notées à son nom)."""
+    st.markdown("### 🕯️ Zone du jour — le sas des intentions confiées")
+    afficher_messages_flash()
+    st.caption("Toute intention confiée dans la journée arrive ICI d'abord : c'est le "
+               "sas, aucune ne peut être publiée sans y passer. Relisez-la, harmonisez "
+               "son texte — orthographe, dignité, clarté — puis envoyez-la en réserve : "
+               "elle sera publiée à 00h00 le jour suivant, et c'est ce texte soigné que "
+               "la chaîne de prière portera au lecteur.")
+    _ids_eq = [e[0] for e in equipes]
+    _attente, _envoyees_auj, _ecartees = intentions_du_jour_compte(
+        equipe_ids=_ids_eq, paroisse_id=pid)
+    _m1, _m2, _m3 = st.columns(3)
+    _m1.metric("⏳ En attente", _attente)
+    _m2.metric("🕊️ Envoyées en réserve (aujourd'hui)", _envoyees_auj)
+    _m3.metric("🌙 Écartées", _ecartees)
+    st.markdown("---")
+    _lignes = intentions_du_jour_attente(equipe_ids=_ids_eq, paroisse_id=pid)
+    _noms_eq = {e[0]: e[1] for e in equipes}
+    if not _lignes:
+        st.info("Aucune intention en attente : le sas est vide — "
+                "la chaîne de prière est alimentée. 🕊️")
+        return
+    for (_zid, _txt, _nom, _anon, _jn, _eqi, _pri, _dt) in _lignes:
+        _qui = "🕊️ Anonyme" if _anon else (str(_nom).strip() or "Notre prochain")
+        _eq = _noms_eq.get(_eqi)
+        _titre = f"🕯️ {_qui} — reçu le {_dt}" + (f" · équipe {_eq}" if _eq else "")
+        with st.expander(_titre):
+            st.markdown('<div style="background:#f8f5fd; border-left:4px solid #4A148C; '
+                        'padding:10px 14px; border-radius:8px; font-style:italic;">'
+                        + html.escape(_txt or "") + '</div>', unsafe_allow_html=True)
+            _nouveau = st.text_area("Texte harmonisé (tel qu'il sera publié demain à 00h00)",
+                                    value=_txt, key=f"zjp_txt_{_zid}", height=100)
+            _b1, _b2 = st.columns(2)
+            if _b1.button("🕊️ Traiter & envoyer en réserve", key=f"zjp_env_{_zid}",
+                          type="primary"):
+                _ok, _msg = envoyer_intention_du_jour_en_reserve(_zid, _nouveau)
+                if _ok:
+                    st.session_state["flash_success"] = _msg
+                    st.rerun()
+                else:
+                    st.error(_msg)
+            if _b2.button("🌙 Écarter de la chaîne", key=f"zjp_ec_{_zid}"):
+                if ecarter_intention_du_jour(_zid):
+                    st.session_state["flash_success"] = ("Intention écartée — elle ne "
+                                                         "rejoindra pas la réserve. 🌙")
+                    st.rerun()
+                else:
+                    st.error("Écart impossible (intention déjà traitée).")
+    st.caption("🤫 Le principe « être une tombe » demeure : ce qui est lu ici se porte "
+               "en prière, ne se raconte pas.")
+
 
 def _onglet_coins_intentions(pid, equipes):
     """🙏 COINS DES INTENTIONS (v7.9.0) — 4e onglet de « 📌 Suivi et Agenda »
@@ -36,6 +101,15 @@ def _onglet_coins_intentions(pid, equipes):
     numéro ne porte jamais 2 intentions prises en charge."""
     verifier_reparer_intentions()
     prise_en_charge_automatique()
+
+    # ---------- 0. 🕯️ ZONE DU JOUR — LE SAS (v7.9.10, déménagée du diocèse)
+    # « Les intentions c'est une affaire des paroisses et de ses équipes. »
+    # Aucune intention ne peut être publiée sans y passer : elle y est
+    # traitée puis envoyée vers la réserve immédiatement ; la publication
+    # se fait à 00h00 du jour suivant.
+    _zone_du_jour_paroisse(pid, equipes)
+    st.markdown("---")
+
     ids_eq = [e[0] for e in equipes]
     _ph = ",".join("?" * len(ids_eq)) if ids_eq else "NULL"
     _prm = list(ids_eq)
@@ -851,3 +925,4 @@ def show_paroisse():
                 with st.expander(f"{a[1]} {a[2]} ({a[0]}) – {afficher_situation(a[3])} – {duree} an(s) ({eq_nom})"):
                     st.write(f"Ajouté par : {a[8] or 'Inconnu'}")
                     if a[6]: st.write(f"Commentaire : {a[6]}")
+
