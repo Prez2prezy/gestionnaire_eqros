@@ -506,4 +506,3 @@ def show_validation_communication():
                 st.error("Échec. Vérifiez (1) les secrets TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID "
                          "(Streamlit Cloud → Manage app → Settings → Secrets) et (2) les logs "
                          "(Manage app → Logs) : le motif exact de l'échec y est désormais écrit.")
-
