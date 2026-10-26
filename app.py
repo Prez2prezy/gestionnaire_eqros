@@ -392,3 +392,4 @@ elif st.session_state['role'] == 'equipe':
 elif st.session_state['role'] == 'communication':
     from views.view_communication import show_communication
     show_communication()
+
