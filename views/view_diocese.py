@@ -920,4 +920,3 @@ def show_diocese():
                 commit_and_sync()
                 st.session_state["flash_success"] = "Toutes les données ont été supprimées. 🗑️"
                 st.rerun()
-
