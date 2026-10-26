@@ -74,7 +74,12 @@ conn, USE_TURSO = init_db()
 #     et fetchall() relisent LE résultat de CETTE requête, jamais celui
 #     du voisin ;
 #   ③ lastrowid / rowcount / description se lisent par fil (le dernier
-#     résultat de CHACUN lui appartient).
+#     résultat de CHACUN lui appartient) ;
+#   ④ (v7.9.13) LA MAIN PRUDENTE : les lignes ne sont demandées qu'aux
+#     lectures — une écriture n'a rien à rendre, et chez l'hébergeur le
+#     conducteur distant peut répondre None sans mentir sur la réussite.
+#     Chaque métadonnée est lue avec des gants : rien ne peut plus
+#     briser une requête au moment où on relève son résultat.
 # Le rattrapage des micro-coupures Hrana/Turso (v7.8.16, v7.9.10) demeure
 # à l'identique, à l'intérieur du verrou.
 _verrou_db = threading.RLock()      # réentrant : un même fil peut enchaîner
@@ -116,6 +121,16 @@ class CursorWrapper:
     def execute(self, query, params=None):
         with _verrou_db:
             last_err = None
+            # v7.9.13 — LA MAIN PRUDENTE : chez l'hébergeur (le dialecte
+            # distant de Turso), le curseur laissait `description` posée
+            # après une écriture pendant que `fetchall()` répondait None —
+            # et `list(None)` brisait alors chaque INSERT / UPDATE / DELETE /
+            # CREATE en production (26 octobre 2026). Désormais on ne
+            # demande des lignes qu'aux lectures ; les écritures n'y
+            # touchent jamais, et chaque métadonnée est lue avec des gants :
+            # si le conducteur se dérobe, la requête poursuit sa route.
+            _est_lecture = (query or "").lstrip().upper().startswith(
+                ("SELECT", "WITH", "PRAGMA", "VALUES", "EXPLAIN"))
             for attempt in range(3):
                 try:
                     cur = self.cursor.execute(query,
@@ -123,10 +138,25 @@ class CursorWrapper:
                     # v7.9.11 — capture IMMÉDIATE, sous le verrou : les
                     # lignes et les métadonnées deviennent la propriété de
                     # CETTE requête (aucun partage avec le fil voisin).
-                    _desc = cur.description
-                    _lignes = list(cur.fetchall()) if _desc is not None else []
-                    _res = ResultatRequete(_lignes, cur.lastrowid,
-                                           cur.rowcount, _desc)
+                    _desc = None
+                    _brut = None
+                    if _est_lecture:
+                        try:
+                            _desc = cur.description
+                        except Exception:
+                            _desc = None
+                        _brut = cur.fetchall()
+                    _lignes = list(_brut) if _brut is not None else []
+                    try:
+                        _lastrowid = cur.lastrowid
+                    except Exception:
+                        _lastrowid = 0
+                    try:
+                        _rowcount = cur.rowcount
+                    except Exception:
+                        _rowcount = 0
+                    _res = ResultatRequete(_lignes, _lastrowid,
+                                           _rowcount, _desc)
                     _tls.dernier = _res
                     return _res
                 except Exception as e:
