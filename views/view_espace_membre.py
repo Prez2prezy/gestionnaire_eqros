@@ -90,12 +90,19 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.9.16"
+_VERSION_APPLI = "v7.9.17"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
 # le site du Mouvement) ; vide, elle reste discrètement absente.
 LIEN_FACEBOOK = ""
+
+# v7.9.17 — L'ANNONCE DU PÈLERINAGE : la vidéo YouTube de la chaîne
+# « Équipes du Rosaire Grand-Bassam » s'affiche en tête du fil d'actualité
+# (carte « 🛕 Annonce de pèlerinage » avec le lecteur incorporé et un lien
+# d'ouverture). Mettre "" dans la constante pour retirer la carte d'un seul
+# geste, sans toucher au reste.
+LIEN_YOUTUBE_PELERINAGE = "https://youtu.be/RHrIgEeepO8?si=Dg0P8YHE0K3PYNo3"
 
 
 # ====================================================================
@@ -2680,8 +2687,19 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
     # « 📿 Ta dizaine du jour », bouton « 📿 Égrener la dizaine » et le
     # bouton lui-même s'effacent jusqu'à demain. Le livre déjà ouvert
     # reste prioritaire (on ne ferme pas une lecture en cours).
+    # v7.9.17 — le masquage SURVIT AU RECHARGEMENT : le clic pose aussi un
+    # cookie d'un jour dans le navigateur (« engagement honoré aujourd'hui »)
+    # — la session seule est vidée à chaque F5/actualisation. La pose se fait
+    # ICI, à chaque passage tant que la session le porte (idempotent) ; le
+    # cookie est lu avant tout affichage. Si le navigateur refuse les
+    # cookies, le comportement redevient celui d'avant (carte revenue au
+    # rechargement) : aucun blocage, aucun message.
+    _jour_eng = date.today().isoformat()
+    _eng_session = bool(st.session_state.get("engagement_honore_" + _jour_eng))
+    if _eng_session:
+        _poser_cookie_pdr("pdr_engagement", _jour_eng)
     if (not st.session_state.get("diz_ouvert")
-            and st.session_state.get("engagement_honore_" + date.today().isoformat())):
+            and (_eng_session or _lire_cookie_pdr("pdr_engagement") == _jour_eng)):
         return
 
     st.markdown("---")
@@ -3249,6 +3267,55 @@ def _render_actualites(pid=None):
                     st.markdown(f"🎬 [Voir la vidéo]({a[3]})")
 
 
+# ──────────────────────────────────────────────────────────────────────
+# v7.9.17 — LA MÉMOIRE D'UN JOUR : « 📌 Marquer l'alerte comme lue » et
+# « J'ai honoré mon engagement de ce jour » masquaient leur carte jusqu'au
+# rechargement seulement (l'état vivait dans la session, vidée à chaque
+# F5/actualisation). Un petit cookie d'un jour posé dans le navigateur
+# porte désormais le « déjà traité aujourd'hui » : la carte reste masquée
+# au rechargement et revient le lendemain (affichage 1 fois par jour, par
+# navigateur). Le cookie est posé par un script invisible ; s'il ne peut
+# pas l'être (réglages stricts), tout se comporte exactement comme avant.
+# ──────────────────────────────────────────────────────────────────────
+def _lire_cookie_pdr(nom):
+    """Valeur du cookie `nom` posé par l'application côté navigateur, ou
+    '' si absent / indisponible (tests, cookies bloqués)."""
+    try:
+        _entetes = getattr(st, "context", None)
+        if _entetes is None:
+            return ""
+        _brut = ""
+        try:
+            for _k, _v in (_entetes.headers or {}).items():
+                if str(_k).lower() == "cookie":
+                    _brut = str(_v or "")
+                    break
+        except Exception:
+            _brut = ""
+        if not _brut:
+            return ""
+        for _partie in _brut.split(";"):
+            _k, _sep, _v = _partie.strip().partition("=")
+            if _sep and _k == nom:
+                return _v.strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _poser_cookie_pdr(nom, valeur):
+    """Pose (côté navigateur) le cookie `nom=valeur` pour une journée
+    (max-age 86400). Silencieux en cas d'échec : aucun message, aucun
+    blocage — la carte se comporte alors comme avant la v7.9.17."""
+    try:
+        _comp_html(
+            "<script>(function(){try{document.cookie='" + str(nom) + "="
+            + str(valeur) + "; path=/; max-age=86400; SameSite=Lax';}"
+            "catch(e){}})();</script>", height=0)
+    except Exception:
+        pass
+
+
 def _alerte_feuillet_fil(lien_theme=None):
     """v7.8-h · v7.8.2-h — Alerte « nouveau feuillet » en tête du fil d'actualité.
     Visible 45 jours après la publication (couvre un mois pastoral complet) ;
@@ -3283,8 +3350,16 @@ def _alerte_feuillet_fil(lien_theme=None):
     # mènerait à une vitrine « pas encore publié »).
     if not _feuillet_sections(pub[0], pub[1]):
         return
+    # v7.9.17 — le masquage SURVIT AU RECHARGEMENT : le clic pose aussi un
+    # cookie d'un jour (clé du feuillet + date du jour) ; la carte revient
+    # le lendemain, ou dès qu'une NOUVELLE publication remplace la clé.
     _cle = f"{pub[0]}-{pub[1]}"
-    if st.session_state.get("alerte_feuillet_lue") == _cle:
+    _jour_al = date.today().isoformat()
+    _val_cookie = _cle + "|" + _jour_al
+    _lue_session = st.session_state.get("alerte_feuillet_lue") == _cle
+    if _lue_session:
+        _poser_cookie_pdr("pdr_alerte_feuillet", _val_cookie)
+    if _lue_session or _lire_cookie_pdr("pdr_alerte_feuillet") == _val_cookie:
         return
     _lien = ""
     if lien_theme:
@@ -3445,216 +3520,278 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
         '.int-cadre-or label, .int-cadre-or label p { color:#e8eaf6 !important; }'
         '.int-cadre-or [data-testid="stCaptionContainer"] p { color:#b8c0e8'
         ' !important; }'
+        '.int-depliant-or summary { background:linear-gradient(135deg,#1A237E,'
+        ' #4527a0) !important; text-align:center; border-radius:0 !important; }'
+        '.int-depliant-or summary p, .int-depliant-or summary div {'
+        ' color:#FFD000 !important; font-weight:600 !important; }'
+        '.int-depliant-or details { background:transparent !important; }'
         '</style>', unsafe_allow_html=True)
-    with st.container(border=True):
-        st.markdown('<div id="int-or-marker"></div>', unsafe_allow_html=True)
-        # ── BANNIÈRE (v7.9.3 — harmonisée avec « 🕯️ Un jour, une dizaine » :
-        # même dégradé #1A237E→#283593, même liseré or de 2 px, même titre
-        # dpl-titre-g) — tout est DANS le cadre doré
-        st.markdown(
-            '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
-            ' border:2px solid #FFD700; border-radius:15px; padding:16px;'
-            ' text-align:center; margin:2px 4px 10px 4px;">'
-            '<div class="dpl-titre-g" style="font-size:clamp(1.05rem, 4.5vw, 1.25rem);">'
-            '🙏 Vos intentions à une équipe</div>'
-            '<div style="color:#ffffff; font-size:clamp(0.85rem, 3.6vw, 1rem);'
-            ' margin-top:6px; line-height:1.6;">'
-            'Confie à Notre Dame du Rosaire ton intention de prière<br>'
-            'par le canal d\u2019une équipe</div>'
-            '<div style="display:inline-block; margin-top:9px; background:rgba(255,215,0,0.14);'
-            ' border:1px solid #FFD700; border-radius:20px; padding:6px 16px; max-width:94%;'
-            ' color:#FFD000; font-size:0.78rem; line-height:1.65;">🤫 « Tu es le prochain'
-            ' de l\u2019équipe qui prie pour toi. En retour, va dans « 🕯️ Un jour, une dizaine »'
-            ' et confie ton prochain à la Vierge Marie : c\u2019est LA CHAÎNE DE PRIÈRE'
-            ' UNIVERSELLE »</div></div>',
-            unsafe_allow_html=True)
-        _idx_def = 0
-        if equipe_membre_id:
-            for _i, _e in enumerate(equipes):
-                if _e[0] == equipe_membre_id:
-                    _idx_def = _i
-                    break
-        # ── CHOIX DE L'ÉQUIPE : expanseur HORS formulaire — chaque clic met
-        # à jour le TITRE de l'expanseur (« — nom de l'équipe ») et le choix
-        # est mémorisé en session ; les champs restent dans le formulaire.
-        _idx_choisi = st.session_state.get("int_eq_choix")
-        if not isinstance(_idx_choisi, int) or _idx_choisi < 0 or _idx_choisi >= len(equipes):
-            st.session_state.pop("int_eq_choix", None)  # index obsolète
-            _idx_choisi = _idx_def
-        _titre_ex = "👥 Choix de l’équipe"
-        if "int_eq_choix" in st.session_state:
-            _titre_ex += " — " + str(equipes[_idx_choisi][1])
-        with st.expander(_titre_ex):
-            st.radio("À quelle équipe confier votre intention ?",
-                     list(range(len(equipes))), index=_idx_choisi,
-                     format_func=lambda i: equipes[i][1],
-                     key="int_eq_choix", label_visibility="collapsed")
-        # ── v7.9.0 — CTA « à vous de prier » : après un envoi réussi, le
-        # fidèle est invité à égrener SA dizaine immédiatement (la chaîne de
-        # prière universelle) ; le clic ouvre directement le livret.
-        if st.session_state.get("int_derniere") is not None:
-            _jn_cta = st.session_state["int_derniere"]
-            st.markdown('<div style="background:rgba(255,215,0,0.10); border:1px dashed #FFD700;'
-                        ' border-radius:10px; padding:10px 12px; margin:0 4px 10px 4px;'
-                        ' text-align:center;">'
-                        '<div style="color:#FFD000; font-weight:600;">🙏 Votre intention est'
-                        ' partie — à vous de prier maintenant !</div>'
-                        '<div style="color:#e8eaf6; font-size:0.85rem; margin-top:4px;">'
-                        'Égrenez votre dizaine et portez l’intention du prochain dans'
-                        ' la chaîne de prière universelle.</div></div>',
-                        unsafe_allow_html=True)
-            if st.button("📿 Prier ma dizaine maintenant", key="int_cta_dizaine",
-                         type="primary", width="stretch"):
-                st.session_state["diz_jrnais"] = int(_jn_cta)
-                st.session_state["diz_ouvert"] = True
-                st.session_state["diz_page"] = 0
-                st.session_state.pop("int_derniere", None)
-                st.session_state.pop("flt_ouvert", None)  # un seul livre ouvert à la fois
-                st.rerun()
-        with st.form("form_intention_equipe", clear_on_submit=False):
-            # ── CHAMPS (liséré doré via CSS ci-dessus)
-            st.markdown('<div style="color:#FFD000; font-size:0.85rem;'
-                        ' margin:2px 2px 6px 2px;">« * » indique les champs'
-                        ' obligatoires</div>', unsafe_allow_html=True)
-            # Clés PAR GÉNÉRATION (v7.8.15) : les widgets d'un st.form ne se
-            # resynchronisent pas au rerun → au succès, int_gen s'incrémente
-            # et les champs renaissent NEUFS (vides), sans perdre la saisie
-            # en cas de validation refusée (clear_on_submit reste False).
-            _gen = st.session_state.get("int_gen", 0)
-            _k = lambda b: b + "_" + str(_gen)
-            if _k("int_nom") not in st.session_state and (auteur_nom or "").strip():
-                st.session_state[_k("int_nom")] = auteur_nom
-            _nom = st.text_input("Nom et Prénom *", key=_k("int_nom"), max_chars=80,
-                                 placeholder="Ex : N’guess KONÉ")
-            _contact = st.text_input("Contact WhatsApp / Adresse mail *",
-                                     key=_k("int_contact"), max_chars=120,
-                                     placeholder="Ex : +225 07 00 00 00 00 ou nguekon@exemple.com")
-            # v7.9.0 — JOUR DE NAISSANCE : clé discrète de la chaîne de prière.
-            # Pré-rempli si le visiteur a déjà validé son jour au livret.
-            _jn_pre = st.session_state.get("diz_jrnais")
-            _jn_pre = _jn_pre if isinstance(_jn_pre, int) and 1 <= _jn_pre <= 31 else None
-            _jour = st.number_input("Jour de naissance (1 - 31) *", min_value=1,
-                                    max_value=31, value=_jn_pre, step=1,
-                                    key=_k("int_jour"),
-                                    help="Votre jour de naissance devient votre clé discrète "
-                                         "dans la chaîne de prière universelle : c’est lui qui "
-                                         "garantit que vous ne prierez jamais votre propre "
-                                         "intention dans « 🕯️ Un jour, une dizaine ».")
-            _txt = st.text_area("Intention de prière *", key=_k("int_txt"), height=110,
-                                max_chars=600,
-                                placeholder="Pour la santé de…, pour ma famille…, "
-                                            "pour les vocations…")
-            # v7.9.1 — retour de la case d'anonymat (demande user) : l'auteur
-            # non signé reste inconnu du responsable (« Anonyme »), mais son
-            # contact est quand même enregistré — c'est lui qui porte la règle
-            # d'unicité (un numéro = une seule intention prise en charge).
-            _anon = st.checkbox(
-                "🕊️ Rester anonyme (le responsable verra « Anonyme »)",
-                key=_k("int_anon"))
-            _rgpd = st.checkbox(
-                "En envoyant cette intention, j’accepte que certaines données techniques "
-                "soient utilisées à des fins de sécurité et de lutte contre les envois "
-                "automatisés (spam) — voir la politique de confidentialité, en pied "
-                "de page.",
-                key=_k("int_rgpd"))
-            if st.form_submit_button("📨 Confier cette intention", type="primary",
-                                     width="stretch"):
-                _manque = []
-                if not (_nom or "").strip() and not _anon:
-                    _manque.append("votre nom et prénom (ou cochez « 🕊️ Rester anonyme »)")
-                if not (_contact or "").strip():
-                    _manque.append("un contact (WhatsApp ou adresse mail)")
-                if _jour is None:
-                    _manque.append("votre jour de naissance (chiffre entre 1 et 31)")
-                if not (_txt or "").strip():
-                    _manque.append("votre intention de prière")
-                if not _rgpd:
-                    _manque.append("l’acceptation (case ☑) de la politique de confidentialité")
-                if _manque:
-                    st.warning("Il manque : " + " ; ".join(_manque) + ".")
-                # v7.9.1 — UNICITÉ PAR NUMÉRO : un même numéro de téléphone ne
-                # peut pas porter 2 intentions prises en charge en même temps.
-                # v7.9.4 — le message parle au cœur (date + Matthieu 7.12) :
-                # ni leçon, ni mécanisme — la chaîne ne se brise pas.
-                elif contact_en_priere(_contact):
-                    _d_emit = date_intention_en_priere(_contact)
-                    _depuis = _d_emit.strftime("%d/%m/%Y") if _d_emit else ""
-                    st.warning("📿 Tu es déjà porté(e) en prière"
-                               + (f" depuis le {_depuis}" if _depuis else "")
-                               + ". Ne brise pas la CHAÎNE DE PRIÈRE. Continue de méditer "
-                               "ta dizaine à CAUSE DE TON PROCHAIN.\n\n"
-                               "Matthieu 7.12 : « Faites pour les autres tout ce que vous "
-                               "voudriez qu’ils fassent pour vous, car c’est là tout "
-                               "l’enseignement de la Loi et des prophètes.»")
-                else:
-                    _i = st.session_state.get("int_eq_choix")
-                    if not isinstance(_i, int) or not (0 <= _i < len(equipes)):
-                        _i = 0
-                    _eq = equipes[_i]
-                    _auteur = ("Anonyme" if _anon
-                               else (_nom or "").strip() or "Visiteur de l’Espace de Prière")
-                    # v7.8.16 — envoi blindé : une micro-coupure vers la base
-                    # (Turso) affiche un message doux et CONSERVE la saisie au
-                    # lieu de faire planter toute la page ; le fidèle peut
-                    # réessayer d'un clic sans rien retaper.
-                    _err_envoi = False
-                    try:
-                        c.execute("""INSERT INTO intentions_equipes
-                                     (equipe_id, texte, auteur_nom, auteur_contact, anonyme,
-                                      jour_naissance, statut, date_soumission)
-                                     VALUES (?, ?, ?, ?, ?, ?, 'recue', ?)""",
-                                  (_eq[0], _txt.strip(), None if _anon else _auteur,
-                                   (_contact or "").strip(),
-                                   1 if _anon else 0, int(_jour), date.today().isoformat()))
-                        commit_and_sync()
-                        # v7.9.4 — LA ZONE DU JOUR : l'intention confiée aujourd'hui
-                        # y est recueillie ; v7.9.10 — le SAS : la paroisse est notée
-                        # sur la ligne (le sas paroissial la reconnaît d'emblée).
-                        verser_intention_du_jour(_txt.strip(), auteur_nom=None if _anon else _auteur,
-                                                 auteur_contact=(_contact or "").strip(),
-                                                 anonyme=_anon, jour_naissance=int(_jour),
-                                                 equipe_id=_eq[0],
-                                                 paroisse_id=(_eq[2] if len(_eq) > 2 else None))
-                    except Exception:
-                        _err_envoi = True
-                        st.error("⚠️ L’envoi n’a pas pu aboutir (connexion instable "
-                                 "vers la base de données). Merci de réessayer dans "
-                                 "quelques instants — votre saisie est conservée.")
-                    if not _err_envoi:
-                        st.session_state["int_gen"] = _gen + 1  # champs renaissent vides
-                        for _b in ("int_nom", "int_contact", "int_txt", "int_jour", "int_rgpd"):
-                            st.session_state.pop(_b + "_" + str(_gen), None)
-                        # v7.9.0 — le jour de naissance devient l'identité de
-                        # chaîne du fidèle (il ne priera jamais sa propre
-                        # intention) et le CTA « prier ma dizaine » s'affiche.
-                        st.session_state["diz_jrnais"] = int(_jour)
-                        st.session_state["int_derniere"] = int(_jour)
-                        st.session_state["flash_success"] = (
-                            "🙏 Votre intention a été confiée à " + str(_eq[1])
-                            + ". Elle arrive directement au responsable — elle sera portée "
-                            "en prière, en toute confidentialité. 📿 À vous maintenant : "
-                            "égrenez une dizaine et porter en prière votre prochain — c’est LA "
-                            "CHAÎNE DE PRIÈRE UNIVERSELLE.")
-                        st.rerun()
-        # ── Mini-script (dernier élément du cadre, remonte au container bordé)
-        # : pose le cadre doré + la classe .int-cadre-or (CSS ci-dessus). Comme
-        # injecter_icone_pwa : tourne à chaque rerun, iframe invisible.
-        # v7.8.16 — via stcompat (st.iframe) : height=0 est borné à 1 px.
-        try:
-            _comp_html(
-                "<script>(function(){"
-                "var d=window.parent.document;"
-                "var m=d.getElementById('int-or-marker'); if(!m) return;"
-                "var w=m.closest('div[data-testid=\"stVerticalBlock\"]'); if(!w) return;"
-                "w.style.border='2px solid #FFD700';"
-                "w.style.borderRadius='15px';"
-                "w.style.background='#121a45';"
-                "w.style.boxShadow='0 4px 14px rgba(0,0,0,0.35)';"
-                "w.style.padding='10px 6px';"
-                "w.classList.add('int-cadre-or');"
-                "})();</script>", height=0)
-        except Exception:
-            pass
+    # v7.9.17 — DEMANDE UTILISATRICE : la rubrique est CONTENUE DANS UN
+    # DÉPLIANT, comme « 📿 Découvrez les Équipes du Rosaire ! ». L'expander
+    # porte le titre ; le mini-script ci-dessous (marker int-or-marker)
+    # habille désormais l'EXPANDER lui-même (bordure + fond + summary
+    # dégradé) au lieu du conteneur bordé, retiré. Ouvert par défaut
+    # comme le dépliant de découverte (DEPLIANT_OUVERT) et repliable
+    # d'un clic ; un formulaire soumis (messages de reprise visibles)
+    # ou le CTA « 📿 Prier ma dizaine maintenant » le maintiennent ouvert.
+    _depl_int_ouvert = (DEPLIANT_OUVERT
+                        or bool(st.session_state.get("form_intention_equipe"))
+                        or (st.session_state.get("int_derniere") is not None))
+    with st.expander("🙏 Vos intentions à une équipe",
+                     expanded=_depl_int_ouvert):
+            st.markdown('<div id="int-or-marker"></div>', unsafe_allow_html=True)
+            # ── BANNIÈRE (v7.9.3 — harmonisée avec « 🕯️ Un jour, une dizaine » :
+            # même dégradé #1A237E→#283593, même liseré or de 2 px, même titre
+            # dpl-titre-g) — tout est DANS le cadre doré
+            st.markdown(
+                '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+                ' border:2px solid #FFD700; border-radius:15px; padding:16px;'
+                ' text-align:center; margin:2px 4px 10px 4px;">'
+                '<div class="dpl-titre-g" style="font-size:clamp(1.05rem, 4.5vw, 1.25rem);">'
+                '🙏 Vos intentions à une équipe</div>'
+                '<div style="color:#ffffff; font-size:clamp(0.85rem, 3.6vw, 1rem);'
+                ' margin-top:6px; line-height:1.6;">'
+                'Confie à Notre Dame du Rosaire ton intention de prière<br>'
+                'par le canal d\u2019une équipe</div>'
+                '<div style="display:inline-block; margin-top:9px; background:rgba(255,215,0,0.14);'
+                ' border:1px solid #FFD700; border-radius:20px; padding:6px 16px; max-width:94%;'
+                ' color:#FFD000; font-size:0.78rem; line-height:1.65;">🤫 « Tu es le prochain'
+                ' de l\u2019équipe qui prie pour toi. En retour, va dans « 🕯️ Un jour, une dizaine »'
+                ' et confie ton prochain à la Vierge Marie : c\u2019est LA CHAÎNE DE PRIÈRE'
+                ' UNIVERSELLE »</div></div>',
+                unsafe_allow_html=True)
+            _idx_def = 0
+            if equipe_membre_id:
+                for _i, _e in enumerate(equipes):
+                    if _e[0] == equipe_membre_id:
+                        _idx_def = _i
+                        break
+            # ── CHOIX DE L'ÉQUIPE : expanseur HORS formulaire — chaque clic met
+            # à jour le TITRE de l'expanseur (« — nom de l'équipe ») et le choix
+            # est mémorisé en session ; les champs restent dans le formulaire.
+            _idx_choisi = st.session_state.get("int_eq_choix")
+            if not isinstance(_idx_choisi, int) or _idx_choisi < 0 or _idx_choisi >= len(equipes):
+                st.session_state.pop("int_eq_choix", None)  # index obsolète
+                _idx_choisi = _idx_def
+            _titre_ex = "👥 Choix de l’équipe"
+            if "int_eq_choix" in st.session_state:
+                _titre_ex += " — " + str(equipes[_idx_choisi][1])
+            with st.expander(_titre_ex):
+                st.radio("À quelle équipe confier votre intention ?",
+                         list(range(len(equipes))), index=_idx_choisi,
+                         format_func=lambda i: equipes[i][1],
+                         key="int_eq_choix", label_visibility="collapsed")
+            # ── v7.9.0 — CTA « à vous de prier » : après un envoi réussi, le
+            # fidèle est invité à égrener SA dizaine immédiatement (la chaîne de
+            # prière universelle) ; le clic ouvre directement le livret.
+            if st.session_state.get("int_derniere") is not None:
+                _jn_cta = st.session_state["int_derniere"]
+                st.markdown('<div style="background:rgba(255,215,0,0.10); border:1px dashed #FFD700;'
+                            ' border-radius:10px; padding:10px 12px; margin:0 4px 10px 4px;'
+                            ' text-align:center;">'
+                            '<div style="color:#FFD000; font-weight:600;">🙏 Votre intention est'
+                            ' partie — à vous de prier maintenant !</div>'
+                            '<div style="color:#e8eaf6; font-size:0.85rem; margin-top:4px;">'
+                            'Égrenez votre dizaine et portez l’intention du prochain dans'
+                            ' la chaîne de prière universelle.</div></div>',
+                            unsafe_allow_html=True)
+                if st.button("📿 Prier ma dizaine maintenant", key="int_cta_dizaine",
+                             type="primary", width="stretch"):
+                    st.session_state["diz_jrnais"] = int(_jn_cta)
+                    st.session_state["diz_ouvert"] = True
+                    st.session_state["diz_page"] = 0
+                    st.session_state.pop("int_derniere", None)
+                    st.session_state.pop("flt_ouvert", None)  # un seul livre ouvert à la fois
+                    st.rerun()
+            with st.form("form_intention_equipe", clear_on_submit=False):
+                # ── CHAMPS (liséré doré via CSS ci-dessus)
+                st.markdown('<div style="color:#FFD000; font-size:0.85rem;'
+                            ' margin:2px 2px 6px 2px;">« * » indique les champs'
+                            ' obligatoires</div>', unsafe_allow_html=True)
+                # Clés PAR GÉNÉRATION (v7.8.15) : les widgets d'un st.form ne se
+                # resynchronisent pas au rerun → au succès, int_gen s'incrémente
+                # et les champs renaissent NEUFS (vides), sans perdre la saisie
+                # en cas de validation refusée (clear_on_submit reste False).
+                _gen = st.session_state.get("int_gen", 0)
+                _k = lambda b: b + "_" + str(_gen)
+                if _k("int_nom") not in st.session_state and (auteur_nom or "").strip():
+                    st.session_state[_k("int_nom")] = auteur_nom
+                _nom = st.text_input("Nom et Prénom *", key=_k("int_nom"), max_chars=80,
+                                     placeholder="Ex : N’guess KONÉ")
+                _contact = st.text_input("Contact WhatsApp / Adresse mail *",
+                                         key=_k("int_contact"), max_chars=120,
+                                         placeholder="Ex : +225 07 00 00 00 00 ou nguekon@exemple.com")
+                # v7.9.0 — JOUR DE NAISSANCE : clé discrète de la chaîne de prière.
+                # Pré-rempli si le visiteur a déjà validé son jour au livret.
+                _jn_pre = st.session_state.get("diz_jrnais")
+                _jn_pre = _jn_pre if isinstance(_jn_pre, int) and 1 <= _jn_pre <= 31 else None
+                _jour = st.number_input("Jour de naissance (1 - 31) *", min_value=1,
+                                        max_value=31, value=_jn_pre, step=1,
+                                        key=_k("int_jour"),
+                                        help="Votre jour de naissance devient votre clé discrète "
+                                             "dans la chaîne de prière universelle : c’est lui qui "
+                                             "garantit que vous ne prierez jamais votre propre "
+                                             "intention dans « 🕯️ Un jour, une dizaine ».")
+                _txt = st.text_area("Intention de prière *", key=_k("int_txt"), height=110,
+                                    max_chars=600,
+                                    placeholder="Pour la santé de…, pour ma famille…, "
+                                                "pour les vocations…")
+                # v7.9.1 — retour de la case d'anonymat (demande user) : l'auteur
+                # non signé reste inconnu du responsable (« Anonyme »), mais son
+                # contact est quand même enregistré — c'est lui qui porte la règle
+                # d'unicité (un numéro = une seule intention prise en charge).
+                _anon = st.checkbox(
+                    "🕊️ Rester anonyme (le responsable verra « Anonyme »)",
+                    key=_k("int_anon"))
+                _rgpd = st.checkbox(
+                    "En envoyant cette intention, j’accepte que certaines données techniques "
+                    "soient utilisées à des fins de sécurité et de lutte contre les envois "
+                    "automatisés (spam) — voir la politique de confidentialité, en pied "
+                    "de page.",
+                    key=_k("int_rgpd"))
+                if st.form_submit_button("📨 Confier cette intention", type="primary",
+                                         width="stretch"):
+                    _manque = []
+                    if not (_nom or "").strip() and not _anon:
+                        _manque.append("votre nom et prénom (ou cochez « 🕊️ Rester anonyme »)")
+                    if not (_contact or "").strip():
+                        _manque.append("un contact (WhatsApp ou adresse mail)")
+                    if _jour is None:
+                        _manque.append("votre jour de naissance (chiffre entre 1 et 31)")
+                    if not (_txt or "").strip():
+                        _manque.append("votre intention de prière")
+                    if not _rgpd:
+                        _manque.append("l’acceptation (case ☑) de la politique de confidentialité")
+                    if _manque:
+                        st.warning("Il manque : " + " ; ".join(_manque) + ".")
+                    # v7.9.1 — UNICITÉ PAR NUMÉRO : un même numéro de téléphone ne
+                    # peut pas porter 2 intentions prises en charge en même temps.
+                    # v7.9.4 — le message parle au cœur (date + Matthieu 7.12) :
+                    # ni leçon, ni mécanisme — la chaîne ne se brise pas.
+                    elif contact_en_priere(_contact):
+                        _d_emit = date_intention_en_priere(_contact)
+                        _depuis = _d_emit.strftime("%d/%m/%Y") if _d_emit else ""
+                        st.warning("📿 Tu es déjà porté(e) en prière"
+                                   + (f" depuis le {_depuis}" if _depuis else "")
+                                   + ". Ne brise pas la CHAÎNE DE PRIÈRE. Continue de méditer "
+                                   "ta dizaine à CAUSE DE TON PROCHAIN.\n\n"
+                                   "Matthieu 7.12 : « Faites pour les autres tout ce que vous "
+                                   "voudriez qu’ils fassent pour vous, car c’est là tout "
+                                   "l’enseignement de la Loi et des prophètes.»")
+                    else:
+                        _i = st.session_state.get("int_eq_choix")
+                        if not isinstance(_i, int) or not (0 <= _i < len(equipes)):
+                            _i = 0
+                        _eq = equipes[_i]
+                        _auteur = ("Anonyme" if _anon
+                                   else (_nom or "").strip() or "Visiteur de l’Espace de Prière")
+                        # v7.8.16 — envoi blindé : une micro-coupure vers la base
+                        # (Turso) affiche un message doux et CONSERVE la saisie au
+                        # lieu de faire planter toute la page ; le fidèle peut
+                        # réessayer d'un clic sans rien retaper.
+                        _err_envoi = False
+                        try:
+                            c.execute("""INSERT INTO intentions_equipes
+                                         (equipe_id, texte, auteur_nom, auteur_contact, anonyme,
+                                          jour_naissance, statut, date_soumission)
+                                         VALUES (?, ?, ?, ?, ?, ?, 'recue', ?)""",
+                                      (_eq[0], _txt.strip(), None if _anon else _auteur,
+                                       (_contact or "").strip(),
+                                       1 if _anon else 0, int(_jour), date.today().isoformat()))
+                            commit_and_sync()
+                            # v7.9.4 — LA ZONE DU JOUR : l'intention confiée aujourd'hui
+                            # y est recueillie ; v7.9.10 — le SAS : la paroisse est notée
+                            # sur la ligne (le sas paroissial la reconnaît d'emblée).
+                            verser_intention_du_jour(_txt.strip(), auteur_nom=None if _anon else _auteur,
+                                                     auteur_contact=(_contact or "").strip(),
+                                                     anonyme=_anon, jour_naissance=int(_jour),
+                                                     equipe_id=_eq[0],
+                                                     paroisse_id=(_eq[2] if len(_eq) > 2 else None))
+                        except Exception:
+                            _err_envoi = True
+                            st.error("⚠️ L’envoi n’a pas pu aboutir (connexion instable "
+                                     "vers la base de données). Merci de réessayer dans "
+                                     "quelques instants — votre saisie est conservée.")
+                        if not _err_envoi:
+                            st.session_state["int_gen"] = _gen + 1  # champs renaissent vides
+                            for _b in ("int_nom", "int_contact", "int_txt", "int_jour", "int_rgpd"):
+                                st.session_state.pop(_b + "_" + str(_gen), None)
+                            # v7.9.0 — le jour de naissance devient l'identité de
+                            # chaîne du fidèle (il ne priera jamais sa propre
+                            # intention) et le CTA « prier ma dizaine » s'affiche.
+                            st.session_state["diz_jrnais"] = int(_jour)
+                            st.session_state["int_derniere"] = int(_jour)
+                            st.session_state["flash_success"] = (
+                                "🙏 Votre intention a été confiée à " + str(_eq[1])
+                                + ". Elle arrive directement au responsable — elle sera portée "
+                                "en prière, en toute confidentialité. 📿 À vous maintenant : "
+                                "égrenez une dizaine et porter en prière votre prochain — c’est LA "
+                                "CHAÎNE DE PRIÈRE UNIVERSELLE.")
+                            st.rerun()
+            # ── Mini-script (dernier élément du dépliant, remonte au bloc puis à
+            # l'EXPANDER) : v7.9.17 — l'habillage doré (bordure, fond, ombre) se
+            # pose sur l'expander lui-même (classe .int-depliant-or → summary
+            # dégradé via le CSS ci-dessus) et le bloc interne garde la classe
+            # .int-cadre-or (champs à liséré or). Comme injecter_icone_pwa :
+            # tourne à chaque rerun, iframe invisible.
+            # v7.8.16 — via stcompat (st.iframe) : height=0 est borné à 1 px.
+            try:
+                _comp_html(
+                    "<script>(function(){"
+                    "var d=window.parent.document;"
+                    "var m=d.getElementById('int-or-marker'); if(!m) return;"
+                    "var w=m.closest('div[data-testid=\"stVerticalBlock\"]'); if(!w) return;"
+                    "w.classList.add('int-cadre-or');"
+                    "var e=m.closest('div[data-testid=\"stExpander\"]')"
+                    "||m.closest('details[data-testid=\"stExpander\"]')||w;"
+                    "e.style.border='2px solid #FFD700';"
+                    "e.style.borderRadius='15px';"
+                    "e.style.overflow='hidden';"
+                    "e.style.background='#121a45';"
+                    "e.style.boxShadow='0 4px 14px rgba(0,0,0,0.35)';"
+                    "e.classList.add('int-depliant-or');"
+                    "w.style.padding='10px 6px';"
+                    "})();</script>", height=0)
+            except Exception:
+                pass
+
+
+def _carte_annonce_pelerinage():
+    """🛕 ANNONCE DU PÈLERINAGE (v7.9.17) — la vidéo YouTube de la chaîne
+    « Équipes du Rosaire Grand-Bassam », affichée en tête du fil d'actualité
+    tant que LIEN_YOUTUBE_PELERINAGE (en tête de module) est renseigné.
+    Lecteur incorporé responsive (16:9, même mécanique que la playlist du
+    contexte paroissial) + lien d'ouverture directe sur YouTube."""
+    _url = str(LIEN_YOUTUBE_PELERINAGE or "").strip()
+    if not _url:
+        return
+    _m = re.search(r"(?:youtu\.be/|v=|shorts/|embed/)([A-Za-z0-9_-]{6,})", _url)
+    if not _m:
+        return
+    _src = "https://www.youtube.com/embed/" + _m.group(1) + "?rel=0"
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+        ' border:2px solid #FFD700; border-radius:15px; padding:16px;'
+        ' text-align:center; margin:10px;">'
+        '<div class="dpl-titre-g" style="font-size:clamp(1.05rem, 4.5vw, 1.25rem);">'
+        '🛕 Annonce de pèlerinage</div>'
+        '<div style="color:#ffffff; font-size:clamp(0.85rem, 3.6vw, 1rem);'
+        ' margin-top:6px; line-height:1.6;">'
+        'Regardez l\u2019annonce du pèlerinage des Équipes du Rosaire —'
+        ' Diocèse de Grand-Bassam</div>'
+        '<div style="position:relative; width:100%; padding-top:56.25%;'
+        ' border-radius:12px; overflow:hidden; border:1px solid #FFD700;'
+        ' margin:12px 0 0 0;">'
+        '<iframe src="' + _src + '" title="Annonce de pèlerinage"'
+        ' style="position:absolute; top:0; left:0; width:100%; height:100%;'
+        ' border:none;" allow="encrypted-media; picture-in-picture"'
+        ' allowfullscreen></iframe></div>'
+        '<a href="' + html.escape(_url) + '" target="_blank" rel="noopener"'
+        ' style="display:inline-block; margin-top:10px; background:rgba(255,215,0,0.14);'
+        ' border:1px solid #FFD700; border-radius:20px; padding:6px 16px;'
+        ' color:#FFD000; text-decoration:none; font-size:0.8rem;'
+        ' max-width:94%;">🎬 Ouvrir la vidéo sur YouTube</a></div>',
+        unsafe_allow_html=True)
 
 
 def _render_fil_actualites(pid=None, lien_theme=None, equipe_membre_id=None,
@@ -3671,6 +3808,9 @@ def _render_fil_actualites(pid=None, lien_theme=None, equipe_membre_id=None,
     rubrique intentions (remontée AVANT « 🕯️ Un jour, une dizaine ») et les
     Actualités de la Paroisse ne s'affichent plus ici (code conservé)."""
     _alerte_feuillet_fil(lien_theme)
+    # v7.9.17 — l'annonce du pèlerinage (vidéo YouTube) accompagne l'alerte
+    # en tête du fil, pour tous (public comme membre).
+    _carte_annonce_pelerinage()
 
     cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
         else ("AND paroisse_cible IS NULL", [])
@@ -4399,3 +4539,4 @@ def _corps_espace_membre(matloc_membre=None):
                                intentions=False)  # v7.8.15 : retiré côté Membre
         if not FIL_ALLEGEE:  # v7.9.3 — fil allégé : la carte du jour uniquement
             _render_actualites(pid=pid_m)
+
