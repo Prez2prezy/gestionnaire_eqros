@@ -90,7 +90,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.9.13"
+_VERSION_APPLI = "v7.9.14"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -3774,6 +3774,10 @@ def _enregistrer_presence(membre_id, evt_id, choix):
     st.rerun()
 
 
+# v7.9.14 — le chapelet doré relevé une fois pour toutes (l'incorporation
+# ne se refait pas à chaque page) ; None tant qu'il n'a pas été cherché.
+_LOGO_PIED_MEMORISE = None
+
 def _render_pied_de_page(matloc_membre=None):
     """🟣 PIED DE PAGE DU SITE (v7.9.3, refondu v7.9.9, disposition v7.9.10,
     assagi v7.9.11) — présent sur TOUTES les pages des Espaces de Prière
@@ -3792,23 +3796,58 @@ def _render_pied_de_page(matloc_membre=None):
     montre, elle ne se raconte plus) : il reste l'essentiel. Fond violet
     nuit du badge « Bienvenue » (du haut jusqu'en bas), barre noire de
     copyright en pied, icône Facebook (si LIEN_FACEBOOK est renseigné).
-    Le mode écoute dédié (?musique=1) en est exempté."""
+    Le mode écoute dédié (?musique=1) en est exempté.
+    v7.9.14 — le chapelet doré est cherché à côté du module (adresse
+    certaine, où que la maison soit installée) et le nom de la paroisse
+    est dit chaque fois qu'il peut être connu : fidèle reconnu, ou
+    paroisse qui a ouvert la porte (QR / lien paroissial), sinon pied
+    sobre — jamais de vide qui ressemble à un oubli."""
     if st.query_params.get("musique") == "1":
         return
     # v7.9.10 — le fidèle est reconnu discrètement (paroisse + responsable) :
-    # une seule lecture tolérante, aucune fuite en cas d'imprévu.
+    # des lectures tolérantes, aucune fuite en cas d'imprévu.
+    # v7.9.14 — le nom de la paroisse est montré chaque fois qu'il peut être
+    # connu : celle du fidèle reconnu (même si son statut dort — le pied de
+    # page ne décide rien, il dit bonjour), sinon celle qui a ouvert la porte
+    # (le QR ou le lien paroissial qui a mené ici). Sinon, pied sobre.
     _nom_par, _wa_par, _pid_par = None, None, None
+    _est_membre = False
     if matloc_membre:
+        _ml = str(matloc_membre).upper().strip()
         try:
             _row_par = c.execute("""SELECT p.nom, p.whatsapp_responsable, p.id
                                     FROM membres m
                                     JOIN paroisses p ON m.paroisse_id = p.id
                                     WHERE m.matloc=? AND m.statut='actif'
-                                    LIMIT 1""", (str(matloc_membre).upper().strip(),)).fetchone()
+                                    LIMIT 1""", (_ml,)).fetchone()
             if _row_par:
                 _nom_par, _wa_par, _pid_par = _row_par[0], _row_par[1], _row_par[2]
+                _est_membre = True
         except Exception:
             _nom_par, _wa_par, _pid_par = None, None, None
+        if not _est_membre:
+            try:
+                _row_par = c.execute("""SELECT p.nom, p.whatsapp_responsable, p.id
+                                        FROM membres m
+                                        JOIN paroisses p ON m.paroisse_id = p.id
+                                        WHERE m.matloc=?
+                                        LIMIT 1""", (_ml,)).fetchone()
+                if _row_par:
+                    _nom_par, _wa_par, _pid_par = _row_par[0], _row_par[1], _row_par[2]
+                    _est_membre = True
+            except Exception:
+                pass
+    if not _nom_par:
+        try:
+            _pid_accueil = st.session_state.get("paroisse_origine")
+            if _pid_accueil:
+                _row_acc = c.execute("""SELECT nom, whatsapp_responsable, id
+                                        FROM paroisses WHERE id=?""",
+                                     (_pid_accueil,)).fetchone()
+                if _row_acc:
+                    _nom_par, _wa_par, _pid_par = _row_acc[0], _row_acc[1], _row_acc[2]
+        except Exception:
+            pass
     # v7.9.10 — la colonne 3 pilote le MÊME menu que l'entête (?r=index) :
     # l'ordre des cinq rubriques et l'index diffèrent (membre ≠ public).
     _rubriques_pied = [
@@ -3820,12 +3859,12 @@ def _render_pied_de_page(matloc_membre=None):
     ]
     _index_rub = {"🏠 Actualités": 0, "📿 Rosaire": 1, "🕯️ Thème": 2,
                   "🖼️ Galerie +": 3, "📖 Archives": 4}
-    if _nom_par:
+    if _est_membre:
         _index_rub = {"🏠 Actualités": 0, "📿 Rosaire": 2, "🕯️ Thème": 1,
                       "🖼️ Galerie +": 4, "📖 Archives": 5}
     _base_lien = "?espace=1&nav=1"
     _p_ctx = None
-    if _nom_par:
+    if _est_membre:
         # membre reconnu : le lien emporte SON adresse (matloc + paroisse)
         # et la colonne 3 suit l'ordre des rubriques membre
         _base_lien += "&matloc=" + urllib.parse.quote(str(matloc_membre))
@@ -3841,14 +3880,30 @@ def _render_pied_de_page(matloc_membre=None):
     # v7.9.11 — le LOGO DU MOUVEMENT, INCORPORÉ (aucune adresse à manquer) :
     # le chapelet doré des Équipes du Rosaire (static/logo_equipes_rosaire.png),
     # dessiné pour lui — ce n'est plus l'icône de l'application.
-    try:
-        import base64 as _b64
-        with open(os.path.join("static", "logo_equipes_rosaire.png"), "rb") as _f:
-            _logo_pied = ('<img class="pdr-img" src="data:image/png;base64,'
-                          + _b64.b64encode(_f.read()).decode("ascii")
-                          + '" alt="Les Équipes du Rosaire" width="64" height="64">')
-    except Exception:
-        _logo_pied = '<div class="pdr-logo">📿</div>'
+    # v7.9.14 — LE LOGO QUI NE SE PERD PLUS : il est cherché d'abord À CÔTÉ
+    # DU MODULE (l'adresse certaine, où que la maison soit installée), puis
+    # au coin habituel ; relevé une seule fois puis gardé en mémoire, il ne
+    # dépend plus du lieu d'où la page parle.
+    global _LOGO_PIED_MEMORISE
+    _logo_pied = _LOGO_PIED_MEMORISE
+    if _logo_pied is None:
+        try:
+            import base64 as _b64
+            _ici = os.path.dirname(os.path.abspath(__file__))
+            for _cand in (os.path.join(_ici, os.pardir, "static",
+                                       "logo_equipes_rosaire.png"),
+                          os.path.join("static", "logo_equipes_rosaire.png")):
+                if os.path.exists(_cand):
+                    with open(_cand, "rb") as _f:
+                        _logo_pied = ('<img class="pdr-img" src="data:image/png;base64,'
+                                      + _b64.b64encode(_f.read()).decode("ascii")
+                                      + '" alt="Les Équipes du Rosaire" width="64" height="64">')
+                    break
+        except Exception:
+            _logo_pied = None
+        if not _logo_pied:
+            _logo_pied = '<div class="pdr-logo">📿</div>'
+        _LOGO_PIED_MEMORISE = _logo_pied
     # v7.9.10 — « Contactez le responsable paroissial » : WhatsApp quand la
     # paroisse l'a renseigné, une simple invitation sinon.
     _wa_chiffres = "".join(_ch for _ch in str(_wa_par or "") if _ch.isdigit())
