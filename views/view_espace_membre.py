@@ -90,7 +90,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.9.15"
+_VERSION_APPLI = "v7.9.16"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -3920,9 +3920,11 @@ def _render_pied_de_page(matloc_membre=None):
                           os.path.join("static", "logo_equipes_rosaire.png")):
                 if os.path.exists(_cand):
                     with open(_cand, "rb") as _f:
+                        # v7.9.16 — plus d'attributs width/height figés : la
+                        # taille est pilotée par le CSS (.pdr-img)
                         _logo_pied = ('<img class="pdr-img" src="data:image/png;base64,'
                                       + _b64.b64encode(_f.read()).decode("ascii")
-                                      + '" alt="Les Équipes du Rosaire" width="64" height="64">')
+                                      + '" alt="Les Équipes du Rosaire">')
                     break
         except Exception:
             _logo_pied = None
@@ -3961,8 +3963,13 @@ def _render_pied_de_page(matloc_membre=None):
                 ' padding-left:26px; }'
                 '}'
                 '.pdr-v910 .pdr-col-milieu { text-align:center; }'
-                '.pdr-v910 .pdr-img { width:64px; height:64px; border-radius:14px;'
-                ' box-shadow:0 3px 10px rgba(0,0,0,.4); }'
+                # v7.9.16 — LE LOGO AGRANDI : même largeur que le nom
+                # « LES ÉQUIPES DU ROSAIRE » (≈ 240 px), proportion carrée
+                # conservée, réduit proprement si l'écran est étroit
+                # (max-width:100%). L'ombre suit la forme ronde du chapelet
+                # (drop-shadow), pas un carré autour des coins transparents.
+                '.pdr-v910 .pdr-img { width:240px; max-width:100%; height:auto;'
+                ' filter:drop-shadow(0 3px 10px rgba(0,0,0,.45)); }'
                 '.pdr-v910 .pdr-logo { font-size:2.1rem; line-height:1.2;'
                 ' filter:drop-shadow(0 2px 6px rgba(0,0,0,.4)); }'
                 '.pdr-v910 .pdr-nom { color:#FFFFFF; font-weight:bold; letter-spacing:.06em;'
@@ -4033,7 +4040,8 @@ def _render_pied_de_page(matloc_membre=None):
         + _logo_pied +
         '<div class="pdr-nom">LES ÉQUIPES DU ROSAIRE</div>'
         '<div class="pdr-dio">DIOCÈSE DE GRAND-BASSAM</div>'
-        + ('<div class="pdr-par">🕯️ ' + html.escape(str(_nom_par)) + '</div>' if _nom_par else '') +
+        # v7.9.16 — la ligne paroisse porte son libellé : « 🕯️ Paroisse : Nom »
+        + ('<div class="pdr-par">🕯️ Paroisse : ' + html.escape(str(_nom_par)) + '</div>' if _nom_par else '') +
         _contact_html +
         '</div>'
         '<div class="pdr-col pdr-col-droite">'
@@ -4391,4 +4399,3 @@ def _corps_espace_membre(matloc_membre=None):
                                intentions=False)  # v7.8.15 : retiré côté Membre
         if not FIL_ALLEGEE:  # v7.9.3 — fil allégé : la carte du jour uniquement
             _render_actualites(pid=pid_m)
-
