@@ -407,6 +407,22 @@ def init_tables_and_migrations():
                     jour_naissance INTEGER,
                     publiee INTEGER DEFAULT 1,
                     date_publication TEXT)""")
+    # v7.9.18 — CHAÎNE DE LA DERNIÈRE SÉANCE : à la prière mensuelle, les
+    # membres PRÉSENTS PHYSIQUEMENT forment une chaîne — le voisin de droite
+    # devient le « prochain » de chacun, qui médite et prie son intention
+    # jusqu'à la prochaine séance. L'ordre change à CHAQUE séance (les
+    # présences ne garantissent pas les positions précédentes) : chaque
+    # enregistrement est une ligne d'historique, la plus récente de l'équipe
+    # est la chaîne en vigueur. `ordre` porte les N° méd. dans l'ordre de la
+    # chaîne (10,17,09,…) ; `absents` note les « présents spirituellement »
+    # (hors chaîne), pour mémoire.
+    c.execute("""CREATE TABLE IF NOT EXISTS chaine_seances (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    equipe_id INTEGER NOT NULL,
+                    date_seance TEXT,
+                    ordre TEXT NOT NULL,
+                    absents TEXT,
+                    date_enregistrement TEXT)""")
     # v7.9.4 — LA ZONE DU JOUR : toutes les intentions confiées dans la
     # journée y sont recueillies d'abord ; le LENDEMAIN, chacune entre dans
     # la réserve (traitee=1, date_traitement posé).
@@ -1594,6 +1610,99 @@ def reserve_lignes(equipe_id=None, paroisse_id=None, limite=300):
                          tuple(_prm)).fetchall()
     except Exception as e:
         logger.warning(f"reserve_lignes : {e!r}")
+        return []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v7.9.18 — CHAÎNE DE LA DERNIÈRE SÉANCE
+# « Au cours d'une prière mensuelle, les membres présents physiquement
+# constituent une chaîne : le voisin de droite est le prochain de l'autre,
+# et la prochaine séance ne garantit pas les positions précédentes. »
+# Chaque séance enregistre l'ordre des présents (N° méd.) ; l'app en tire la
+# traduction : « X aura pour prochain Y — N° méd. Z, méditera et priera son
+# intention jusqu'à la prochaine séance. » La chaîne se referme sur le
+# premier (le dernier maillon reprend le premier).
+# ─────────────────────────────────────────────────────────────────────────────
+def _assurer_table_chaine_seances():
+    """Création douce de chaine_seances (bases distantes anciennes)."""
+    try:
+        c.execute("SELECT id FROM chaine_seances LIMIT 1")
+    except Exception:
+        try:
+            c.execute("""CREATE TABLE IF NOT EXISTS chaine_seances (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            equipe_id INTEGER NOT NULL,
+                            date_seance TEXT,
+                            ordre TEXT NOT NULL,
+                            absents TEXT,
+                            date_enregistrement TEXT)""")
+            commit_and_sync()
+        except Exception as e:
+            logger.warning(f"_assurer_table_chaine_seances : {e!r}")
+
+
+def enregistrer_chaine_seance(equipe_id, date_seance, ordre_nums, absents_nums=None):
+    """Enregistre la chaîne d'une séance (v7.9.18). ordre_nums : liste d'entiers
+    (N° méd.) dans l'ordre de la chaîne — le dernier reprend le premier.
+    absents_nums : liste optionnelle des « présents spirituellement » (hors
+    chaîne). Retourne (ok, message) prêt à afficher."""
+    _assurer_table_chaine_seances()
+    try:
+        _ordre = [int(n) for n in (ordre_nums or [])]
+    except (TypeError, ValueError):
+        return (False, "Les N° méd. de la chaîne sont illisibles.")
+    if not _ordre:
+        return (False, "La chaîne est vide : notez au moins deux membres présents.")
+    if len(_ordre) == 1:
+        return (False, "Une chaîne relie au moins deux membres présents.")
+    _abs = []
+    try:
+        _abs = [int(n) for n in (absents_nums or [])]
+    except (TypeError, ValueError):
+        return (False, "Les N° méd. des présents spirituellement sont illisibles.")
+    try:
+        c.execute("""INSERT INTO chaine_seances
+                     (equipe_id, date_seance, ordre, absents, date_enregistrement)
+                     VALUES (?,?,?,?,?)""",
+                  (int(equipe_id),
+                   str(date_seance or date.today().isoformat()),
+                   ",".join(str(n) for n in _ordre),
+                   ",".join(str(n) for n in _abs) if _abs else None,
+                   datetime.now().strftime("%Y-%m-%d %H:%M")))
+        commit_and_sync()
+        return (True, "Chaîne de la séance enregistrée : chaque membre peut porter "
+                      "l'intention de son prochain jusqu'à la prochaine séance. ⛓️")
+    except Exception as e:
+        logger.warning(f"enregistrer_chaine_seance : {e!r}")
+        return (False, "L'enregistrement a échoué (erreur technique journalisée).")
+
+
+def derniere_chaine_seance(equipe_id):
+    """La chaîne la plus récente de l'équipe (v7.9.18) — c'est elle qui est
+    « en vigueur » jusqu'à la prochaine séance. Retourne
+    (id, date_seance, ordre, absents, date_enregistrement) ou None."""
+    _assurer_table_chaine_seances()
+    try:
+        return c.execute("""SELECT id, date_seance, ordre, absents, date_enregistrement
+                            FROM chaine_seances WHERE equipe_id=?
+                            ORDER BY date_seance DESC, id DESC LIMIT 1""",
+                         (int(equipe_id),)).fetchone()
+    except Exception as e:
+        logger.warning(f"derniere_chaine_seance : {e!r}")
+        return None
+
+
+def historique_chaines_seance(equipe_id, limite=12):
+    """Historique des chaînes d'une équipe, la plus récente d'abord
+    (v7.9.18) — les anciennes séances restent consultables."""
+    _assurer_table_chaine_seances()
+    try:
+        return c.execute("""SELECT id, date_seance, ordre, absents, date_enregistrement
+                            FROM chaine_seances WHERE equipe_id=?
+                            ORDER BY date_seance DESC, id DESC LIMIT ?""",
+                         (int(equipe_id), int(limite))).fetchall()
+    except Exception as e:
+        logger.warning(f"historique_chaines_seance : {e!r}")
         return []
 
 
