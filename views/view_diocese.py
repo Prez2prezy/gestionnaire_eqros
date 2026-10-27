@@ -25,7 +25,8 @@ from database import (c, commit_and_sync, safe_migrate)
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation,
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale,
                       supprimer_photo, afficher_messages_flash, lien_whatsapp, URL_ESPACE_SPIRITUEL,
-                      synchroniser_menu_session, lire_menu_session)
+                      synchroniser_menu_session, lire_menu_session,
+                      urls_galerie, supprimer_photos_galerie, sauvegarder_illustration)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel,
                         afficher_whatsapp_tabs, afficher_historique_paroisse,
                         afficher_etat_presences_paroisse, _qrcode_png_bytes)
@@ -140,8 +141,9 @@ def _gestionnaire_archives_galerie():
         with c_ok:
             if st.button("✅ Oui, supprimer définitivement", key="btn_sup_gal_ok", type="primary"):
                 for (gid, gtitre, gimg) in _cochees:
-                    if gimg and str(gimg).startswith("http"):
-                        supprimer_photo(gimg)
+                    # v7.9.18 — TOUTES les photos de l'entrée (une entrée peut
+                    # en porter plusieurs depuis la v7.9.18)
+                    supprimer_photos_galerie(gimg)
                 _ids = [x[0] for x in _cochees]
                 _ph_del = ",".join("?" * len(_ids))
                 c.execute(f"DELETE FROM galerie_plus WHERE id IN ({_ph_del})", _ids)
@@ -186,8 +188,21 @@ def _galerie_plus_saisie():
             _a_gal = st.text_input("Signé par (optionnel)",
                                    placeholder="Ex : Équipe Sainte Marie" if _rub_gal == "souvenirs"
                                    else "Ex : Marie, paroisse Saint-Joseph")
-            _i_gal = st.text_input("Lien de la photo (optionnel — https://…, ex. imgbb)",
+            _i_gal = st.text_input("…ou collez un LIEN de photo (imgbb…)",
                                    placeholder="https://i.ibb.co/…")
+        # v7.9.18 — TÉLÉVERSEMENT DIRECT de plusieurs photos en un seul
+        # envoi (demande : Souvenirs / Témoignages). Les photos partent
+        # chez l'hébergeur (Cloudinary, déjà configuré) et rejoignent la
+        # même carte ; le champ lien ci-dessus reste accepté pour une
+        # photo déjà en ligne (imgbb…).
+        _f_gal = st.file_uploader(
+            "📷 Téléverser une ou plusieurs photos (facultatif — JPG/PNG/WebP)",
+            accept_multiple_files=True, type=["jpg", "jpeg", "png", "webp"],
+            key="gal_upload_multi")
+        if _f_gal:
+            st.caption("📷 " + str(len(_f_gal)) + " photo(s) prête(s) : "
+                       + ", ".join(f.name for f in _f_gal[:6])
+                       + (" …" if len(_f_gal) > 6 else ""))
         _x_gal = st.text_area("Texte" + (" *" if _rub_gal == "temoignages" else " (optionnel)"),
                               height=110,
                               placeholder="Un mot qui raconte le moment…" if _rub_gal == "souvenirs"
@@ -198,20 +213,47 @@ def _galerie_plus_saisie():
             elif _i_gal.strip() and not _i_gal.strip().startswith("http"):
                 st.error("Le lien de la photo doit commencer par https://")
             else:
+                # v7.9.18 — rassembler les photos : téléversées D'ABORD
+                # (l'ordre de l'album suit l'ordre des fichiers choisis),
+                # puis le lien collé éventuel.
+                _urls_gal = []
+                if _f_gal:
+                    for _f in _f_gal:
+                        try:
+                            _u_env = sauvegarder_illustration(_f)
+                        except Exception:
+                            _u_env = None
+                        if _u_env:
+                            _urls_gal.append(_u_env)
+                    if not _urls_gal:
+                        st.error("Aucune photo n'a pu être envoyée (hébergement "
+                                 "d'images indisponible). Vérifiez la connexion ; "
+                                 "sinon utilisez un lien imgbb dans le champ « LIEN "
+                                 "de photo ».")
+                        st.stop()
+                    elif len(_urls_gal) < len(_f_gal):
+                        st.warning(str(len(_f_gal) - len(_urls_gal))
+                                   + " photo(s) n'ont pas pu être envoyées ; "
+                                     "les autres sont publiées.")
+                if _i_gal.strip().startswith("http"):
+                    _urls_gal.append(_i_gal.strip())
+                _stock_gal = " | ".join(_urls_gal) if _urls_gal else None
                 c.execute("""INSERT INTO galerie_plus
                              (rubrique, titre, texte, image_url, date_event, lieu,
                               auteur_nom, date_publication)
                              VALUES (?,?,?,?,?,?,?,?)""",
                           (_rub_gal, _t_gal.strip(), _x_gal.strip() or None,
-                           _i_gal.strip() or None,
+                           _stock_gal,
                            _d_gal.isoformat() if _d_gal else None,
                            _l_gal.strip() or None, _a_gal.strip() or None,
                            date.today().isoformat()))
                 commit_and_sync()
+                _n_photos = len(urls_galerie(_stock_gal or ""))
                 st.session_state["flash_success"] = (
                     "✅ Publié dans « 🖼️ Galerie + → "
                     + ("🏞️ Souvenirs" if _rub_gal == "souvenirs" else "💬 Témoignages")
-                    + " » — visible immédiatement dans l'Espace de Prière.")
+                    + " » (" + str(_n_photos) + " photo(s)) — visible immédiatement "
+                      "dans l'Espace de Prière.")
                 st.rerun()
 
     _publies = c.execute("""SELECT id, titre, image_url, date_event, lieu, auteur_nom, date_publication
@@ -227,15 +269,17 @@ def _galerie_plus_saisie():
         _c_txt, _c_btn = st.columns([10, 2])
         with _c_txt:
             _d_aff = gdevt or gdpub
+            _n_gal = len(urls_galerie(gimg or ""))
             st.write(f"📌 **{gtitre}** — {_d_aff or 'sans date'}"
                      + (f" · 📍 {glieu}" if glieu else "")
                      + (f" · ✍️ {gauteur}" if gauteur else ""))
             if gimg:
-                st.caption("🖼️ " + str(gimg))
+                # v7.9.18 — une entrée peut porter plusieurs photos
+                st.caption("🖼️ " + (str(_n_gal) + " photos"
+                                    if _n_gal > 1 else str(gimg)))
         with _c_btn:
             if st.button("🗑️", key=f"gal_del_{gid}"):
-                if gimg and str(gimg).startswith("http"):
-                    supprimer_photo(gimg)
+                supprimer_photos_galerie(gimg)
                 c.execute("DELETE FROM galerie_plus WHERE id=?", (gid,))
                 commit_and_sync()
                 st.session_state["flash_success"] = "Élément retiré de la Galerie +. 🗑️"
@@ -920,3 +964,4 @@ def show_diocese():
                 commit_and_sync()
                 st.session_state["flash_success"] = "Toutes les données ont été supprimées. 🗑️"
                 st.rerun()
+
