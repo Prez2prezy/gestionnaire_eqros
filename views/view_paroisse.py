@@ -23,7 +23,8 @@ from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, su
                       generer_matricule_unique, get_periode_pastorale, lien_whatsapp, URL_ESPACE_SPIRITUEL,
                       synchroniser_menu_session, lire_menu_session, afficher_messages_flash)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, afficher_historique_suivi, 
-                        afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales)
+                        afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales,
+                        bloc_chaine_seance)
 
 def _zone_du_jour_paroisse(pid, equipes):
     """🕯️ ZONE DU JOUR — LE SAS DES INTENTIONS (v7.9.10, déménagée du
@@ -252,6 +253,12 @@ def _onglet_coins_intentions(pid, equipes):
 
     # ---------- E. RÉSERVE D'INTENTIONS PAR N° MÉD. (v7.9.3) ----------
     _bloc_reserve_paroisse(pid, equipes)
+    # ---------- F. CHAÎNE DE LA DERNIÈRE SÉANCE (v7.9.18) ----------
+    # Le voisin de droite est le prochain de l'autre : après chaque prière
+    # mensuelle, l'ordre des présents physiques est noté ici (par équipe) ;
+    # l'application en tire la traduction maillon par maillon et rappelle,
+    # pour chacun, l'intention à porter (prise dans la réserve ci-dessus).
+    bloc_chaine_seance(equipes, "par")
 
 
 def _bloc_reserve_paroisse(pid, equipes):
