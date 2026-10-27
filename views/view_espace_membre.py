@@ -90,7 +90,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.9.14"
+_VERSION_APPLI = "v7.9.15"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -148,13 +148,32 @@ def _lire_nav(rubriques):
 # ====================================================================
 # HELPERS
 # ====================================================================
+# v7.9.15 — LE LOGO PARTOUT : le fichier images/logo.png est désormais LIVRÉ
+# dans le paquet (c'est le chapelet doré des Équipes du Rosaire). Il est
+# cherché à plusieurs adresses certaines : à côté du module (où que
+# l'application soit installée), puis depuis le dossier de lancement ; en
+# dernier recours, le chapelet livré dans static/ prend le relais. Pour
+# passer au logo officiel du Mouvement, il suffira de déposer la nouvelle
+# image sous le même nom — aucun code à modifier.
+_CHEMINS_LOGO = (
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir,
+                 "images", "logo.png"),
+    os.path.join("images", "logo.png"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir,
+                 "static", "logo_equipes_rosaire.png"),
+    os.path.join("static", "logo_equipes_rosaire.png"),
+)
+
+
 @st.cache_data
 def _logo_base64():
-    try:
-        with open(os.path.join("images", "logo.png"), "rb") as f:
-            return base64.b64encode(f.read()).decode()
-    except Exception:
-        return None
+    for _chemin in _CHEMINS_LOGO:
+        try:
+            with open(_chemin, "rb") as f:
+                return base64.b64encode(f.read()).decode()
+        except Exception:
+            continue
+    return None
 
 
 PDF_URL_RE = re.compile(r'href="(https://res\.cloudinary\.com/[^"]+\.pdf)"')
@@ -3890,7 +3909,13 @@ def _render_pied_de_page(matloc_membre=None):
         try:
             import base64 as _b64
             _ici = os.path.dirname(os.path.abspath(__file__))
-            for _cand in (os.path.join(_ici, os.pardir, "static",
+            # v7.9.15 — images/logo.png D'ABORD : livré dans le paquet, et
+            # remplaçable un jour par le logo officiel (même nom) sans toucher
+            # au code — l'entête, la page d'accueil et le pied restent alors
+            # assortis. Le chapelet dessiné de static/ reste en secours.
+            for _cand in (os.path.join(_ici, os.pardir, "images", "logo.png"),
+                          os.path.join("images", "logo.png"),
+                          os.path.join(_ici, os.pardir, "static",
                                        "logo_equipes_rosaire.png"),
                           os.path.join("static", "logo_equipes_rosaire.png")):
                 if os.path.exists(_cand):
@@ -3925,6 +3950,16 @@ def _render_pied_de_page(matloc_membre=None):
                 ' padding:22px 20px 14px 20px; }'
                 '.pdr-v910 .pdr-col { flex:1 1 210px; min-width:190px; color:#e6dcf7;'
                 ' font-size:0.86rem; line-height:1.8; }'
+                # v7.9.15 — LA 3e COLONNE (menu) DÉCALÉE À DROITE sur les
+                # écrans larges : elle se cale sur le bord droit du pied de
+                # page, bien séparée de la colonne du milieu (logo, nom,
+                # contact). Sur téléphone (< 700 px), les colonnes s'empilent
+                # comme avant — aucun changement mobile.
+                '.pdr-v910 .pdr-col-droite { flex:1 1 210px; }'
+                '@media (min-width:700px) {'
+                '.pdr-v910 .pdr-col-droite { flex:0 1 auto; margin-left:auto;'
+                ' padding-left:26px; }'
+                '}'
                 '.pdr-v910 .pdr-col-milieu { text-align:center; }'
                 '.pdr-v910 .pdr-img { width:64px; height:64px; border-radius:14px;'
                 ' box-shadow:0 3px 10px rgba(0,0,0,.4); }'
@@ -4001,7 +4036,7 @@ def _render_pied_de_page(matloc_membre=None):
         + ('<div class="pdr-par">🕯️ ' + html.escape(str(_nom_par)) + '</div>' if _nom_par else '') +
         _contact_html +
         '</div>'
-        '<div class="pdr-col">'
+        '<div class="pdr-col pdr-col-droite">'
         '<ul class="pdr-menu">' + _menu_pied + '</ul>'
         '</div>'
         '</div>'
@@ -4356,3 +4391,4 @@ def _corps_espace_membre(matloc_membre=None):
                                intentions=False)  # v7.8.15 : retiré côté Membre
         if not FIL_ALLEGEE:  # v7.9.3 — fil allégé : la carte du jour uniquement
             _render_actualites(pid=pid_m)
+
