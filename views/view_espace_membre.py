@@ -84,13 +84,13 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       contact_en_priere, date_intention_en_priere,
                       prise_en_charge_automatique, verser_intention_du_jour,
                       pointer_dizaine, dizaine_deja_pointee, compteur_dizaines_mois)
-from services import safe_date, compter_visite, lien_whatsapp
+from services import safe_date, compter_visite, lien_whatsapp, urls_galerie
 from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
 
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.9.17"
+_VERSION_APPLI = "v7.9.18"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -3237,9 +3237,12 @@ def _depliant_mouvement(paroisse_id=None):
 #         'cliquez pour ouvrir ▾</div></summary>' + _corps + '</details>', unsafe_allow_html=True)
 
 def _render_actualites(pid=None):
-    """📰 Actualités du diocèse (publications simples : affiche +/ou BA).
-    5 dernières, les plus récentes d'abord.
-    LOT C5 : ne montre que le diocèse (cible NULL) + la paroisse du contexte."""
+    """📰 Actualités (publications « actualite » du Service Communication :
+    affiche +/ou BA, enseignements, salves…). 5 dernières, les plus récentes
+    d'abord. LOT C5 : ne montre que le diocèse (cible NULL) + la paroisse du
+    contexte. v7.9.18 — titre simplifié (« Actualités » : les publications
+    ciblées sur une paroisse y figurent aussi) et appel DANS le fil
+    d'actualité (_render_fil_actualites), où elles avaient disparu."""
     cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
         else ("AND paroisse_cible IS NULL", [])
     try:
@@ -3251,7 +3254,7 @@ def _render_actualites(pid=None):
         return
     if not lignes:
         return
-    st.markdown('<h3 style="font-family:Georgia, serif;">📰 Actualités du diocèse</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="font-family:Georgia, serif;">📰 Actualités</h3>', unsafe_allow_html=True)
     for a in lignes:
         with st.expander("📰 " + (a[0] or "(sans titre)")):
             st.caption(f"Publié le {a[4] or '—'}")
@@ -3438,10 +3441,15 @@ def _render_page_galerie(sub):
         if (auteur or "").strip():
             _meta.append("✍️ " + str(auteur).strip())
         _corps = ""
-        if img and str(img).strip().startswith("http"):
-            _corps += ('<img src="' + html.escape(str(img).strip()) + '" alt="" '
-                       'style="width:100%; max-width:560px; border-radius:10px; '
-                       'display:block; margin:0 auto 10px auto; border:1px solid #C9A227;">')
+        # v7.9.18 — PLUSIEURS PHOTOS par entrée (téléversement en un seul
+        # envoi côté diocèse) : toutes les URLs sont affichées l'une après
+        # l'autre, même style ; une entrée d'avant la v7.9.18 (une seule
+        # URL) se rend exactement comme avant.
+        for _u_gal in urls_galerie(img):
+            if _u_gal.startswith("http"):
+                _corps += ('<img src="' + html.escape(_u_gal) + '" alt="" '
+                           'style="width:100%; max-width:560px; border-radius:10px; '
+                           'display:block; margin:0 auto 10px auto; border:1px solid #C9A227;">')
         if (texte or "").strip():
             _corps += ('<div style="line-height:1.7; color:#1a1a1a; white-space:pre-wrap;">'
                        + html.escape(str(texte)) + '</div>')
@@ -3806,7 +3814,12 @@ def _render_fil_actualites(pid=None, lien_theme=None, equipe_membre_id=None,
     v7.9.3 — FIL ALLÉGÉ (FIL_ALLEGEE=True) : le fil ne garde plus que la
     section attendue — la prière/méditation DU JOUR. Le Coin Affiche, la
     rubrique intentions (remontée AVANT « 🕯️ Un jour, une dizaine ») et les
-    Actualités de la Paroisse ne s'affichent plus ici (code conservé)."""
+    Actualités de la Paroisse ne s'affichent plus ici (code conservé).
+    v7.9.18 — les ACTUALITÉS (publications « 📰 actualite » du Service
+    Communication : affiches, BA, enseignements…) reviennent dans le fil,
+    après la carte du jour — le fil allégé les avait fait disparaître
+    totalement : deux publications n'apparaissaient NULLE PART dans
+    l'Espace de Prière."""
     _alerte_feuillet_fil(lien_theme)
     # v7.9.17 — l'annonce du pèlerinage (vidéo YouTube) accompagne l'alerte
     # en tête du fil, pour tous (public comme membre).
@@ -3851,6 +3864,14 @@ def _render_fil_actualites(pid=None, lien_theme=None, equipe_membre_id=None,
             _render_pdf_inline(url_pdf)
     else:
         st.info("Aucun contenu spirituel n'a encore été publié.")
+
+    # v7.9.18 — LES ACTUALITÉS RENTRENT DANS LE FIL : les publications
+    # « 📰 actualite » (enseignements, salves, affiches…) du diocèse et de
+    # la paroisse du contexte s'affichent APRÈS la carte du jour, pour le
+    # public comme pour les membres. Le fil allégé (v7.9.3) les masquait
+    # totalement : elles n'apparaissaient NULLE PART. La fonction se tait
+    # d'elle-même quand il n'y en a pas — aucun écran pollué à vide.
+    _render_actualites(pid)
 
     # v7.9.3 — FIL D'ACTUALITÉ ALLÉGÉ : une seule section reste dans le fil
     # (la prière/méditation du jour, ci-dessus). Le reste est conservé mais
@@ -4366,8 +4387,8 @@ def _corps_espace_membre(matloc_membre=None):
             _lien_theme_pub = ("?espace=1&nav=1&r=2"
                                + (f"&p={pid_pub}" if pid_pub else ""))
             _render_fil_actualites(pid=pid_pub, lien_theme=_lien_theme_pub)
-            if not FIL_ALLEGEE:
-                _render_actualites(pid=pid_pub)
+            # v7.9.18 — les actualités sont rendues DANS le fil (voir
+            # _render_fil_actualites) ; plus aucun appel séparé ici.
         return
 
     # ================= ÉTAT 2 : VUE MEMBRE =================
@@ -4537,6 +4558,5 @@ def _corps_espace_membre(matloc_membre=None):
                                equipe_membre_id=membre[10],
                                auteur_nom=((membre[1] or "") + " " + (membre[2] or "")).strip(),
                                intentions=False)  # v7.8.15 : retiré côté Membre
-        if not FIL_ALLEGEE:  # v7.9.3 — fil allégé : la carte du jour uniquement
-            _render_actualites(pid=pid_m)
-
+        # v7.9.18 — les actualités sont rendues DANS le fil (voir
+        # _render_fil_actualites) ; plus aucun appel séparé ici.
