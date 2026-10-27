@@ -258,6 +258,22 @@ def supprimer_photo(path):
     elif not path.startswith("http") and os.path.exists(path):
         os.remove(path)
 
+def urls_galerie(img):
+    """v7.9.18 — les entrées de la Galerie + (Souvenirs / Témoignages)
+    peuvent porter PLUSIEURS photos : les URLs sont stockées dans la même
+    colonne image_url, séparées par « | ». Cette fonction découpe proprement
+    : une liste d'URLs nettoyées (une seule pour les entrées d'avant la
+    v7.9.18 — rétrocompatible)."""
+    if not img:
+        return []
+    return [u.strip() for u in str(img).split("|") if u.strip()]
+
+def supprimer_photos_galerie(img):
+    """v7.9.18 — supprime TOUTES les photos d'une entrée de la Galerie +
+    (une seule comme plusieurs, via urls_galerie)."""
+    for _u in urls_galerie(img):
+        supprimer_photo(_u)
+
 
 # ============================================================
 # MÉTIER
