@@ -64,13 +64,31 @@ def _deja_publie(s):
     """v7.9.0 — cette soumission a-t-elle DÉJÀ été publiée ? Détecte les
     soumissions restées « attente » alors que leur contenu a déjà rejoint
     les tables publiques (clic double, commit Hrana perdu, publication
-    programmée...). Retourne (booléen, libellé de la table cible)."""
+    programmée...). Retourne (booléen, libellé de la table cible).
+    v7.9.18 — pour les contenus à texte (prière, méditation, bande
+    défilante, actualité), le TITRE SEUL ne suffit plus : le TEXTE doit
+    correspondre aussi. Un même titre avec un contenu différent est une
+    NOUVELLE version (ex. bande défilante remplacée) : elle repart dans
+    « En attente de validation » et redevient publiable normalement.
+    Pour l'audio (pas de texte), titre + fichier joint font foi."""
     try:
         _t, _titre = s[1], (s[2] or "").strip()
-        if _t in ("priere", "meditation", "audio", "annonce_defilante", "actualite"):
+        if _t in ("priere", "meditation", "annonce_defilante", "actualite"):
+            # v7.9.18 — titre ET texte doivent correspondre : un même titre
+            # avec un texte différent est une NOUVELLE version, pas un doublon.
             _ex = c.execute("""SELECT 1 FROM espace_spirituel
                                WHERE type_contenu=? AND TRIM(COALESCE(titre,''))=?
-                               LIMIT 1""", (_t, _titre)).fetchone()
+                                 AND TRIM(COALESCE(contenu_texte,''))=?
+                               LIMIT 1""",
+                            (_t, _titre, (s[3] or "").strip())).fetchone()
+            return (bool(_ex), "Espace de Prière")
+        if _t == "audio":
+            _ex = c.execute("""SELECT 1 FROM espace_spirituel
+                               WHERE type_contenu='audio'
+                                 AND TRIM(COALESCE(titre,''))=?
+                                 AND TRIM(COALESCE(fichier_url,''))=?
+                               LIMIT 1""",
+                            (_titre, (s[5] or "").strip())).fetchone()
             return (bool(_ex), "Espace de Prière")
         if _t == "evenement":
             _ex = c.execute("""SELECT 1 FROM evenements
@@ -106,6 +124,118 @@ def _notifier(soumission, action):
         pass
 
 
+def _inserer_publie(s):
+    """v7.9.18 — insertion du CONTENU d'une soumission dans les tables
+    publiques. Partagée par « ✅ Publier » et le nouveau « 📤 Republier »
+    (2e bouton de la section « Déjà publiés — à ranger ») : une seule
+    logique, zéro écart entre les deux chemins.
+    Retourne True si le contenu a rejoint sa table, False sinon
+    (contenu incomplet — un message explique alors le blocage)."""
+    _ok = True
+    if s[1] in ("priere", "meditation"):
+        c.execute("""INSERT INTO espace_spirituel
+                     (type_contenu, titre, contenu_texte, image_url,
+                      fichier_url, date_publication, auteur_nom, paroisse_cible)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                  (s[1], s[2], s[3], s[4], s[5],
+                   date.today().isoformat(), "Service Communication",
+                   s[10] if len(s) > 10 else None))
+    elif s[1] == "audio":
+        c.execute("""INSERT INTO espace_spirituel
+                     (type_contenu, titre, fichier_url, date_publication, auteur_nom, paroisse_cible)
+                     VALUES (?, ?, ?, ?, ?, ?)""",
+                  ("audio", s[2], s[5], date.today().isoformat(), "Service Communication",
+                   s[10] if len(s) > 10 else None))
+    elif s[1] == "annonce_defilante":
+        cible = s[5] if s[5] in ("membre", "defaut") else None
+        c.execute("""INSERT INTO espace_spirituel
+                     (type_contenu, titre, contenu_texte, fichier_url, date_publication, auteur_nom, paroisse_cible)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                  ("annonce_defilante", s[2] or "Bande défilante", s[3], cible,
+                   date.today().isoformat(), "Service Communication",
+                   s[10] if len(s) > 10 else None))
+    elif s[1] == "actualite":
+        c.execute("""INSERT INTO espace_spirituel
+                     (type_contenu, titre, contenu_texte, image_url, fichier_url,
+                      date_publication, auteur_nom, paroisse_cible, date_evenement, lieu)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                  ("actualite", s[2], s[3], s[4], s[6],
+                   date.today().isoformat(), "Service Communication",
+                   s[10] if len(s) > 10 else None, s[7], s[8]))
+    elif s[1] == "theme_pastoral":
+        try:
+            _an = int(s[7]) if s[7] else None
+        except (ValueError, TypeError):
+            _an = None
+        try:
+            _mys = int(s[8]) if s[8] else 5
+        except (ValueError, TypeError):
+            _mys = 5
+        if _an:
+            c.execute("UPDATE themes_pastoraux SET actif=0")
+            _ex = c.execute("SELECT id FROM themes_pastoraux WHERE annee_debut=?", (_an,)).fetchone()
+            if _ex:
+                c.execute("""UPDATE themes_pastoraux
+                             SET texte_theme=?, mystere_principal=?, actif=1,
+                                 affiche_url=COALESCE(?, affiche_url) WHERE id=?""",
+                          (s[3], _mys, s[4], _ex[0]))
+            else:
+                c.execute("""INSERT INTO themes_pastoraux
+                             (annee_debut, texte_theme, mystere_principal, actif, affiche_url)
+                             VALUES (?, ?, ?, 1, ?)""", (_an, s[3], _mys, s[4]))
+        else:
+            st.error("Année pastorale illisible : utilisez « ❌ Refuser ».")
+            _ok = False
+    elif s[1] == "feuillet":
+        # v7.8.6 — publication du feuillet : le diocèse seul
+        # valide ; l'alerte « 📖 Nouveau feuillet » part alors
+        # dans le fil d'actualité de l'Espace de Prière.
+        try:
+            _an_fp = int(s[7]) if s[7] else None
+        except (ValueError, TypeError):
+            _an_fp = None
+        try:
+            _mois_fp = int(s[8]) if s[8] else None
+        except (ValueError, TypeError):
+            _mois_fp = None
+        if not _an_fp or not _mois_fp or not (1 <= _mois_fp <= 12):
+            st.error("Mois/année du feuillet illisibles : utilisez « ❌ Refuser ».")
+            _ok = False
+        else:
+            _n_secs = c.execute("""SELECT COUNT(*) FROM feuillet_sections
+                                   WHERE annee_debut=? AND mois=?""",
+                                (_an_fp, _mois_fp)).fetchone()[0]
+            if _n_secs == 0:
+                st.error("Aucune section saisie pour ce mois : publication impossible.")
+                _ok = False
+            else:
+                # v7.8.11 — UPDATE puis INSERT (au lieu
+                # d'ON CONFLICT) : robuste même sur une base
+                # ancienne sans contrainte UNIQUE, et la date
+                # de publication est TOUJOURS rafraîchie à la
+                # republication d'une version corrigée.
+                _cur = c.execute(
+                    """UPDATE feuillets_publications
+                       SET numero=?, date_publication=?
+                       WHERE annee_debut=? AND mois=?""",
+                    (_mois_fp, date.today().isoformat(),
+                     _an_fp, _mois_fp))
+                if (_cur.rowcount or 0) == 0:
+                    c.execute(
+                        """INSERT INTO feuillets_publications
+                           (annee_debut, mois, numero, date_publication)
+                           VALUES (?, ?, ?, ?)""",
+                        (_an_fp, _mois_fp, _mois_fp,
+                         date.today().isoformat()))
+    elif s[1] == "evenement":  # ancien type (onglet supprimé), gardé pour l'historique
+        c.execute("""INSERT INTO evenements
+                     (type_evenement, date_evenement, lieu, affiche_url, video_url, auteur_nom, paroisse_cible)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                  (s[2], s[7], s[8], s[4], s[6], "Service Communication",
+                   s[10] if len(s) > 10 else None))
+    return _ok
+
+
 def show_validation_communication():
     _assurer_colonnes_cible()
     st.markdown('<h2 style="color:#1A237E;">🕊️ Soumissions du Service Communication</h2>', unsafe_allow_html=True)
@@ -126,9 +256,14 @@ def show_validation_communication():
     _vrais = [s for s in en_attente if not _deja_publie(s)[0]]
 
     if _doublons:
+        # v7.9.18 — le texte annonce désormais les DEUX sorties possibles :
+        # le rangement simple (✅) et la republication volontaire (📤),
+        # utile quand la version en ligne diffère de la soumission.
         st.warning("🧹 " + str(len(_doublons)) + " soumission(s) « en attente » ont en réalité "
                    "DÉJÀ ÉTÉ PUBLIÉES (clic double ou micro-coupure au moment de la validation). "
-                   "Elles n'attendent que d'être rangées — republier créerait un doublon.")
+                   "Rangez-les avec « ✅ Marquer comme publié » ; ou, si le contenu de la "
+                   "soumission DIFFÈRE de ce qui est en ligne, publiez la nouvelle version "
+                   "avec « 📤 Republier ».")
 
     st.markdown(f"### 🟡 En attente de validation ({len(_vrais)})")
     if not _vrais:
@@ -237,109 +372,10 @@ def show_validation_communication():
             c_pub, c_ref = st.columns(2)
             with c_pub:
                 if st.button("✅ Publier", key=f"pub_{s[0]}", type="primary", use_container_width=True):
-                    _ok = True
-                    if s[1] in ("priere", "meditation"):
-                        c.execute("""INSERT INTO espace_spirituel
-                                     (type_contenu, titre, contenu_texte, image_url,
-                                      fichier_url, date_publication, auteur_nom, paroisse_cible)
-                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                                  (s[1], s[2], s[3], s[4], s[5],
-                                   date.today().isoformat(), "Service Communication",
-                                   s[10] if len(s) > 10 else None))
-                    elif s[1] == "audio":
-                        c.execute("""INSERT INTO espace_spirituel
-                                     (type_contenu, titre, fichier_url, date_publication, auteur_nom, paroisse_cible)
-                                     VALUES (?, ?, ?, ?, ?, ?)""",
-                                  ("audio", s[2], s[5], date.today().isoformat(), "Service Communication",
-                                   s[10] if len(s) > 10 else None))
-                    elif s[1] == "annonce_defilante":
-                        cible = s[5] if s[5] in ("membre", "defaut") else None
-                        c.execute("""INSERT INTO espace_spirituel
-                                     (type_contenu, titre, contenu_texte, fichier_url, date_publication, auteur_nom, paroisse_cible)
-                                     VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                                  ("annonce_defilante", s[2] or "Bande défilante", s[3], cible,
-                                   date.today().isoformat(), "Service Communication",
-                                   s[10] if len(s) > 10 else None))
-                    elif s[1] == "actualite":
-                        c.execute("""INSERT INTO espace_spirituel
-                                     (type_contenu, titre, contenu_texte, image_url, fichier_url,
-                                      date_publication, auteur_nom, paroisse_cible, date_evenement, lieu)
-                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                                  ("actualite", s[2], s[3], s[4], s[6],
-                                   date.today().isoformat(), "Service Communication",
-                                   s[10] if len(s) > 10 else None, s[7], s[8]))
-                    elif s[1] == "theme_pastoral":
-                        try:
-                            _an = int(s[7]) if s[7] else None
-                        except (ValueError, TypeError):
-                            _an = None
-                        try:
-                            _mys = int(s[8]) if s[8] else 5
-                        except (ValueError, TypeError):
-                            _mys = 5
-                        if _an:
-                            c.execute("UPDATE themes_pastoraux SET actif=0")
-                            _ex = c.execute("SELECT id FROM themes_pastoraux WHERE annee_debut=?", (_an,)).fetchone()
-                            if _ex:
-                                c.execute("""UPDATE themes_pastoraux
-                                             SET texte_theme=?, mystere_principal=?, actif=1,
-                                                 affiche_url=COALESCE(?, affiche_url) WHERE id=?""",
-                                          (s[3], _mys, s[4], _ex[0]))
-                            else:
-                                c.execute("""INSERT INTO themes_pastoraux
-                                             (annee_debut, texte_theme, mystere_principal, actif, affiche_url)
-                                             VALUES (?, ?, ?, 1, ?)""", (_an, s[3], _mys, s[4]))
-                        else:
-                            st.error("Année pastorale illisible : utilisez « ❌ Refuser ».")
-                            _ok = False
-                    elif s[1] == "feuillet":
-                        # v7.8.6 — publication du feuillet : le diocèse seul
-                        # valide ; l'alerte « 📖 Nouveau feuillet » part alors
-                        # dans le fil d'actualité de l'Espace de Prière.
-                        try:
-                            _an_fp = int(s[7]) if s[7] else None
-                        except (ValueError, TypeError):
-                            _an_fp = None
-                        try:
-                            _mois_fp = int(s[8]) if s[8] else None
-                        except (ValueError, TypeError):
-                            _mois_fp = None
-                        if not _an_fp or not _mois_fp or not (1 <= _mois_fp <= 12):
-                            st.error("Mois/année du feuillet illisibles : utilisez « ❌ Refuser ».")
-                            _ok = False
-                        else:
-                            _n_secs = c.execute("""SELECT COUNT(*) FROM feuillet_sections
-                                                   WHERE annee_debut=? AND mois=?""",
-                                                (_an_fp, _mois_fp)).fetchone()[0]
-                            if _n_secs == 0:
-                                st.error("Aucune section saisie pour ce mois : publication impossible.")
-                                _ok = False
-                            else:
-                                # v7.8.11 — UPDATE puis INSERT (au lieu
-                                # d'ON CONFLICT) : robuste même sur une base
-                                # ancienne sans contrainte UNIQUE, et la date
-                                # de publication est TOUJOURS rafraîchie à la
-                                # republication d'une version corrigée.
-                                _cur = c.execute(
-                                    """UPDATE feuillets_publications
-                                       SET numero=?, date_publication=?
-                                       WHERE annee_debut=? AND mois=?""",
-                                    (_mois_fp, date.today().isoformat(),
-                                     _an_fp, _mois_fp))
-                                if (_cur.rowcount or 0) == 0:
-                                    c.execute(
-                                        """INSERT INTO feuillets_publications
-                                           (annee_debut, mois, numero, date_publication)
-                                           VALUES (?, ?, ?, ?)""",
-                                        (_an_fp, _mois_fp, _mois_fp,
-                                         date.today().isoformat()))
-                    elif s[1] == "evenement":  # ancien type (onglet supprimé), gardé pour l'historique
-                        c.execute("""INSERT INTO evenements
-                                     (type_evenement, date_evenement, lieu, affiche_url, video_url, auteur_nom, paroisse_cible)
-                                     VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                                  (s[2], s[7], s[8], s[4], s[6], "Service Communication",
-                                   s[10] if len(s) > 10 else None))
-                    if _ok:
+                    # v7.9.18 — l'insertion est PARTAGÉE avec le nouveau bouton
+                    # « 📤 Republier » (section « Déjà publiés — à ranger ») :
+                    # une seule logique, zéro écart entre les deux chemins.
+                    if _inserer_publie(s):
                         # v7.9.2 — traçabilité : la décision manuelle est datée
                         _cur = c.execute("""UPDATE soumissions_comm SET statut='publie',
                                             date_decision=?, auteur_decision=? WHERE id=?""",
@@ -384,8 +420,10 @@ def show_validation_communication():
     if _doublons:
         st.markdown(f"### 🧹 Déjà publiés — à ranger ({len(_doublons)})")
         st.caption("Ces contenus figurent déjà dans l'Espace de Prière (ou l'agenda). "
-                   "Aucun danger à les marquer : RIEN n'est republié, seule la liste "
-                   "d'attente est nettoyée.")
+                   "✅ range la liste d'attente SANS rien republier ; 📤 Republier ajoute "
+                   "le contenu de la soumission comme une NOUVELLE publication — utile "
+                   "quand la version en ligne diffère (ex. une bande défilante remplacée : "
+                   "les deux passeront en défilé).")
         for s in _doublons:
             _tbl = _deja_publie(s)[1]
             libelle = LIBELLES.get(s[1], s[1])
@@ -393,15 +431,43 @@ def show_validation_communication():
                 if s[3]:
                     st.markdown("**Texte :**")
                     st.markdown(s[3])
-                if st.button("✅ Marquer comme publié (sans republier)", key=f"mark_{s[0]}",
-                             type="primary", use_container_width=True):
-                    c.execute("""UPDATE soumissions_comm SET statut='publie',
-                                 date_decision=?, auteur_decision=? WHERE id=?""",
-                              (datetime.now().strftime("%Y-%m-%d %H:%M"),
-                               "👤 diocèse — rangement « déjà publié » (rien republié)", s[0]))
-                    commit_and_sync()
-                    st.session_state["flash_success"] = "Rangé ! La file d'attente est exacte à nouveau. 🧹"
-                    st.rerun()
+                _c_mark, _c_rep = st.columns(2)
+                with _c_mark:
+                    if st.button("✅ Marquer comme publié (sans republier)", key=f"mark_{s[0]}",
+                                 type="primary", use_container_width=True):
+                        c.execute("""UPDATE soumissions_comm SET statut='publie',
+                                     date_decision=?, auteur_decision=? WHERE id=?""",
+                                  (datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                   "👤 diocèse — rangement « déjà publié » (rien republié)", s[0]))
+                        commit_and_sync()
+                        st.session_state["flash_success"] = "Rangé ! La file d'attente est exacte à nouveau. 🧹"
+                        st.rerun()
+                with _c_rep:
+                    # v7.9.18 — le 2e bouton demandé : republier la soumission
+                    # (nouvelle version) quand ce qui est en ligne diffère.
+                    if st.button("📤 Republier", key=f"rep_{s[0]}",
+                                 use_container_width=True):
+                        if _inserer_publie(s):
+                            _cur = c.execute(
+                                """UPDATE soumissions_comm SET statut='publie',
+                                   date_decision=?, auteur_decision=? WHERE id=?""",
+                                (datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                 "👤 diocèse — clic « 📤 Republier » (nouvelle version)", s[0]))
+                            commit_and_sync()
+                            if (_cur.rowcount or 0) == 0:
+                                st.error("⚠️ La republication a réussi mais le rangement de la "
+                                         "soumission n'a pas pu être enregistré : elle "
+                                         "réapparaîtra ici. Utilisez alors « ✅ Marquer comme "
+                                         "publié (sans republier) ».")
+                                st.stop()
+                            _notifier(s, "publie")
+                            st.session_state["flash_success"] = (
+                                "Republié ! La nouvelle version est en ligne. 📤")
+                            st.rerun()
+                        else:
+                            st.error("Republication impossible (contenu incomplet). "
+                                     "Utilisez « ✅ Marquer comme publié (sans republier) » "
+                                     "pour ranger la file d'attente.")
         st.markdown("---")
     # ---------- v7.8.8 : PUBLICATIONS PROGRAMMÉES ----------
     _programmees = []
