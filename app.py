@@ -187,20 +187,26 @@ st.markdown("""
 
 
 def afficher_logo():
-    # Créer le dossier s'il n'existe pas
-    if not os.path.exists("images"):
-        try:
-            os.makedirs("images")
-        except Exception:
-            pass
-    
-    logo_path = os.path.join("images", "logo.png")
-    if os.path.exists(logo_path):
-        try:
-            st.sidebar.image(logo_path, width="stretch")
-        except Exception:
-            st.sidebar.caption("⚡ Erreur de chargement du logo")
-    
+    # v7.9.15 — LE LOGO PARTOUT : le fichier images/logo.png est désormais
+    # LIVRÉ avec l'application (c'est le chapelet doré des Équipes du
+    # Rosaire). Il est cherché à plusieurs adresses certaines : à côté du
+    # fichier app.py (où que l'application soit installée), puis depuis le
+    # dossier de lancement ; en dernier recours, le chapelet livré dans
+    # static/ prend le relais. Pour passer au logo officiel du Mouvement,
+    # il suffira de déposer la nouvelle image sous le même nom
+    # (images/logo.png) — aucun code à modifier.
+    _ici = os.path.dirname(os.path.abspath(__file__))
+    for _chemin in (os.path.join(_ici, "images", "logo.png"),
+                    os.path.join("images", "logo.png"),
+                    os.path.join(_ici, "static", "logo_equipes_rosaire.png"),
+                    os.path.join("static", "logo_equipes_rosaire.png")):
+        if os.path.exists(_chemin):
+            try:
+                st.sidebar.image(_chemin, width="stretch")
+            except Exception:
+                pass
+            break
+
     st.sidebar.markdown("---\n#### 🏛️ DIOCÈSE DE GRAND-BASSAM\n---")
 
 # --- SESSION PERSISTANTE : rester connecté malgré le rafraîchissement ---
