@@ -1,18 +1,21 @@
 import streamlit as st
 import os
+import re
 import pandas as pd
 import io
 import html
 import urllib.parse
 from datetime import date, timedelta
-from database import c, commit_and_sync
+from database import (c, commit_and_sync, enregistrer_chaine_seance,
+                      derniere_chaine_seance, historique_chaines_seance,
+                      intention_reserve_pour_numero)
 import qrcode
 from io import BytesIO
 from services import (safe_date, envoyer_notification_telegram, lien_whatsapp,
                       verifier_abonnement, periode_affichage, get_periode_pastorale,
                       est_cloture, cloturer_periode, TYPES_EVENEMENTS,
                       URL_ESPACE_SPIRITUEL, sauvegarder_illustration, supprimer_photo,
-                      sauvegarder_video, sauvegarder_pdf)
+                      sauvegarder_video, sauvegarder_pdf, afficher_messages_flash)
 from mysteres import get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
 
 
@@ -1848,3 +1851,247 @@ def injecter_icone_pwa(espace=False):
         _chtml(_js, height=0)
     except Exception:
         pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v7.9.18 — CHAÎNE DE LA DERNIÈRE SÉANCE
+# « Au cours d'une prière mensuelle, les membres présents physiquement
+# constituent une chaîne : le voisin de droite est le prochain de l'autre,
+# et la prochaine séance ne garantit pas les positions précédentes. »
+# Le responsable note l'ordre des présents (N° méd.) après chaque séance ;
+# l'application en tire la traduction, maillon par maillon :
+# « X aura pour prochain Y — N° méd. Z, méditera et priera son intention
+# jusqu'à la prochaine séance. » La chaîne se referme toute seule sur le
+# premier membre (le dernier maillon reprend le premier).
+# ─────────────────────────────────────────────────────────────────────────────
+def _parser_ordre_chaine(txt):
+    """Découpe l'ordre de la chaîne (« 10, 17, 09, … » ou avec des flèches
+    « 10 ---> 17 ») en liste de N° méd. Retourne (liste, message_erreur).
+    Si la saisie se referme sur le premier N° (10 … 10), la répétition
+    finale est retirée — la boucle est dessinée automatiquement à
+    l'affichage."""
+    _nums = [int(x) for x in re.findall(r"\d+", str(txt or ""))]
+    if not _nums:
+        return [], ""
+    if len(_nums) >= 2 and _nums[-1] == _nums[0]:
+        _nums = _nums[:-1]
+    if len(_nums) < 2:
+        return [], ("Une chaîne relie au moins deux membres présents : écrivez "
+                    "les N° méd. dans l'ordre (ex. 10, 17, 09, 14).")
+    if len(set(_nums)) != len(_nums):
+        return [], ("Un même N° méd. apparaît plusieurs fois dans la chaîne : "
+                    "chaque membre n'y figure qu'une fois.")
+    return _nums, ""
+
+
+def _parser_nombres_seul(txt):
+    """Découpe une liste simple de N° méd. (présents spirituellement) sans
+    la logique de boucle. Retourne (liste sans doublon, message_erreur)."""
+    _nums = [int(x) for x in re.findall(r"\d+", str(txt or ""))]
+    _dans_ordre = []
+    for _n in _nums:
+        if _n not in _dans_ordre:
+            _dans_ordre.append(_n)
+    return _dans_ordre, ""
+
+
+def _membres_par_numero(eid):
+    """{N° méd. : « Nom Prénom »} des membres ACTIFS de l'équipe qui ont un
+    N° méditation valide (1-20). En cas de doublon de N°, le premier gardé
+    (l'app suppose un N° unique par équipe — même règle que la réserve)."""
+    _num2nom = {}
+    for (_n, _p, _num) in c.execute(
+            """SELECT nom, prenom, numero_meditation FROM membres
+               WHERE equipe_id=? AND statut='actif' ORDER BY nom, prenom""",
+            (eid,)).fetchall():
+        try:
+            _k = int(str(_num).strip())
+        except (TypeError, ValueError):
+            continue
+        if not (1 <= _k <= 20) or _k in _num2nom:
+            continue
+        _num2nom[_k] = (str(_n or "") + " " + str(_p or "")).strip() or ("N° " + str(_k))
+    return _num2nom
+
+
+def bloc_chaine_seance(equipes, prefixe_cle="cs"):
+    """⛓️ CHAÎNE DE LA DERNIÈRE SÉANCE (v7.9.18) — appelé dans l'onglet
+    intentions de « 📌 Suivi et Agenda » (équipe et paroisse) :
+    1. la chaîne EN VIGUEUR (dernière séance enregistrée) avec sa
+       traduction maillon par maillon, au mot près demandé : « X aura pour
+       prochain Y — N° méd. Z, méditera et priera son intention jusqu'à la
+       prochaine séance » ; sous chaque maillon, l'intention du prochain
+       (prise dans la 📚 réserve, ou avertissement si l'emplacement est
+       vide) ; les « présents spirituellement » (absents) sont notés
+       à part, hors chaîne ;
+    2. l'enregistrement d'une NOUVELLE séance : date, ordre des N° méd.
+       (virgules ou flèches), présents spirituellement — avec aperçu en
+       direct et vérification que chaque N° appartient bien à l'équipe ;
+    3. l'historique des séances précédentes (consultable)."""
+    afficher_messages_flash()
+    st.markdown("---")
+    st.markdown("### ⛓️ Chaîne de la dernière séance")
+    st.caption("À la prière mensuelle, les membres PRÉSENTS PHYSIQUEMENT forment une "
+               "chaîne : le voisin de droite devient le « prochain » de chacun, qui "
+               "médite et prie son intention jusqu'à la prochaine séance. L'ordre "
+               "change à chaque séance : notez ici la chaîne du jour — elle remplace "
+               "l'ancienne et reste visible de tout le bureau. 🤫 Les intentions se "
+               "portent, elles ne se commentent pas.")
+    if not equipes:
+        st.info("Aucune équipe : la chaîne de séance attend au moins une équipe.")
+        return
+
+    # ── sélection de l'équipe (une seule → pas de choix) ─────────────────────
+    if len(equipes) == 1:
+        _eid, _nom_eq = equipes[0][0], equipes[0][1]
+    else:
+        _idx_eq = st.selectbox("Équipe", list(range(len(equipes))),
+                               format_func=lambda i: equipes[i][1],
+                               key=f"{prefixe_cle}_ch_eq")
+        _eid, _nom_eq = equipes[_idx_eq][0], equipes[_idx_eq][1]
+
+    _num2nom = _membres_par_numero(_eid)
+
+    # ── 1. la chaîne en vigueur ─────────────────────────────────────────────
+    _ch = derniere_chaine_seance(_eid)
+    if not _ch:
+        st.info("Aucune chaîne enregistrée pour cette équipe : après la prochaine "
+                "prière mensuelle, notez ci-dessous l'ordre des membres présents "
+                "physiquement.")
+    else:
+        _cid, _d_seq, _ordre_txt, _abs_txt, _d_enr = _ch
+        try:
+            _nums = [int(x) for x in str(_ordre_txt or "").split(",") if x.strip()]
+        except ValueError:
+            _nums = []
+        _d_fr = ""
+        try:
+            from datetime import datetime as _dt
+            _d_fr = _dt.strptime(str(_d_seq), "%Y-%m-%d").strftime("%d/%m/%Y")
+        except Exception:
+            _d_fr = str(_d_seq or "?")
+        if _nums and all(n in _num2nom for n in _nums):
+            _lignes = ""
+            for _i, _n in enumerate(_nums):
+                _ns = _nums[(_i + 1) % len(_nums)]
+                _lignes += ('<div style="margin:7px 0 2px 0; line-height:1.55;">'
+                            '<span style="color:#FFD000; font-weight:600;">N° '
+                            + str(_n).zfill(2) + '</span> — <b style="color:#ffffff;">'
+                            + html.escape(_num2nom[_n]) + '</b> aura pour prochain <b '
+                            'style="color:#ffffff;">' + html.escape(_num2nom[_ns])
+                            + '</b> — N° méd. ' + str(_ns) + ', méditera et priera son '
+                            'intention jusqu’à la prochaine séance.</div>')
+                _res = None
+                try:
+                    _res = intention_reserve_pour_numero(_ns)
+                except Exception:
+                    _res = None
+                if _res and _res[0]:
+                    _lignes += ('<div style="margin:0 0 9px 16px; color:#c9d1f2; '
+                                'font-size:0.86rem;">🕯️ Son intention (N° '
+                                + str(_ns).zfill(2) + ') : <i>'
+                                + html.escape(str(_res[0])) + '</i></div>')
+                else:
+                    _lignes += ('<div style="margin:0 0 9px 16px; color:#ffb3a7; '
+                                'font-size:0.86rem;">⚠️ Le N° ' + str(_ns)
+                                + ' n’a pas encore d’intention en réserve — ajoutez-la '
+                                  'dans « 📚 Réserve d’intentions ».</div>')
+            _absents_html = ""
+            if (str(_abs_txt or "").strip()):
+                _abs_noms = []
+                for _a in str(_abs_txt).split(","):
+                    try:
+                        _an = int(_a.strip())
+                    except ValueError:
+                        continue
+                    _abs_noms.append("N° " + str(_an) + " — "
+                                     + html.escape(_num2nom.get(_an, "inconnu")))
+                if _abs_noms:
+                    _absents_html = ('<div style="color:#9fa8da; font-size:0.86rem; '
+                                     'margin-top:9px; border-top:1px solid #27306b; '
+                                     'padding-top:8px;">🪶 Présents spirituellement '
+                                     '(hors chaîne) : ' + " · ".join(_abs_noms)
+                                     + '</div>')
+            st.markdown(
+                '<div style="background:linear-gradient(135deg,#121a45 0%,#1A237E 100%);'
+                ' border:1.5px solid #C9A227; border-radius:12px; padding:14px 18px;'
+                ' margin:10px 0;">'
+                '<div style="color:#FFD000; font-weight:bold; font-size:0.98rem;'
+                ' margin-bottom:6px;">⛓️ Séance du ' + html.escape(_d_fr) + ' — '
+                + str(len(_nums)) + ' membres présents physiquement</div>'
+                + _lignes + _absents_html
+                + '<div style="color:#7986cb; font-size:0.78rem; margin-top:10px;">'
+                  'Enregistrée le ' + html.escape(str(_d_enr or "?")) + ' — la chaîne se '
+                  'referme sur le premier membre.</div></div>',
+                unsafe_allow_html=True)
+        else:
+            st.warning("⚠️ La dernière chaîne enregistrée contient des N° méd. qui ne "
+                       "correspondent plus aux membres actifs de l'équipe (membres "
+                       "partis ou N° modifiés). Enregistrez la chaîne de la prochaine "
+                       "séance pour la remplacer.")
+
+    # ── 2. enregistrement d'une nouvelle séance ────────────────────────────
+    with st.expander("⛓️ Enregistrer la chaîne d'une séance"):
+        _d_nouvelle = st.date_input("Date de la séance", value=date.today(),
+                                    min_value=date(2015, 1, 1), max_value=date.today(),
+                                    key=f"{prefixe_cle}_ch_date")
+        _ordre_txt = st.text_input(
+            "Ordre de la chaîne — les N° méd. des membres présents physiquement, dans l'ordre",
+            placeholder="Ex : 10, 17, 09, 14, 03, 06 — ou avec des flèches : 10 ---> 17 ---> 09 …",
+            key=f"{prefixe_cle}_ch_ordre")
+        _abs_txt = st.text_input(
+            "Présents spirituellement (facultatif) — les N° méd. des membres absents",
+            placeholder="Ex : 11, 18",
+            key=f"{prefixe_cle}_ch_abs")
+        _nums_aper, _err_aper = _parser_ordre_chaine(_ordre_txt)
+        if str(_ordre_txt or "").strip():
+            if _err_aper:
+                st.warning("⚠️ " + _err_aper)
+            else:
+                _aper = "  →  ".join(
+                    f"{n} — {_num2nom.get(n, 'N° INCONNU')}" for n in _nums_aper)
+                st.info("👁️ Aperçu : " + _aper + "  →  (retour à "
+                        + str(_nums_aper[0]) + " — "
+                        + _num2nom.get(_nums_aper[0], "?")
+                        + " : la chaîne se referme toute seule).")
+        if st.button("⛓️ Enregistrer cette chaîne", type="primary",
+                     key=f"{prefixe_cle}_ch_save"):
+            if not str(_ordre_txt or "").strip():
+                st.error("Écrivez d'abord l'ordre de la chaîne (les N° méd. des membres "
+                         "présents, séparés par des virgules).")
+            elif _err_aper:
+                st.error("⚠️ " + _err_aper)
+            else:
+                _inconnus = [n for n in _nums_aper if n not in _num2nom]
+                if _inconnus:
+                    st.error("Le(s) N° méd. " + ", ".join(str(n) for n in _inconnus)
+                             + " n'appartien(nen)t à aucun membre actif de cette équipe "
+                             "(vérifiez les N° dans « 👤 Mes membres »).")
+                else:
+                    _abs_final, _ = _parser_nombres_seul(_abs_txt)
+                    _abs_bad = [n for n in _abs_final if n not in _num2nom]
+                    _abs_bad = [n for n in _abs_bad if n not in _nums_aper]
+                    if _abs_bad:
+                        st.error("Les « présents spirituellement » doivent être des "
+                                 "membres de l'équipe (N° méd. "
+                                 + ", ".join(str(n) for n in _abs_bad) + " inconnu(s)).")
+                    else:
+                        _ok, _msg = enregistrer_chaine_seance(
+                            _eid, _d_nouvelle.isoformat(), _nums_aper, _abs_final)
+                        if _ok:
+                            for _k in (f"{prefixe_cle}_ch_ordre", f"{prefixe_cle}_ch_abs"):
+                                st.session_state.pop(_k, None)
+                            st.session_state["flash_success"] = _msg
+                            st.rerun()
+                        st.error(_msg)
+
+    # ── 3. les séances précédentes ─────────────────────────────────────────
+    _hist = historique_chaines_seance(_eid, limite=12)
+    _hist = _hist[1:] if (_ch and _hist and _hist[0][0] == _ch[0]) else _hist
+    if _hist:
+        with st.expander(f"🗄️ Séances précédentes ({len(_hist)})"):
+            for (_hid, _hd, _ho, _ha, _henr) in _hist:
+                _ligne_h = " → ".join(x.strip().zfill(2) for x in str(_ho or "").split(",") if x.strip())
+                st.markdown(f"**{str(_hd or '?')}** : {_ligne_h}"
+                            + (f"  ·  🪶 hors chaîne : {str(_ha)}" if _ha else "")
+                            + (f"  ·  _enregistrée le {str(_henr)}_" if _henr else ""))
