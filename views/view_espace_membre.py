@@ -4356,4 +4356,3 @@ def _corps_espace_membre(matloc_membre=None):
                                intentions=False)  # v7.8.15 : retiré côté Membre
         if not FIL_ALLEGEE:  # v7.9.3 — fil allégé : la carte du jour uniquement
             _render_actualites(pid=pid_m)
-
