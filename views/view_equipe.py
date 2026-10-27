@@ -16,7 +16,8 @@ from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_
                       afficher_messages_flash)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, 
                         afficher_historique_suivi, afficher_whatsapp_tabs, widget_type_abonnement, 
-                        enregistrer_presence_equipe, afficher_etat_presences_globales)
+                        enregistrer_presence_equipe, afficher_etat_presences_globales,
+                        bloc_chaine_seance)
 
 
 def _bloc_dizaines_equipe(eid):
@@ -309,6 +310,13 @@ def _onglet_intentions_equipe(eid):
     # v7.9.3 — la RÉSERVE : 20 intentions par N° méd., préparées d'avance
     # par le responsable (les intentions de ses membres).
     _bloc_reserve_equipe(eid)
+    # v7.9.18 — LA CHAÎNE DE LA DERNIÈRE SÉANCE : après chaque prière
+    # mensuelle, le responsable note l'ordre des membres présents
+    # physiquement ; l'application en tire la traduction (« X aura pour
+    # prochain Y — N° méd. Z, méditera et priera son intention jusqu'à la
+    # prochaine séance ») et rappelle l'intention à porter pour chaque
+    # maillon (prise dans la réserve ci-dessus).
+    bloc_chaine_seance([(eid, "")], "eq")
 
 
 def show_equipe():
