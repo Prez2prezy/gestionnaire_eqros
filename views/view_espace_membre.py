@@ -102,7 +102,7 @@ LIEN_FACEBOOK = ""
 # (carte « 🛕 Annonce de pèlerinage » avec le lecteur incorporé et un lien
 # d'ouverture). Mettre "" dans la constante pour retirer la carte d'un seul
 # geste, sans toucher au reste.
-LIEN_YOUTUBE_PELERINAGE = "https://youtu.be/RHrIgEeepO8?si=Dg0P8YHE0K3PYNo3"
+LIEN_YOUTUBE_PELERINAGE = "https://www.youtube.com/watch?v=Z6SLDuq2HUU&list=RDZ6SLDuq2HUU&start_radio=1"
 
 
 # ====================================================================
