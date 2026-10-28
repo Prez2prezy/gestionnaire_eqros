@@ -26,7 +26,8 @@ from services import (hash_password, generer_mot_de_passe, safe_date, afficher_s
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale,
                       supprimer_photo, afficher_messages_flash, lien_whatsapp, URL_ESPACE_SPIRITUEL,
                       synchroniser_menu_session, lire_menu_session,
-                      urls_galerie, supprimer_photos_galerie, sauvegarder_illustration)
+                      urls_galerie, supprimer_photos_galerie, sauvegarder_illustration,
+                      sauvegarder_photo_locale)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel,
                         afficher_whatsapp_tabs, afficher_historique_paroisse,
                         afficher_etat_presences_paroisse, _qrcode_png_bytes)
@@ -174,39 +175,69 @@ def _galerie_plus_saisie():
                         key="dio_galerie_vue", horizontal=True, label_visibility="collapsed")
     _rub_gal = "souvenirs" if _vue_gal.startswith("🏞") else "temoignages"
 
-    with st.form("form_galerie_plus", clear_on_submit=True):
-        _t_gal = st.text_input("Titre *",
+    with st.form("form_galerie_plus", clear_on_submit=False):
+        _g_gen = st.session_state.get("gal_gen", 0)
+        _t_gal = st.text_input("Titre *", key=f"gal_t_{_g_gen}",
                                placeholder="Ex : Pèlerinage diocésain à Assinie"
                                if _rub_gal == "souvenirs" else
                                "Ex : Guérison de mon fils après 3 ans de prière")
         _c_gal1, _c_gal2 = st.columns(2)
         with _c_gal1:
             _d_gal = st.date_input("Date de l'évènement (optionnelle)", value=None,
-                                   min_value=date(2015, 1, 1), max_value=date.today())
-            _l_gal = st.text_input("Lieu (optionnel)", placeholder="Ex : Assinie-Mafia")
+                                   min_value=date(2015, 1, 1), max_value=date.today(),
+                                   key=f"gal_d_{_g_gen}")
+            _l_gal = st.text_input("Lieu (optionnel)", placeholder="Ex : Assinie-Mafia",
+                                   key=f"gal_l_{_g_gen}")
         with _c_gal2:
             _a_gal = st.text_input("Signé par (optionnel)",
                                    placeholder="Ex : Équipe Sainte Marie" if _rub_gal == "souvenirs"
-                                   else "Ex : Marie, paroisse Saint-Joseph")
+                                   else "Ex : Marie, paroisse Saint-Joseph",
+                                   key=f"gal_a_{_g_gen}")
             _i_gal = st.text_input("…ou collez un LIEN de photo (imgbb…)",
-                                   placeholder="https://i.ibb.co/…")
+                                   placeholder="https://i.ibb.co/…",
+                                   key=f"gal_i_{_g_gen}")
+            # v7.9.19 — LE « + » À CÔTÉ DU CHAMP LIEN : chaque clic ajoute un
+            # champ de lien supplémentaire, pour joindre d'autres photos déjà
+            # en ligne (imgbb…) à la même carte.
+            _n_liens = int(st.session_state.get("gal_nb_liens", 0) or 0)
+            _liens_sup = []
+            for _k_l in range(1, _n_liens + 1):
+                _liens_sup.append(st.text_input(
+                    "LIEN de photo " + str(_k_l + 1),
+                    placeholder="https://i.ibb.co/…",
+                    key=f"gal_lien_sup_{_k_l}"))
+            _bplus_gal, _bmoins_gal = st.columns(2)
+            with _bplus_gal:
+                _plus_gal = st.form_submit_button("➕ Ajouter un champ photo",
+                                                  width="stretch")
+            with _bmoins_gal:
+                _moins_gal = (st.form_submit_button("➖ Un champ de moins",
+                                                    width="stretch")
+                              if _n_liens else False)
         # v7.9.18 — TÉLÉVERSEMENT DIRECT de plusieurs photos en un seul
-        # envoi (demande : Souvenirs / Témoignages). Les photos partent
-        # chez l'hébergeur (Cloudinary, déjà configuré) et rejoignent la
-        # même carte ; le champ lien ci-dessus reste accepté pour une
-        # photo déjà en ligne (imgbb…).
+        # envoi (demande : Souvenirs / Témoignages). v7.9.19 — PLUS D'ÉCHEC
+        # QUI BLOQUE : si l'hébergement d'images (Cloudinary) n'est pas
+        # configuré ou indisponible, chaque photo est rangée DANS
+        # L'APPLICATION (static/galerie/…) et s'affiche exactement pareil ;
+        # le champ lien ci-dessus reste accepté pour une photo déjà en ligne.
         _f_gal = st.file_uploader(
             "📷 Téléverser une ou plusieurs photos (facultatif — JPG/PNG/WebP)",
             accept_multiple_files=True, type=["jpg", "jpeg", "png", "webp"],
-            key="gal_upload_multi")
+            key=f"gal_upload_multi_{_g_gen}")
         if _f_gal:
             st.caption("📷 " + str(len(_f_gal)) + " photo(s) prête(s) : "
                        + ", ".join(f.name for f in _f_gal[:6])
                        + (" …" if len(_f_gal) > 6 else ""))
         _x_gal = st.text_area("Texte" + (" *" if _rub_gal == "temoignages" else " (optionnel)"),
-                              height=110,
+                              height=110, key=f"gal_x_{_g_gen}",
                               placeholder="Un mot qui raconte le moment…" if _rub_gal == "souvenirs"
                               else "Racontez la grâce reçue, avec sobriété et reconnaissance…")
+        if _plus_gal:
+            st.session_state["gal_nb_liens"] = min(_n_liens + 1, 9)
+            st.rerun()
+        if _moins_gal:
+            st.session_state["gal_nb_liens"] = max(_n_liens - 1, 0)
+            st.rerun()
         if st.form_submit_button("📢 Publier dans la Galerie +", type="primary", width="stretch"):
             if not _t_gal.strip() or (_rub_gal == "temoignages" and not _x_gal.strip()):
                 st.error("Titre requis (et, pour un témoignage, le texte aussi).")
@@ -215,7 +246,7 @@ def _galerie_plus_saisie():
             else:
                 # v7.9.18 — rassembler les photos : téléversées D'ABORD
                 # (l'ordre de l'album suit l'ordre des fichiers choisis),
-                # puis le lien collé éventuel.
+                # puis le(s) lien(s) collé(s) éventuel(s).
                 _urls_gal = []
                 if _f_gal:
                     for _f in _f_gal:
@@ -223,20 +254,31 @@ def _galerie_plus_saisie():
                             _u_env = sauvegarder_illustration(_f)
                         except Exception:
                             _u_env = None
+                        if not _u_env:
+                            # v7.9.19 — l'hébergeur est absent ou injoignable :
+                            # la photo est reçue quand même, rangée dans
+                            # l'application (static/galerie/…).
+                            try:
+                                _u_env = sauvegarder_photo_locale(_f)
+                            except Exception:
+                                _u_env = None
                         if _u_env:
                             _urls_gal.append(_u_env)
                     if not _urls_gal:
-                        st.error("Aucune photo n'a pu être envoyée (hébergement "
-                                 "d'images indisponible). Vérifiez la connexion ; "
-                                 "sinon utilisez un lien imgbb dans le champ « LIEN "
-                                 "de photo ».")
+                        st.error("Aucune photo n'a pu être enregistrée (ni hébergement "
+                                 "d'images, ni rangement local). Vérifiez la connexion "
+                                 "et les droits du dossier « static » ; sinon utilisez "
+                                 "un lien imgbb dans le champ « LIEN de photo ».")
                         st.stop()
                     elif len(_urls_gal) < len(_f_gal):
                         st.warning(str(len(_f_gal) - len(_urls_gal))
-                                   + " photo(s) n'ont pas pu être envoyées ; "
+                                   + " photo(s) n'ont pas pu être enregistrées ; "
                                      "les autres sont publiées.")
                 if _i_gal.strip().startswith("http"):
                     _urls_gal.append(_i_gal.strip())
+                for _ls in _liens_sup:
+                    if _ls and str(_ls).strip().startswith("http"):
+                        _urls_gal.append(str(_ls).strip())
                 _stock_gal = " | ".join(_urls_gal) if _urls_gal else None
                 c.execute("""INSERT INTO galerie_plus
                              (rubrique, titre, texte, image_url, date_event, lieu,
@@ -254,6 +296,10 @@ def _galerie_plus_saisie():
                     + ("🏞️ Souvenirs" if _rub_gal == "souvenirs" else "💬 Témoignages")
                     + " » (" + str(_n_photos) + " photo(s)) — visible immédiatement "
                       "dans l'Espace de Prière.")
+                # les champs renaissent propres (génération suivante), y
+                # compris les champs de lien ajoutés par le +
+                st.session_state["gal_gen"] = _g_gen + 1
+                st.session_state.pop("gal_nb_liens", None)
                 st.rerun()
 
     _publies = c.execute("""SELECT id, titre, image_url, date_event, lieu, auteur_nom, date_publication
@@ -964,4 +1010,3 @@ def show_diocese():
                 commit_and_sync()
                 st.session_state["flash_success"] = "Toutes les données ont été supprimées. 🗑️"
                 st.rerun()
-
