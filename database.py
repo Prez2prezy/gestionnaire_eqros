@@ -1445,6 +1445,63 @@ def publier_reserve_due(force=False):
         return 0
 
 
+# ======================================================================
+# v7.9.20 — LA DURÉE DE VIE DES INTENTIONS EN RÉSERVE
+# ======================================================================
+# « Une intention est censée avoir une durée de 20 jours après sa prise
+# en charge quand elle vient du visiteur, et jusqu'à la prochaine séance
+# de la prière mensuelle pour le membre. Elle doit par conséquent être
+# supprimée de la réserve après 00h00 de la date échéance, ou à la
+# nouvelle saisie. » —
+#   • VISITEUR (passée par la 🕯️ Zone du jour) : 20 jours après sa prise
+#     en charge (date_ajout) — elle quitte la réserve à 00h00 du 21ᵉ jour ;
+#   • MEMBRE (posée en face de son N° dans la ⛓️ Chaîne) : elle vit
+#     jusqu'à la NOUVELLE saisie — enregistrer_chaine_seance la libère
+#     (celles notées à CETTE séance suivent juste après, date_ajout du
+#     jour : elles ne sont pas touchées) ;
+#   • les vieilles lignes orphelines (d'avant les réserves d'équipe, sans
+#     équipe notée) suivent la règle des 20 jours du visiteur.
+# Le réveil est paresseux : une seule exécution par jour et par processus,
+# appelée aux lectures de la réserve comme aux tirages. Les lignes
+# libérées passent active=0 (elles quittent toutes les vues et les
+# compteurs, comme l'ancienne rotation).
+
+DUREE_RESERVE_VISITEUR = 20
+
+_RESERVE_PURGE_FAIT_LE = None
+
+
+def purger_reserve_expiree(force=False):
+    """LE RÉVEIL DE LA RÉSERVE (v7.9.20) : libère les intentions dont la
+    durée de vie est échue — celles des VISITEURS 20 jours après leur prise
+    en charge (00h00 du 21ᵉ jour) et les vieilles lignes orphelines ; celles
+    des MEMBRES sont libérées à la nouvelle saisie de la chaîne (voir
+    enregistrer_chaine_seance). Paresseux et idempotent : une seule
+    exécution par jour et par processus (sauf force=True), silencieux.
+    Retourne le nombre d'intentions libérées."""
+    global _RESERVE_PURGE_FAIT_LE
+    _auj = date.today().isoformat()
+    if not force and _RESERVE_PURGE_FAIT_LE == _auj:
+        return 0
+    try:
+        _assurer_table_reserve()
+        _limite = date.fromordinal(
+            date.today().toordinal() - DUREE_RESERVE_VISITEUR).isoformat()
+        _cur = c.execute("""UPDATE intentions_reserve SET active=0
+                            WHERE active=1
+                              AND date_ajout IS NOT NULL
+                              AND date_ajout <= ?
+                              AND (publiee IS NOT NULL
+                                   OR qui IN ('cet anonyme', 'notre prochain')
+                                   OR equipe_id IS NULL)""", (_limite,))
+        commit_and_sync()
+        _RESERVE_PURGE_FAIT_LE = _auj
+        return int(getattr(_cur, "rowcount", 0) or 0)
+    except Exception as e:
+        logger.warning(f"purger_reserve_expiree : {e!r}")
+        return 0
+
+
 def envoyer_intention_du_jour_en_reserve(zid, texte=None):
     """LE SAS (v7.9.10) : envoie IMMÉDIATEMENT une intention de la zone du
     jour (traitee=0) en réserve, avec le texte harmonisé passé (ou son
@@ -1579,10 +1636,13 @@ def reserve_compteur():
     """{N° méd. (1-20) : nombre d'intentions en réserve} (v7.9.3) — les
     20 emplacements existent TOUJOURS (compteur à 0 quand vide).
     v7.9.4 — seules les intentions ACTIVES comptent (une par N° en régime
-    normal ; plus si les demandes abondent)."""
+    normal ; plus si les demandes abondent).
+    v7.9.20 — le réveil de la durée de vie passe d'abord (les intentions
+    échues ne comptent plus)."""
     _d = {n: 0 for n in range(1, 21)}
     try:
         _assurer_table_reserve()
+        purger_reserve_expiree()
         for _num, _n in c.execute("""SELECT numero_med, COUNT(*) FROM intentions_reserve
                                      WHERE active=1 GROUP BY numero_med""").fetchall():
             if 1 <= int(_num) <= 20:
@@ -1595,8 +1655,10 @@ def reserve_compteur():
 def reserve_lignes(equipe_id=None, paroisse_id=None, limite=300):
     """Intentions ACTIVES en réserve, les plus récentes d'abord (v7.9.3,
     filtre active=1 v7.9.4) :
-    (id, numero_med, texte, auteur_nom, equipe_id, date_ajout)."""
+    (id, numero_med, texte, auteur_nom, equipe_id, date_ajout).
+    v7.9.20 — le réveil de la durée de vie passe d'abord."""
     _assurer_table_reserve()
+    purger_reserve_expiree()
     _cond, _prm = ["active=1"], []
     if equipe_id is not None:
         _cond.append("equipe_id=?")
@@ -1671,10 +1733,33 @@ def enregistrer_chaine_seance(equipe_id, date_seance, ordre_nums, absents_nums=N
                    ",".join(str(n) for n in _ordre),
                    ",".join(str(n) for n in _abs) if _abs else None,
                    datetime.now().strftime("%Y-%m-%d %H:%M")))
+        # v7.9.20 — LA NOUVELLE SAISIE LIBÈRE LES INTENTIONS DES MEMBRES :
+        # celles posées dans la chaîne précédente ont vécu « jusqu'à la
+        # prochaine séance » — la séance venue, elles quittent la réserve
+        # (celles notées à CETTE séance suivent juste après, avec date_ajout
+        # du jour : elles ne sont pas touchées ; celles du jour même, d'une
+        # correction de saisie non plus). Les intentions des VISITEURS ne
+        # bougent pas : elles suivent leur règle à elles (20 jours).
+        try:
+            _lib = c.execute("""UPDATE intentions_reserve SET active=0
+                                WHERE equipe_id=? AND active=1
+                                  AND (date_ajout IS NULL OR date_ajout < ?)
+                                  AND publiee IS NULL
+                                  AND (qui IS NULL OR qui NOT IN
+                                       ('cet anonyme', 'notre prochain'))""",
+                              (int(equipe_id), date.today().isoformat()))
+            _n_lib = int(getattr(_lib, "rowcount", 0) or 0)
+        except Exception as e:
+            logger.warning(f"enregistrer_chaine_seance (libération) : {e!r}")
+            _n_lib = 0
         commit_and_sync()
         # v7.9.19 — la phrase demandée : « X prie pour Y — N° méd. Z. »
-        return (True, "Chaîne de la séance enregistrée : chaque membre prie pour "
-                      "son prochain jusqu'à la prochaine séance. ⛓️")
+        _msg = ("Chaîne de la séance enregistrée : chaque membre prie pour "
+                "son prochain jusqu'à la prochaine séance. ⛓️")
+        if _n_lib:
+            _msg += (" Les intentions de la précédente séance ("
+                     + str(_n_lib) + ") ont quitté la réserve.")
+        return (True, _msg)
     except Exception as e:
         logger.warning(f"enregistrer_chaine_seance : {e!r}")
         return (False, "L'enregistrement a échoué (erreur technique journalisée).")
@@ -1725,7 +1810,10 @@ def intention_reserve_pour_numero(numero_med, cycle=None, jour_exclu=None):
         # v7.9.10 — le réveil puis le filtre : seules les intentions
         # PUBLIÉES (ou d'avant v7.9.10) nourrissent le tirage — rien ne
         # s'affiche avant 00h00 du jour suivant son entrée en réserve.
+        # v7.9.20 — la durée de vie passe d'abord : une intention échue ne
+        # nourrit plus le tirage.
         publier_reserve_due()
+        purger_reserve_expiree()
         rows = c.execute("""SELECT texte, qui, auteur_nom, jour_naissance
                             FROM intentions_reserve
                             WHERE numero_med=? AND active=1
@@ -1762,6 +1850,7 @@ def intentions_reserve_du_numero(numero_med, texte_exclu=None, jour_exclu=None):
     try:
         _assurer_table_reserve()
         publier_reserve_due()
+        purger_reserve_expiree()
         rows = c.execute("""SELECT texte, qui, auteur_nom, jour_naissance
                             FROM intentions_reserve
                             WHERE numero_med=? AND active=1
@@ -1886,3 +1975,97 @@ def date_intention_en_priere(contact):
     except Exception as e:
         logger.warning(f"date_intention_en_priere : {e!r}")
     return None
+
+
+# ======================================================================
+# v7.9.20 — LA MÉMOIRE D'UN JOUR DES CARTES (« 🔔 feuillet mensuel »,
+# « 📿 Ta dizaine du jour »)
+# ======================================================================
+# Les cartes de l'Espace de Prière se referment pour la journée quand le
+# fidèle les marque (« 📌 Marquer l'alerte comme lue », « J'ai honoré mon
+# engagement de ce jour »). Jusqu'ici la mémoire vivait dans la session et
+# dans un cookie du navigateur : au rechargement, la session est vidée et,
+# quand l'Espace est vu depuis une page extérieure (le site), le navigateur
+# refuse les cookies dits « tierce partie » — la carte revenait donc, sans
+# cesse. Désormais la mémoire vit EN BASE : elle tient au rechargement
+# comme à la navigation ; la carte revient le lendemain (ou quand un
+# NOUVEAU feuillet paraît — la clé porte alors un autre nom). Le lecteur
+# est reconnu par une clé sans cookie ni session (MatLoc du membre,
+# empreinte hachée de la consultation pour un visiteur — voir
+# _cle_lecteur_pdr dans views/view_espace_membre.py) : aucune donnée
+# personnelle n'est gardée, et le ménage des jours passés part à chaque
+# écriture.
+
+
+def _assurer_table_cartes_vues():
+    """Création douce de cartes_vues (bases distantes anciennes)."""
+    try:
+        c.execute("SELECT 1 FROM cartes_vues LIMIT 1")
+    except Exception:
+        try:
+            c.execute("""CREATE TABLE IF NOT EXISTS cartes_vues (
+                            cle TEXT NOT NULL,
+                            carte TEXT NOT NULL,
+                            jour TEXT NOT NULL,
+                            UNIQUE(cle, carte, jour))""")
+            commit_and_sync()
+        except Exception as e:
+            logger.warning(f"_assurer_table_cartes_vues : {e!r}")
+
+
+def marquer_carte_vue(cle, carte):
+    """Note que CE lecteur (clé) a marqué CETTE carte aujourd'hui (v7.9.20)
+    — la mémoire d'un jour, tenue en base, qui survit au rechargement.
+    Le ménage des jours passés part en même temps. Silencieuse : jamais de
+    plantage pour le fidèle. Retourne True si la mémoire est notée."""
+    _cle = str(cle or "").strip()
+    _carte = str(carte or "").strip()
+    if not _cle or not _carte:
+        return False
+    try:
+        _assurer_table_cartes_vues()
+        _auj = date.today().isoformat()
+        c.execute("DELETE FROM cartes_vues WHERE jour < ?", (_auj,))
+        c.execute("INSERT OR IGNORE INTO cartes_vues (cle, carte, jour) "
+                  "VALUES (?, ?, ?)", (_cle, _carte, _auj))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"marquer_carte_vue : {e!r}")
+        return False
+
+
+def carte_deja_vue(cle, carte):
+    """1 si CE lecteur a déjà marqué CETTE carte aujourd'hui, 0 sinon
+    (v7.9.20) — la mémoire d'un jour, tenue en base."""
+    _cle = str(cle or "").strip()
+    _carte = str(carte or "").strip()
+    if not _cle or not _carte:
+        return 0
+    try:
+        _assurer_table_cartes_vues()
+        return 1 if c.execute(
+            "SELECT 1 FROM cartes_vues WHERE cle=? AND carte=? AND jour=? LIMIT 1",
+            (_cle, _carte, date.today().isoformat())).fetchone() else 0
+    except Exception as e:
+        logger.warning(f"carte_deja_vue : {e!r}")
+        return 0
+
+
+def dizaine_visiteur_pointee(jrnais):
+    """1 si un VISITEUR de ce jour de naissance a déjà compté sa dizaine
+    aujourd'hui (v7.9.20) — pour retrouver « ✅ Merci Sainte Mère … » après
+    un rechargement, sans jamais compter deux fois le même passage."""
+    try:
+        _j = int(jrnais)
+    except (TypeError, ValueError):
+        return 0
+    try:
+        _assurer_dizaines_journal()
+        return 1 if c.execute(
+            """SELECT 1 FROM dizaines_journal
+               WHERE type='visiteur' AND jrnais=? AND jour=? LIMIT 1""",
+            (_j, date.today().isoformat())).fetchone() else 0
+    except Exception as e:
+        logger.warning(f"dizaine_visiteur_pointee : {e!r}")
+        return 0
