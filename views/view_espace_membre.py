@@ -84,27 +84,30 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       intentions_reserve_surplus,
                       contact_en_priere, date_intention_en_priere,
                       prise_en_charge_automatique, verser_intention_du_jour,
-                      pointer_dizaine, dizaine_deja_pointee, compteur_dizaines_mois)
+                      pointer_dizaine, dizaine_deja_pointee, compteur_dizaines_mois,
+                      marquer_carte_vue, carte_deja_vue, dizaine_visiteur_pointee)
 from services import safe_date, compter_visite, lien_whatsapp, urls_galerie
 from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
 
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.9.19"
+_VERSION_APPLI = "v7.9.20"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
 # le site du Mouvement) ; vide, elle reste discrètement absente.
 LIEN_FACEBOOK = ""
 
-# v7.9.17 — L'VIDÉO À LA DEMANDE : la vidéo YouTube de la chaîne
+# v7.9.17 — LA VIDÉO À LA DEMANDE : la vidéo YouTube de la chaîne
 # « Équipes du Rosaire Grand-Bassam » s'affiche JUSTE AVANT LE PIED DE PAGE
 # (v7.9.19 — elle a quitté la tête du fil d'actualité, à la demande :
-# « s'il doit s'ouvrir, c'est juste avant le pied de page »), avec le
-# lecteur incorporé et un lien d'ouverture. Mettre "" dans la constante
-# pour retirer la carte d'un seul geste, sans toucher au reste.
-LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE = "https://www.youtube.com/watch?v=Z6SLDuq2HUU&list=RDZ6SLDuq2HUU&start_radio=1"
+# « s'il doit s'ouvrir, c'est juste avant le pied de page » ; v7.9.20 —
+# la date du pèlerinage est passée, la carte porte son nom d'aujourd'hui :
+# la vidéo reste disponible à la demande), avec le lecteur incorporé et un
+# lien d'ouverture. Mettre "" dans la constante pour retirer la carte d'un
+# seul geste, sans toucher au reste.
+LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE = "https://youtu.be/RHrIgEeepO8?si=Dg0P8YHE0K3PYNo3"
 
 # v7.9.19 — L'ADRESSE DE LA CHAÎNE YOUTUBE (demande : « le lien de la
 # chaîne youtube.com à ajouter comme adresse dans le pied de page ») :
@@ -2629,10 +2632,13 @@ def _pointage_incognito(est_membre=False, matloc=None, nom_membre=None,
                                 est_membre=True)
         elif jrnais:
             _cle_j = "diz_pointee_visiteur_" + date.today().isoformat()
-            if not st.session_state.get(_cle_j):
+            # v7.9.20 — le passage du visiteur est retrouvé en base : un
+            # rechargement ne compte plus deux fois, et la présence du jour
+            # redevient visible après le rechargement.
+            if not st.session_state.get(_cle_j) and not dizaine_visiteur_pointee(jrnais):
                 pointer_dizaine(jrnais=jrnais, paroisse_id=paroisse_id,
                                 est_membre=False)
-                st.session_state[_cle_j] = True
+            st.session_state[_cle_j] = True
     except Exception:
         pass  # cause incognito : jamais de plantage pour un pointage
 
@@ -2689,7 +2695,13 @@ def _rendre_pointage_dizaine(est_membre=False, matloc=None, nom_membre=None,
                 st.warning(_msg)
     else:
         _cle_j = "diz_pointee_visiteur_" + date.today().isoformat()
-        if st.session_state.get(_cle_j):
+        # v7.9.20 — la présence du visiteur est retrouvée en base (par son
+        # jour de naissance) : après un rechargement, le remerciement
+        # revient au lieu de re-proposer le bouton (et de compter deux fois).
+        _deja_v = bool(st.session_state.get(_cle_j))
+        if not _deja_v and jrnais:
+            _deja_v = bool(dizaine_visiteur_pointee(jrnais))
+        if _deja_v:
             st.success(_msg_dizaine_capitale())
         else:
             if st.button("✅ Merci Sainte Mère pour ton aide de ce jour!",
@@ -2717,12 +2729,18 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
     # cookie est lu avant tout affichage. Si le navigateur refuse les
     # cookies, le comportement redevient celui d'avant (carte revenue au
     # rechargement) : aucun blocage, aucun message.
+    # v7.9.20 — la mémoire tient DÉSORMAIS EN BASE (clé du lecteur) : elle
+    # survit au rechargement même quand le navigateur refuse les cookies
+    # (consultation depuis une page extérieure) — même tenue, même promesse.
     _jour_eng = date.today().isoformat()
+    _cle_lecteur = _cle_lecteur_pdr()
     _eng_session = bool(st.session_state.get("engagement_honore_" + _jour_eng))
     if _eng_session:
         _poser_cookie_pdr("pdr_engagement", _jour_eng)
+        marquer_carte_vue(_cle_lecteur, "dizaine_engagement")
     if (not st.session_state.get("diz_ouvert")
-            and (_eng_session or _lire_cookie_pdr("pdr_engagement") == _jour_eng)):
+            and (_eng_session or _lire_cookie_pdr("pdr_engagement") == _jour_eng
+                 or carte_deja_vue(_cle_lecteur, "dizaine_engagement"))):
         return
 
     st.markdown("---")
@@ -2835,6 +2853,10 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
         # la dizaine » + le bouton) jusqu'à demain, exactement comme
         # « 📌 Marquer comme lue » — la garde en tête de fonction s'en charge
         # au rendu suivant (aucun commentaire affiché).
+        # v7.9.20 — le bouton REVIENT AUSSI APRÈS UN RECHARGEMENT pour le
+        # visiteur : sa présence du jour est retrouvée en base (par son jour
+        # de naissance), au lieu de vivre dans la seule session — et un
+        # passage ne compte plus deux fois.
         _cle_eng = "engagement_honore_" + date.today().isoformat()
         if not st.session_state.get(_cle_eng):
             _fait_auj = False
@@ -2843,10 +2865,14 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
             else:
                 _fait_auj = bool(st.session_state.get(
                     "diz_pointee_visiteur_" + date.today().isoformat()))
+                if not _fait_auj and st.session_state.get("diz_jrnais"):
+                    _fait_auj = bool(dizaine_visiteur_pointee(
+                        st.session_state.get("diz_jrnais")))
             if _fait_auj:
                 if st.button("J'ai honoré mon engagement de ce jour",
                              key="diz_engagement", width="stretch"):
                     st.session_state[_cle_eng] = True
+                    marquer_carte_vue(_cle_lecteur, "dizaine_engagement")
                     st.rerun()
         return
 
@@ -3342,6 +3368,45 @@ def _poser_cookie_pdr(nom, valeur):
         pass
 
 
+# ──────────────────────────────────────────────────────────────────────
+# v7.9.20 — LA CLÉ DU LECTEUR : la mémoire d'un jour tient DÉSORMAIS EN
+# BASE (voir marquer_carte_vue / carte_deja_vue dans database.py) — le
+# cookie, lui, ne suffit plus : la session est vidée à chaque rechargement
+# et, quand l'Espace est vu depuis une page extérieure (le site), le
+# navigateur refuse les cookies dits « tierce partie » — la carte
+# réapparaissait donc au rechargement. La clé identifie le lecteur SANS
+# cookie ni session : le membre par son MatLoc (dans l'adresse), le
+# visiteur par l'empreinte de sa consultation (navigateur + adresse
+# réseau, hachée — aucune donnée personnelle n'est gardée). Elle est
+# stable au rechargement comme à la navigation.
+# ──────────────────────────────────────────────────────────────────────
+def _cle_lecteur_pdr():
+    """La clé du lecteur pour la mémoire d'un jour (v7.9.20) : « M:… » pour
+    un membre reconnu (MatLoc porté par l'adresse), « N:… » pour un visiteur
+    (empreinte hachée de sa consultation). Stable au rechargement."""
+    try:
+        _mat = st.query_params.get("matloc")
+        if _mat:
+            return "M:" + str(_mat).upper().strip()
+    except Exception:
+        pass
+    _ua, _ip = "", ""
+    try:
+        _entetes = getattr(st, "context", None)
+        if _entetes is not None:
+            for _k, _v in (_entetes.headers or {}).items():
+                _kl = str(_k).lower()
+                if _kl == "user-agent":
+                    _ua = str(_v or "")
+                elif _kl == "x-forwarded-for":
+                    _ip = str(_v or "").split(",")[0].strip()
+    except Exception:
+        pass
+    import hashlib as _hl
+    return "N:" + _hl.sha256((_ua + "|" + _ip).encode(
+        "utf-8", "ignore")).hexdigest()[:24]
+
+
 def _alerte_feuillet_fil(lien_theme=None):
     """v7.8-h · v7.8.2-h — Alerte « nouveau feuillet » en tête du fil d'actualité.
     Visible 45 jours après la publication (couvre un mois pastoral complet) ;
@@ -3379,13 +3444,21 @@ def _alerte_feuillet_fil(lien_theme=None):
     # v7.9.17 — le masquage SURVIT AU RECHARGEMENT : le clic pose aussi un
     # cookie d'un jour (clé du feuillet + date du jour) ; la carte revient
     # le lendemain, ou dès qu'une NOUVELLE publication remplace la clé.
+    # v7.9.20 — la mémoire tient DÉSORMAIS EN BASE (clé du lecteur) : elle
+    # survit au rechargement même quand le navigateur refuse les cookies
+    # (consultation depuis une page extérieure) — même tenue, même promesse.
     _cle = f"{pub[0]}-{pub[1]}"
     _jour_al = date.today().isoformat()
     _val_cookie = _cle + "|" + _jour_al
+    _cle_lecteur = _cle_lecteur_pdr()
+    _carte_jour = "feuillet:" + _cle
     _lue_session = st.session_state.get("alerte_feuillet_lue") == _cle
     if _lue_session:
         _poser_cookie_pdr("pdr_alerte_feuillet", _val_cookie)
-    if _lue_session or _lire_cookie_pdr("pdr_alerte_feuillet") == _val_cookie:
+        marquer_carte_vue(_cle_lecteur, _carte_jour)
+    if (_lue_session
+            or _lire_cookie_pdr("pdr_alerte_feuillet") == _val_cookie
+            or carte_deja_vue(_cle_lecteur, _carte_jour)):
         return
     _lien = ""
     if lien_theme:
@@ -3409,6 +3482,7 @@ def _alerte_feuillet_fil(lien_theme=None):
         unsafe_allow_html=True)
     if st.button("📌 Marquer l'alerte comme lue", key="alerte_feuillet_lu_btn"):
         st.session_state["alerte_feuillet_lue"] = _cle
+        marquer_carte_vue(_cle_lecteur, _carte_jour)
         st.rerun()
 
 
@@ -3820,9 +3894,10 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
 
 
 def _carte_vidéo_a_la_demande():
-    """🛕 VIDÉO À LA DEMANDE (v7.9.17) — la vidéo YouTube de la chaîne
-    « Équipes du Rosaire Grand-Bassam », affichée en tête du fil d'actualité
-    tant que LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE (en tête de module) est renseigné.
+    """🛕 VIDÉO À LA DEMANDE (v7.9.17 ; nom d'aujourd'hui v7.9.20) — la vidéo
+    YouTube de la chaîne « Équipes du Rosaire Grand-Bassam », ouverte juste
+    avant le pied de page tant que LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE (en tête
+    de module) est renseigné.
     Lecteur incorporé responsive (16:9, même mécanique que la playlist du
     contexte paroissial) + lien d'ouverture directe sur YouTube."""
     _url = str(LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE or "").strip()
@@ -4301,9 +4376,10 @@ def show_espace_membre(matloc_membre=None):
     (_corps_espace_membre, code d'origine inchangé), PUIS le pied de page
     du site — présent sur toutes les pages, y compris le livre ouvert.
     v7.9.10 — le pied de page connaît le fidèle (paroisse + responsable) :
-    v7.9.19 — la carte de vidéo à la demande s'ouvre JUSTE AVANT le pied de
-    page, sur toutes les pages de l'Espace de Prière (demande : « s'il
-    doit s'ouvrir, c'est juste avant le pied de page »)."""
+    v7.9.19 — la carte vidéo s'ouvre JUSTE AVANT le pied de page, sur
+    toutes les pages de l'Espace de Prière (demande : « s'il doit
+    s'ouvrir, c'est juste avant le pied de page »).
+    v7.9.20 — elle porte son nom d'aujourd'hui : la vidéo à la demande."""
     _corps_espace_membre(matloc_membre)
     _carte_vidéo_a_la_demande()
     _render_pied_de_page(matloc_membre)
