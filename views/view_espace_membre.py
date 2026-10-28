@@ -99,7 +99,7 @@ LIEN_FACEBOOK = ""
 
 # v7.9.17 — L'ANNONCE DU PÈLERINAGE : la vidéo YouTube de la chaîne
 # « Équipes du Rosaire Grand-Bassam » s'affiche en tête du fil d'actualité
-# (carte « 🛕 Annonce de pèlerinage » avec le lecteur incorporé et un lien
+# (carte « 🛕 Vidéo à la demande » avec le lecteur incorporé et un lien
 # d'ouverture). Mettre "" dans la constante pour retirer la carte d'un seul
 # geste, sans toucher au reste.
 LIEN_YOUTUBE_PELERINAGE = "https://www.youtube.com/watch?v=Z6SLDuq2HUU&list=RDZ6SLDuq2HUU&start_radio=1"
@@ -3782,7 +3782,7 @@ def _carte_annonce_pelerinage():
         ' border:2px solid #FFD700; border-radius:15px; padding:16px;'
         ' text-align:center; margin:10px;">'
         '<div class="dpl-titre-g" style="font-size:clamp(1.05rem, 4.5vw, 1.25rem);">'
-        '🛕 Annonce de pèlerinage</div>'
+        '🛕 Vidéo à la demande </div>'
         '<div style="color:#ffffff; font-size:clamp(0.85rem, 3.6vw, 1rem);'
         ' margin-top:6px; line-height:1.6;">'
         'Regardez l\u2019annonce du pèlerinage des Équipes du Rosaire —'
@@ -3790,7 +3790,7 @@ def _carte_annonce_pelerinage():
         '<div style="position:relative; width:100%; padding-top:56.25%;'
         ' border-radius:12px; overflow:hidden; border:1px solid #FFD700;'
         ' margin:12px 0 0 0;">'
-        '<iframe src="' + _src + '" title="Annonce de pèlerinage"'
+        '<iframe src="' + _src + '" title="Vidéo à la demande"'
         ' style="position:absolute; top:0; left:0; width:100%; height:100%;'
         ' border:none;" allow="encrypted-media; picture-in-picture"'
         ' allowfullscreen></iframe></div>'
