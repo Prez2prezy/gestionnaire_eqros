@@ -10,8 +10,7 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       INTENTIONS_UNIVERSELLES, jours_depuis,
                       prise_en_charge_automatique, stats_dizaines_jour,
                       _assurer_dizaines_journal, _assurer_table_reserve,
-                      reserve_compteur, reserve_lignes,
-                      ajouter_intention_reserve, retirer_intention_reserve,
+                      reserve_compteur, reserve_lignes, publier_reserve_due,
                       OBJECTIF_RESERVE,
                       # v7.9.10 — LE SAS DES INTENTIONS (la zone du jour
                       # déménage du diocèse vers la paroisse)
@@ -23,8 +22,7 @@ from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, su
                       generer_matricule_unique, get_periode_pastorale, lien_whatsapp, URL_ESPACE_SPIRITUEL,
                       synchroniser_menu_session, lire_menu_session, afficher_messages_flash)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, afficher_historique_suivi, 
-                        afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales,
-                        bloc_chaine_seance)
+                        afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales)
 
 def _zone_du_jour_paroisse(pid, equipes):
     """🕯️ ZONE DU JOUR — LE SAS DES INTENTIONS (v7.9.10, déménagée du
@@ -251,50 +249,55 @@ def _onglet_coins_intentions(pid, equipes):
                "📚 La réserve ci-dessous garantit une intention d’avance pour "
                "chacun des N° méd.")
 
-    # ---------- E. RÉSERVE D'INTENTIONS PAR N° MÉD. (v7.9.3) ----------
+    # ---------- E. RÉSERVE D'INTENTIONS (v7.9.19) ----------
+    # v7.9.19 — la chaîne de la dernière séance a quitté le niveau paroisse :
+    # c'est au niveau de chaque équipe qu'elle se note, et c'est elle qui
+    # pourvoit la réserve (les intentions des membres y sont posées en face
+    # de chaque membre). La réserve ci-dessous RÉUNIT toutes les intentions
+    # des réserves d'équipes — membres comme visiteurs.
     _bloc_reserve_paroisse(pid, equipes)
-    # ---------- F. CHAÎNE DE LA DERNIÈRE SÉANCE (v7.9.18) ----------
-    # Le voisin de droite est le prochain de l'autre : après chaque prière
-    # mensuelle, l'ordre des présents physiques est noté ici (par équipe) ;
-    # l'application en tire la traduction maillon par maillon et rappelle,
-    # pour chacun, l'intention à porter (prise dans la réserve ci-dessus).
-    bloc_chaine_seance(equipes, "par")
 
 
 def _bloc_reserve_paroisse(pid, equipes):
-    """📚 RÉSERVE D'INTENTIONS PAR N° MÉD. (v7.9.3) — volet PAROISSIAL :
-    « il est capital d'avoir au préalable une intention pour chacun des
-    N° méd. Ça sera l'affaire des responsables d'équipe et paroissial. »
-    (v7.9.4 — UNE intention par N° méd.) Le responsable paroissial ajoute
-    ici les intentions des membres de ses équipes (il choisit l'équipe puis
-    le membre — le N° méd. du membre désigne l'emplacement), en complément
-    du travail des responsables d'équipe. Les compteurs sont GLOBAUX : la
-    chaîne est universelle."""
+    """📚 RÉSERVE D'INTENTIONS (v7.9.19 — titre simplifié, vue d'ensemble) :
+    la vue PAROISSIALE RÉUNIT toutes les intentions en provenance des
+    réserves des équipes — celles des MEMBRES (posées par les responsables
+    d'équipe, directement en face de chaque membre dans la chaîne de séance)
+    comme celles des VISITEURS (passées par le sas, la 🕯️ Zone du jour).
+    « Si un N° méd. contient plus d'une intention, le membre comme le
+    visiteur qui médite ce N° méd. verra ses intentions augmentées selon le
+    surplus. » Lecture seule ici : l'ajout et le retrait se font dans chaque
+    équipe. Compteurs GLOBAUX : la chaîne est universelle."""
     _assurer_table_reserve()
-    # v7.9.3 — la confirmation d'un ajout (flash posé par le formulaire)
-    # s'affiche ici, en tête du bloc, APRÈS le rerun.
+    publier_reserve_due()
     afficher_messages_flash()
     st.markdown("---")
-    st.markdown("### 📚 Réserve d'intentions — 1 intention par N° méd.")
-    st.caption("Chaque N° méd. (1-20) porte UNE intention : c'est elle que le visiteur "
-               "du jour reçoit selon SON N° méd. et médite pendant 20 jours — chacun "
-               "a ainsi sa propre intention de prochain. Ajoutez ici les intentions "
-               "des membres de vos équipes, une par N° méd. Compteurs toutes équipes "
-               "confondues (la chaîne est universelle). 🤫 Comme toujours : être une "
-               "tombe.")
+    st.markdown("### 📚 Réserve d'intentions")
+    st.caption("La réserve de la paroisse RÉUNIT toutes les intentions des réserves "
+               "d'équipes : celles des MEMBRES (posées en face de chaque membre, dans "
+               "la ⛓️ Chaîne de la dernière séance de chaque équipe) et celles des "
+               "VISITEURS (passées par la 🕯️ Zone du jour). Chaque N° méd. porte AU "
+               "MOINS une intention : c'est elle que le lecteur du jour reçoit selon "
+               "SON N° méd. — et s'il en porte plusieurs, ses intentions augmentent "
+               "selon le surplus. Compteurs et liste toutes équipes confondues (la "
+               "chaîne est universelle). 🤫 Comme toujours : être une tombe.")
     _cpt = reserve_compteur()
     _total = sum(_cpt.values())
-    _grille = "".join(
-        '<div style="min-width:62px; flex:1 0 62px; background:'
-        + ("#1b2a5e" if _cpt[n] else "#121a45")
-        + '; border:1px solid '
-        + ("#FFD700" if _cpt[n] >= OBJECTIF_RESERVE else ("#3a4585" if _cpt[n] else "#27306b"))
-        + '; border-radius:9px; padding:6px 4px; text-align:center;">'
-        + '<div style="color:' + ("#FFD000" if _cpt[n] else "#5a6398")
-        + '; font-weight:bold; font-size:0.95rem;">' + str(n).zfill(2) + '</div>'
-        + '<div style="color:' + ("#e8eaf6" if _cpt[n] else "#5a6398")
-        + '; font-size:0.72rem;">' + str(_cpt[n]) + "/" + str(OBJECTIF_RESERVE) + '</div></div>'
-        for n in range(1, 21))
+    _grille = ""
+    for n in range(1, 21):
+        _nb = _cpt[n]
+        _lib = (str(min(_nb, OBJECTIF_RESERVE)) + "/" + str(OBJECTIF_RESERVE)
+                + (" +" + str(_nb - OBJECTIF_RESERVE) if _nb > OBJECTIF_RESERVE else ""))
+        _grille += (
+            '<div style="min-width:62px; flex:1 0 62px; background:'
+            + ("#1b2a5e" if _nb else "#121a45")
+            + '; border:1px solid '
+            + ("#FFD700" if _nb >= OBJECTIF_RESERVE else ("#3a4585" if _nb else "#27306b"))
+            + '; border-radius:9px; padding:6px 4px; text-align:center;">'
+            + '<div style="color:' + ("#FFD000" if _nb else "#5a6398")
+            + '; font-weight:bold; font-size:0.95rem;">' + str(n).zfill(2) + '</div>'
+            + '<div style="color:' + ("#e8eaf6" if _nb else "#5a6398")
+            + '; font-size:0.72rem;">' + _lib + '</div></div>')
     st.markdown('<div style="display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 4px 0;">'
                 + _grille + '</div>', unsafe_allow_html=True)
     if _total >= 20 * OBJECTIF_RESERVE:
@@ -303,67 +306,25 @@ def _bloc_reserve_paroisse(pid, equipes):
     else:
         st.caption("🎯 Objectif : 1 intention par N° méd. (20 au total) — réserve actuelle : "
                    + str(_total) + ".")
-    if not equipes:
-        st.info("Aucune équipe dans cette paroisse : la réserve se remplit depuis "
-                "les équipes (responsables d'équipe) ou dès qu'une équipe existera.")
+    _lignes = reserve_lignes()
+    _noms_eq = {e[0]: e[1] for e in equipes}
+    if not _lignes:
+        st.info("La réserve est vide : les intentions arrivent ici dès que les "
+                "équipes les posent (en face de chaque membre, dans la ⛓️ Chaîne de "
+                "la dernière séance) et que la 🕯️ Zone du jour en envoie.")
         return
-    with st.expander("➕ Ajouter une intention à la réserve"):
-        _eq_sel = st.selectbox("Équipe du membre", list(range(len(equipes))),
-                               format_func=lambda i: equipes[i][1],
-                               key="res_par_eq")
-        _eq_id = equipes[_eq_sel][0]
-        _membres = c.execute("""SELECT id, nom, prenom, numero_meditation FROM membres
-                                WHERE equipe_id=? AND statut='actif' ORDER BY nom""",
-                             (_eq_id,)).fetchall()
-        if not _membres:
-            st.info("Cette équipe n'a pas encore de membre actif.")
-        else:
-            with st.form("form_reserve_par", clear_on_submit=True):
-                _sel = st.selectbox(
-                    "Membre (son N° méd. désigne l'emplacement de la réserve)",
-                    list(range(len(_membres))),
-                    format_func=lambda i: (
-                        f"{_membres[i][1]} {_membres[i][2]}"
-                        + (f" — N° méd. {_membres[i][3]}" if _membres[i][3]
-                           else " — ⚠️ sans N° méd. (à renseigner par le responsable d'équipe)")))
-                _txt = st.text_area("Intention de prière *", height=90, max_chars=500,
-                                    placeholder="Pour la santé de…, pour ma famille…, "
-                                                "pour les vocations…")
-                if st.form_submit_button("➕ Ajouter à la réserve", type="primary"):
-                    _m = _membres[_sel]
-                    try:
-                        _num = int(str(_m[3]).strip()) if _m[3] else None
-                    except (TypeError, ValueError):
-                        _num = None
-                    if _num is None or not (1 <= _num <= 20):
-                        st.warning("⚠️ " + str(_m[1]) + " " + str(_m[2])
-                                   + " n'a pas de N° méditation valide (1-20). "
-                                     "Le responsable d'équipe doit d'abord le renseigner.")
-                    else:
-                        _ok, _msg = ajouter_intention_reserve(
-                            _num, _txt,
-                            auteur_nom=(str(_m[1]) + " " + str(_m[2])).strip(),
-                            equipe_id=_eq_id, paroisse_id=pid)
-                        if _ok:
-                            st.session_state["flash_success"] = _msg
-                            st.rerun()
-                        # v7.9.4 — refus (emplacement déjà pourvu) : flash en
-                        # tête de bloc, visible même l'expander refermé.
-                        st.session_state["flash_warning"] = _msg
-                        st.rerun()
-    _lignes = reserve_lignes(paroisse_id=pid)
-    if _lignes:
-        _noms_eq = {e[0]: e[1] for e in equipes}
-        with st.expander(f"🗂️ Intentions en réserve de la paroisse ({len(_lignes)})"):
-            for (rid, num, texte, auteur, eqi, daj) in _lignes:
-                st.markdown(f"**N° méd. {int(num):02d}** — *{auteur or 'Membre'}*"
-                            + (f" · équipe « {_noms_eq.get(eqi, '?')} »" if eqi else "")
-                            + (f" · ajoutée le {daj}" if daj else ""))
-                st.write(texte)
-                if st.button("🗑️ Retirer de la réserve", key=f"res_del_par_{rid}"):
-                    retirer_intention_reserve(rid)
-                    st.rerun()
-                st.markdown("---")
+    with st.expander(f"🗂️ Intentions en réserve — toutes les équipes ({len(_lignes)})"):
+        _n_par_num = {}
+        for (rid, num, texte, auteur, eqi, daj) in _lignes:
+            _n_par_num[int(num)] = _n_par_num.get(int(num), 0) + 1
+        for (rid, num, texte, auteur, eqi, daj) in _lignes:
+            _multi = (" · surplus N° " + str(int(num)).zfill(2)
+                      if _n_par_num.get(int(num), 0) > 1 else "")
+            st.markdown(f"**N° méd. {int(num):02d}** — *{auteur or 'Membre'}*"
+                        + (f" · équipe « {_noms_eq.get(eqi, '?')} »" if eqi else "")
+                        + (f" · ajoutée le {daj}" if daj else "") + _multi)
+            st.write(texte)
+            st.markdown("---")
 
 
 def _tableau_de_bord_paroisse(pid, nom_p):
@@ -932,4 +893,3 @@ def show_paroisse():
                 with st.expander(f"{a[1]} {a[2]} ({a[0]}) – {afficher_situation(a[3])} – {duree} an(s) ({eq_nom})"):
                     st.write(f"Ajouté par : {a[8] or 'Inconnu'}")
                     if a[6]: st.write(f"Commentaire : {a[6]}")
-
