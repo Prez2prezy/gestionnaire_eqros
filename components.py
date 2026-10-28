@@ -8,7 +8,8 @@ import urllib.parse
 from datetime import date, timedelta
 from database import (c, commit_and_sync, enregistrer_chaine_seance,
                       derniere_chaine_seance, historique_chaines_seance,
-                      intention_reserve_pour_numero)
+                      intentions_reserve_du_numero,
+                      ajouter_intention_reserve, reserve_lignes)
 import qrcode
 from io import BytesIO
 from services import (safe_date, envoyer_notification_telegram, lien_whatsapp,
@@ -1859,10 +1860,9 @@ def injecter_icone_pwa(espace=False):
 # constituent une chaîne : le voisin de droite est le prochain de l'autre,
 # et la prochaine séance ne garantit pas les positions précédentes. »
 # Le responsable note l'ordre des présents (N° méd.) après chaque séance ;
-# l'application en tire la traduction, maillon par maillon :
-# « X aura pour prochain Y — N° méd. Z, méditera et priera son intention
-# jusqu'à la prochaine séance. » La chaîne se referme toute seule sur le
-# premier membre (le dernier maillon reprend le premier).
+# l'application en tire la traduction, maillon par maillon (phrase v7.9.19) :
+# « N° 10 — X prie pour Y — N° méd. Z. » La chaîne se referme toute seule
+# sur le premier membre (le dernier maillon reprend le premier).
 # ─────────────────────────────────────────────────────────────────────────────
 def _parser_ordre_chaine(txt):
     """Découpe l'ordre de la chaîne (« 10, 17, 09, … » ou avec des flèches
@@ -1918,25 +1918,30 @@ def bloc_chaine_seance(equipes, prefixe_cle="cs"):
     """⛓️ CHAÎNE DE LA DERNIÈRE SÉANCE (v7.9.18) — appelé dans l'onglet
     intentions de « 📌 Suivi et Agenda » (équipe et paroisse) :
     1. la chaîne EN VIGUEUR (dernière séance enregistrée) avec sa
-       traduction maillon par maillon, au mot près demandé : « X aura pour
-       prochain Y — N° méd. Z, méditera et priera son intention jusqu'à la
-       prochaine séance » ; sous chaque maillon, l'intention du prochain
-       (prise dans la 📚 réserve, ou avertissement si l'emplacement est
-       vide) ; les « présents spirituellement » (absents) sont notés
-       à part, hors chaîne ;
-    2. l'enregistrement d'une NOUVELLE séance : date, ordre des N° méd.
-       (virgules ou flèches), présents spirituellement — avec aperçu en
-       direct et vérification que chaque N° appartient bien à l'équipe ;
+       traduction maillon par maillon, au mot près demandé (v7.9.19) :
+       « X prie pour Y — N° méd. Z. » ; sous chaque maillon, LES intentions
+       du prochain (prises dans la 📚 réserve — un N° méd. peut en porter
+       plusieurs : la principale + le surplus —, ou avertissement si
+       l'emplacement est vide) ; les « présents spirituellement » (absents)
+       sont notés à part, hors chaîne ;
+    2. l'enregistrement d'une NOUVELLE séance : date, PUIS la liste des
+       membres à la verticale avec, en face de chacun, la zone de saisie de
+       SON intention (elle rejoint directement la 📚 réserve — les
+       intentions des membres ne passent jamais par la 🕯️ Zone du jour),
+       puis l'ordre des N° méd. (virgules ou flèches) et les présents
+       spirituellement — avec aperçu en direct et vérification que chaque
+       N° appartient bien à l'équipe ;
     3. l'historique des séances précédentes (consultable)."""
     afficher_messages_flash()
     st.markdown("---")
     st.markdown("### ⛓️ Chaîne de la dernière séance")
     st.caption("À la prière mensuelle, les membres PRÉSENTS PHYSIQUEMENT forment une "
                "chaîne : le voisin de droite devient le « prochain » de chacun, qui "
-               "médite et prie son intention jusqu'à la prochaine séance. L'ordre "
-               "change à chaque séance : notez ici la chaîne du jour — elle remplace "
-               "l'ancienne et reste visible de tout le bureau. 🤫 Les intentions se "
-               "portent, elles ne se commentent pas.")
+               "prie pour lui jusqu'à la prochaine séance. L'ordre change à chaque "
+               "séance : notez ici la chaîne du jour — elle remplace l'ancienne et "
+               "reste visible de tout le bureau ; c'est elle qui pourvoit la "
+               "📚 réserve d'intentions. 🤫 Les intentions se portent, elles ne se "
+               "commentent pas.")
     if not equipes:
         st.info("Aucune équipe : la chaîne de séance attend au moins une équipe.")
         return
@@ -1974,23 +1979,38 @@ def bloc_chaine_seance(equipes, prefixe_cle="cs"):
             _lignes = ""
             for _i, _n in enumerate(_nums):
                 _ns = _nums[(_i + 1) % len(_nums)]
+                # v7.9.19 — la phrase demandée, au mot près :
+                # « N° 10 — MOTIAN TOFFÉ Ahua Innocent prie pour
+                #   ONIBONKOU Odette — N° méd. 17. »
                 _lignes += ('<div style="margin:7px 0 2px 0; line-height:1.55;">'
                             '<span style="color:#FFD000; font-weight:600;">N° '
                             + str(_n).zfill(2) + '</span> — <b style="color:#ffffff;">'
-                            + html.escape(_num2nom[_n]) + '</b> aura pour prochain <b '
+                            + html.escape(_num2nom[_n]) + '</b> prie pour <b '
                             'style="color:#ffffff;">' + html.escape(_num2nom[_ns])
-                            + '</b> — N° méd. ' + str(_ns) + ', méditera et priera son '
-                            'intention jusqu’à la prochaine séance.</div>')
-                _res = None
+                            + '</b> — N° méd. ' + str(_ns) + '.</div>')
+                # v7.9.19 — LES intentions du prochain : le N° méd. peut en
+                # porter plusieurs (le surplus de la réserve) ; elles
+                # s'affichent toutes, l'une sous l'autre.
                 try:
-                    _res = intention_reserve_pour_numero(_ns)
+                    _toutes = intentions_reserve_du_numero(_ns)
                 except Exception:
-                    _res = None
-                if _res and _res[0]:
-                    _lignes += ('<div style="margin:0 0 9px 16px; color:#c9d1f2; '
-                                'font-size:0.86rem;">🕯️ Son intention (N° '
-                                + str(_ns).zfill(2) + ') : <i>'
-                                + html.escape(str(_res[0])) + '</i></div>')
+                    _toutes = []
+                if _toutes:
+                    if len(_toutes) == 1:
+                        _lignes += ('<div style="margin:0 0 9px 16px; color:#c9d1f2; '
+                                    'font-size:0.86rem;">🕯️ Son intention (N° '
+                                    + str(_ns).zfill(2) + ') : <i>'
+                                    + html.escape(str(_toutes[0][0])) + '</i></div>')
+                    else:
+                        _lignes += ('<div style="margin:0 0 3px 16px; color:#c9d1f2; '
+                                    'font-size:0.86rem;">🕯️ Ses intentions (N° '
+                                    + str(_ns).zfill(2) + ' — ' + str(len(_toutes))
+                                    + ') :</div>')
+                        for _ti in _toutes:
+                            _lignes += ('<div style="margin:0 0 3px 30px; color:#c9d1f2; '
+                                        'font-size:0.86rem;">• <i>'
+                                        + html.escape(str(_ti[0])) + '</i></div>')
+                        _lignes += '<div style="margin:0 0 6px 0;"></div>'
                 else:
                     _lignes += ('<div style="margin:0 0 9px 16px; color:#ffb3a7; '
                                 'font-size:0.86rem;">⚠️ Le N° ' + str(_ns)
@@ -2035,6 +2055,43 @@ def bloc_chaine_seance(equipes, prefixe_cle="cs"):
         _d_nouvelle = st.date_input("Date de la séance", value=date.today(),
                                     min_value=date(2015, 1, 1), max_value=date.today(),
                                     key=f"{prefixe_cle}_ch_date")
+        # v7.9.19 — LA LISTE DES MEMBRES, À LA VERTICALE, JUSTE APRÈS LA DATE :
+        # en face de chaque membre, la zone de saisie de SON intention. C'est
+        # ici que la réserve se pourvoit (le « ➕ Ajouter une intention à la
+        # réserve » d'antan a quitté la page) — les intentions des membres ne
+        # passent JAMAIS par la 🕯️ Zone du jour : elles rejoignent directement
+        # la 📚 réserve, à la hauteur du N° méd. du membre.
+        _cpt_res_eq = {}
+        try:
+            for (_rid, _rnum, _rtxt, _raut, _reqi, _rdaj) in reserve_lignes(equipe_id=_eid):
+                _cpt_res_eq[int(_rnum)] = _cpt_res_eq.get(int(_rnum), 0) + 1
+        except Exception:
+            _cpt_res_eq = {}
+        _cles_intentions = []
+        if _num2nom:
+            st.markdown("🕯️ **Les intentions des membres** — une zone par membre, "
+                        "à la hauteur de son N° méd. :")
+            st.caption("Ce que vous écrivez ici rejoint directement la 📚 Réserve "
+                       "d'intentions (il peut y avoir plusieurs intentions au même "
+                       "N° méd. : celui qui le médite portera aussi le surplus). "
+                       "Laissez vide si rien à ajouter. 🤫 Être une tombe.")
+            for _num_m in sorted(_num2nom):
+                _cle_i = f"{prefixe_cle}_int_{_num_m}"
+                _cles_intentions.append(_cle_i)
+                _deja = _cpt_res_eq.get(_num_m, 0)
+                st.text_input(
+                    "N° " + str(_num_m).zfill(2) + " — " + _num2nom[_num_m],
+                    key=_cle_i, max_chars=500,
+                    placeholder=("(" + str(_deja) + " déjà en réserve) "
+                                 "ex : pour la santé de…, pour ma famille…"))
+            # les membres actifs sans N° méd. valide ne peuvent pas figurer
+            _sans_num = c.execute("""SELECT COUNT(*) FROM membres
+                                     WHERE equipe_id=? AND statut='actif'""",
+                                  (_eid,)).fetchone()[0] - len(_num2nom)
+            if _sans_num > 0:
+                st.caption("⚠️ " + str(_sans_num) + " membre(s) actif(s) n'apparai(ssen)t "
+                           "pas ci-dessus : leur N° méd. (1-20) n'est pas renseigné — "
+                           "à compléter dans « 👤 Mes membres ».")
         _ordre_txt = st.text_input(
             "Ordre de la chaîne — les N° méd. des membres présents physiquement, dans l'ordre",
             placeholder="Ex : 10, 17, 09, 14, 03, 06 — ou avec des flèches : 10 ---> 17 ---> 09 …",
@@ -2079,9 +2136,32 @@ def bloc_chaine_seance(equipes, prefixe_cle="cs"):
                         _ok, _msg = enregistrer_chaine_seance(
                             _eid, _d_nouvelle.isoformat(), _nums_aper, _abs_final)
                         if _ok:
-                            for _k in (f"{prefixe_cle}_ch_ordre", f"{prefixe_cle}_ch_abs"):
+                            # v7.9.19 — les intentions écrites en face des membres
+                            # rejoignent la 📚 réserve (une par N° méd., le surplus
+                            # bienvenu). JAMAIS par la 🕯️ Zone du jour.
+                            _nb_int = 0
+                            for _cle_i in _cles_intentions:
+                                _txt_i = str(st.session_state.get(_cle_i, "") or "").strip()
+                                if not _txt_i:
+                                    continue
+                                try:
+                                    _num_i = int(_cle_i.rsplit("_", 1)[1])
+                                except (IndexError, ValueError):
+                                    continue
+                                _ok_i, _msg_i = ajouter_intention_reserve(
+                                    _num_i, _txt_i, auteur_nom=_num2nom.get(_num_i),
+                                    equipe_id=_eid)
+                                if _ok_i:
+                                    _nb_int += 1
+                                else:
+                                    st.warning(_msg_i)
+                            for _k in (f"{prefixe_cle}_ch_ordre", f"{prefixe_cle}_ch_abs",
+                                       *_cles_intentions):
                                 st.session_state.pop(_k, None)
-                            st.session_state["flash_success"] = _msg
+                            st.session_state["flash_success"] = (
+                                _msg + (" 📚 " + str(_nb_int)
+                                        + " intention(s) des membres ajoutée(s) à la réserve."
+                                        if _nb_int else ""))
                             st.rerun()
                         st.error(_msg)
 
