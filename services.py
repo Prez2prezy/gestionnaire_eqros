@@ -228,6 +228,37 @@ def sauvegarder_illustration(fichier):
             print(f"Erreur upload illustration: {e}")
     return None
 
+def sauvegarder_photo_locale(fichier, dossier="galerie"):
+    """v7.9.19 — RECEVOIR LES PHOTOS MÊME SANS HÉBERGEUR : quand l'hébergement
+    d'images (Cloudinary) n'est pas configuré ou indisponible, la photo est
+    quand même acceptée : elle est réduite (max 800 px, JPG) et rangée dans
+    le dossier « static » de l'application (static/galerie/…), déjà servi
+    par l'app sur /app/static/… (enableStaticServing). L'adresse retournée
+    s'affiche comme n'importe quelle photo de la Galerie +. Retourne
+    l'adresse publique, ou None si même le rangement local a échoué."""
+    if not fichier:
+        return None
+    try:
+        from PIL import ImageOps
+        img = Image.open(fichier)
+        img.load()
+        try:
+            img = ImageOps.exif_transpose(img)  # photos de téléphone bien droites
+        except Exception:
+            pass
+        if img.mode in ("RGBA", "P", "LA"):
+            img = img.convert("RGB")
+        img.thumbnail((800, 800))
+        _dossier = os.path.join("static", dossier)
+        os.makedirs(_dossier, exist_ok=True)
+        _nom = (datetime.now().strftime("%Y%m%d_%H%M%S") + "_"
+                + secrets.token_hex(4) + ".jpg")
+        img.save(os.path.join(_dossier, _nom), "JPEG", quality=70)
+        return "/app/static/" + dossier + "/" + _nom
+    except Exception as e:
+        print(f"Erreur sauvegarde photo locale ({dossier}): {e}")
+        return None
+
 def sauvegarder_video(fichier):
     """Vidéo (MP4/MOV) pour les bandes-annonces d'évènements."""
     if fichier and USE_CLOUDINARY:
@@ -255,8 +286,24 @@ def supprimer_photo(path):
             cloudinary.uploader.destroy(public_id)
         except Exception:
             pass
-    elif not path.startswith("http") and os.path.exists(path):
-        os.remove(path)
+    elif not path.startswith("http"):
+        # v7.9.19 — les PHOTOS LOCALES de la Galerie + (adresses /app/static/
+        # posées par sauvegarder_photo_locale) sont effacées du dossier static
+        # avec l'entrée ; les anciens chemins relatifs (photos/…) comme avant.
+        _local = None
+        if path.startswith("/app/static/"):
+            _local = os.path.join("static", path[len("/app/static/"):])
+        elif path.startswith("app/static/"):
+            _local = os.path.join("static", path[len("app/static/"):])
+        elif path.startswith("static/"):
+            _local = path
+        elif os.path.exists(path):
+            _local = path
+        if _local and os.path.exists(_local):
+            try:
+                os.remove(_local)
+            except Exception:
+                pass
 
 def urls_galerie(img):
     """v7.9.18 — les entrées de la Galerie + (Souvenirs / Témoignages)
@@ -711,4 +758,3 @@ def executer_publications_programmees():
             commit_and_sync()
         except Exception as e:
             logger.warning(f"publications programmées : commit ({e!r})")
-
