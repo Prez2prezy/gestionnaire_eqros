@@ -98,13 +98,13 @@ _VERSION_APPLI = "v7.9.19"
 # le site du Mouvement) ; vide, elle reste discrètement absente.
 LIEN_FACEBOOK = ""
 
-# v7.9.17 — L'ANNONCE DU PÈLERINAGE : la vidéo YouTube de la chaîne
+# v7.9.17 — L'VIDÉO À LA DEMANDE : la vidéo YouTube de la chaîne
 # « Équipes du Rosaire Grand-Bassam » s'affiche JUSTE AVANT LE PIED DE PAGE
 # (v7.9.19 — elle a quitté la tête du fil d'actualité, à la demande :
 # « s'il doit s'ouvrir, c'est juste avant le pied de page »), avec le
 # lecteur incorporé et un lien d'ouverture. Mettre "" dans la constante
 # pour retirer la carte d'un seul geste, sans toucher au reste.
-LIEN_YOUTUBE_PELERINAGE = "https://youtu.be/RHrIgEeepO8?si=Dg0P8YHE0K3PYNo3"
+LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE = "https://www.youtube.com/watch?v=Z6SLDuq2HUU&list=RDZ6SLDuq2HUU&start_radio=1"
 
 # v7.9.19 — L'ADRESSE DE LA CHAÎNE YOUTUBE (demande : « le lien de la
 # chaîne youtube.com à ajouter comme adresse dans le pied de page ») :
@@ -3819,13 +3819,13 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                 pass
 
 
-def _carte_annonce_pelerinage():
-    """🛕 ANNONCE DU PÈLERINAGE (v7.9.17) — la vidéo YouTube de la chaîne
+def _carte_vidéo_a_la_demande():
+    """🛕 VIDÉO À LA DEMANDE (v7.9.17) — la vidéo YouTube de la chaîne
     « Équipes du Rosaire Grand-Bassam », affichée en tête du fil d'actualité
-    tant que LIEN_YOUTUBE_PELERINAGE (en tête de module) est renseigné.
+    tant que LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE (en tête de module) est renseigné.
     Lecteur incorporé responsive (16:9, même mécanique que la playlist du
     contexte paroissial) + lien d'ouverture directe sur YouTube."""
-    _url = str(LIEN_YOUTUBE_PELERINAGE or "").strip()
+    _url = str(LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE or "").strip()
     if not _url:
         return
     _m = re.search(r"(?:youtu\.be/|v=|shorts/|embed/)([A-Za-z0-9_-]{6,})", _url)
@@ -3837,15 +3837,15 @@ def _carte_annonce_pelerinage():
         ' border:2px solid #FFD700; border-radius:15px; padding:16px;'
         ' text-align:center; margin:10px;">'
         '<div class="dpl-titre-g" style="font-size:clamp(1.05rem, 4.5vw, 1.25rem);">'
-        '🛕 Annonce de pèlerinage</div>'
+        '🛕 Vidéo à la demande</div>'
         '<div style="color:#ffffff; font-size:clamp(0.85rem, 3.6vw, 1rem);'
         ' margin-top:6px; line-height:1.6;">'
-        'Regardez l\u2019annonce du pèlerinage des Équipes du Rosaire —'
+        'Regardez la vidéo à la demande sur la chaîne des Équipes du Rosaire —'
         ' Diocèse de Grand-Bassam</div>'
         '<div style="position:relative; width:100%; padding-top:56.25%;'
         ' border-radius:12px; overflow:hidden; border:1px solid #FFD700;'
         ' margin:12px 0 0 0;">'
-        '<iframe src="' + _src + '" title="Annonce de pèlerinage"'
+        '<iframe src="' + _src + '" title="Vidéo à la demande"'
         ' style="position:absolute; top:0; left:0; width:100%; height:100%;'
         ' border:none;" allow="encrypted-media; picture-in-picture"'
         ' allowfullscreen></iframe></div>'
@@ -4301,11 +4301,11 @@ def show_espace_membre(matloc_membre=None):
     (_corps_espace_membre, code d'origine inchangé), PUIS le pied de page
     du site — présent sur toutes les pages, y compris le livre ouvert.
     v7.9.10 — le pied de page connaît le fidèle (paroisse + responsable) :
-    v7.9.19 — la carte vidéo du pèlerinage s'ouvre JUSTE AVANT le pied de
+    v7.9.19 — la carte de vidéo à la demande s'ouvre JUSTE AVANT le pied de
     page, sur toutes les pages de l'Espace de Prière (demande : « s'il
     doit s'ouvrir, c'est juste avant le pied de page »)."""
     _corps_espace_membre(matloc_membre)
-    _carte_annonce_pelerinage()
+    _carte_vidéo_a_la_demande()
     _render_pied_de_page(matloc_membre)
 
 
