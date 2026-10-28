@@ -97,7 +97,7 @@ _VERSION_APPLI = "v7.9.18"
 # le site du Mouvement) ; vide, elle reste discrètement absente.
 LIEN_FACEBOOK = ""
 
-# v7.9.17 — L'ANNONCE DU PÈLERINAGE : la vidéo YouTube de la chaîne
+# v7.9.17 — VIDÉO À LA DEMANDE : la vidéo YouTube de la chaîne
 # « Équipes du Rosaire Grand-Bassam » s'affiche en tête du fil d'actualité
 # (carte « 🛕 Vidéo à la demande » avec le lecteur incorporé et un lien
 # d'ouverture). Mettre "" dans la constante pour retirer la carte d'un seul
@@ -3765,7 +3765,7 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
 
 
 def _carte_annonce_pelerinage():
-    """🛕 ANNONCE DU PÈLERINAGE (v7.9.17) — la vidéo YouTube de la chaîne
+    """🛕 VIDÉO À LA DEMANDE (v7.9.17) — la vidéo YouTube de la chaîne
     « Équipes du Rosaire Grand-Bassam », affichée en tête du fil d'actualité
     tant que LIEN_YOUTUBE_PELERINAGE (en tête de module) est renseigné.
     Lecteur incorporé responsive (16:9, même mécanique que la playlist du
@@ -3785,7 +3785,7 @@ def _carte_annonce_pelerinage():
         '🛕 Vidéo à la demande </div>'
         '<div style="color:#ffffff; font-size:clamp(0.85rem, 3.6vw, 1rem);'
         ' margin-top:6px; line-height:1.6;">'
-        'Regardez l\u2019annonce du pèlerinage des Équipes du Rosaire —'
+        'Regardez l\u2019la vidéo à la demande sur la chaîne des Équipes du Rosaire —'
         ' Diocèse de Grand-Bassam</div>'
         '<div style="position:relative; width:100%; padding-top:56.25%;'
         ' border-radius:12px; overflow:hidden; border:1px solid #FFD700;'
@@ -3821,7 +3821,7 @@ def _render_fil_actualites(pid=None, lien_theme=None, equipe_membre_id=None,
     totalement : deux publications n'apparaissaient NULLE PART dans
     l'Espace de Prière."""
     _alerte_feuillet_fil(lien_theme)
-    # v7.9.17 — l'annonce du pèlerinage (vidéo YouTube) accompagne l'alerte
+    # v7.9.17 — LA VIDÉO À LA DEMANDE (vidéo YouTube) accompagne l'alerte
     # en tête du fil, pour tous (public comme membre).
     _carte_annonce_pelerinage()
 
