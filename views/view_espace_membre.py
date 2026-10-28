@@ -81,6 +81,7 @@ from datetime import date
 from stcompat import comp_html as _comp_html
 from database import (c, commit_and_sync, verifier_reparer_intentions,
                       intention_du_prochain, intention_du_prochain_detail,
+                      intentions_reserve_surplus,
                       contact_en_priere, date_intention_en_priere,
                       prise_en_charge_automatique, verser_intention_du_jour,
                       pointer_dizaine, dizaine_deja_pointee, compteur_dizaines_mois)
@@ -90,19 +91,26 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.9.18"
+_VERSION_APPLI = "v7.9.19"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
 # le site du Mouvement) ; vide, elle reste discrètement absente.
 LIEN_FACEBOOK = ""
 
-# v7.9.17 — VIDÉO À LA DEMANDE : la vidéo YouTube de la chaîne
-# « Équipes du Rosaire Grand-Bassam » s'affiche en tête du fil d'actualité
-# (carte « 🛕 Vidéo à la demande » avec le lecteur incorporé et un lien
-# d'ouverture). Mettre "" dans la constante pour retirer la carte d'un seul
-# geste, sans toucher au reste.
-LIEN_YOUTUBE_PELERINAGE = "https://www.youtube.com/watch?v=Z6SLDuq2HUU&list=RDZ6SLDuq2HUU&start_radio=1"
+# v7.9.17 — L'ANNONCE DU PÈLERINAGE : la vidéo YouTube de la chaîne
+# « Équipes du Rosaire Grand-Bassam » s'affiche JUSTE AVANT LE PIED DE PAGE
+# (v7.9.19 — elle a quitté la tête du fil d'actualité, à la demande :
+# « s'il doit s'ouvrir, c'est juste avant le pied de page »), avec le
+# lecteur incorporé et un lien d'ouverture. Mettre "" dans la constante
+# pour retirer la carte d'un seul geste, sans toucher au reste.
+LIEN_YOUTUBE_PELERINAGE = "https://youtu.be/RHrIgEeepO8?si=Dg0P8YHE0K3PYNo3"
+
+# v7.9.19 — L'ADRESSE DE LA CHAÎNE YOUTUBE (demande : « le lien de la
+# chaîne youtube.com à ajouter comme adresse dans le pied de page ») :
+# elle apparaît dans la colonne centrale du pied, sous le contact du
+# responsable paroissial. Vide, elle reste discrètement absente.
+LIEN_YOUTUBE_CHAINE = "https://www.youtube.com/channel/UCK3pN76H1lTlIyjsIrYMTXw"
 
 
 # ====================================================================
@@ -1808,13 +1816,28 @@ def _ligne_chaine(jour_visiteur=None, matloc=None):
     leurs N° méd. et méditent avec, sur 20 jours.
     v7.9.4 — le membre transmet son MatLoc : son intention lui est
     ATTACHÉE sur sa période désignée (membre), comme sur 20 jours pour
-    le visiteur."""
+    le visiteur.
+    v7.9.19 — LE SURPLUS : « Si un N° méd. contient plus d'une intention,
+    le membre comme le visiteur qui médite ce N° méd. verra ses intentions
+    augmentées selon le surplus. » Chaque intention en plus du N° méd. du
+    lecteur s'ajoute à la ligne, l'une sous l'autre."""
     _txt, _qui = intention_du_prochain_detail(jour_visiteur=jour_visiteur,
                                               matloc=matloc)
     if _qui:
-        return ("🕯️ Vierge Marie, mère de Dieu, intercède pour " + _qui
-                + " : " + _txt)
-    return "🕯️ Vierge Marie, mère de Dieu, intercède : " + _txt
+        _lignes = ["🕯️ Vierge Marie, mère de Dieu, intercède pour " + _qui
+                   + " : " + _txt]
+    else:
+        _lignes = ["🕯️ Vierge Marie, mère de Dieu, intercède : " + _txt]
+    try:
+        _surplus = intentions_reserve_surplus(jour_visiteur=jour_visiteur,
+                                              matloc=matloc, texte_exclu=_txt)
+        for (_s_txt, _s_qui) in _surplus:
+            _lignes.append("🕯️ Et elle intercède aussi"
+                           + (" pour " + _s_qui if _s_qui else "")
+                           + " : " + _s_txt)
+    except Exception:
+        pass
+    return "\n".join(_lignes)
 
 
 def _render_page_rosaire_eyquem():
@@ -3446,7 +3469,11 @@ def _render_page_galerie(sub):
         # l'autre, même style ; une entrée d'avant la v7.9.18 (une seule
         # URL) se rend exactement comme avant.
         for _u_gal in urls_galerie(img):
-            if _u_gal.startswith("http"):
+            # v7.9.19 — les photos rangées dans l'application (secours local
+            # sans hébergeur) portent une adresse /app/static/… : elles
+            # s'affichent exactement comme les photos hébergées.
+            if (_u_gal.startswith("http") or _u_gal.startswith("/app/static/")
+                    or _u_gal.startswith("app/static/")):
                 _corps += ('<img src="' + html.escape(_u_gal) + '" alt="" '
                            'style="width:100%; max-width:560px; border-radius:10px; '
                            'display:block; margin:0 auto 10px auto; border:1px solid #C9A227;">')
@@ -3529,7 +3556,8 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
         '.int-cadre-or [data-testid="stCaptionContainer"] p { color:#b8c0e8'
         ' !important; }'
         '.int-depliant-or summary { background:linear-gradient(135deg,#1A237E,'
-        ' #4527a0) !important; text-align:center; border-radius:0 !important; }'
+        ' #4527a0) !important; text-align:center; border-radius:0 !important;'
+        ' display:block !important; }'
         '.int-depliant-or summary p, .int-depliant-or summary div {'
         ' color:#FFD000 !important; font-weight:600 !important; }'
         '.int-depliant-or details { background:transparent !important; }'
@@ -3537,13 +3565,19 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
     # v7.9.17 — DEMANDE UTILISATRICE : la rubrique est CONTENUE DANS UN
     # DÉPLIANT, comme « 📿 Découvrez les Équipes du Rosaire ! ». L'expander
     # porte le titre ; le mini-script ci-dessous (marker int-or-marker)
-    # habille désormais l'EXPANDER lui-même (bordure + fond + summary
-    # dégradé) au lieu du conteneur bordé, retiré. Ouvert par défaut
-    # comme le dépliant de découverte (DEPLIANT_OUVERT) et repliable
-    # d'un clic ; un formulaire soumis (messages de reprise visibles)
-    # ou le CTA « 📿 Prier ma dizaine maintenant » le maintiennent ouvert.
-    _depl_int_ouvert = (DEPLIANT_OUVERT
-                        or bool(st.session_state.get("form_intention_equipe"))
+    # habille l'EXPANDER lui-même (bordure + fond + summary dégradé).
+    # v7.9.19 — DEMANDE UTILISATRICE : « est dans un expander pas dans un
+    # dépliant, comme « 📿 Découvrez les Équipes du Rosaire ! », sous la
+    # forme de carte lorsqu'elle est repliée » — la rubrique reste un
+    # expander (pas le bloc details du dépliant de découverte), habillé
+    # EXACTEMENT comme la carte du dépliant (même dégradé, même liseré or,
+    # mêmes coins arrondis), et elle se présente REPLIÉE À L'ARRIVÉE : une
+    # carte, qui s'ouvre d'un clic. La mini-ligne « cliquez pour ouvrir ▾ »
+    # du dépliant de découverte est reprise (posée par le mini-script, qui
+    # la retourne au clic) ; un formulaire soumis (messages de reprise
+    # visibles) ou le CTA « 📿 Prier ma dizaine maintenant » la maintient
+    # ouverte.
+    _depl_int_ouvert = (bool(st.session_state.get("form_intention_equipe"))
                         or (st.session_state.get("int_derniere") is not None))
     with st.expander("🙏 Vos intentions à une équipe",
                      expanded=_depl_int_ouvert):
@@ -3737,11 +3771,14 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                                 "CHAÎNE DE PRIÈRE UNIVERSELLE.")
                             st.rerun()
             # ── Mini-script (dernier élément du dépliant, remonte au bloc puis à
-            # l'EXPANDER) : v7.9.17 — l'habillage doré (bordure, fond, ombre) se
-            # pose sur l'expander lui-même (classe .int-depliant-or → summary
-            # dégradé via le CSS ci-dessus) et le bloc interne garde la classe
+            # l'EXPANDER) : l'habillage doré (bordure, fond, ombre) se pose sur
+            # l'expander lui-même (classe .int-depliant-or → summary dégradé via
+            # le CSS ci-dessus) et le bloc interne garde la classe
             # .int-cadre-or (champs à liséré or). Comme injecter_icone_pwa :
             # tourne à chaque rerun, iframe invisible.
+            # v7.9.19 — le mini-script ajoute AUSSI la mini-ligne du dépliant
+            # de découverte (« cliquez pour ouvrir ▾ » / « cliquez pour
+            # replier ▴ ») sous le titre, retournée à chaque clic.
             # v7.8.16 — via stcompat (st.iframe) : height=0 est borné à 1 px.
             try:
                 _comp_html(
@@ -3759,13 +3796,31 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                     "e.style.boxShadow='0 4px 14px rgba(0,0,0,0.35)';"
                     "e.classList.add('int-depliant-or');"
                     "w.style.padding='10px 6px';"
+                    "var dt=e.querySelector('details')||e;"
+                    "var s=e.querySelector('summary');"
+                    "if(s){"
+                    "var cons=s.querySelector('.int-consigne');"
+                    "if(!cons){"
+                    "cons=d.createElement('div');"
+                    "cons.className='int-consigne';"
+                    "cons.style.cssText='width:100%; color:#e8eaf6 !important;"
+                    " font-size:0.78rem; font-weight:normal !important;"
+                    " text-align:center;';"
+                    "s.appendChild(cons);"
+                    "s.style.display='block';}"
+                    "var maj=function(){"
+                    "var ouvert=dt.hasAttribute('open');"
+                    "cons.textContent= ouvert ? 'cliquez pour replier ▴' :"
+                    " 'cliquez pour ouvrir ▾';};"
+                    "maj();"
+                    "s.addEventListener('click', function(){ setTimeout(maj, 60); });}"
                     "})();</script>", height=0)
             except Exception:
                 pass
 
 
 def _carte_annonce_pelerinage():
-    """🛕 VIDÉO À LA DEMANDE (v7.9.17) — la vidéo YouTube de la chaîne
+    """🛕 ANNONCE DU PÈLERINAGE (v7.9.17) — la vidéo YouTube de la chaîne
     « Équipes du Rosaire Grand-Bassam », affichée en tête du fil d'actualité
     tant que LIEN_YOUTUBE_PELERINAGE (en tête de module) est renseigné.
     Lecteur incorporé responsive (16:9, même mécanique que la playlist du
@@ -3782,15 +3837,15 @@ def _carte_annonce_pelerinage():
         ' border:2px solid #FFD700; border-radius:15px; padding:16px;'
         ' text-align:center; margin:10px;">'
         '<div class="dpl-titre-g" style="font-size:clamp(1.05rem, 4.5vw, 1.25rem);">'
-        '🛕 Vidéo à la demande </div>'
+        '🛕 Annonce de pèlerinage</div>'
         '<div style="color:#ffffff; font-size:clamp(0.85rem, 3.6vw, 1rem);'
         ' margin-top:6px; line-height:1.6;">'
-        'Regardez l\u2019la vidéo à la demande sur la chaîne des Équipes du Rosaire —'
+        'Regardez l\u2019annonce du pèlerinage des Équipes du Rosaire —'
         ' Diocèse de Grand-Bassam</div>'
         '<div style="position:relative; width:100%; padding-top:56.25%;'
         ' border-radius:12px; overflow:hidden; border:1px solid #FFD700;'
         ' margin:12px 0 0 0;">'
-        '<iframe src="' + _src + '" title="Vidéo à la demande"'
+        '<iframe src="' + _src + '" title="Annonce de pèlerinage"'
         ' style="position:absolute; top:0; left:0; width:100%; height:100%;'
         ' border:none;" allow="encrypted-media; picture-in-picture"'
         ' allowfullscreen></iframe></div>'
@@ -3821,9 +3876,9 @@ def _render_fil_actualites(pid=None, lien_theme=None, equipe_membre_id=None,
     totalement : deux publications n'apparaissaient NULLE PART dans
     l'Espace de Prière."""
     _alerte_feuillet_fil(lien_theme)
-    # v7.9.17 — LA VIDÉO À LA DEMANDE (vidéo YouTube) accompagne l'alerte
-    # en tête du fil, pour tous (public comme membre).
-    _carte_annonce_pelerinage()
+    # v7.9.19 — la carte vidéo a quitté la tête du fil : elle s'ouvre
+    # désormais JUSTE AVANT LE PIED DE PAGE (demande explicite), dans
+    # show_espace_membre, sur toutes les pages de l'Espace de Prière.
 
     cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
         else ("AND paroisse_cible IS NULL", [])
@@ -4105,6 +4160,13 @@ def _render_pied_de_page(matloc_membre=None):
     _fb = str(LIEN_FACEBOOK or "").strip()
     _fb_html = ('<a class="pdr-fb" href="' + html.escape(_fb, quote=True) +
                 '" target="_blank" rel="noopener" aria-label="Facebook">f</a>') if _fb else ''
+    # v7.9.19 — L'ADRESSE DE LA CHAÎNE YOUTUBE (demande : « le lien de la
+    # chaîne youtube.com à ajouter comme adresse dans le pied de page ») :
+    # une ligne de plus dans la colonne centrale, sous le contact du
+    # responsable paroissial, comme une adresse du Mouvement.
+    _yt = str(LIEN_YOUTUBE_CHAINE or "").strip()
+    _yt_html = ('<a class="pdr-contact pdr-yt" href="' + html.escape(_yt, quote=True)
+                + '" target="_blank" rel="noopener">▶️ Notre chaîne YouTube</a>') if _yt else ''
     st.markdown('<style>'
                 '.pdr-v910 { margin:30px 10px 18px 10px; border-radius:16px; overflow:hidden;'
                 ' background:linear-gradient(165deg, #241042 0%, #3B1177 55%, #4A148C 100%);'
@@ -4113,15 +4175,26 @@ def _render_pied_de_page(matloc_membre=None):
                 ' padding:22px 20px 14px 20px; }'
                 '.pdr-v910 .pdr-col { flex:1 1 210px; min-width:190px; color:#e6dcf7;'
                 ' font-size:0.86rem; line-height:1.8; }'
-                # v7.9.15 — LA 3e COLONNE (menu) DÉCALÉE À DROITE sur les
-                # écrans larges : elle se cale sur le bord droit du pied de
-                # page, bien séparée de la colonne du milieu (logo, nom,
-                # contact). Sur téléphone (< 700 px), les colonnes s'empilent
+                # v7.9.15 — disposition d'origine (base mobile) : la 3e
+                # colonne (menu) part du même rang que les autres, et le
+                # bloc @media ci-dessous règle les écrans larges (v7.9.19 :
+                # trois colonnes de MÊME largeur — colonne centrale
+                # équidistante des deux extrêmes, menu calé à droite).
+                # Sur téléphone (< 700 px), les colonnes s'empilent
                 # comme avant — aucun changement mobile.
                 '.pdr-v910 .pdr-col-droite { flex:1 1 210px; }'
+                # v7.9.19 — LA COLONNE CENTRALE ÉQUIDISTANTE DES DEUX EXTRÊMES
+                # (demande : « la 2ᵉ colonne semble plus proche de la 3ᵉ ») :
+                # sur les écrans larges, les TROIS colonnes ont exactement la
+                # même largeur (flex:1 1 0) — le centre du logo/nom tombe au
+                # juste milieu ; le menu de droite reste calé à droite. Sur
+                # téléphone (< 700 px), l'empilement ne change pas.
                 '@media (min-width:700px) {'
-                '.pdr-v910 .pdr-col-droite { flex:0 1 auto; margin-left:auto;'
-                ' padding-left:26px; }'
+                '.pdr-v910 .pdr-cols { flex-wrap:nowrap; }'
+                '.pdr-v910 .pdr-col { flex:1 1 0; min-width:0; }'
+                '.pdr-v910 .pdr-col-droite { flex:1 1 0; min-width:0;'
+                ' margin-left:0; padding-left:0; text-align:right; }'
+                '.pdr-v910 ul.pdr-menu { text-align:right; }'
                 '}'
                 '.pdr-v910 .pdr-col-milieu { text-align:center; }'
                 # v7.9.16 — LE LOGO AGRANDI : même largeur que le nom
@@ -4155,6 +4228,8 @@ def _render_pied_de_page(matloc_membre=None):
                 '.pdr-v910 .pdr-contact { display:inline-block; color:#FFD54F;'
                 ' font-size:0.84rem; text-decoration:none; margin-top:4px; }'
                 '.pdr-v910 a.pdr-contact:hover { text-decoration:underline; }'
+                # v7.9.19 — la ligne YouTube de la colonne centrale
+                '.pdr-v910 .pdr-yt { display:block; margin-top:6px; }'
                 '.pdr-v910 .pdr-bas { background:rgba(5,2,12,.88); padding:10px 16px;'
                 ' display:flex; flex-wrap:wrap; gap:4px 18px; align-items:center;'
                 ' justify-content:space-between; }'
@@ -4204,6 +4279,8 @@ def _render_pied_de_page(matloc_membre=None):
         # v7.9.16 — la ligne paroisse porte son libellé : « 🕯️ Paroisse : Nom »
         + ('<div class="pdr-par">🕯️ Paroisse : ' + html.escape(str(_nom_par)) + '</div>' if _nom_par else '') +
         _contact_html +
+        # v7.9.19 — l'adresse de la chaîne YouTube, comme une adresse du Mouvement
+        _yt_html +
         '</div>'
         '<div class="pdr-col pdr-col-droite">'
         '<ul class="pdr-menu">' + _menu_pied + '</ul>'
@@ -4223,8 +4300,12 @@ def show_espace_membre(matloc_membre=None):
     """Point d'entrée de l'Espace de Prière (v7.9.3) : le corps de page
     (_corps_espace_membre, code d'origine inchangé), PUIS le pied de page
     du site — présent sur toutes les pages, y compris le livre ouvert.
-    v7.9.10 — le pied de page connaît le fidèle (paroisse + responsable) :"""
+    v7.9.10 — le pied de page connaît le fidèle (paroisse + responsable) :
+    v7.9.19 — la carte vidéo du pèlerinage s'ouvre JUSTE AVANT le pied de
+    page, sur toutes les pages de l'Espace de Prière (demande : « s'il
+    doit s'ouvrir, c'est juste avant le pied de page »)."""
     _corps_espace_membre(matloc_membre)
+    _carte_annonce_pelerinage()
     _render_pied_de_page(matloc_membre)
 
 
