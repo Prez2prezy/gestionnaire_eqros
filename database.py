@@ -1516,9 +1516,12 @@ def ajouter_intention_reserve(numero_med, texte, auteur_nom=None,
                               equipe_id=None, paroisse_id=None,
                               jour_naissance=None, qui=None):
     """Ajoute une intention à la réserve d'un N° méd. (v7.9.3).
-    v7.9.4 — UNE intention par N° méd. : si l'emplacement est déjà pourvu,
-    l'ajout est refusé avec un message doux (il se renouvelle de lui-même
-    avec les intentions confiées — ou retirez d'abord celle en place).
+    v7.9.4 — UNE intention par N° méd. (règle d'origine).
+    v7.9.19 — LE SURPLUS EST LE BIENVENU : un N° méd. peut porter plusieurs
+    intentions. Le membre ou le visiteur qui médite CE N° reçoit alors
+    TOUTES les intentions du N° : la principale + le surplus (voir
+    intentions_reserve_surplus). Aucun ajout n'est plus refusé pour cause
+    d'emplacement déjà pourvu.
     Retourne (ok, message) — le message est prêt à être affiché."""
     _assurer_table_reserve()
     _num = _numero_med_normale(numero_med)
@@ -1530,15 +1533,9 @@ def ajouter_intention_reserve(numero_med, texte, auteur_nom=None,
     if len(_txt) > 500:
         return (False, "L'intention est trop longue (500 caractères maximum).")
     try:
-        _deja = c.execute("""SELECT id FROM intentions_reserve
-                             WHERE numero_med=? AND active=1 LIMIT 1""",
-                          (_num,)).fetchone()
-        if _deja:
-            return (False, "📿 L'emplacement du N° méd. " + str(_num)
-                           + " est déjà pourvu : chaque N° porte UNE intention. "
-                           "Il se renouvelle au fil des intentions confiées — ou "
-                           "retirez d'abord celle en place (🗑️) si elle doit laisser "
-                           "la place.")
+        _deja = c.execute("""SELECT COUNT(*) FROM intentions_reserve
+                             WHERE numero_med=? AND active=1""",
+                          (_num,)).fetchone()[0]
         c.execute("""INSERT INTO intentions_reserve
                      (numero_med, texte, auteur_nom, equipe_id, paroisse_id,
                       date_ajout, active, qui, jour_naissance)
@@ -1548,6 +1545,11 @@ def ajouter_intention_reserve(numero_med, texte, auteur_nom=None,
                    (str(qui).strip() or None) if qui else None,
                    int(jour_naissance) if jour_naissance else None))
         commit_and_sync()
+        if _deja:
+            return (True, "📚 Intention ajoutée à la réserve du N° méd. " + str(_num)
+                           + " — il porte maintenant " + str(_deja + 1)
+                           + " intentions : le membre ou le visiteur qui médite ce "
+                             "N° portera aussi ce surplus.")
         return (True, "📚 Intention ajoutée à la réserve du N° méd. " + str(_num) + ".")
     except Exception as e:
         logger.warning(f"ajouter_intention_reserve : {e!r}")
@@ -1670,8 +1672,9 @@ def enregistrer_chaine_seance(equipe_id, date_seance, ordre_nums, absents_nums=N
                    ",".join(str(n) for n in _abs) if _abs else None,
                    datetime.now().strftime("%Y-%m-%d %H:%M")))
         commit_and_sync()
-        return (True, "Chaîne de la séance enregistrée : chaque membre peut porter "
-                      "l'intention de son prochain jusqu'à la prochaine séance. ⛓️")
+        # v7.9.19 — la phrase demandée : « X prie pour Y — N° méd. Z. »
+        return (True, "Chaîne de la séance enregistrée : chaque membre prie pour "
+                      "son prochain jusqu'à la prochaine séance. ⛓️")
     except Exception as e:
         logger.warning(f"enregistrer_chaine_seance : {e!r}")
         return (False, "L'enregistrement a échoué (erreur technique journalisée).")
@@ -1743,6 +1746,67 @@ def intention_reserve_pour_numero(numero_med, cycle=None, jour_exclu=None):
     except Exception as e:
         logger.warning(f"intention_reserve_pour_numero : {e!r}")
         return None
+
+
+def intentions_reserve_du_numero(numero_med, texte_exclu=None, jour_exclu=None):
+    """TOUTES les intentions d'un N° méd. (v7.9.19) — la réserve accepte
+    désormais plusieurs intentions au même N° (le surplus). Cette fonction
+    les rend TOUTES : liste de (texte, qui), les plus anciennes d'abord.
+    texte_exclu : retire de la liste l'intention déjà montrée à part (la
+    ligne principale du tirage) — le lecteur ne la lit pas deux fois.
+    jour_exclu : règle d'or (le lecteur ne voit jamais la sienne).
+    Seules les intentions ACTIVES et PUBLIÉES sont rendues."""
+    _num = _numero_med_normale(numero_med)
+    if _num is None:
+        return []
+    try:
+        _assurer_table_reserve()
+        publier_reserve_due()
+        rows = c.execute("""SELECT texte, qui, auteur_nom, jour_naissance
+                            FROM intentions_reserve
+                            WHERE numero_med=? AND active=1
+                              AND (publiee IS NULL OR publiee<>0)
+                            ORDER BY id ASC""", (_num,)).fetchall()
+    except Exception as e:
+        logger.warning(f"intentions_reserve_du_numero : {e!r}")
+        return []
+    _exclu = str(texte_exclu or "").strip()
+    _sortie = []
+    for (_txt, _qui, _auteur, _jn) in rows:
+        if jour_exclu is not None and _jn is not None and int(_jn) == int(jour_exclu):
+            continue
+        if _exclu and str(_txt or "").strip() == _exclu:
+            continue
+        _q = (str(_qui or "").strip() or str(_auteur or "").strip() or "notre prochain")
+        _sortie.append((str(_txt or "").strip(), _q))
+    return _sortie
+
+
+def intentions_reserve_surplus(jour_visiteur=None, matloc=None, texte_exclu=None):
+    """LE SURPLUS POUR LE LECTEUR (v7.9.19) : « Si un N° méd. contient plus
+    d'une intention, le membre comme le visiteur qui médite ce N° méd. verra
+    ses intentions augmentées selon le surplus. » Retrouve le N° méd. du
+    lecteur (son jour de naissance pour un visiteur, sa fiche membre pour un
+    membre) et rend TOUTES les intentions de ce N°, SAUF la ligne principale
+    déjà affichée (texte_exclu) et, pour le visiteur, ses propres intentions
+    (règle d'or). Côté membre, comme au tirage principal, aucune exclusion.
+    Retourne une liste de (texte, qui)."""
+    _num = None
+    if matloc:
+        try:
+            _row = c.execute("""SELECT numero_meditation FROM membres
+                                WHERE matloc=? LIMIT 1""",
+                             (str(matloc).upper().strip(),)).fetchone()
+            if _row:
+                _num = _numero_med_normale(_row[0])
+        except Exception:
+            _num = None
+    elif jour_visiteur is not None:
+        _num = _numero_med_normale(jour_visiteur)
+    if _num is None:
+        return []
+    return intentions_reserve_du_numero(_num, texte_exclu=texte_exclu,
+                                        jour_exclu=jour_visiteur)
 
 
 # ======================================================================
