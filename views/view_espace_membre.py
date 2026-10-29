@@ -85,14 +85,16 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       contact_en_priere, date_intention_en_priere,
                       prise_en_charge_automatique, verser_intention_du_jour,
                       pointer_dizaine, dizaine_deja_pointee, compteur_dizaines_mois,
-                      marquer_carte_vue, carte_deja_vue, dizaine_visiteur_pointee)
+                      marquer_carte_vue, carte_deja_vue, dizaine_visiteur_pointee,
+                      feuillet_questions_lister, feuillet_reponses_enregistrer,
+                      feuillet_reponses_de_cle, importer_dizaines_hors_ligne)
 from services import safe_date, compter_visite, lien_whatsapp, urls_galerie
 from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
 
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.9.20"
+_VERSION_APPLI = "v7.10.1"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -107,7 +109,7 @@ LIEN_FACEBOOK = ""
 # la vidéo reste disponible à la demande), avec le lecteur incorporé et un
 # lien d'ouverture. Mettre "" dans la constante pour retirer la carte d'un
 # seul geste, sans toucher au reste.
-LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE = "https://www.youtube.com/watch?v=hYv04JVIALI&list=RDhYv04JVIALI&start_radio=1"
+LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE = "https://youtu.be/RHrIgEeepO8?si=Dg0P8YHE0K3PYNo3"
 
 # v7.9.19 — L'ADRESSE DE LA CHAÎNE YOUTUBE (demande : « le lien de la
 # chaîne youtube.com à ajouter comme adresse dans le pied de page ») :
@@ -1235,6 +1237,124 @@ def _render_feuillet_vitrine(annee_debut, mois_pastoral):
         st.rerun()
 
 
+# ====================================================================
+# v7.10.0 — LE QUESTIONNAIRE DU FEUILLET (côté fidèles)
+# Sous le feuillet du mois (🕯️ Thème → Vue d'ensemble), ses questions et
+# exercices deviennent un questionnaire : les MEMBRES répondent sous leur
+# MatLoc (ils retrouvent leurs réponses et peuvent les corriger), les
+# VISITEURS signent du nom qu'ils choisissent. Répondre à nouveau
+# remplace SES réponses — jamais celles des autres.
+# ====================================================================
+def _qf_cle_visiteur(nom):
+    """Clé douce du visiteur signant ses réponses (« N:jean-kouassi »)."""
+    _n = unicodedata.normalize("NFKD", str(nom or "").strip().lower())
+    _n = "".join(ch for ch in _n if not unicodedata.combining(ch))
+    _n = re.sub(r"[^a-z0-9]+", "-", _n).strip("-")
+    return ("N:" + _n[:60]) if _n else None
+
+
+def _render_questionnaire_mensuel(annee_debut, mois_pastoral,
+                                  est_membre=False, matloc=None,
+                                  nom_membre=None, equipe_id=None,
+                                  paroisse_id=None):
+    questions = feuillet_questions_lister(annee_debut, mois_pastoral, True)
+    if not questions:
+        return
+    _cle = None
+    _deja = {}
+    _nom_v = ""
+    if est_membre and matloc:
+        _cle = "M:" + str(matloc).upper().strip()
+        _deja = feuillet_reponses_de_cle(annee_debut, mois_pastoral, _cle)
+    else:
+        _cle = st.session_state.get("qf_cle_visiteur")
+        if _cle:
+            _deja = feuillet_reponses_de_cle(annee_debut, mois_pastoral, _cle)
+    _an_civ = annee_debut if mois_pastoral <= 4 else annee_debut + 1
+
+    st.markdown(_carte_etape("📝 LE QUESTIONNAIRE DU FEUILLET — N° "
+                             + str(mois_pastoral)), unsafe_allow_html=True)
+    st.markdown(_carte_priere(
+        '<div class="cp-para">Le feuillet de ce mois pose des questions et '
+        'propose des exercices — réponds ci-dessous, à ton rythme. Tes '
+        'réponses nourrissent la marche de tout le Mouvement.'
+        + ("</div><div class=\"cp-para\"><b>Tu as déjà répondu</b> : tes "
+           "réponses t'attendent en bas — tu peux les corriger et renvoyer."
+           if _deja else "")
+        + "</div>"), unsafe_allow_html=True)
+
+    _erreurs = []
+    with st.form("form_questionnaire_feuillet", clear_on_submit=False):
+        if not est_membre:
+            _nom_v = st.text_input(
+                "Ton nom et prénoms (pour signer tes réponses)",
+                value=st.session_state.get("qf_nom_visiteur", ""))
+        _valeurs = {}
+        for (_qid, _ord, _q_txt, _t, _ch, _ob, _ac) in questions:
+            _lbl = (f"Q{_ord}. {_q_txt}"
+                    + ("  *" if _ob else ""))
+            _rep0 = _deja.get(_qid, "")
+            if _t == "texte":
+                _valeurs[_qid] = st.text_area(_lbl, value=_rep0, height=70,
+                                              key=f"qf_w_{_qid}")
+            elif _t == "oui_non":
+                _opts = ["Oui", "Non"]
+                _idx = _opts.index(_rep0) if _rep0 in _opts else None
+                _valeurs[_qid] = st.radio(_lbl, _opts, index=_idx,
+                                          horizontal=True, key=f"qf_w_{_qid}")
+            else:  # choix
+                _opts = [x.strip() for x in (_ch or "").split(",")
+                         if x.strip()] or ["Oui", "Non"]
+                _idx = _opts.index(_rep0) if _rep0 in _opts else None
+                if len(_opts) <= 3:
+                    _valeurs[_qid] = st.radio(_lbl, _opts, index=_idx,
+                                              horizontal=True,
+                                              key=f"qf_w_{_qid}")
+                else:
+                    _valeurs[_qid] = st.selectbox(_lbl, ["—"] + _opts,
+                                                  index=None,
+                                                  format_func=(
+                                                      lambda x, _o=_opts:
+                                                      x if x != "—" else
+                                                      "Choisis…"),
+                                                  key=f"qf_w_{_qid}")
+                    if _rep0 in _opts:
+                        _valeurs[_qid] = _rep0
+        if st.form_submit_button("📨 Envoyer mes réponses", type="primary",
+                                 width="stretch"):
+            _manquantes = [f"Q{q[1]}" for q in questions
+                           if q[5] and not str(_valeurs.get(q[0]) or "").strip()
+                           and str(_valeurs.get(q[0]) or "—") not in ("Oui", "Non")]
+            if not est_membre and not (_nom_v or "").strip():
+                _erreurs.append("Écris d'abord ton nom et prénoms pour signer "
+                                "tes réponses.")
+            if _manquantes:
+                _erreurs.append("Réponse attendue pour : "
+                                + ", ".join(_manquantes) + ".")
+            if _erreurs:
+                for _e in _erreurs:
+                    st.error(_e)
+            else:
+                _cle_envoi = _cle or _qf_cle_visiteur(_nom_v)
+                _n = feuillet_reponses_enregistrer(
+                    annee_debut, mois_pastoral, _valeurs, _cle_envoi,
+                    qui_nom=(nom_membre if est_membre else _nom_v.strip()),
+                    qui_type=("membre" if est_membre else "visiteur"),
+                    equipe_id=equipe_id, paroisse_id=paroisse_id)
+                if _n:
+                    if not est_membre:
+                        st.session_state["qf_cle_visiteur"] = _cle_envoi
+                        st.session_state["qf_nom_visiteur"] = _nom_v.strip()
+                    st.session_state["flash_success"] = (
+                        "✅ Merci pour tes " + str(_n) + " réponse(s) ! Le "
+                        "Seigneur qui posait des questions écoute les tiennes "
+                        "— Que La Vierge Marie te garde. 🕊️")
+                    st.rerun()
+                else:
+                    st.error("Tes réponses n'ont pas pu être notées — "
+                             "réessaie.")
+
+
 def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"):
     """📖 Lecteur du livret — v7.8 : une section = une page.
     autonome=True  : mode plein écran (barre de titre fixe, fermeture) ;
@@ -1487,9 +1607,13 @@ def _render_feuillets_archives_expanders(annee_theme, mois_courant):
                         "📖 Relire ce feuillet</a>", unsafe_allow_html=True)
 
 
-def _render_page_theme_ensemble():
+def _render_page_theme_ensemble(est_membre=False, matloc=None,
+                                nom_membre=None, equipe_id=None,
+                                paroisse_id=None):
     """🕯️ Thème → Vue d'ensemble — v7.7.7 : langage du dépliant (bannière
-    bleu-or, badge d'étape, carte jaune verrouillée, trait fin)."""
+    bleu-or, badge d'étape, carte jaune verrouillée, trait fin).
+    v7.10.0 — le questionnaire du feuillet répond sous la vitrine (membres
+    ET visiteurs) ; la signature s'est élargie pour connaître qui répond."""
     theme = get_theme_actif()
     if not theme:
         st.info("🕯️ Aucun thème pastoral n'est actuellement actif. "
@@ -1539,6 +1663,14 @@ def _render_page_theme_ensemble():
 
     # ---------- 📖 LE FEUILLET MENSUEL DE PRIÈRE (v7.8) ----------
     _render_feuillet_vitrine(annee_debut, _mois_pastoral)
+
+    # ---------- 📝 LE QUESTIONNAIRE DU FEUILLET (v7.10.0) ----------
+    # juste sous la vitrine : les questions et exercices du mois, ouverts
+    # aux membres comme aux visiteurs.
+    _render_questionnaire_mensuel(annee_debut, _mois_pastoral,
+                                  est_membre=est_membre, matloc=matloc,
+                                  nom_membre=nom_membre, equipe_id=equipe_id,
+                                  paroisse_id=paroisse_id)
 
     # ---------- 📚 FEUILLETS PRÉCÉDENTS (v7.8.2-i) : archivage en expanders ----------
     _render_feuillets_archives_expanders(annee_debut, _mois_pastoral)
@@ -2658,6 +2790,153 @@ def _msg_dizaine_capitale(est_membre=False, matloc=None):
     return _txt + " — À demain! 🕊️"
 
 
+# --- v7.10.0 — LA RÉCUPÉRATION DES DIZAINES PRIÉES HORS LIGNE --------------
+# L'application de méditation du quotidien vit SANS internet : quand son
+# fidèle la quitte, elle lui prépare un petit fichier de ses journées
+# priées. Le livre « 🕯️ Un jour, une dizaine » le reçoit ici, à la même
+# place que « ✕ Terminer » — et chaque journée retrouvée rejoint la
+# chaîne, une seule fois, sans jamais recompter ce qui était déjà là.
+_MOIS_FR_HL = {"janvier": 1, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5,
+               "juin": 6, "juillet": 7, "aout": 8, "septembre": 9,
+               "octobre": 10, "novembre": 11, "decembre": 12}
+
+
+def _jour_valide_hl(_a, _m, _j):
+    try:
+        return date(int(_a), int(_m), int(_j)).isoformat()
+    except (ValueError, TypeError):
+        return None
+
+
+def _jours_dans_texte_hl(_t):
+    """Tire les journées (ISO) d'un texte : 2026-10-28 · 28/10/2026 ·
+    28-10-2026 · « 28 octobre 2026 ». Rien qui ressemble à demain."""
+    _t = unicodedata.normalize("NFKD", _t)
+    _t = "".join(ch for ch in _t if not unicodedata.combining(ch))
+    _trouvees = set()
+    # ISO d'abord (2026-10-28, avec ou sans heure)
+    for _m in re.finditer(r"\b(20[2-4]\d)-(\d{1,2})-(\d{1,2})\b", _t):
+        _j = _jour_valide_hl(_m.group(1), _m.group(2), _m.group(3))
+        if _j:
+            _trouvees.add(_j)
+    # JJ/MM/AAAA (ou JJ-MM-AAAA, JJ.MM.AAAA) — jour d'abord ; si le 2ᵉ
+    # nombre dépasse 12, les deux étaient inversés
+    for _m in re.finditer(r"\b(\d{1,2})[/.\-](\d{1,2})[/.\-](20[2-4]\d)\b", _t):
+        _j1, _j2 = int(_m.group(1)), int(_m.group(2))
+        if _j2 > 12 and _j1 <= 12:
+            _j1, _j2 = _j2, _j1
+        _j = _jour_valide_hl(_m.group(3), _j2, _j1)
+        if _j:
+            _trouvees.add(_j)
+    # « 28 octobre 2026 » (et 1er mai 2026)
+    for _m in re.finditer(r"\b(\d{1,2})(?:er)?\s+([a-zûé]+)\s+(20[2-4]\d)\b",
+                          _t, re.IGNORECASE):
+        _mois = _MOIS_FR_HL.get(_m.group(2).lower())
+        _j = _jour_valide_hl(_m.group(3), _mois, _m.group(1)) if _mois else None
+        if _j:
+            _trouvees.add(_j)
+    return _trouvees
+
+
+def _lire_jours_dans_fichier(brut):
+    """Le fichier de l'application hors ligne → liste de journées ISO,
+    triées, sans doublon. JSON (liste de dates ou d'objets avec un champ
+    date/jour) comme texte simple (une journée par ligne, séparateurs
+    ; , ou tabulation). Tolérant : seules les vraies journées entrent."""
+    if not brut:
+        return []
+    try:
+        _t = brut.decode("utf-8", errors="ignore")
+    except Exception:
+        return []
+    if not _t.strip():
+        return []
+    _extraits = []
+    try:
+        _j = json.loads(_t)
+        if isinstance(_j, dict):
+            _liste = None
+            for _k, _v in _j.items():
+                if isinstance(_v, list):
+                    _kl = _k.lower()
+                    if _liste is None or any(x in _kl for x in (
+                            "date", "jour", "dizaine", "medit", "priere",
+                            "histo", "liste", "data")):
+                        _liste = _v
+                        if any(x in _kl for x in ("date", "jour", "dizaine")):
+                            break
+            _j = _liste or []
+        if isinstance(_j, list):
+            for _el in _j:
+                if isinstance(_el, str):
+                    _extraits.append(_el)
+                elif isinstance(_el, dict):
+                    _v = None
+                    for _k in ("date", "jour", "date_priere", "le", "when",
+                               "day", "date_meditation", "timestamp"):
+                        if _k in _el and _el.get(_k):
+                            _v = str(_el[_k])
+                            break
+                    if _v:
+                        _extraits.append(_v)
+    except Exception:
+        _extraits = _t.splitlines()
+    _jours = set()
+    for _el in _extraits:
+        _jours |= _jours_dans_texte_hl(str(_el))
+    _auj = date.today().isoformat()
+    return sorted(j for j in _jours if j <= _auj)
+
+
+def _recuperer_dizaines_hors_ligne(est_membre=False, matloc=None,
+                                   nom_membre=None, equipe_id=None,
+                                   paroisse_id=None, jrnais=None):
+    """📥 La porte de la récupération — ouverte en fin de livre, à côté du
+    pointage du jour, pour le membre comme pour le visiteur. La
+    récupération ne recompte jamais une journée déjà dans la chaîne."""
+    with st.expander("📿 Tu as prié hors ligne ? Remets tes journées dans la chaîne"):
+        st.caption("Choisis le fichier que ton application de méditation t'a "
+                   "préparé (bouton Partager / Exporter). Chaque journée "
+                   "retrouvée rejoint ta chaîne — une seule fois, même si tu "
+                   "repasses le même fichier.")
+        _fichier = st.file_uploader("Fichier de ton application",
+                                    type=None,
+                                    key="pdr_hl_fichier")
+        if _fichier is None:
+            return
+        _jours = _lire_jours_dans_fichier(_fichier.getvalue())
+        if not _jours:
+            st.warning("Aucune journée reconnaissable dans ce fichier — "
+                       "vérifie qu'il vient bien de ton application de "
+                       "méditation, ou demande le fichier d'un autre jour.")
+            return
+        _derniers = ", ".join(_jours[-10:])
+        st.info("🕯️ **" + str(len(_jours)) + "** journée(s) priée(s) retrouvée(s)"
+                + (" — les dernières : " + _derniers if len(_jours) <= 10
+                   else " — les 10 dernières : " + _derniers))
+        if st.button("✅ Les remettre dans ma chaîne", key="pdr_hl_ok",
+                     type="primary", width="stretch"):
+            _aj, _dj, _ig = importer_dizaines_hors_ligne(
+                matloc=matloc, nom=nom_membre, jrnais=jrnais,
+                equipe_id=equipe_id, paroisse_id=paroisse_id,
+                est_membre=est_membre, jours=_jours)
+            _msgs = []
+            if _aj:
+                _msgs.append("📿 " + str(_aj) + " journée(s) rejointe(s) ta "
+                             "chaîne de prière — Merci Sainte Mère pour ta "
+                             "fidélité ! 🕊️")
+            if _dj:
+                _msgs.append("🌿 " + str(_dj) + " journée(s) y figuraient "
+                             "déjà — rien n'a été recompté.")
+            if _ig:
+                _msgs.append("🧹 " + str(_ig) + " ligne(s) laissée(s) de côté "
+                             "(dates à venir ou non reconnues).")
+            if _aj:
+                st.success("  ".join(_msgs))
+            else:
+                st.info(" ".join(_msgs) or "Rien à ajouter pour le moment.")
+
+
 def _rendre_pointage_dizaine(est_membre=False, matloc=None, nom_membre=None,
                              equipe_id=None, paroisse_id=None, jrnais=None):
     """v7.9.2 — LE POINTAGE DE LA CHAÎNE, affiché sur la DERNIÈRE page du
@@ -2712,6 +2991,14 @@ def _rendre_pointage_dizaine(est_membre=False, matloc=None, nom_membre=None,
                     st.session_state[_cle_j] = True
                     st.rerun()
                 st.warning(_msg)
+
+    # v7.10.0 — la récupération des journées priées hors ligne : ouverte
+    # ICI, juste sous le pointage du jour, pour le membre comme pour le
+    # visiteur — le fichier de l'application de méditation rejoint la
+    # chaîne, sans jamais recompter une journée déjà présente.
+    _recuperer_dizaines_hors_ligne(est_membre=est_membre, matloc=matloc,
+                                   nom_membre=nom_membre, equipe_id=equipe_id,
+                                   paroisse_id=paroisse_id, jrnais=jrnais)
 
 
 def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=None,
@@ -2805,8 +3092,11 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
     # tirée UNE fois pour tout le livre ; pour le visiteur, son jour de
     # naissance écarte ses PROPRES intentions du tirage (personne ne prie
     # la sienne) et son N° méd. désigne l'intention de SON prochain, stable
-    # sur la fenêtre de 20 jours. Côté membre, pas d'identité de chaîne :
-    # aucune exclusion. La ligne suit le modèle « intercède pour {qui} : … ».
+    # sur la fenêtre de 20 jours. v7.10.1 — RÈGLE D'OR POUR LE MEMBRE AUSSI :
+    # sa fiche (jour de naissance ET nom) écarte ses propres intentions du
+    # tirage comme du surplus — une intention notée à son nom dans la
+    # chaîne de séance ne lui revient plus. La ligne suit le modèle
+    # « intercède pour {qui} : … ».
     _chaine = _ligne_chaine(
         st.session_state.get("diz_jrnais") if not est_membre else None,
         matloc=matloc if est_membre else None)
@@ -3921,6 +4211,10 @@ def _carte_vidéo_a_la_demande():
         ' border-radius:12px; overflow:hidden; border:1px solid #FFD700;'
         ' margin:12px 0 0 0;">'
         '<iframe src="' + _src + '" title="Vidéo à la demande"'
+        # v7.10.1 — CHARGEMENT PARESSEUX : le lecteur ne se réveille que
+        # quand le fidèle descend le voir — l'arrivée dans l'Espace et la
+        # navigation ne l'attendent plus (la lenteur ressentie à l'ouverture).
+        ' loading="lazy"'
         ' style="position:absolute; top:0; left:0; width:100%; height:100%;'
         ' border:none;" allow="encrypted-media; picture-in-picture"'
         ' allowfullscreen></iframe></div>'
@@ -4379,9 +4673,23 @@ def show_espace_membre(matloc_membre=None):
     v7.9.19 — la carte vidéo s'ouvre JUSTE AVANT le pied de page, sur
     toutes les pages de l'Espace de Prière (demande : « s'il doit
     s'ouvrir, c'est juste avant le pied de page »).
-    v7.9.20 — elle porte son nom d'aujourd'hui : la vidéo à la demande."""
+    v7.9.20 — elle porte son nom d'aujourd'hui : la vidéo à la demande.
+    v7.10.1 — la vidéo NE SUIT PLUS le lecteur partout : elle ne s'ouvre
+    plus comme un second pied de page sous la méditation et la prière des
+    intentions. Elle retrouve sa place de carte d'accueil : visible sur la
+    page d'arrivée (« 🏠 Actualités »), absente du livre ouvert et des
+    autres pages — la prière reste toute à la prière."""
     _corps_espace_membre(matloc_membre)
-    _carte_vidéo_a_la_demande()
+    # v7.10.1 — accueil SEULEMENT : ni livre ouvert (dizaine, livret), ni
+    # autre rubrique (Rosaire, Thème, Galerie, Archives, évènements…).
+    if not (st.session_state.get("diz_ouvert") or st.session_state.get("flt_ouvert")):
+        try:
+            _rub_v = _lire_nav(RUBRIQUES_MEMBRE if matloc_membre
+                               else RUBRIQUES_PUBLIC)[0]
+        except Exception:
+            _rub_v = "🏠 Actualités"
+        if _rub_v == "🏠 Actualités":
+            _carte_vidéo_a_la_demande()
     _render_pied_de_page(matloc_membre)
 
 
@@ -4526,7 +4834,8 @@ def _corps_espace_membre(matloc_membre=None):
                 _render_page_en_preparation("💬", "Discussions",
                                             "Cet espace accueillera les cadres de discussions thématiques. Il est en préparation.")
             else:
-                _render_page_theme_ensemble()
+                _render_page_theme_ensemble(est_membre=False,
+                                            paroisse_id=pid_pub)
         elif rub == "🖼️ Galerie +":
             # v7.9.1 — souvenirs (photos) et témoignages (grâces reçues).
             _render_page_galerie(sub)
@@ -4695,7 +5004,11 @@ def _corps_espace_membre(matloc_membre=None):
             _render_page_en_preparation("💬", "Discussions",
                                         "Cet espace accueillera les cadres de discussions thématiques. Il est en préparation.")
         else:
-            _render_page_theme_ensemble()
+            _render_page_theme_ensemble(est_membre=True, matloc=membre[3],
+                                        nom_membre=((membre[1] or "") + " "
+                                                    + (membre[2] or "")).strip(),
+                                        equipe_id=membre[10],
+                                        paroisse_id=membre[11])
 
     elif rub == "🖼️ Galerie +":
         # v7.9.1 — souvenirs (photos) et témoignages (grâces reçues),
@@ -4717,3 +5030,4 @@ def _corps_espace_membre(matloc_membre=None):
                                intentions=False)  # v7.8.15 : retiré côté Membre
         # v7.9.18 — les actualités sont rendues DANS le fil (voir
         # _render_fil_actualites) ; plus aucun appel séparé ici.
+
