@@ -21,6 +21,10 @@ from datetime import date
 # v7.9.10 — LA ZONE DU JOUR DÉMÉNAGE : « Les intentions c'est une affaire
 # des paroisses et de ses équipes. » L'écran vit désormais dans
 # view_paroisse.py (🙏 Coins des Intentions / 📌 Suivi et Agenda - Paroisse).
+# v7.10.3 — LA RÉSERVE AUSSI : « les intentions, c'est une affaire de
+# paroisse, de ses membres et visiteurs — le diocèse n'a rien à voir
+# dedans. » La rubrique de réserve quitte ce menu ; la réserve vit dans la
+# vue paroisse et dans les équipes, comme la Zone du jour depuis la v7.9.10.
 from database import (c, commit_and_sync, safe_migrate)
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation,
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale,
