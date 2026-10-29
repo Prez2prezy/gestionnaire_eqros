@@ -4,7 +4,8 @@
 # 6 onglets : 🙏 Prière/Méditation · 📺 Bandes défilantes · 🖼️ Affiches & B-A
 # (publication simple : actualités) · 🕯️ Thème pastoral · 🎵 Musique · 📔 Journal
 # v2.1 (v7.8.5) : l'onglet 🕯️ Thème pastoral accueille aussi la zone
-# 2️⃣ bis « Le feuillet mensuel en Équipe » (déplacée du SAS diocèse).
+# « Le feuillet mensuel en Équipe » (déplacée du SAS diocèse ; numérotée
+# « 1. » depuis la v7.10.2, avec « 1 Bis. » pour le questionnaire).
 # Les évènements avec Réponse de Communion relèvent EXCLUSIVEMENT de l'agenda
 # (canal des responsables d'équipe) — jamais de ce canal.
 # Marqueurs : Ctrl+F → "VERSION 2.0", "_onglet_actualites".
@@ -244,15 +245,17 @@ def _onglet_theme():
                             "date_evenement": str(int(annee_t)),
                             "lieu": str(int(myst_t))})
 
-    # ---------- v7.8.5 : zone 2️⃣ bis — LE FEUILLET MENSUEL EN ÉQUIPE ----------
+    # ---------- v7.8.5 : zone « 1. Le feuillet mensuel en Équipe » ----------
     # (déplacée du SAS diocèse : tout le contenu du mois est porté par le
-    # feuillet ; les zones 1️⃣/2️⃣/3️⃣ sont retirées.)
+    # feuillet ; les zones 1️⃣/2️⃣/3️⃣ sont retirées. v7.10.2 : elle porte
+    # le n° « 1. » — l'ancien préfixe évoquait une zone disparue.)
     st.markdown("---")
     gerer_feuillet_mensuel()
 
-    # ---------- v7.10.0 : zone 2️⃣ ter — LE QUESTIONNAIRE DU FEUILLET ----------
+    # ---------- v7.10.0 : zone « 1 Bis. Le questionnaire du feuillet » ----------
     # Les questions et exercices du feuillet deviennent un questionnaire
     # répondu par les membres et les visiteurs (Espace de Prière).
+    # v7.10.2 : n° « 1 Bis. » (au lieu de l'ancien préfixe) + soumission au diocèse.
     st.markdown("---")
     gerer_questionnaire_feuillet()
 
