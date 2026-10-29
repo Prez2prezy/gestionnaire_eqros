@@ -16,7 +16,7 @@ from database import c, commit_and_sync
 from services import (sauvegarder_illustration, sauvegarder_audio, sauvegarder_video,
                       envoyer_notification_telegram, get_periode_pastorale,
                       afficher_messages_flash)
-from components import gerer_feuillet_mensuel
+from components import gerer_feuillet_mensuel, gerer_questionnaire_feuillet
 
 
 def _liste_paroisses():
@@ -249,6 +249,12 @@ def _onglet_theme():
     # feuillet ; les zones 1️⃣/2️⃣/3️⃣ sont retirées.)
     st.markdown("---")
     gerer_feuillet_mensuel()
+
+    # ---------- v7.10.0 : zone 2️⃣ ter — LE QUESTIONNAIRE DU FEUILLET ----------
+    # Les questions et exercices du feuillet deviennent un questionnaire
+    # répondu par les membres et les visiteurs (Espace de Prière).
+    st.markdown("---")
+    gerer_questionnaire_feuillet()
 
 
 # ---------------- 🎵 MUSIQUE ----------------
