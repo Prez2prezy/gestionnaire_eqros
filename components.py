@@ -14,6 +14,9 @@ from database import (c, commit_and_sync, enregistrer_chaine_seance,
                       feuillet_question_ajouter, feuillet_question_modifier,
                       feuillet_question_supprimer, feuillet_question_deplacer,
                       feuillet_questions_detecter, feuillet_reponses_resume,
+                      # v7.10.2 — le questionnaire SOUMIS au diocèse
+                      feuillet_questionnaire_soumission,
+                      feuillet_questionnaire_soumettre,
                       TYPES_REPONSE)
 import qrcode
 from io import BytesIO
@@ -1236,7 +1239,7 @@ def afficher_page_reponse_membre(event_id):
             </div>
             """, unsafe_allow_html=True)
 
-# --- 2️⃣ bis v7.7.9 : le bloc feuillet est un FRAGMENT. Les interactions
+# --- v7.7.9 : le bloc feuillet est un FRAGMENT. Les interactions
 # (changement de section, enregistrement) ne redessinent QUE ce bloc :
 # la page ne remonte plus en haut à chaque cochage. ---
 try:
@@ -1257,7 +1260,7 @@ SECTIONS_FEUILLET = [
 
 @_dec_frag
 def _bloc_feuillet_diocese(themes, MOIS_NOMS):
-    """FRAGMENT du feuillet mensuel (saisie diocèse 2️⃣ bis).
+    """FRAGMENT du feuillet mensuel (saisie diocèse, zone « 1. »).
     Une section peut impliquer PLUSIEURS lecteurs (multiselect) : la valeur
     stockée est une chaîne « R,1,T ». L'ancienne valeur « tous » reste lue.
     Les marqueurs R. / T. / 1. / 2. / 3. DU TEXTE restent la référence
@@ -1695,11 +1698,14 @@ def _bloc_feuillet_diocese(themes, MOIS_NOMS):
                 _soumettre_feuillet()
 
 def gerer_feuillet_mensuel():
-    """2️⃣ bis — LE FEUILLET MENSUEL EN ÉQUIPE (v7.8.5 : déplacé du SAS diocèse
+    """1. LE FEUILLET MENSUEL EN ÉQUIPE (v7.8.5 : déplacé du SAS diocèse
     vers Service Communication → 🕯️ Thème pastoral ; les zones 1️⃣ thème de
     l'année, 2️⃣ sous-thèmes mensuels et 3️⃣ liens des 20 mystères sont
-    retirées : tout le contenu du mois est désormais porté par le feuillet)."""
-    st.markdown("### 2️⃣ bis. Le feuillet mensuel en Équipe")
+    retirées : tout le contenu du mois est désormais porté par le feuillet.
+    v7.10.2 — la numérotation redevient la nôtre : « 1. » ici et
+    « 1 Bis. » pour le questionnaire — l'ancien préfixe portait le
+    souvenir d'une zone disparue après l'import)."""
+    st.markdown("### 1. Le feuillet mensuel en Équipe")
     st.caption("Saisie section par section du feuillet reçu (10-15 du mois). "
                "Process conseillé : photographier les pages → transcription → collage ici. "
                "Chaque section porte le lecteur attendu (R / 1 / 2 / 3 / tous) selon les "
@@ -2192,13 +2198,14 @@ def bloc_chaine_seance(equipes, prefixe_cle="cs"):
 # lisent ici, question par question, et repartent en carnet Excel.
 # ====================================================================
 def gerer_questionnaire_feuillet():
-    st.markdown("### 2️⃣ ter. Le questionnaire du feuillet")
+    st.markdown("### 1 Bis. Le questionnaire du feuillet")
     st.caption("Reprends les questions et les exercices du feuillet du mois : "
                "elles deviennent un questionnaire que les membres ET les "
                "visiteurs répondent dans l'Espace de Prière (🕯️ Thème → Vue "
                "d'ensemble, juste sous le feuillet). Chaque question reprise "
                "ou tapée ici peut recevoir une réponse libre, un Oui/Non ou "
-               "des choix proposés.")
+               "des choix proposés. Comme le feuillet, le questionnaire ne "
+               "parvient aux fidèles qu'APRÈS la validation du diocèse.")
 
     _themes_q = c.execute("SELECT annee_debut FROM themes_pastoraux "
                           "ORDER BY annee_debut DESC").fetchall()
@@ -2231,9 +2238,14 @@ def gerer_questionnaire_feuillet():
                                    if _q_sec else ""),
                                 unsafe_allow_html=True)
                 with _c2:
+                    # v7.10.2 — REPRISE D'UN CLIC RÉPARÉE : la question rejoint
+                    # le champ par SA CLÉ (posée AVANT le dessin du champ) —
+                    # avant, la valeur passée en `value` était ignorée quand
+                    # le champ avait déjà vécu : « Écris d'abord la question. »
+                    # au moment d'ajouter, et il fallait copier-coller.
                     if st.button("➕ Reprendre", key=f"qf_rep_{_i}",
                                  width="stretch"):
-                        st.session_state["qf_prefill"] = _q_txt
+                        st.session_state["qf_new_txt"] = _q_txt
                         st.rerun()
     else:
         st.info("🔎 Aucune ligne en forme de question repérée dans le feuillet "
@@ -2241,10 +2253,13 @@ def gerer_questionnaire_feuillet():
                 "saisis d'abord les sections du feuillet.")
 
     # ── 2. ajouter une question ──────────────────────────────────────────
-    _prefill = st.session_state.pop("qf_prefill", "") or ""
     with st.form("form_qf_ajout", clear_on_submit=True):
+        # v7.10.2 — le champ porte SA CLÉ : la question reprise d'un clic
+        # (posée dans la session AVANT le dessin du champ) s'y installe
+        # vraiment — fini le « Écris d'abord la question. » au moment
+        # d'ajouter, fini le copier-coller obligatoire.
         _q_new = st.text_area("➕ Nouvelle question (ou exercice proposé)",
-                              value=_prefill, height=80)
+                              key="qf_new_txt", height=80)
         _c1, _c2 = st.columns(2)
         with _c1:
             _t_new = st.selectbox("Type de réponse", list(TYPES_REPONSE.values()),
@@ -2339,6 +2354,64 @@ def gerer_questionnaire_feuillet():
                         st.session_state["flash_success"] = (
                             "🗑️ Question retirée du mois.")
                         st.rerun()
+
+    # ── 3 bis. la soumission au diocèse (v7.10.2) ─────────────────────────
+    # Comme le feuillet lui-même : le Service Communication prépare, le
+    # diocèse SEUL fait paraître (Rappel du flux v7.8.6). Tant que le
+    # diocèse n'a pas validé le mois, le questionnaire ne paraît pas dans
+    # l'Espace de Prière — côté fidèles, le voile reste posé.
+    _soum_q = feuillet_questionnaire_soumission(_an_q, _mois_q)
+    _statut_q = _soum_q[1] if _soum_q else None
+    _actives_q = feuillet_questions_lister(_an_q, _mois_q, True)
+    if _statut_q == "publie":
+        _dpub_q = safe_date(_soum_q[4]) if _soum_q[4] else None
+        st.success("✅ Questionnaire validé par le diocèse"
+                   + (f" le {_dpub_q.strftime('%d/%m/%Y')}" if _dpub_q else "")
+                   + " — les fidèles y répondent dans l'Espace de Prière.")
+    elif _statut_q == "refuse":
+        st.error("❌ Le diocèse n'a pas retenu ce questionnaire"
+                 + (f" — Motif : {_soum_q[2]}" if _soum_q[2] else "")
+                 + ". Retouche les questions puis soumets à nouveau.")
+    elif _statut_q == "attente":
+        st.info("🟡 Questionnaire soumis au diocèse — en attente de sa "
+                "validation. Les fidèles ne le voient pas encore.")
+        st.button("⏳ Validation en attente du diocèse", key="qf_att_dio",
+                  disabled=True, width="stretch")
+    elif _statut_q == "programme":
+        st.info("🗓️ Validation du questionnaire programmée pour le "
+                f"**{_soum_q[5] or '?'}** : il paraîtra aux fidèles à cette "
+                "date, sans nouveau clic.")
+    if _statut_q != "attente" and _statut_q != "programme" and _actives_q:
+        _resume_q = "\n".join(
+            f"Q{q[1]}. {q[2]} ({TYPES_REPONSE.get(q[3], q[3])}"
+            + (", choix : " + q[4] if q[4] else "")
+            + (", obligatoire" if q[5] else "") + ")"
+            for q in _actives_q)
+        with st.expander("📨 Soumettre le questionnaire au diocèse"):
+            st.caption("Comme le feuillet : rien ne paraît aux fidèles sans la "
+                       "validation du diocèse. La soumission emporte les "
+                       + str(len(_actives_q)) + " question(s) active(s) du mois "
+                       "(elles se relisent dans la soumission côté diocèse). Une "
+                       "correction après coup se resoumet — elle repart en "
+                       "attente, comme une version corrigée.")
+            if st.button("📨 Soumettre le questionnaire au diocèse",
+                         key="qf_soum_dio", type="primary", width="stretch"):
+                _ok_q, _msg_q = feuillet_questionnaire_soumettre(
+                    _an_q, _mois_q, _resume_q,
+                    auteur_id=st.session_state.get("user_id"),
+                    version_corrigee=(_statut_q == "publie"))
+                if _ok_q:
+                    try:
+                        envoyer_notification_telegram(
+                            "📡 <b>Service Communication</b> — questionnaire du "
+                            "feuillet N°" + str(_mois_q) + " soumis À VALIDER "
+                            "par le diocèse")
+                    except Exception:
+                        pass
+                    st.session_state["flash_success"] = _msg_q
+                    st.rerun()
+                else:
+                    st.error(_msg_q)
 
     # ── 4. les réponses reçues : lecture + carnet Excel ──────────────────
     _resume = feuillet_reponses_resume(_an_q, _mois_q)
