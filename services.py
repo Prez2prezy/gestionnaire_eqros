@@ -758,3 +758,4 @@ def executer_publications_programmees():
             commit_and_sync()
         except Exception as e:
             logger.warning(f"publications programmées : commit ({e!r})")
+
