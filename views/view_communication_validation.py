@@ -15,7 +15,8 @@ LIBELLES = {"priere": "🙏 Prière", "meditation": "📖 Méditation",
             "actualite": "📰 Actualité (affiche/BA)",
             "theme_pastoral": "🕯️ Thème pastoral",
             "evenement": "📅 Évènement (historique)",
-            "feuillet": "📖 Feuillet mensuel de prière"}
+            "feuillet": "📖 Feuillet mensuel de prière",
+            "questionnaire": "📋 Questionnaire du feuillet"}
 
 
 def _assurer_colonnes_cible():
@@ -227,6 +228,29 @@ def _inserer_publie(s):
                            VALUES (?, ?, ?, ?)""",
                         (_an_fp, _mois_fp, _mois_fp,
                          date.today().isoformat()))
+    elif s[1] == "questionnaire":
+        # v7.10.2 — publication du questionnaire : les questions vivent déjà
+        # dans feuillet_questions (préparées par la cellule) ; la validation
+        # du mois LÈVE LE VOILE côté fidèles (feuillet_questionnaire_publie
+        # regarde cette soumission passée à 'publie'). Rien d'autre à insérer.
+        try:
+            _an_qp = int(s[7]) if s[7] else None
+        except (ValueError, TypeError):
+            _an_qp = None
+        try:
+            _mois_qp = int(s[8]) if s[8] else None
+        except (ValueError, TypeError):
+            _mois_qp = None
+        if not _an_qp or not _mois_qp or not (1 <= _mois_qp <= 12):
+            st.error("Mois/année du questionnaire illisibles : utilisez « ❌ Refuser ».")
+            _ok = False
+        else:
+            _n_qs = c.execute("""SELECT COUNT(*) FROM feuillet_questions
+                                 WHERE annee_debut=? AND mois=? AND active=1""",
+                              (_an_qp, _mois_qp)).fetchone()[0]
+            if _n_qs == 0:
+                st.error("Aucune question active pour ce mois : publication impossible.")
+                _ok = False
     elif s[1] == "evenement":  # ancien type (onglet supprimé), gardé pour l'historique
         c.execute("""INSERT INTO evenements
                      (type_evenement, date_evenement, lieu, affiche_url, video_url, auteur_nom, paroisse_cible)
@@ -322,6 +346,44 @@ def show_validation_communication():
                 else:
                     st.error("⚠️ Aucune section saisie pour ce mois : la publication "
                              "est impossible (le clic mènerait à une vitrine vide).")
+            if s[1] == "questionnaire":
+                # v7.10.2 — LE QUESTIONNAIRE SOUMIS AU DIOCÈSE : même convention
+                # que le feuillet (date_evenement = année pastorale, lieu = mois).
+                _an_qf, _mois_qf = None, None
+                try:
+                    _an_qf = int(s[7]) if s[7] else None
+                except (ValueError, TypeError):
+                    _an_qf = None
+                try:
+                    _mois_qf = int(s[8]) if s[8] else None
+                except (ValueError, TypeError):
+                    _mois_qf = None
+                MOIS_PAST_Q = ["Septembre", "Octobre", "Novembre", "Décembre", "Janvier",
+                               "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août"]
+                _mois_lbl_q = (MOIS_PAST_Q[_mois_qf - 1]
+                               if _mois_qf and 1 <= _mois_qf <= 12 else "?")
+                _an_civ_q = (_an_qf + 1) if _mois_qf and _mois_qf >= 5 else _an_qf
+                st.info(f"📋 Questionnaire du feuillet N°{_mois_qf or '?'} — "
+                        f"{_mois_lbl_q} {_an_civ_q or _an_qf or '?'} "
+                        f"(année pastorale {_an_qf or '?'})")
+                try:
+                    _qs_sas = c.execute("""SELECT ordre, question, type_reponse, choix,
+                                                  obligatoire FROM feuillet_questions
+                                           WHERE annee_debut=? AND mois=? AND active=1
+                                           ORDER BY COALESCE(ordre, 9999), id""",
+                                        (_an_qf, _mois_qf)).fetchall()
+                except Exception:
+                    _qs_sas = []
+                if _qs_sas:
+                    st.success(f"✅ {len(_qs_sas)} question(s) active(s) à faire paraître :")
+                    for (_o_q, _t_q, _ty_q, _ch_q, _ob_q) in _qs_sas:
+                        _badge_q = ("✍️" if _ty_q == "texte"
+                                    else "🔘" if _ty_q == "oui_non" else "🔠")
+                        st.write(f"{_badge_q} **Q{_o_q}.** {_t_q}"
+                                 + ("  ·  obligatoire" if _ob_q else ""))
+                else:
+                    st.error("⚠️ Aucune question active pour ce mois : la publication "
+                             "est impossible.")
 
             _nom_c = _nom_paroisse(s[10]) if len(s) > 10 else None
             st.info("🎯 Cible : " + (_nom_c if _nom_c else "🌍 Diocèse (tous)"))
@@ -556,8 +618,9 @@ def show_validation_communication():
 
     # --- v7.8.5 : la « 🕯️ Gestion du thème » quitte le SAS ---
     st.markdown("---")
-    st.caption("🕯️ Le feuillet mensuel en Équipe (ex-zone 2️⃣ bis) est désormais géré par le "
-               "Service Communication (onglet 🕯️ Thème pastoral). Les zones « thème de "
+    st.caption("🕯️ Le feuillet mensuel en Équipe est désormais géré par le "
+               "Service Communication (onglet 🕯️ Thème pastoral, zone « 1. » — "
+               "son questionnaire en « 1 Bis. »). Les zones « thème de "
                "l'année », « 12 sous-thèmes mensuels » et « liens des 20 mystères » sont "
                "retirées : le contenu du mois est porté par le feuillet.")
 
@@ -572,4 +635,3 @@ def show_validation_communication():
                 st.error("Échec. Vérifiez (1) les secrets TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID "
                          "(Streamlit Cloud → Manage app → Settings → Secrets) et (2) les logs "
                          "(Manage app → Logs) : le motif exact de l'échec y est désormais écrit.")
-
