@@ -1855,6 +1855,35 @@ def reserve_lignes(equipe_id=None, paroisse_id=None, limite=300):
         return []
 
 
+def reserve_lignes_paroisse_nommee(limite=300):
+    """LA RÉSERVE PARTAGÉE ENTRE PAROISSES (v7.10.2) : « Les paroisses ne se
+    voient pas, par conséquent elles ne peuvent pas se partager les
+    intentions. » Remède : chaque intention active de la réserve revient
+    AVEC le nom de sa paroisse — celle de son équipe (intentions posées par
+    les responsables dans la ⛓️ Chaîne), ou celle notée à l'entrée en réserve
+    (intentions des visiteurs passées par la 🕯️ Zone du jour). Une intention
+    sans paroisse retrouvée revient avec None (elle s'affiche « paroisse non
+    notée », sans gêner personne).
+    Retourne (id, numero_med, texte, auteur_nom, equipe_id, date_ajout,
+              paroisse_nom, equipe_nom)."""
+    _assurer_table_reserve()
+    purger_reserve_expiree()
+    try:
+        return c.execute("""SELECT r.id, r.numero_med, r.texte, r.auteur_nom,
+                                   r.equipe_id, r.date_ajout,
+                                   COALESCE(p1.nom, p2.nom) AS paroisse_nom,
+                                   e.nom_equipe AS equipe_nom
+                            FROM intentions_reserve r
+                            LEFT JOIN equipes e ON e.id = r.equipe_id
+                            LEFT JOIN paroisses p1 ON p1.id = e.paroisse_id
+                            LEFT JOIN paroisses p2 ON p2.id = r.paroisse_id
+                            WHERE r.active=1
+                            ORDER BY r.id DESC LIMIT {l}""".format(l=int(limite))).fetchall()
+    except Exception as e:
+        logger.warning(f"reserve_lignes_paroisse_nommee : {e!r}")
+        return []
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # v7.9.18 — CHAÎNE DE LA DERNIÈRE SÉANCE
 # « Au cours d'une prière mensuelle, les membres présents physiquement
@@ -2444,6 +2473,84 @@ def feuillet_questions_lister(annee_debut, mois, actives_seules=True):
 def feuillet_questionnaire_existe(annee_debut, mois):
     """1 si le mois pastoral porte au moins UNE question active."""
     return 1 if feuillet_questions_lister(annee_debut, mois, True) else 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v7.10.2 — LE QUESTIONNAIRE SOUMIS AU DIOCÈSE
+# « Le questionnaire du feuillet, n'est-il pas soumis au diocèse ? » —
+# Si, désormais. Comme le feuillet lui-même (v7.8.6) : le Service
+# Communication prépare les questions, puis « 📨 Soumettre le questionnaire
+# au diocèse » ; le diocèse SEUL valide (« ✅ Publier » au SAS), et rien ne
+# parvient aux fidèles avant. La validation du mois = une soumission
+# type_contenu='questionnaire' passée à statut='publie' (convention :
+# date_evenement = année pastorale, lieu = mois pastoral, comme le feuillet).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def feuillet_questionnaire_soumission(annee_debut, mois):
+    """La DERNIÈRE soumission du questionnaire pour ce mois pastoral :
+    (id, statut, motif_refus, date_soumission, date_decision, date_publication_prevue)
+    ou None si le questionnaire n'a jamais été soumis."""
+    try:
+        return c.execute("""SELECT id, statut, motif_refus, date_soumission,
+                                   date_decision, date_publication_prevue
+                            FROM soumissions_comm
+                            WHERE type_contenu='questionnaire'
+                              AND date_evenement=? AND lieu=?
+                            ORDER BY id DESC LIMIT 1""",
+                         (str(int(annee_debut)), str(int(mois)))).fetchone()
+    except Exception as e:
+        logger.warning(f"feuillet_questionnaire_soumission : {e!r}")
+        return None
+
+
+def feuillet_questionnaire_publie(annee_debut, mois):
+    """1 si le diocèse a VALIDÉ le questionnaire de ce mois pastoral (au
+    moins une soumission 'questionnaire' du mois passée à 'publie'). C'est
+    le voile côté fidèles : tant qu'il n'est pas levé, le questionnaire ne
+    paraît pas dans l'Espace de Prière."""
+    try:
+        return bool(c.execute("""SELECT 1 FROM soumissions_comm
+                                 WHERE type_contenu='questionnaire'
+                                   AND date_evenement=? AND lieu=?
+                                   AND statut='publie'
+                                 ORDER BY id DESC LIMIT 1""",
+                              (str(int(annee_debut)),
+                               str(int(mois)))).fetchone())
+    except Exception as e:
+        logger.warning(f"feuillet_questionnaire_publie : {e!r}")
+        return False
+
+
+def feuillet_questionnaire_soumettre(annee_debut, mois, resume, auteur_id=None,
+                                     version_corrigee=False):
+    """Soumet le questionnaire du mois au diocèse (v7.10.2) : une ligne
+    type_contenu='questionnaire', statut='attente', avec un résumé lisible
+    des questions en contenu_texte. Retourne (ok, message prêt à afficher)."""
+    _mois_noms = ["Septembre", "Octobre", "Novembre", "Décembre", "Janvier",
+                  "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août"]
+    _m = int(mois) if 1 <= int(mois) <= 12 else 1
+    _titre = (f"Questionnaire du feuillet N°{_m} — {_mois_noms[_m - 1]} "
+              f"{int(annee_debut)}")
+    if version_corrigee:
+        _titre += " (version corrigée)"
+    try:
+        _assurer_tables_questionnaire()
+        c.execute("""INSERT INTO soumissions_comm
+                     (auteur_id, type_contenu, titre, contenu_texte,
+                      image_url, fichier_url, video_url, date_evenement,
+                      lieu, statut, date_soumission, paroisse_cible)
+                     VALUES (?, 'questionnaire', ?, ?, NULL, NULL, NULL,
+                             ?, ?, 'attente', ?, NULL)""",
+                  (auteur_id, _titre, str(resume or ""),
+                   str(int(annee_debut)), str(int(mois)),
+                   date.today().isoformat()))
+        commit_and_sync()
+        return (True, "Questionnaire soumis au diocèse. ✅ Rien ne sera montré "
+                      "aux fidèles sans sa validation — la soumission apparaît "
+                      "dans « 🟡 En attente de validation » côté diocèse.")
+    except Exception as e:
+        logger.warning(f"feuillet_questionnaire_soumettre : {e!r}")
+        return (False, "La soumission n'a pas pu être notée — réessaie.")
 
 
 def feuillet_question_ajouter(annee_debut, mois, question,
