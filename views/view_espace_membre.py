@@ -96,7 +96,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.10.2"
+_VERSION_APPLI = "v7.10.3"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -5038,3 +5038,4 @@ def _corps_espace_membre(matloc_membre=None):
                                intentions=False)  # v7.8.15 : retiré côté Membre
         # v7.9.18 — les actualités sont rendues DANS le fil (voir
         # _render_fil_actualites) ; plus aucun appel séparé ici.
+
