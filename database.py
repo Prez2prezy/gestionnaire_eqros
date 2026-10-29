@@ -1855,33 +1855,10 @@ def reserve_lignes(equipe_id=None, paroisse_id=None, limite=300):
         return []
 
 
-def reserve_lignes_paroisse_nommee(limite=300):
-    """LA RÉSERVE PARTAGÉE ENTRE PAROISSES (v7.10.2) : « Les paroisses ne se
-    voient pas, par conséquent elles ne peuvent pas se partager les
-    intentions. » Remède : chaque intention active de la réserve revient
-    AVEC le nom de sa paroisse — celle de son équipe (intentions posées par
-    les responsables dans la ⛓️ Chaîne), ou celle notée à l'entrée en réserve
-    (intentions des visiteurs passées par la 🕯️ Zone du jour). Une intention
-    sans paroisse retrouvée revient avec None (elle s'affiche « paroisse non
-    notée », sans gêner personne).
-    Retourne (id, numero_med, texte, auteur_nom, equipe_id, date_ajout,
-              paroisse_nom, equipe_nom)."""
-    _assurer_table_reserve()
-    purger_reserve_expiree()
-    try:
-        return c.execute("""SELECT r.id, r.numero_med, r.texte, r.auteur_nom,
-                                   r.equipe_id, r.date_ajout,
-                                   COALESCE(p1.nom, p2.nom) AS paroisse_nom,
-                                   e.nom_equipe AS equipe_nom
-                            FROM intentions_reserve r
-                            LEFT JOIN equipes e ON e.id = r.equipe_id
-                            LEFT JOIN paroisses p1 ON p1.id = e.paroisse_id
-                            LEFT JOIN paroisses p2 ON p2.id = r.paroisse_id
-                            WHERE r.active=1
-                            ORDER BY r.id DESC LIMIT {l}""".format(l=int(limite))).fetchall()
-    except Exception as e:
-        logger.warning(f"reserve_lignes_paroisse_nommee : {e!r}")
-        return []
+# v7.10.3 — la fonction d'étiquetage par paroisse (reserve_lignes_paroisse_
+# nommee, v7.10.2) est retirée : « les intentions, c'est une affaire de
+# paroisse, de ses membres et visiteurs — le diocèse n'a rien à voir
+# dedans. » La réserve se lit comme avant, sans noms de paroisses.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
