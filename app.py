@@ -15,6 +15,9 @@ _paquet_complet = all(hasattr(_coeur_paquet, _nom) for _nom in (
     "tableau_pointages_visiteurs",            # v7.9.11 — les passages anonymes
     "publier_reserve_due",                    # v7.9.10 — le réveil de 00h00
     "envoyer_intention_du_jour_en_reserve",   # v7.9.10 — le sas des intentions
+    "feuillet_reponses_enregistrer",          # v7.10.0 — le questionnaire du feuillet
+    "mission_creer",                          # v7.10.0 — l'envoi en mission
+    "importer_dizaines_hors_ligne",           # v7.10.0 — les dizaines hors ligne
 ))
 # ---------------------------------------------------------------------------
 
