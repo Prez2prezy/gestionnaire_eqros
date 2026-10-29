@@ -11,6 +11,7 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       prise_en_charge_automatique, stats_dizaines_jour,
                       _assurer_dizaines_journal, _assurer_table_reserve,
                       reserve_compteur, reserve_lignes, publier_reserve_due,
+                      reserve_lignes_paroisse_nommee,
                       OBJECTIF_RESERVE,
                       # v7.9.10 — LE SAS DES INTENTIONS (la zone du jour
                       # déménage du diocèse vers la paroisse)
@@ -259,28 +260,32 @@ def _onglet_coins_intentions(pid, equipes):
 
 
 def _bloc_reserve_paroisse(pid, equipes):
-    """📚 RÉSERVE D'INTENTIONS (v7.9.19 — titre simplifié, vue d'ensemble) :
-    la vue PAROISSIALE RÉUNIT toutes les intentions en provenance des
-    réserves des équipes — celles des MEMBRES (posées par les responsables
-    d'équipe, directement en face de chaque membre dans la chaîne de séance)
-    comme celles des VISITEURS (passées par le sas, la 🕯️ Zone du jour).
-    « Si un N° méd. contient plus d'une intention, le membre comme le
-    visiteur qui médite ce N° méd. verra ses intentions augmentées selon le
-    surplus. » Lecture seule ici : l'ajout et le retrait se font dans chaque
-    équipe. Compteurs GLOBAUX : la chaîne est universelle."""
+    """📚 RÉSERVE D'INTENTIONS (v7.9.19 — titre simplifié, vue d'ensemble ;
+    v7.10.2 — LES PAROISSES SE VOIENT ET SE PARTAGENT LES INTENTIONS) :
+    la vue PAROISSIALE RÉUNIT toutes les intentions de la réserve — celles
+    des MEMBRES (posées par les responsables d'équipe, directement en face
+    de chaque membre dans la chaîne de séance) comme celles des VISITEURS
+    (passées par le sas, la 🕯️ Zone du jour) — et chaque intention porte
+    DÉSORMAIS LE NOM DE SA PAROISSE : les paroisses se voient, chacune voit
+    ce que les autres partagent, et la chaîne universelle fait circuler les
+    intentions de l'une à l'autre. « Si un N° méd. contient plus d'une
+    intention, le membre comme le visiteur qui médite ce N° méd. verra ses
+    intentions augmentées selon le surplus. » Lecture seule ici : l'ajout et
+    le retrait se font dans chaque équipe. Compteurs GLOBAUX : la chaîne est
+    universelle."""
     _assurer_table_reserve()
     publier_reserve_due()
     afficher_messages_flash()
     st.markdown("---")
     st.markdown("### 📚 Réserve d'intentions")
-    st.caption("La réserve de la paroisse RÉUNIT toutes les intentions des réserves "
-               "d'équipes : celles des MEMBRES (posées en face de chaque membre, dans "
-               "la ⛓️ Chaîne de la dernière séance de chaque équipe) et celles des "
-               "VISITEURS (passées par la 🕯️ Zone du jour). Chaque N° méd. porte AU "
-               "MOINS une intention : c'est elle que le lecteur du jour reçoit selon "
-               "SON N° méd. — et s'il en porte plusieurs, ses intentions augmentent "
-               "selon le surplus. Compteurs et liste toutes équipes confondues (la "
-               "chaîne est universelle). 🤫 Comme toujours : être une tombe.")
+    st.caption("La réserve RÉUNIT toutes les intentions de TOUTES les paroisses : "
+               "celles des MEMBRES (posées en face de chaque membre, dans la ⛓️ Chaîne "
+               "de la dernière séance de chaque équipe) et celles des VISITEURS "
+               "(passées par la 🕯️ Zone du jour). Chaque intention porte le nom de sa "
+               "paroisse : les paroisses SE VOIENT et SE PARTAGENT les intentions — "
+               "celle que le lecteur du jour reçoit selon SON N° méd. peut venir de "
+               "n'importe quelle paroisse, et s'il en porte plusieurs, ses intentions "
+               "augmentent selon le surplus. 🤫 Comme toujours : être une tombe.")
     _cpt = reserve_compteur()
     _total = sum(_cpt.values())
     _grille = ""
@@ -306,22 +311,23 @@ def _bloc_reserve_paroisse(pid, equipes):
     else:
         st.caption("🎯 Objectif : 1 intention par N° méd. (20 au total) — réserve actuelle : "
                    + str(_total) + ".")
-    _lignes = reserve_lignes()
-    _noms_eq = {e[0]: e[1] for e in equipes}
+    _lignes = reserve_lignes_paroisse_nommee()
     if not _lignes:
         st.info("La réserve est vide : les intentions arrivent ici dès que les "
                 "équipes les posent (en face de chaque membre, dans la ⛓️ Chaîne de "
                 "la dernière séance) et que la 🕯️ Zone du jour en envoie.")
         return
-    with st.expander(f"🗂️ Intentions en réserve — toutes les équipes ({len(_lignes)})"):
+    with st.expander(f"🗂️ Intentions en réserve — toutes les paroisses ({len(_lignes)})"):
         _n_par_num = {}
-        for (rid, num, texte, auteur, eqi, daj) in _lignes:
+        for (rid, num, texte, auteur, eqi, daj, _pnom, _enom) in _lignes:
             _n_par_num[int(num)] = _n_par_num.get(int(num), 0) + 1
-        for (rid, num, texte, auteur, eqi, daj) in _lignes:
+        for (rid, num, texte, auteur, eqi, daj, _pnom, _enom) in _lignes:
             _multi = (" · surplus N° " + str(int(num)).zfill(2)
                       if _n_par_num.get(int(num), 0) > 1 else "")
+            _orig = (" 🏘️ " + _pnom) if _pnom else " 🏘️ paroisse non notée"
+            _eq = (" · équipe « " + _enom + " »") if _enom else ""
             st.markdown(f"**N° méd. {int(num):02d}** — *{auteur or 'Membre'}*"
-                        + (f" · équipe « {_noms_eq.get(eqi, '?')} »" if eqi else "")
+                        + _orig + _eq
                         + (f" · ajoutée le {daj}" if daj else "") + _multi)
             st.write(texte)
             st.markdown("---")
