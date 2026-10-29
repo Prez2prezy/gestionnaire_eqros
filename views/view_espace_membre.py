@@ -87,14 +87,16 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       pointer_dizaine, dizaine_deja_pointee, compteur_dizaines_mois,
                       marquer_carte_vue, carte_deja_vue, dizaine_visiteur_pointee,
                       feuillet_questions_lister, feuillet_reponses_enregistrer,
-                      feuillet_reponses_de_cle, importer_dizaines_hors_ligne)
+                      feuillet_reponses_de_cle, importer_dizaines_hors_ligne,
+                      # v7.10.2 — le questionnaire SOUMIS au diocèse
+                      feuillet_questionnaire_publie)
 from services import safe_date, compter_visite, lien_whatsapp, urls_galerie
 from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
 
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.10.1"
+_VERSION_APPLI = "v7.10.2"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -1257,6 +1259,12 @@ def _render_questionnaire_mensuel(annee_debut, mois_pastoral,
                                   est_membre=False, matloc=None,
                                   nom_membre=None, equipe_id=None,
                                   paroisse_id=None):
+    # v7.10.2 — LE VOILE : le questionnaire ne paraît aux fidèles qu'APRÈS
+    # la validation du diocèse (comme le feuillet lui-même). Tant que la
+    # soumission du mois n'est pas passée à « publie » au SAS, rien ne se
+    # montre ici — préparé ne veut pas dire paraître.
+    if not feuillet_questionnaire_publie(annee_debut, mois_pastoral):
+        return
     questions = feuillet_questions_lister(annee_debut, mois_pastoral, True)
     if not questions:
         return
@@ -5030,4 +5038,3 @@ def _corps_espace_membre(matloc_membre=None):
                                intentions=False)  # v7.8.15 : retiré côté Membre
         # v7.9.18 — les actualités sont rendues DANS le fil (voir
         # _render_fil_actualites) ; plus aucun appel séparé ici.
-
