@@ -9,7 +9,12 @@ from datetime import date, timedelta
 from database import (c, commit_and_sync, enregistrer_chaine_seance,
                       derniere_chaine_seance, historique_chaines_seance,
                       intentions_reserve_du_numero,
-                      ajouter_intention_reserve, reserve_lignes)
+                      ajouter_intention_reserve, reserve_lignes,
+                      feuillet_questions_lister, feuillet_questionnaire_existe,
+                      feuillet_question_ajouter, feuillet_question_modifier,
+                      feuillet_question_supprimer, feuillet_question_deplacer,
+                      feuillet_questions_detecter, feuillet_reponses_resume,
+                      TYPES_REPONSE)
 import qrcode
 from io import BytesIO
 from services import (safe_date, envoyer_notification_telegram, lien_whatsapp,
@@ -2175,3 +2180,218 @@ def bloc_chaine_seance(equipes, prefixe_cle="cs"):
                 st.markdown(f"**{str(_hd or '?')}** : {_ligne_h}"
                             + (f"  ·  🪶 hors chaîne : {str(_ha)}" if _ha else "")
                             + (f"  ·  _enregistrée le {str(_henr)}_" if _henr else ""))
+
+
+# ====================================================================
+# v7.10.0 — LE QUESTIONNAIRE DU FEUILLET MENSUEL (composition)
+# La cellule Communication reprend, mois par mois, les questions et les
+# exercices du feuillet reçu (saisi juste au-dessus) et les propose en
+# questionnaire dans l'Espace de Prière — aux MEMBRES comme aux
+# VISITEURS. Les questions repérées d'un clic dans le texte du feuillet
+# et celles tapées à la main vivent côte à côte ; les réponses reçues se
+# lisent ici, question par question, et repartent en carnet Excel.
+# ====================================================================
+def gerer_questionnaire_feuillet():
+    st.markdown("### 2️⃣ ter. Le questionnaire du feuillet")
+    st.caption("Reprends les questions et les exercices du feuillet du mois : "
+               "elles deviennent un questionnaire que les membres ET les "
+               "visiteurs répondent dans l'Espace de Prière (🕯️ Thème → Vue "
+               "d'ensemble, juste sous le feuillet). Chaque question reprise "
+               "ou tapée ici peut recevoir une réponse libre, un Oui/Non ou "
+               "des choix proposés.")
+
+    _themes_q = c.execute("SELECT annee_debut FROM themes_pastoraux "
+                          "ORDER BY annee_debut DESC").fetchall()
+    _annees_q = sorted({t[0] for t in _themes_q} | {get_periode_pastorale()[0]},
+                       reverse=True)
+    _an_q = st.selectbox("Année pastorale du questionnaire", _annees_q,
+                         key="qf_annee")
+    _mois_q_lbl = st.selectbox(
+        "Mois pastoral du questionnaire",
+        ["Septembre", "Octobre", "Novembre", "Décembre", "Janvier", "Février",
+         "Mars", "Avril", "Mai", "Juin", "Juillet", "Août"], key="qf_mois")
+    _mois_q = ["Septembre", "Octobre", "Novembre", "Décembre", "Janvier",
+               "Février", "Mars", "Avril", "Mai", "Juin", "Juillet",
+               "Août"].index(_mois_q_lbl) + 1
+
+    # ── 1. les questions repérées DANS le feuillet (reprise d'un clic) ──
+    _detectees = feuillet_questions_detecter(_an_q, _mois_q)
+    if _detectees:
+        with st.expander("🔎 Questions repérées dans le feuillet de ce mois ("
+                         + str(len(_detectees)) + ") — reprends d'un clic"):
+            st.caption("Lignes en forme de question trouvées dans le texte des "
+                       "sections saisies au-dessus. Reprends celles que tu veux "
+                       "proposer, telles quelles ou retouchées.")
+            for _i, (_q_txt, _q_sec) in enumerate(_detectees):
+                _c1, _c2 = st.columns([4.4, 1])
+                with _c1:
+                    st.markdown("🗨️ « " + html.escape(_q_txt) + " »"
+                                + ('<span style="opacity:.65;"> — '
+                                   + html.escape(_q_sec) + "</span>"
+                                   if _q_sec else ""),
+                                unsafe_allow_html=True)
+                with _c2:
+                    if st.button("➕ Reprendre", key=f"qf_rep_{_i}",
+                                 width="stretch"):
+                        st.session_state["qf_prefill"] = _q_txt
+                        st.rerun()
+    else:
+        st.info("🔎 Aucune ligne en forme de question repérée dans le feuillet "
+                "de ce mois — tape tes questions à la main ci-dessous, ou "
+                "saisis d'abord les sections du feuillet.")
+
+    # ── 2. ajouter une question ──────────────────────────────────────────
+    _prefill = st.session_state.pop("qf_prefill", "") or ""
+    with st.form("form_qf_ajout", clear_on_submit=True):
+        _q_new = st.text_area("➕ Nouvelle question (ou exercice proposé)",
+                              value=_prefill, height=80)
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            _t_new = st.selectbox("Type de réponse", list(TYPES_REPONSE.values()),
+                                  key="qf_type")
+            _t_code = [k for k, v in TYPES_REPONSE.items()
+                       if v == _t_new][0]
+        with _c2:
+            _ch_new = st.text_input(
+                "Choix proposés (séparés par une virgule)",
+                key="qf_choix",
+                help="Uniquement pour « 🔠 Choix proposés » — ex. : "
+                     "Souvent, Parfois, Rarement")
+        _ob_new = st.checkbox("Réponse obligatoire", key="qf_obl")
+        if st.form_submit_button("💾 Ajouter cette question", width="stretch"):
+            if not _q_new.strip():
+                st.error("Écris d'abord la question.")
+            elif _t_code == "choix" and not _ch_new.strip():
+                st.error("Pour des choix proposés, liste-les séparés par une "
+                         "virgule (ex. : Souvent, Parfois, Rarement).")
+            else:
+                if feuillet_question_ajouter(_an_q, _mois_q, _q_new.strip(),
+                                             _t_code, _ch_new.strip() or None,
+                                             _ob_new):
+                    st.session_state["flash_success"] = (
+                        "✅ Question ajoutée au questionnaire de ce mois.")
+                    st.rerun()
+                else:
+                    st.error("L'ajout n'a pas pu être noté — réessaie.")
+
+    # ── 3. les questions du mois : modifier, ordonner, activer, retirer ──
+    _qs_q = feuillet_questions_lister(_an_q, _mois_q, actives_seules=False)
+    if not _qs_q:
+        st.info("Le questionnaire de ce mois est encore vide.")
+    else:
+        st.markdown("#### 📝 Les questions de ce mois (" + str(len(_qs_q)) + ")")
+        for (_qid, _ord, _q_txt, _t, _ch, _ob, _ac) in _qs_q:
+            _badge = ("✍️ Texte" if _t == "texte"
+                      else "🔘 Oui/Non" if _t == "oui_non" else "🔠 Choix")
+            _entete = (f"{'🟢' if _ac else '⚪️'} Q{_ord}. "
+                       + (_q_txt[:90] + ("…" if len(_q_txt) > 90 else ""))
+                       + f"  ·  {_badge}"
+                       + ("  ·  obligatoire" if _ob else ""))
+            with st.expander(_entete):
+                with st.form(f"form_qf_mod_{_qid}"):
+                    _q_m = st.text_area("Question", value=_q_txt, height=70,
+                                        key=f"qf_m_txt_{_qid}")
+                    _c1, _c2 = st.columns(2)
+                    with _c1:
+                        _t_m_lbl = st.selectbox(
+                            "Type de réponse", list(TYPES_REPONSE.values()),
+                            index=(list(TYPES_REPONSE).index(_t)),
+                            key=f"qf_m_type_{_qid}")
+                        _t_m = [k for k, v in TYPES_REPONSE.items()
+                                if v == _t_m_lbl][0]
+                    with _c2:
+                        _ch_m = st.text_input(
+                            "Choix (virgules)", value=(_ch or ""),
+                            key=f"qf_m_choix_{_qid}")
+                    _ob_m = st.checkbox("Réponse obligatoire", value=bool(_ob),
+                                        key=f"qf_m_obl_{_qid}")
+                    _ac_m = st.checkbox(
+                        "Proposée aux fidèles (question active)",
+                        value=bool(_ac), key=f"qf_m_act_{_qid}")
+                    if st.form_submit_button("💾 Enregistrer la modification",
+                                             width="stretch"):
+                        if feuillet_question_modifier(
+                                _qid, question=_q_m, type_reponse=_t_m,
+                                choix=(_ch_m.strip() or None),
+                                obligatoire=_ob_m, active=_ac_m):
+                            st.session_state["flash_success"] = (
+                                "✅ Question mise à jour.")
+                            st.rerun()
+                        else:
+                            st.error("La modification n'a pas pu être notée.")
+                _c1, _c2, _c3 = st.columns(3)
+                with _c1:
+                    if st.button("⬆️ Monter", key=f"qf_up_{_qid}",
+                                 width="stretch"):
+                        feuillet_question_deplacer(_qid, "haut")
+                        st.rerun()
+                with _c2:
+                    if st.button("⬇️ Descendre", key=f"qf_dn_{_qid}",
+                                 width="stretch"):
+                        feuillet_question_deplacer(_qid, "bas")
+                        st.rerun()
+                with _c3:
+                    if st.button("🗑️ Retirer", key=f"qf_del_{_qid}",
+                                 width="stretch",
+                                 help="La question et les réponses qu'elle "
+                                      "avait recueillies quittent le mois."):
+                        feuillet_question_supprimer(_qid)
+                        st.session_state["flash_success"] = (
+                            "🗑️ Question retirée du mois.")
+                        st.rerun()
+
+    # ── 4. les réponses reçues : lecture + carnet Excel ──────────────────
+    _resume = feuillet_reponses_resume(_an_q, _mois_q)
+    _n_rep_total = sum(len(q[5]) for q in _resume)
+    with st.expander("👀 Réponses reçues (" + str(_n_rep_total)
+                     + ") — lecture et carnet"):
+        if not _n_rep_total:
+            st.info("Aucune réponse pour ce mois pour le moment.")
+        else:
+            for (_qid, _ord, _q_txt, _t, _ch, _reps) in _resume:
+                if not _reps:
+                    continue
+                _compte = {}
+                for _r in _reps:
+                    _compte[_r[2]] = _compte.get(_r[2], 0) + 1
+                _entete_r = (f"Q{_ord}. "
+                             + (_q_txt[:80] + ("…" if len(_q_txt) > 80 else ""))
+                             + " — " + str(len(_reps)) + " réponse(s)")
+                with st.expander(_entete_r):
+                    if _t in ("oui_non", "choix"):
+                        for _v, _n in sorted(_compte.items(),
+                                             key=lambda x: -x[1]):
+                            _pct = round(100 * _n / max(1, len(_reps)))
+                            st.markdown("• **" + html.escape(_v or "—")
+                                        + "** — " + str(_n) + " (" + str(_pct)
+                                        + " %)")
+                    for (_nom, _typ, _rep, _d) in _reps:
+                        _qui = _nom or "Anonyme"
+                        _icone = "👤" if _typ == "membre" else "🕊️"
+                        st.markdown(
+                            '<div style="opacity:.85; margin:2px 0;">' + _icone
+                            + " <b>" + html.escape(_qui) + "</b> · "
+                            + html.escape(str(_d or ""))
+                            + " — « " + html.escape(_rep or "")
+                            + " »</div>", unsafe_allow_html=True)
+            # le carnet Excel de tout le mois
+            _lignes = []
+            for (_qid, _ord, _q_txt, _t, _ch, _reps) in _resume:
+                for (_nom, _typ, _rep, _d) in _reps:
+                    _lignes.append({"Question": f"Q{_ord}",
+                                    "Énoncé": _q_txt,
+                                    "Qui": _nom or "Anonyme",
+                                    "Profil": ("Membre" if _typ == "membre"
+                                               else "Visiteur"),
+                                    "Réponse": _rep,
+                                    "Date": _d})
+            _df_q = pd.DataFrame(_lignes)
+            _buf_q = io.BytesIO()
+            with pd.ExcelWriter(_buf_q, engine="openpyxl") as w:
+                _df_q.to_excel(w, index=False)
+            _buf_q.seek(0)
+            st.download_button(
+                "📥 Télécharger le carnet des réponses (Excel)",
+                data=_buf_q,
+                file_name=f"questionnaire_feuillet_{_an_q}_{_mois_q:02d}.xlsx",
+                key="qf_export", width="stretch")
