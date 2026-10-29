@@ -1,5 +1,7 @@
 import sqlite3
 import os
+import re
+import json
 import time
 import hashlib
 import secrets
@@ -450,6 +452,52 @@ def init_tables_and_migrations():
                     qui TEXT,
                     date_debut TEXT NOT NULL,
                     date_fin TEXT)""")
+    # v7.10.0 — QUESTIONNAIRE DU FEUILLET MENSUEL : les questions et
+    # exercices du feuillet du mois, composées par la cellule Communication,
+    # répondues par les membres ET les visiteurs dans l'Espace de Prière
+    # (🕯️ Thème → Vue d'ensemble, juste sous le feuillet).
+    c.execute("""CREATE TABLE IF NOT EXISTS feuillet_questions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    annee_debut INTEGER NOT NULL,
+                    mois INTEGER NOT NULL,
+                    ordre INTEGER,
+                    question TEXT NOT NULL,
+                    type_reponse TEXT DEFAULT 'texte',
+                    choix TEXT,
+                    obligatoire INTEGER DEFAULT 0,
+                    active INTEGER DEFAULT 1)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS feuillet_reponses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    question_id INTEGER NOT NULL,
+                    annee_debut INTEGER NOT NULL,
+                    mois INTEGER NOT NULL,
+                    cle TEXT NOT NULL,
+                    qui_nom TEXT,
+                    qui_type TEXT DEFAULT 'visiteur',
+                    reponse TEXT,
+                    equipe_id INTEGER,
+                    paroisse_id INTEGER,
+                    date_reponse TEXT)""")
+    # v7.10.0 — ENVOI EN MISSION : les missions préparées par les
+    # responsables d'équipe (fiche d'envoi imprimable) et leur retour
+    # (fiche de rapport de mission). `participants` porte la liste des
+    # envoyés (JSON : nom, matloc, contact, externe) ; `rapport` porte le
+    # retour (JSON : déroulement, grâces, difficultés, propositions,
+    # participants effectifs).
+    c.execute("""CREATE TABLE IF NOT EXISTS missions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    equipe_id INTEGER NOT NULL,
+                    paroisse_id INTEGER,
+                    titre TEXT NOT NULL,
+                    objectif TEXT,
+                    date_mission TEXT,
+                    lieu TEXT,
+                    participants TEXT,
+                    statut TEXT DEFAULT 'envoi',
+                    date_envoi TEXT,
+                    auteur_nom TEXT,
+                    rapport TEXT,
+                    date_rapport TEXT)""")
     commit_and_sync()
 
     # --- 2. DONNÉES PAR DÉFAUT ---
@@ -688,6 +736,86 @@ def set_parametre(cle, valeur):
     commit_and_sync()
 
 
+# ======================================================================
+# v7.10.1 — LA RÈGLE D'OR POUR LES MEMBRES AUSSI
+# ======================================================================
+# « Personne ne prie sa propre intention. » Jusqu'ici la règle protégeait
+# le VISITEUR (son jour de naissance écartait ses intentions à lui) ; côté
+# MEMBRE la règle ne le protégeait pas : une intention notée en face de
+# son N° dans la chaîne de séance revenait devant LUI dans sa propre
+# dizaine. Désormais la fiche du membre (son MatLoc) donne son jour de
+# naissance ET son nom : ses propres intentions lui sont masquées — au
+# tirage principal comme dans le surplus — et une intention reçue qui se
+# révélerait être la sienne n'est pas gardée attachée.
+
+
+def _nom_cle(nom):
+    """Clé de comparaison d'un nom (v7.10.1) : espaces réduits, minuscules,
+    mots REMIS EN ORDRE — « Odette ONIBONKOU », « ONIBONKOU Odette » et
+    « odette  onibonkou » sont le même nom (la fiche porte « Prénom Nom »,
+    la chaîne de séance note « Nom Prénom » : l'ordre ne doit pas tromper
+    la règle d'or)."""
+    return " ".join(sorted(t.lower() for t in str(nom or "").split()))
+
+
+_FICHES_MEMBRES = {}
+
+
+def fiche_membre(matloc):
+    """(jour_de_naissance, nom_complet) du membre porteur de ce MatLoc
+    (v7.10.1) — la règle d'or côté membre. Le jour vient de la date de
+    naissance de la fiche (« 1990-05-17 » ou « 17/05/1990 » → 17) ;
+    le nom complet joint prénom et nom. Mémoire du processus : une seule
+    lecture par MatLoc (une fiche ne change pas pendant la visite).
+    Retourne (None, None) quand la fiche est inconnue ou muette."""
+    _k = str(matloc or "").upper().strip()
+    if not _k:
+        return (None, None)
+    if _k not in _FICHES_MEMBRES:
+        _fiche = (None, None)
+        try:
+            _r = c.execute("""SELECT date_naissance, prenom, nom
+                              FROM membres WHERE matloc=? LIMIT 1""",
+                           (_k,)).fetchone()
+            if _r:
+                _jour = None
+                _s = str(_r[0] or "").strip()
+                for _tranche in (slice(8, 10), slice(0, 2)):
+                    # « 1990-05-17… » → 17, ou « 17/05/1991 » → 17 —
+                    # la tranche n'est gardée que si elle dit un vrai jour
+                    if len(_s) >= 10 and _s[_tranche].isdigit():
+                        _v = int(_s[_tranche])
+                        if 1 <= _v <= 31:
+                            _jour = _v
+                            break
+                if _jour is not None and not (1 <= _jour <= 31):
+                    _jour = None
+                _nomc = " ".join(x for x in (str(_r[1] or "").strip(),
+                                             str(_r[2] or "").strip()) if x)
+                _fiche = (_jour, _nomc or None)
+                # Seule une fiche TROUVÉE est retenue : un MatLoc encore
+                # inconnu (membre créé à l'instant) reste interrogable.
+                _FICHES_MEMBRES[_k] = _fiche
+        except Exception as e:
+            logger.warning(f"fiche_membre : {e!r}")
+    return _FICHES_MEMBRES.get(_k, (None, None))
+
+
+def _est_propre_a(qui, auteur, jour_ligne, nom_exclu, jour_exclu):
+    """1 si cette intention (qui / auteur / jour de naissance notés sur la
+    ligne) appartient AU LECTEUR lui-même (v7.10.1) : le nom correspond à
+    celui de sa fiche, ou son jour de naissance correspond à celui noté
+    sur l'intention. La règle d'or : personne ne prie la sienne."""
+    if nom_exclu:
+        _cible = _nom_cle(nom_exclu)
+        if _cible and (_nom_cle(qui) == _cible or _nom_cle(auteur) == _cible):
+            return 1
+    if (jour_exclu is not None and jour_ligne is not None
+            and int(jour_ligne) == int(jour_exclu)):
+        return 1
+    return 0
+
+
 def intention_du_prochain_detail(jour_visiteur=None, matloc=None):
     """Retourne (TEXTE, QUI) de l'« intention du prochain » à porter dans la
     dizaine du jour (v7.9.0), selon le choix enregistré par la paroisse :
@@ -729,9 +857,21 @@ def intention_du_prochain_detail(jour_visiteur=None, matloc=None):
                 # universelles se relaient chaque jour.
                 return (INTENTIONS_UNIVERSELLES[date.today().timetuple().tm_yday % 3], None)
             return ((choix if choix in INTENTIONS_UNIVERSELLES else _secours[0]), None)
+        # v7.10.1 — LA RÈGLE D'OR POUR TOUS : le lecteur (visiteur par son
+        # jour, membre par sa fiche — jour ET nom) ne doit jamais recevoir
+        # la sienne. Ces deux clés suivent tout le tirage ci-dessous.
+        _jour_exclu = None
+        _nom_exclu = None
+        if matloc:
+            _jour_exclu, _nom_exclu = fiche_membre(matloc)
+        elif jour_visiteur is not None:
+            _jour_exclu = int(jour_visiteur)
         # v7.9.4 — L'ATTACHEMENT D'ABORD : l'intention déjà reçue reste LA
         # SIENNE pendant toute sa période (membre : période désignée ;
         # visiteur : 20 jours), quel que soit le renouvellement de la réserve.
+        # v7.10.1 — sauf si cette intention attachée se révèle être la
+        # PROPRE intention du lecteur (reçue avant la règle d'or) : elle
+        # n'est pas montrée, le tirage poursuit et la remplace tout seul.
         _cle = None
         if matloc:
             _cle = "M:" + str(matloc)
@@ -741,7 +881,8 @@ def intention_du_prochain_detail(jour_visiteur=None, matloc=None):
         if _cle:
             _att = prochain_attache(_cle)
             if _att and str(_att[0] or "").strip():
-                return (_att[0], _att[1])
+                if not _est_propre_a(_att[1], None, None, _nom_exclu, _jour_exclu):
+                    return (_att[0], _att[1])
         # LA RÉSERVE (v7.9.3, affinée v7.9.4) : l'intention placée au N° méd.
         # du lecteur — la règle d'or l'y protège aussi de la sienne.
         if jour_visiteur is not None:
@@ -762,8 +903,9 @@ def intention_du_prochain_detail(jour_visiteur=None, matloc=None):
                               ORDER BY date_soumission ASC, id ASC""", (statut,)).fetchall()
         admissibles = []
         for _txt, _jn, _nom, _anon in lignes:
-            # La règle d'or : le lecteur ne prie jamais sa propre intention.
-            if jour_visiteur is not None and _jn is not None and int(_jn) == int(jour_visiteur):
+            # La règle d'or : le lecteur ne prie jamais sa propre intention
+            # (v7.10.1 — pour le membre aussi : jour ET nom de sa fiche).
+            if _est_propre_a(None, _nom, _jn, _nom_exclu, _jour_exclu):
                 continue
             if _anon:
                 qui = "cet anonyme"
@@ -909,8 +1051,30 @@ def jours_depuis(d_iso):
 #                jour (comptage global, sans nom).
 
 
+# v7.10.1 — LES TABLES RECONNUES UNE FOIS POUR TOUTE LA JOURNÉE D'OUVERTURE :
+# chaque contrôle doux (« cette table existe-t-elle ? ») repartait à CHAQUE
+# page, chez l'hébergeur en allers-retours lointains — jusqu'à vingt
+# tentatives perdues rien qu'à l'entrée dans la dizaine : c'était la
+# lenteur ressentie à l'ouverture de l'Espace et au clic « Égrener la
+# dizaine ». Désormais la vérification complète ne se pose qu'UNE FOIS par
+# processus ; ensuite la maison connaît ses murs par cœur.
+_TABLES_RECONNUES = set()
+
+
+def _table_reconnue(nom_table):
+    """1 si la table a déjà été vérifiée présente dans CE processus."""
+    return nom_table in _TABLES_RECONNUES
+
+
+def _table_averee(nom_table):
+    """Note que la table a été vérifiée (présente ou posée) ce processus."""
+    _TABLES_RECONNUES.add(nom_table)
+
+
 def _assurer_dizaines_journal():
     """Création douce de dizaines_journal (bases distantes anciennes)."""
+    if _table_reconnue("dizaines_journal"):
+        return
     try:
         c.execute("SELECT id FROM dizaines_journal LIMIT 1")
     except Exception:
@@ -926,6 +1090,7 @@ def _assurer_dizaines_journal():
                         heure TEXT,
                         UNIQUE(matloc, jour))""")
         commit_and_sync()
+    _table_averee("dizaines_journal")
 
 
 def dizaine_deja_pointee(matloc=None):
@@ -1126,7 +1291,11 @@ OBJECTIF_RESERVE = 1    # v7.9.4 — UNE intention par N° méd.
 def _assurer_table_reserve():
     """Création douce de intentions_reserve (bases distantes anciennes).
     v7.9.4 — les colonnes active/qui/jour_naissance sont ajoutées en ALTER
-    doux (idempotent) : une base Cloud née avant v7.9.4 doit rester lisible."""
+    doux (idempotent) : une base Cloud née avant v7.9.4 doit rester lisible.
+    v7.10.1 — le contrôle complet ne se pose qu'UNE FOIS par processus
+    (la lenteur des pages venait de ces allers-retours répétés)."""
+    if _table_reconnue("intentions_reserve"):
+        return
     try:
         c.execute("SELECT id FROM intentions_reserve LIMIT 1")
     except Exception:
@@ -1152,12 +1321,16 @@ def _assurer_table_reserve():
             commit_and_sync()
         except Exception:
             pass  # colonne déjà présente
+    _table_averee("intentions_reserve")
 
 
 def _assurer_table_du_jour():
     """Création douce de intentions_du_jour — LA ZONE DU JOUR (v7.9.4) :
     elle reçoit toutes les intentions confiées dans la journée ; le
-    lendemain, chacune entre dans la réserve (traiter_intentions_du_jour)."""
+    lendemain, chacune entre dans la réserve (traiter_intentions_du_jour).
+    v7.10.1 — le contrôle ne se pose qu'UNE FOIS par processus."""
+    if _table_reconnue("intentions_du_jour"):
+        return
     try:
         c.execute("SELECT id FROM intentions_du_jour LIMIT 1")
     except Exception:
@@ -1177,11 +1350,15 @@ def _assurer_table_du_jour():
             commit_and_sync()
         except Exception as e:
             logger.warning(f"_assurer_table_du_jour : {e!r}")
+    _table_averee("intentions_du_jour")
 
 
 def _assurer_table_attributions():
     """Création douce de attributions_prochain (v7.9.4) — l'intention du
-    prochain reçue reste attachée à son lecteur pendant sa période."""
+    prochain reçue reste attachée à son lecteur pendant sa période.
+    v7.10.1 — le contrôle ne se pose qu'UNE FOIS par processus."""
+    if _table_reconnue("attributions_prochain"):
+        return
     try:
         c.execute("SELECT id FROM attributions_prochain LIMIT 1")
     except Exception:
@@ -1197,6 +1374,7 @@ def _assurer_table_attributions():
             commit_and_sync()
         except Exception as e:
             logger.warning(f"_assurer_table_attributions : {e!r}")
+    _table_averee("attributions_prochain")
 
 
 # v7.9.4 — garde-fou : le transfert « zone du jour → réserve » ne tourne
@@ -1688,7 +1866,10 @@ def reserve_lignes(equipe_id=None, paroisse_id=None, limite=300):
 # premier (le dernier maillon reprend le premier).
 # ─────────────────────────────────────────────────────────────────────────────
 def _assurer_table_chaine_seances():
-    """Création douce de chaine_seances (bases distantes anciennes)."""
+    """Création douce de chaine_seances (bases distantes anciennes).
+    v7.10.1 — le contrôle ne se pose qu'UNE FOIS par processus."""
+    if _table_reconnue("chaine_seances"):
+        return
     try:
         c.execute("SELECT id FROM chaine_seances LIMIT 1")
     except Exception:
@@ -1703,6 +1884,7 @@ def _assurer_table_chaine_seances():
             commit_and_sync()
         except Exception as e:
             logger.warning(f"_assurer_table_chaine_seances : {e!r}")
+    _table_averee("chaine_seances")
 
 
 def enregistrer_chaine_seance(equipe_id, date_seance, ordre_nums, absents_nums=None):
@@ -1836,13 +2018,16 @@ def intention_reserve_pour_numero(numero_med, cycle=None, jour_exclu=None):
         return None
 
 
-def intentions_reserve_du_numero(numero_med, texte_exclu=None, jour_exclu=None):
+def intentions_reserve_du_numero(numero_med, texte_exclu=None, jour_exclu=None,
+                                 nom_exclu=None):
     """TOUTES les intentions d'un N° méd. (v7.9.19) — la réserve accepte
     désormais plusieurs intentions au même N° (le surplus). Cette fonction
     les rend TOUTES : liste de (texte, qui), les plus anciennes d'abord.
     texte_exclu : retire de la liste l'intention déjà montrée à part (la
     ligne principale du tirage) — le lecteur ne la lit pas deux fois.
     jour_exclu : règle d'or (le lecteur ne voit jamais la sienne).
+    nom_exclu : règle d'or côté MEMBRE (v7.10.1) — le nom de sa fiche
+    écarte les intentions notées à son nom dans la réserve.
     Seules les intentions ACTIVES et PUBLIÉES sont rendues."""
     _num = _numero_med_normale(numero_med)
     if _num is None:
@@ -1864,6 +2049,9 @@ def intentions_reserve_du_numero(numero_med, texte_exclu=None, jour_exclu=None):
     for (_txt, _qui, _auteur, _jn) in rows:
         if jour_exclu is not None and _jn is not None and int(_jn) == int(jour_exclu):
             continue
+        if nom_exclu and (_nom_cle(_qui) == _nom_cle(nom_exclu)
+                          or _nom_cle(_auteur) == _nom_cle(nom_exclu)):
+            continue
         if _exclu and str(_txt or "").strip() == _exclu:
             continue
         _q = (str(_qui or "").strip() or str(_auteur or "").strip() or "notre prochain")
@@ -1877,11 +2065,15 @@ def intentions_reserve_surplus(jour_visiteur=None, matloc=None, texte_exclu=None
     ses intentions augmentées selon le surplus. » Retrouve le N° méd. du
     lecteur (son jour de naissance pour un visiteur, sa fiche membre pour un
     membre) et rend TOUTES les intentions de ce N°, SAUF la ligne principale
-    déjà affichée (texte_exclu) et, pour le visiteur, ses propres intentions
-    (règle d'or). Côté membre, comme au tirage principal, aucune exclusion.
-    Retourne une liste de (texte, qui)."""
+    déjà affichée (texte_exclu) et SES PROPRES intentions (règle d'or) :
+    pour le visiteur, son jour de naissance ; pour le membre, son jour ET
+    son nom de fiche (v7.10.1 — une intention notée à son nom dans la
+    réserve ne lui revient plus). Retourne une liste de (texte, qui)."""
     _num = None
+    _jour_exclu = jour_visiteur
+    _nom_exclu = None
     if matloc:
+        _jour_exclu, _nom_exclu = fiche_membre(matloc)
         try:
             _row = c.execute("""SELECT numero_meditation FROM membres
                                 WHERE matloc=? LIMIT 1""",
@@ -1895,7 +2087,8 @@ def intentions_reserve_surplus(jour_visiteur=None, matloc=None, texte_exclu=None
     if _num is None:
         return []
     return intentions_reserve_du_numero(_num, texte_exclu=texte_exclu,
-                                        jour_exclu=jour_visiteur)
+                                        jour_exclu=_jour_exclu,
+                                        nom_exclu=_nom_exclu)
 
 
 # ======================================================================
@@ -1998,7 +2191,10 @@ def date_intention_en_priere(contact):
 
 
 def _assurer_table_cartes_vues():
-    """Création douce de cartes_vues (bases distantes anciennes)."""
+    """Création douce de cartes_vues (bases distantes anciennes).
+    v7.10.1 — le contrôle ne se pose qu'UNE FOIS par processus."""
+    if _table_reconnue("cartes_vues"):
+        return
     try:
         c.execute("SELECT 1 FROM cartes_vues LIMIT 1")
     except Exception:
@@ -2011,6 +2207,7 @@ def _assurer_table_cartes_vues():
             commit_and_sync()
         except Exception as e:
             logger.warning(f"_assurer_table_cartes_vues : {e!r}")
+    _table_averee("cartes_vues")
 
 
 def marquer_carte_vue(cle, carte):
@@ -2069,3 +2266,505 @@ def dizaine_visiteur_pointee(jrnais):
     except Exception as e:
         logger.warning(f"dizaine_visiteur_pointee : {e!r}")
         return 0
+
+
+# ====================================================================
+# v7.10.0 — LA RÉCUPÉRATION DES DIZAINES PRIÉES HORS LIGNE
+# L'application de méditation du quotidien (hors internet) confie au
+# Gestionnaire la mémoire des jours priés : chaque jour retrouvé dans le
+# fichier rejoint le journal des dizaines, comme si le fidèle avait
+# cliqué « ✕ Terminer » ce jour-là. La récupération est IDEMPOTENTE —
+# repasser le même fichier n'ajoute jamais deux fois la même journée
+# (membre : UNIQUE(matloc, jour) ; visiteur : contrôle (jrnais, jour)).
+# Les journées à venir ne sont jamais acceptées (on ne prie pas
+# demain), et une récupération ne dépasse jamais MAX_IMPORT jours.
+# ====================================================================
+
+MAX_IMPORT_DIZAINES = 400
+
+
+def importer_dizaines_hors_ligne(matloc=None, nom=None, jrnais=None,
+                                 equipe_id=None, paroisse_id=None,
+                                 est_membre=True, jours=None):
+    """Reçoit la liste des jours priés hors ligne (ISO AAAA-MM-JJ) et les
+    note dans le journal des dizaines. Retourne (ajoutés, déjà comptés,
+    ignorés). Silencieuse sur les lignes incompréhensibles : seuls les
+    jours véritables entrent."""
+    _ajoutes, _deja, _ignores = 0, 0, 0
+    try:
+        _assurer_dizaines_journal()
+    except Exception as e:
+        logger.warning(f"importer_dizaines_hors_ligne : {e!r}")
+        return (0, 0, 0)
+    _auj = date.today().isoformat()
+    _propres, _vus = [], set()
+    for j in (jours or []):
+        _j = str(j or "").strip()
+        if not _j or _j in _vus:
+            continue
+        _vus.add(_j)
+        # ni le futur, ni ce qui n'est pas une date honnête
+        try:
+            _d = date.fromisoformat(_j)
+        except ValueError:
+            _ignores += 1
+            continue
+        if _j > _auj:
+            _ignores += 1
+            continue
+        _propres.append(_j)
+    if len(_propres) > MAX_IMPORT_DIZAINES:
+        _ignores += len(_propres) - MAX_IMPORT_DIZAINES
+        _propres = _propres[:MAX_IMPORT_DIZAINES]
+    try:
+        if est_membre:
+            _mat = str(matloc or "").strip().upper()
+            if not _mat:
+                return (0, 0, len(_propres) + _ignores)
+            _la = c.execute(
+                "SELECT jour FROM dizaines_journal WHERE matloc=?",
+                (_mat,)).fetchall()
+            _la = {str(r[0]) for r in _la}
+            for _j in _propres:
+                if _j in _la:
+                    _deja += 1
+                    continue
+                c.execute("""INSERT INTO dizaines_journal
+                             (matloc, nom, type, jrnais, equipe_id,
+                              paroisse_id, jour, heure)
+                             VALUES (?, ?, 'membre', NULL, ?, ?, ?, ?)""",
+                          (_mat, nom or None, equipe_id, paroisse_id, _j,
+                           datetime.now().strftime("%H:%M")))
+                _la.add(_j)
+                _ajoutes += 1
+        else:
+            try:
+                _jrn = int(jrnais)
+            except (TypeError, ValueError):
+                return (0, 0, len(_propres) + _ignores)
+            for _j in _propres:
+                _pris = c.execute(
+                    """SELECT 1 FROM dizaines_journal
+                       WHERE type='visiteur' AND jrnais=? AND jour=?
+                       LIMIT 1""", (_jrn, _j)).fetchone()
+                if _pris:
+                    _deja += 1
+                    continue
+                c.execute("""INSERT INTO dizaines_journal
+                             (matloc, nom, type, jrnais, equipe_id,
+                              paroisse_id, jour, heure)
+                             VALUES (NULL, NULL, 'visiteur', ?, ?, ?, ?, ?)""",
+                          (_jrn, equipe_id, paroisse_id, _j,
+                           datetime.now().strftime("%H:%M")))
+                _ajoutes += 1
+        if _ajoutes:
+            commit_and_sync()
+        return (_ajoutes, _deja, _ignores)
+    except Exception as e:
+        logger.warning(f"importer_dizaines_hors_ligne : {e!r}")
+        return (0, _deja, _ignores)
+
+
+# ====================================================================
+# v7.10.0 — LE QUESTIONNAIRE DU FEUILLET MENSUEL
+# Chaque mois, la cellule Communication reprend les questions et les
+# exercices du feuillet reçu, et les propose en questionnaire aux
+# MEMBRES comme aux VISITEURS (page 🕯️ Thème → Vue d'ensemble, sous le
+# feuillet). Un membre répond sous son MatLoc (il retrouve et peut
+# corriger ses réponses) ; un visiteur signe du nom qu'il choisit.
+# Répondre à nouveau remplace les réponses précédentes du même lecteur
+# — jamais celles des autres.
+# ====================================================================
+
+TYPES_REPONSE = {"texte": "✍️ Texte libre", "oui_non": "🔘 Oui ou Non",
+                 "choix": "🔠 Choix proposés"}
+
+
+def _assurer_tables_questionnaire():
+    """Création douce des deux tables du questionnaire (bases distantes
+    anciennes créées avant la v7.10.0).
+    v7.10.1 — le contrôle ne se pose qu'UNE FOIS par processus."""
+    if _table_reconnue("feuillet_questions"):
+        return True
+    _ok = True
+    for _t in ("feuillet_questions", "feuillet_reponses"):
+        try:
+            c.execute(f"SELECT 1 FROM {_t} LIMIT 1")
+        except Exception:
+            try:
+                c.execute("""CREATE TABLE IF NOT EXISTS feuillet_questions (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                annee_debut INTEGER NOT NULL,
+                                mois INTEGER NOT NULL,
+                                ordre INTEGER,
+                                question TEXT NOT NULL,
+                                type_reponse TEXT DEFAULT 'texte',
+                                choix TEXT,
+                                obligatoire INTEGER DEFAULT 0,
+                                active INTEGER DEFAULT 1)""")
+                c.execute("""CREATE TABLE IF NOT EXISTS feuillet_reponses (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                question_id INTEGER NOT NULL,
+                                annee_debut INTEGER NOT NULL,
+                                mois INTEGER NOT NULL,
+                                cle TEXT NOT NULL,
+                                qui_nom TEXT,
+                                qui_type TEXT DEFAULT 'visiteur',
+                                reponse TEXT,
+                                equipe_id INTEGER,
+                                paroisse_id INTEGER,
+                                date_reponse TEXT)""")
+                commit_and_sync()
+            except Exception as e:
+                logger.warning(f"_assurer_tables_questionnaire : {e!r}")
+                _ok = False
+    if _ok:
+        _table_averee("feuillet_questions")
+    return _ok
+
+
+def feuillet_questions_lister(annee_debut, mois, actives_seules=True):
+    """[(id, ordre, question, type_reponse, choix, obligatoire, active)]
+    du mois pastoral demandé, dans l'ordre composé."""
+    try:
+        _assurer_tables_questionnaire()
+        _ph = " AND active=1" if actives_seules else ""
+        return c.execute(
+            f"""SELECT id, ordre, question, type_reponse, choix,
+                       obligatoire, active
+                FROM feuillet_questions
+                WHERE annee_debut=? AND mois=?{_ph}
+                ORDER BY COALESCE(ordre, 9999), id""",
+            (int(annee_debut), int(mois))).fetchall()
+    except Exception as e:
+        logger.warning(f"feuillet_questions_lister : {e!r}")
+        return []
+
+
+def feuillet_questionnaire_existe(annee_debut, mois):
+    """1 si le mois pastoral porte au moins UNE question active."""
+    return 1 if feuillet_questions_lister(annee_debut, mois, True) else 0
+
+
+def feuillet_question_ajouter(annee_debut, mois, question,
+                              type_reponse="texte", choix=None,
+                              obligatoire=0):
+    """Ajoute une question en fin de liste. Retourne son id (ou None)."""
+    _q = str(question or "").strip()
+    if not _q:
+        return None
+    try:
+        _assurer_tables_questionnaire()
+        _n = c.execute("""SELECT COUNT(*) FROM feuillet_questions
+                          WHERE annee_debut=? AND mois=?""",
+                       (int(annee_debut), int(mois))).fetchone()[0]
+        _t = type_reponse if type_reponse in TYPES_REPONSE else "texte"
+        _ch = str(choix or "").strip() if _t == "choix" else None
+        if _t == "choix" and not _ch:
+            _t, _ch = "texte", None
+        c.execute("""INSERT INTO feuillet_questions
+                     (annee_debut, mois, ordre, question, type_reponse,
+                      choix, obligatoire, active)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
+                  (int(annee_debut), int(mois), _n + 1, _q, _t, _ch,
+                   1 if obligatoire else 0))
+        commit_and_sync()
+        return c.execute("""SELECT id FROM feuillet_questions
+                            WHERE annee_debut=? AND mois=? AND question=?
+                            ORDER BY id DESC LIMIT 1""",
+                         (int(annee_debut), int(mois), _q)).fetchone()[0]
+    except Exception as e:
+        logger.warning(f"feuillet_question_ajouter : {e!r}")
+        return None
+
+
+def feuillet_question_modifier(id_question, question=None, type_reponse=None,
+                               choix=None, obligatoire=None, active=None):
+    """Modifie ce qui est fourni ; le reste demeure. Retourne True si écrit."""
+    try:
+        _assurer_tables_questionnaire()
+        _row = c.execute("""SELECT annee_debut, mois, question, type_reponse,
+                            choix, obligatoire, active FROM feuillet_questions
+                            WHERE id=?""", (int(id_question),)).fetchone()
+        if not _row:
+            return False
+        _q = str(question).strip() if question is not None else _row[2]
+        if not _q:
+            return False
+        _t = type_reponse if type_reponse in TYPES_REPONSE else _row[3]
+        _ch = str(choix).strip() if choix is not None else _row[4]
+        if _t == "choix" and not _ch:
+            _t = "texte"
+        if _t != "choix":
+            _ch = None
+        _ob = _row[5] if obligatoire is None else (1 if obligatoire else 0)
+        _ac = _row[6] if active is None else (1 if active else 0)
+        c.execute("""UPDATE feuillet_questions
+                     SET question=?, type_reponse=?, choix=?, obligatoire=?,
+                         active=? WHERE id=?""",
+                  (_q, _t, _ch, _ob, _ac, int(id_question)))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"feuillet_question_modifier : {e!r}")
+        return False
+
+
+def feuillet_question_supprimer(id_question):
+    """Retire la question ET les réponses qu'elle avait recueillies."""
+    try:
+        _assurer_tables_questionnaire()
+        c.execute("DELETE FROM feuillet_reponses WHERE question_id=?",
+                  (int(id_question),))
+        c.execute("DELETE FROM feuillet_questions WHERE id=?",
+                  (int(id_question),))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"feuillet_question_supprimer : {e!r}")
+        return False
+
+
+def feuillet_question_deplacer(id_question, direction="haut"):
+    """Échange la place de la question avec sa voisine (ordre composé)."""
+    try:
+        _assurer_tables_questionnaire()
+        _row = c.execute("""SELECT id, annee_debut, mois, ordre
+                            FROM feuillet_questions WHERE id=?""",
+                         (int(id_question),)).fetchone()
+        if not _row:
+            return False
+        _qid, _an, _mo, _or = _row
+        _toutes = c.execute("""SELECT id, ordre FROM feuillet_questions
+                               WHERE annee_debut=? AND mois=?
+                               ORDER BY COALESCE(ordre, 9999), id""",
+                            (_an, _mo)).fetchall()
+        _idx = next((i for i, r in enumerate(_toutes) if r[0] == _qid), None)
+        if _idx is None:
+            return False
+        _autre = _idx - 1 if direction == "haut" else _idx + 1
+        if _autre < 0 or _autre >= len(_toutes):
+            return False
+        _id2 = _toutes[_autre][0]
+        c.execute("UPDATE feuillet_questions SET ordre=? WHERE id=?",
+                  (_idx + 1, _id2))
+        c.execute("UPDATE feuillet_questions SET ordre=? WHERE id=?",
+                  (_autre + 1, _qid))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"feuillet_question_deplacer : {e!r}")
+        return False
+
+
+def feuillet_questions_detecter(annee_debut, mois):
+    """🔎 Les lignes en forme de question ou d'exercice repérées DANS le
+    feuillet du mois (sections déjà saisies) : [(question, titre_section)].
+    Le texte reste la référence — la cellule garde la main sur ce qu'elle
+    reprend vraiment."""
+    try:
+        rows = c.execute("""SELECT titre, contenu FROM feuillet_sections
+                            WHERE annee_debut=? AND mois=?
+                            ORDER BY ordre""",
+                         (int(annee_debut), int(mois))).fetchall()
+    except Exception as e:
+        logger.warning(f"feuillet_questions_detecter : {e!r}")
+        return []
+    _trouvees, _vus = [], set()
+    for _titre, _contenu in rows:
+        for _l in (_contenu or "").split("\n"):
+            _l = _l.strip().lstrip("*").lstrip("•").lstrip("-").strip()
+            if len(_l) < 8 or len(_l) > 320 or "?" not in _l:
+                continue
+            # retire un éventuel numéro de liste en tête (« 1. », « 2) »…)
+            _l = re.sub(r"^\s*\d{1,2}\s*[.)]\s*", "", _l).strip()
+            if not _l or _l.lower() in _vus:
+                continue
+            _vus.add(_l.lower())
+            _trouvees.append((_l, (_titre or "").strip()))
+    return _trouvees
+
+
+def feuillet_reponses_enregistrer(annee_debut, mois, reponses, cle,
+                                  qui_nom=None, qui_type="visiteur",
+                                  equipe_id=None, paroisse_id=None):
+    """Reçoit {question_id: réponse} du lecteur (clé) — remplace SES
+    réponses du mois (les siennes seulement) et note la date du jour.
+    Retourne le nombre de réponses notées (0 si rien à écrire)."""
+    _cle = str(cle or "").strip()
+    _propres = {int(k): str(v or "").strip()
+                for k, v in (reponses or {}).items()
+                if str(v or "").strip()}
+    if not _cle or not _propres:
+        return 0
+    try:
+        _assurer_tables_questionnaire()
+        _ids_valides = {r[0] for r in c.execute(
+            """SELECT id FROM feuillet_questions
+               WHERE annee_debut=? AND mois=?""",
+            (int(annee_debut), int(mois))).fetchall()}
+        _propres = {k: v for k, v in _propres.items() if k in _ids_valides}
+        if not _propres:
+            return 0
+        c.execute("""DELETE FROM feuillet_reponses
+                     WHERE cle=? AND annee_debut=? AND mois=?""",
+                  (_cle, int(annee_debut), int(mois)))
+        _auj = date.today().isoformat()
+        for _qid, _rep in _propres.items():
+            c.execute("""INSERT INTO feuillet_reponses
+                         (question_id, annee_debut, mois, cle, qui_nom,
+                          qui_type, reponse, equipe_id, paroisse_id,
+                          date_reponse)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                      (_qid, int(annee_debut), int(mois), _cle,
+                       (qui_nom or None), (qui_type or "visiteur"), _rep,
+                       equipe_id, paroisse_id, _auj))
+        commit_and_sync()
+        return len(_propres)
+    except Exception as e:
+        logger.warning(f"feuillet_reponses_enregistrer : {e!r}")
+        return 0
+
+
+def feuillet_reponses_de_cle(annee_debut, mois, cle):
+    """{question_id: réponse} du lecteur (clé) pour CE mois — pour
+    retrouver ses réponses et lui laisser la main de les corriger."""
+    _cle = str(cle or "").strip()
+    if not _cle:
+        return {}
+    try:
+        _assurer_tables_questionnaire()
+        return {r[0]: r[1] for r in c.execute(
+            """SELECT question_id, reponse FROM feuillet_reponses
+               WHERE cle=? AND annee_debut=? AND mois=?""",
+            (_cle, int(annee_debut), int(mois))).fetchall()}
+    except Exception as e:
+        logger.warning(f"feuillet_reponses_de_cle : {e!r}")
+        return {}
+
+
+def feuillet_reponses_resume(annee_debut, mois):
+    """Pour la lecture des réponses reçues : [(id, ordre, question,
+    type_reponse, choix, [(qui_nom, qui_type, reponse, date)])], question
+    par question, dans l'ordre composé (questions actives ET retirées qui
+    avaient reçu des réponses)."""
+    try:
+        _assurer_tables_questionnaire()
+        _qs = c.execute("""SELECT id, ordre, question, type_reponse, choix
+                           FROM feuillet_questions
+                           WHERE annee_debut=? AND mois=?""",
+                        (int(annee_debut), int(mois))).fetchall()
+        _noms = {r[0]: (r[1] or "") for r in c.execute(
+            """SELECT id, titre FROM feuillet_sections
+               WHERE annee_debut=? AND mois=?""",
+            (int(annee_debut), int(mois))).fetchall()}
+        _out = []
+        for _q in _qs:
+            _reps = [(r[0], r[1], r[2], r[3]) for r in c.execute(
+                """SELECT qui_nom, qui_type, reponse, date_reponse
+                   FROM feuillet_reponses WHERE question_id=?
+                   ORDER BY date_reponse ASC, id ASC""",
+                (_q[0],)).fetchall()]
+            _out.append((_q[0], _q[1], _q[2], _q[3], _q[4], _reps))
+        # questions retirées mais qui avaient reçu des réponses : la
+        # mémoire des fidèles ne disparaît pas de la lecture
+        _ids_vus = {q[0] for q in _out}
+        _orph = [(r[0],) for r in c.execute(
+            """SELECT DISTINCT question_id FROM feuillet_reponses
+               WHERE annee_debut=? AND mois=?""",
+            (int(annee_debut), int(mois))).fetchall() if r[0] not in _ids_vus]
+        for (_qid,) in _orph:
+            _reps = [(r[0], r[1], r[2], r[3]) for r in c.execute(
+                """SELECT qui_nom, qui_type, reponse, date_reponse
+                   FROM feuillet_reponses WHERE question_id=?
+                   ORDER BY date_reponse ASC, id ASC""",
+                (_qid,)).fetchall()]
+            if _reps:
+                _out.append((_qid, 9999, "(question retirée du mois)",
+                             "texte", None, _reps))
+        return sorted(_out, key=lambda q: (q[1] if q[1] is not None else 9999,
+                                           q[0]))
+    except Exception as e:
+        logger.warning(f"feuillet_reponses_resume : {e!r}")
+        return []
+
+
+# ====================================================================
+# v7.10.0 — L'ENVOI EN MISSION
+# Le responsable d'équipe prépare une mission : titre, objectif, date,
+# lieu et la liste des personnes envoyées (de l'équipe ou venues
+# d'ailleurs). Le Gestionnaire en tire la FICHE D'ENVOI EN MISSION
+# imprimable ; après la mission, la FICHE DE RAPPORT DE MISSION recueille
+# le retour (déroulement, grâces, difficultés, propositions).
+# ====================================================================
+
+def mission_creer(equipe_id, paroisse_id, titre, objectif,
+                  date_mission=None, lieu=None, participants=None,
+                  auteur_nom=None):
+    """Ouvre une mission. `participants` = liste de dicts
+    {nom, matloc, contact, externe}. Retourne l'id (ou None)."""
+    _t = str(titre or "").strip()
+    if not _t or not equipe_id:
+        return None
+    try:
+        c.execute("""INSERT INTO missions
+                     (equipe_id, paroisse_id, titre, objectif, date_mission,
+                      lieu, participants, statut, date_envoi, auteur_nom)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, 'envoi', ?, ?)""",
+                  (int(equipe_id),
+                   int(paroisse_id) if paroisse_id else None,
+                   _t, (str(objectif).strip() or None),
+                   (str(date_mission) if date_mission else None),
+                   (str(lieu).strip() or None),
+                   json.dumps(participants or [], ensure_ascii=False),
+                   date.today().isoformat(),
+                   (str(auteur_nom).strip() or None)))
+        commit_and_sync()
+        return c.execute("""SELECT id FROM missions WHERE equipe_id=?
+                            ORDER BY id DESC LIMIT 1""",
+                         (int(equipe_id),)).fetchone()[0]
+    except Exception as e:
+        logger.warning(f"mission_creer : {e!r}")
+        return None
+
+
+def missions_equipe(equipe_id, tous=False):
+    """[(id, titre, objectif, date_mission, lieu, participants_json,
+    statut, date_envoi, auteur_nom, rapport_json, date_rapport)] de
+    l'équipe, la plus récente d'abord. tous=False : missions non retirées."""
+    try:
+        _ph = "" if tous else " AND statut != 'retiree'"
+        return c.execute(
+            f"""SELECT id, titre, objectif, date_mission, lieu, participants,
+                       statut, date_envoi, auteur_nom, rapport, date_rapport
+                FROM missions WHERE equipe_id=?{_ph}
+                ORDER BY id DESC""", (int(equipe_id),)).fetchall()
+    except Exception as e:
+        logger.warning(f"missions_equipe : {e!r}")
+        return []
+
+
+def mission_rapport_enregistrer(id_mission, rapport):
+    """Range le retour de mission (dict → JSON) et passe la mission à
+    « rapportee ». Retourne True si écrit."""
+    try:
+        c.execute("""UPDATE missions SET rapport=?, statut='rapportee',
+                     date_rapport=? WHERE id=?""",
+                  (json.dumps(rapport or {}, ensure_ascii=False),
+                   date.today().isoformat(), int(id_mission)))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"mission_rapport_enregistrer : {e!r}")
+        return False
+
+
+def mission_supprimer(id_mission):
+    """Retire définitivement une mission (essai erroné)."""
+    try:
+        c.execute("DELETE FROM missions WHERE id=?", (int(id_mission),))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"mission_supprimer : {e!r}")
+        return False
