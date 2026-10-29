@@ -1,6 +1,10 @@
 import streamlit as st
 import pandas as pd
 import io
+import os
+import json
+import base64
+import html
 import logging
 from datetime import date
 from database import (c, commit_and_sync, verifier_reparer_intentions, jours_depuis,
@@ -8,7 +12,9 @@ from database import (c, commit_and_sync, verifier_reparer_intentions, jours_dep
                       tableau_pointages_equipe, tableau_pointages_visiteurs,
                       _assurer_table_reserve, reserve_compteur, reserve_lignes,
                       retirer_intention_reserve, publier_reserve_due,
-                      OBJECTIF_RESERVE)
+                      OBJECTIF_RESERVE,
+                      mission_creer, missions_equipe,
+                      mission_rapport_enregistrer, mission_supprimer)
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
@@ -18,6 +24,7 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
                         afficher_historique_suivi, afficher_whatsapp_tabs, widget_type_abonnement, 
                         enregistrer_presence_equipe, afficher_etat_presences_globales,
                         bloc_chaine_seance)
+from stcompat import comp_html
 
 
 def _bloc_dizaines_equipe(eid):
@@ -291,6 +298,518 @@ def _onglet_intentions_equipe(eid):
     # méd. Z. »
     bloc_chaine_seance([(eid, "")], "eq")
     _bloc_reserve_equipe(eid)
+
+
+# ====================================================================
+# v7.10.0 — L'ENVOI EN MISSION (les deux fiches du responsable d'équipe)
+# La FICHE D'ENVOI EN MISSION porte la proposition : objectif, date,
+# lieu et la liste des personnes envoyées. La FICHE DE RAPPORT DE
+# MISSION recueille le retour : déroulement, grâces, difficultés,
+# propositions. Chaque fiche s'imprime (ou s'enregistre en PDF) d'un
+# clic — elle seule sort sur le papier, rien d'autre de la page.
+# ====================================================================
+_ID_FICHE = "fiche-imprimable-mission"
+
+
+def _logo_mission_b64():
+    """Le chapelet doré des Équipes du Rosaire, porté par la fiche."""
+    _ici = os.path.dirname(os.path.abspath(__file__))
+    for _chemin in (os.path.join(_ici, "..", "images", "logo.png"),
+                    os.path.join("images", "logo.png"),
+                    os.path.join(_ici, "..", "static",
+                                 "logo_equipes_rosaire.png")):
+        try:
+            if os.path.exists(_chemin):
+                return ("data:image/png;base64,"
+                        + base64.b64encode(open(_chemin, "rb").read()).decode())
+        except Exception:
+            continue
+    return None
+
+
+def _grille_participants(participants):
+    """La table des envoyés, ligne à ligne — membres et venus d'ailleurs."""
+    if not participants:
+        return ('<div class="fm-ligne-vide">Personne n\u2019est encore inscrit '
+                'sur cette mission.</div>')
+    _lignes = ""
+    for _i, p in enumerate(participants, start=1):
+        _nom = html.escape(str(p.get("nom") or "—"))
+        _num = html.escape(str(p.get("numero_med") or "—"))
+        _contact = html.escape(str(p.get("contact") or "—"))
+        _hors = (' <span class="fm-hors">hors équipe</span>'
+                 if p.get("externe") else "")
+        _lignes += ('<tr><td class="fm-num">' + str(_i) + '</td>'
+                    '<td>' + _nom + _hors + '</td>'
+                    '<td>' + _num + '</td>'
+                    '<td>' + _contact + '</td></tr>')
+    return ('<table class="fm-table">'
+            '<thead><tr><th>N°</th><th>Nom et prénoms</th>'
+            '<th>N° méd.</th><th>Contact</th></tr></thead>'
+            '<tbody>' + _lignes + '</tbody></table>')
+
+
+_CSS_FICHE = """
+  .fm-fiche { font-family: Georgia, 'Times New Roman', serif; color:#1a1a2e;
+              background:#ffffff; border:2px solid #1A237E; border-radius:12px;
+              padding:26px 30px; margin:10px 4px; line-height:1.5; }
+  .fm-fiche * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .fm-tete { text-align:center; border-bottom:3px double #FFD700;
+             padding-bottom:12px; margin-bottom:14px; }
+  .fm-tete img { height:74px; margin-bottom:6px; }
+  .fm-tete .fm-mouvement { font-size:0.98rem; font-weight:bold;
+                           letter-spacing:2px; color:#1A237E;
+                           text-transform:uppercase; }
+  .fm-tete .fm-diocese { font-size:0.85rem; color:#4527a0; }
+  .fm-titre { text-align:center; font-size:1.28rem; font-weight:bold;
+              color:#1A237E; letter-spacing:1.5px; margin:14px 0 2px;
+              text-transform:uppercase; }
+  .fm-soustitre { text-align:center; font-size:0.88rem; font-style:italic;
+                  color:#555; margin-bottom:14px; }
+  .fm-bandeau { display:flex; flex-wrap:wrap; gap:6px 22px; font-size:0.92rem;
+                background:#e8eaf6; border-radius:8px; padding:10px 14px;
+                margin:10px 0 14px; }
+  .fm-bandeau b { color:#1A237E; }
+  .fm-bloc { margin:12px 0; }
+  .fm-bloc .fm-etiquette { font-size:0.8rem; font-weight:bold;
+                           text-transform:uppercase; letter-spacing:1px;
+                           color:#1A237E; margin-bottom:4px; }
+  .fm-bloc .fm-texte { border:1px solid #c5cae9; border-radius:8px;
+                       padding:10px 12px; font-size:0.95rem;
+                       background:#fafaff; white-space:pre-wrap; }
+  .fm-table { width:100%; border-collapse:collapse; font-size:0.92rem;
+              margin-top:6px; }
+  .fm-table th { background:#1A237E; color:#ffffff; padding:7px 9px;
+                 text-align:left; font-size:0.82rem; letter-spacing:0.5px; }
+  .fm-table td { border:1px solid #c5cae9; padding:7px 9px; }
+  .fm-table tr:nth-child(even) td { background:#f3f5fb; }
+  .fm-num { width:34px; text-align:center; font-weight:bold; color:#1A237E; }
+  .fm-hors { font-size:0.72rem; background:#fff3cd; border:1px solid #ffd54f;
+             border-radius:8px; padding:1px 7px; margin-left:6px;
+             font-style:italic; }
+  .fm-ligne-vide { font-size:0.9rem; font-style:italic; color:#777;
+                   padding:8px 0; }
+  .fm-priere { text-align:center; font-style:italic; color:#4527a0;
+               font-size:0.95rem; margin:18px 10px 6px; }
+  .fm-signatures { display:flex; justify-content:space-between; gap:20px;
+                   margin-top:26px; }
+  .fm-signatures .fm-sig { flex:1; text-align:center; font-size:0.88rem; }
+  .fm-signatures .fm-sig .fm-role { font-weight:bold; color:#1A237E;
+                                    margin-bottom:52px; }
+  .fm-signatures .fm-sig .fm-nom { border-top:1px solid #999;
+                                   padding-top:5px; font-size:0.82rem;
+                                   color:#444; }
+  .fm-pied { text-align:center; font-size:0.72rem; color:#888;
+             margin-top:16px; border-top:1px solid #e0e0e0; padding-top:8px; }
+"""
+
+
+def _entete_fiche_mission(titre_fiche, soustitre):
+    """Tête commune des deux fiches (mouvement, diocèse, titre)."""
+    _logo = _logo_mission_b64()
+    return ('<div class="fm-tete">'
+            + ('<img src="' + _logo + '" alt="">' if _logo else "")
+            + '<div class="fm-mouvement">Équipes du Rosaire</div>'
+            + '<div class="fm-diocese">Diocèse de Grand-Bassam — '
+            + '« Équipier : l\u2019évangile avec Marie ! »</div></div>'
+            + '<div class="fm-titre">' + titre_fiche + '</div>'
+            + '<div class="fm-soustitre">' + soustitre + '</div>')
+
+
+def _bandeau_mission(mission, nom_equipe, nom_paroisse):
+    """Ligne d'identité de la mission (équipe, paroisse, date, lieu)."""
+    _d = str(mission.get("date_mission") or "—")
+    try:
+        from datetime import date as _d_cls
+        _d = _d_cls.fromisoformat(str(mission["date_mission"])).strftime(
+            "%d/%m/%Y")
+    except Exception:
+        pass
+    return ('<div class="fm-bandeau">'
+            '<span>✈️ <b>Équipe :</b> ' + html.escape(nom_equipe) + '</span>'
+            '<span>🏘️ <b>Paroisse :</b> ' + html.escape(nom_paroisse or "—")
+            + '</span>'
+            '<span>📅 <b>Date :</b> ' + _d + '</span>'
+            '<span>📍 <b>Lieu :</b> ' + html.escape(mission.get("lieu") or "—")
+            + '</span></div>')
+
+
+def _fiche_envoi_html(mission, nom_equipe, nom_paroisse, resp_equipe,
+                      resp_paroisse):
+    """La FICHE D'ENVOI EN MISSION — la proposition remise au responsable :
+    objectif de la mission et liste des personnes envoyées."""
+    _participants = mission.get("participants") or []
+    _corps = (
+        _entete_fiche_mission(
+            "Fiche d\u2019envoi en mission",
+            "Proposition préparée par le responsable d\u2019équipe — "
+            "à présenter pour bénédiction et accord")
+        + _bandeau_mission(mission, nom_equipe, nom_paroisse)
+        + '<div class="fm-bloc"><div class="fm-etiquette">🎯 Objectif de la mission</div>'
+        + '<div class="fm-texte">' + html.escape(mission.get("objectif") or "—")
+        + '</div></div>'
+        + '<div class="fm-bloc"><div class="fm-etiquette">👥 Personnes envoyées en mission ('
+        + str(len(_participants)) + ')</div>'
+        + _grille_participants(_participants) + '</div>'
+        + '<div class="fm-priere">« Allez partout dans le monde, et proclamez '
+        'la Bonne Nouvelle à toute la création. » — Marc 16, 15<br>'
+        'Que La Vierge Marie, Étoile de la nouvelle évangélisation, '
+        'accompagne chaque envoyé.</div>'
+        + '<div class="fm-signatures">'
+        + '<div class="fm-sig"><div class="fm-role">Le Responsable de l\u2019équipe</div>'
+        + '<div class="fm-nom">' + html.escape(resp_equipe or "") + '</div></div>'
+        + '<div class="fm-sig"><div class="fm-role">Le Responsable paroissial</div>'
+        + '<div class="fm-nom">' + html.escape(resp_paroisse or "") + '</div></div>'
+        + '</div>'
+        + '<div class="fm-pied">Fiche d\u2019envoi en mission — préparée le '
+        + html.escape(str(mission.get("date_envoi") or ""))
+        + ' par ' + html.escape(str(mission.get("auteur_nom") or "—"))
+        + '</div>')
+    return '<div class="fm-fiche" id="' + _ID_FICHE + '">' + _corps + '</div>'
+
+
+def _fiche_rapport_html(mission, nom_equipe, nom_paroisse, resp_equipe):
+    """La FICHE DE RAPPORT DE MISSION — le retour du responsable :
+    déroulement, grâces reçues, difficultés, propositions."""
+    _r = mission.get("rapport") or {}
+    _eff = _r.get("participants_effectifs") or []
+    _corps = (
+        _entete_fiche_mission(
+            "Fiche de rapport de mission",
+            "Retour de la mission confiée — remis par le responsable "
+            "d\u2019équipe après la mission")
+        + _bandeau_mission(mission, nom_equipe, nom_paroisse)
+        + '<div class="fm-bloc"><div class="fm-etiquette">🎯 Rappel de l\u2019objectif</div>'
+        + '<div class="fm-texte">' + html.escape(mission.get("objectif") or "—")
+        + '</div></div>'
+        + '<div class="fm-bloc"><div class="fm-etiquette">👥 Personnes ayant porté la mission</div>'
+        + '<div class="fm-texte">'
+        + (html.escape(" · ".join(_eff)) if _eff
+           else html.escape(" · ".join(str(p.get("nom") or "")
+                                       for p in (mission.get("participants")
+                                                 or [])) or "—"))
+        + '</div></div>'
+        + '<div class="fm-bloc"><div class="fm-etiquette">📖 Déroulement de la mission</div>'
+        + '<div class="fm-texte">' + html.escape(_r.get("deroulement") or "—")
+        + '</div></div>'
+        + '<div class="fm-bloc"><div class="fm-etiquette">✨ Grâces reçues et moments forts</div>'
+        + '<div class="fm-texte">' + html.escape(_r.get("graces") or "—")
+        + '</div></div>'
+        + '<div class="fm-bloc"><div class="fm-etiquette">🌫️ Difficultés rencontrées</div>'
+        + '<div class="fm-texte">' + html.escape(_r.get("difficultes") or "—")
+        + '</div></div>'
+        + '<div class="fm-bloc"><div class="fm-etiquette">🌱 Propositions et suites à donner</div>'
+        + '<div class="fm-texte">' + html.escape(_r.get("propositions") or "—")
+        + '</div></div>'
+        + '<div class="fm-priere">« Racontez-leur ce que le Seigneur a fait '
+        'pour vous. » — Que la joie de cette mission porte du fruit.</div>'
+        + '<div class="fm-signatures">'
+        + '<div class="fm-sig"><div class="fm-role">Le Responsable de l\u2019équipe</div>'
+        + '<div class="fm-nom">' + html.escape(resp_equipe or "") + '</div></div>'
+        + '<div class="fm-sig"><div class="fm-role">Le Responsable paroissial / diocésain</div>'
+        + '<div class="fm-nom"></div></div>'
+        + '</div>'
+        + '<div class="fm-pied">Fiche de rapport de mission — mission « '
+        + html.escape(str(mission.get("titre") or "")) + ' » · rapport noté le '
+        + html.escape(str(mission.get("date_rapport") or ""))
+        + '</div>')
+    return '<div class="fm-fiche" id="' + _ID_FICHE + '">' + _corps + '</div>'
+
+
+_CSS_IMPRESSION_FICHE = """
+@media print {
+    body, body * { visibility: hidden !important; }
+    #""" + _ID_FICHE + """, #""" + _ID_FICHE + """ * {
+        visibility: visible !important; }
+    #""" + _ID_FICHE + """ { position: absolute; left: 0; top: 0;
+        width: 100%; border-radius: 0; margin: 0; box-shadow: none; }
+    @page { margin: 12mm; }
+}
+"""
+
+
+def _rendre_fiche_imprimable(fiche_html, nom_fichier):
+    """Montre la fiche, pose l'impression (elle seule sort sur le papier)
+    et offre le fichier autonome à télécharger (imprimable d'où que ce soit)."""
+    st.markdown("<style>" + _CSS_IMPRESSION_FICHE + _CSS_FICHE + "</style>",
+                unsafe_allow_html=True)
+    st.markdown(fiche_html, unsafe_allow_html=True)
+    _c1, _c2 = st.columns(2)
+    with _c1:
+        comp_html(
+            '<div style="font-family:sans-serif; text-align:center; '
+            'margin-top:2px;"><button onclick="window.parent.print()" '
+            'style="background:#1A237E; color:#fff; border:none; '
+            'border-radius:24px; padding:9px 22px; font-size:0.92rem; '
+            'font-weight:bold; cursor:pointer;">🖨️ Imprimer la fiche '
+            '(ou l\u2019enregistrer en PDF)</button></div>', height=52)
+    with _c2:
+        _autonome = (
+            '<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, '
+            'initial-scale=1"><title>' + html.escape(nom_fichier)
+            + '</title><style>' + _CSS_FICHE + '''
+                body { background:#f0f0f5; margin:0; padding:14px; }
+                .barre { text-align:center; margin:10px 0 16px; }
+                .barre button { background:#1A237E; color:#fff; border:none;
+                    border-radius:24px; padding:10px 24px; font-size:0.95rem;
+                    font-weight:bold; cursor:pointer; }
+                @media print {
+                    body { background:#fff; padding:0; }
+                    .barre { display:none; }
+                    .fm-fiche { border:none; margin:0; }
+                    @page { margin: 12mm; }
+                }
+            </style></head><body>'
+            '<div class="barre"><button onclick="window.print()">🖨️ Imprimer '
+            'cette fiche</button></div>'
+            + fiche_html + '</body></html>''')
+        st.download_button("📥 Télécharger la fiche (page à imprimer)",
+                           data=_autonome.encode("utf-8"),
+                           file_name=nom_fichier,
+                           mime="text/html", width="stretch",
+                           key="dl_" + nom_fichier)
+
+
+_STATUTS_MISSION = {"envoi": "🟡 Proposition prête (fiche d'envoi)",
+                    "rapportee": "✅ Rapport de mission reçu"}
+
+
+def _onglet_missions(eid, pid, nom_equipe):
+    """✈️ ENVOI EN MISSION — le responsable prépare l'envoi (fiche
+    imprimable : personnes + objectif) puis range le retour (fiche de
+    rapport imprimable). Les fiches se gardent dans l'équipe, prêtes à
+    être re-imprimées."""
+    _info_eq = c.execute("SELECT responsable FROM equipes WHERE id=?",
+                         (eid,)).fetchone()
+    _resp_eq = (_info_eq[0] if _info_eq and _info_eq[0] else
+                st.session_state.get('username', ""))
+    _resp_par = None
+    if pid:
+        _r = c.execute("SELECT responsable FROM paroisses WHERE id=?",
+                       (pid,)).fetchone()
+        _resp_par = _r[0] if _r else None
+
+    with st.expander("➕ Préparer une mission (fiche d'envoi en mission)"):
+        with st.form("form_mission", clear_on_submit=True):
+            _titre = st.text_input("Nom de la mission",
+                                   placeholder="Ex. : Visite et prière avec "
+                                               "les familles de Moossou")
+            _objectif = st.text_area(
+                "Objectif de la mission (ce que la mission vient chercher)",
+                height=90,
+                placeholder="Ex. : porter la prière du Rosaire aux familles "
+                            "éloignées, retrouver les membres absents, "
+                            "inviter de nouveaux équipiers…")
+            _c1, _c2 = st.columns(2)
+            with _c1:
+                _date_m = st.date_input("Date de la mission", value=None)
+            with _c2:
+                _lieu = st.text_input("Lieu / quartier / familles visitées")
+            _membres = c.execute(
+                """SELECT id, matloc, nom, prenom, numero_meditation,
+                          whatsapp FROM membres
+                   WHERE equipe_id=? AND statut='actif'
+                   ORDER BY nom, prenom""", (eid,)).fetchall()
+            _opts = {f"{m[2]} {m[3]} — N° méd. {m[4] or '?'}": m
+                     for m in _membres}
+            _choisis = st.multiselect(
+                "👥 Personnes de l'équipe envoyées en mission",
+                list(_opts.keys()))
+            _hors = st.text_area(
+                "➕ Personnes venues d'ailleurs (une par ligne — "
+                "facultatif)", height=70,
+                placeholder="Ex. : Frère Jean-Baptiste\nSœur Marie-Claire")
+            if st.form_submit_button("✈️ Ouvrir la mission et préparer la fiche",
+                                     type="primary", width="stretch"):
+                if not _titre.strip():
+                    st.error("Donne d'abord un nom à la mission.")
+                elif not _objectif.strip():
+                    st.error("L'objectif de la mission est le cœur de la "
+                             "fiche — écris-le.")
+                elif not _choisis and not _hors.strip():
+                    st.error("Liste au moins une personne envoyée en mission.")
+                else:
+                    _participants = []
+                    for _lbl in _choisis:
+                        _m = _opts[_lbl]
+                        _participants.append({
+                            "nom": f"{_m[2]} {_m[3]}".strip(),
+                            "matloc": _m[1],
+                            "numero_med": _m[4],
+                            "contact": _m[5] or "",
+                            "externe": 0})
+                    for _l in _hors.split("\n"):
+                        _l = _l.strip()
+                        if _l:
+                            _participants.append({"nom": _l, "matloc": None,
+                                                  "numero_med": None,
+                                                  "contact": "", "externe": 1})
+                    _mid = mission_creer(
+                        eid, pid, _titre.strip(), _objectif.strip(),
+                        date_mission=(_date_m.isoformat() if _date_m else None),
+                        lieu=(_lieu.strip() or None),
+                        participants=_participants,
+                        auteur_nom=st.session_state.get('username'))
+                    if _mid:
+                        st.session_state["flash_success"] = (
+                            "✈️ Mission ouverte ! Ta fiche d'envoi est prête "
+                            "juste en dessous — imprime-la.")
+                        st.rerun()
+                    else:
+                        st.error("La mission n'a pas pu être ouverte — "
+                                 "réessaie.")
+
+    _missions = missions_equipe(eid)
+    if not _missions:
+        st.info("Aucune mission pour le moment — ouvre la première : la fiche "
+                "d'envoi en mission naîtra de ta préparation.")
+        return
+    st.markdown("#### ✈️ Les missions de l'équipe (" + str(len(_missions))
+                + ")")
+    for (_mid, _titre, _objectif, _date_m, _lieu, _part_json, _statut,
+         _date_envoi, _auteur, _rapport_json, _date_rapport) in _missions:
+        try:
+            _participants = json.loads(_part_json or "[]")
+        except Exception:
+            _participants = []
+        try:
+            _rapport = json.loads(_rapport_json or "{}")
+        except Exception:
+            _rapport = {}
+        _mission = {"id": _mid, "titre": _titre, "objectif": _objectif,
+                    "date_mission": _date_m, "lieu": _lieu,
+                    "participants": _participants, "statut": _statut,
+                    "date_envoi": _date_envoi, "auteur_nom": _auteur,
+                    "rapport": _rapport, "date_rapport": _date_rapport}
+        _d_aff = _date_m or "date à fixer"
+        _badge = _STATUTS_MISSION.get(_statut, _statut)
+        with st.expander("✈️ " + _titre + " — " + str(_d_aff)
+                         + "   ·   " + _badge):
+            _c1, _c2, _c3 = st.columns(3)
+            with _c1:
+                if st.button("🖨️ Fiche d'envoi", key=f"mi_env_{_mid}",
+                             width="stretch", type="primary"):
+                    st.session_state["mission_fiche"] = ("envoi", _mid)
+            with _c2:
+                if st.button("📝 Rapport de mission", key=f"mi_rap_{_mid}",
+                             width="stretch"):
+                    st.session_state["mission_fiche"] = ("rapport", _mid)
+            with _c3:
+                if st.button("🗑️ Supprimer", key=f"mi_del_{_mid}",
+                             width="stretch",
+                             help="Retire définitivement cette mission "
+                                  "(essai erroné)."):
+                    st.session_state["mission_suppr"] = _mid
+            if st.session_state.get("mission_suppr") == _mid:
+                st.warning("Retirer définitivement « " + _titre + " » et son "
+                           "rapport ?")
+                _c1, _c2 = st.columns(2)
+                with _c1:
+                    if st.button("✅ Oui, retirer", key=f"mi_del_ok_{_mid}",
+                                 width="stretch"):
+                        mission_supprimer(_mid)
+                        st.session_state.pop("mission_suppr", None)
+                        st.session_state["flash_success"] = (
+                            "🗑️ Mission retirée.")
+                        st.rerun()
+                with _c2:
+                    if st.button("↩️ Non, la garder", key=f"mi_del_no_{_mid}",
+                                 width="stretch"):
+                        st.session_state.pop("mission_suppr", None)
+                        st.rerun()
+
+            st.markdown("🎯 **Objectif :** " + (_objectif or "—"))
+            st.markdown("📍 **Lieu :** " + (_lieu or "—") + "  ·  📅 **Date :** "
+                        + str(_d_aff))
+            if _participants:
+                st.caption("👥 " + " · ".join(
+                    str(p.get("nom") or "?")
+                    + (" (hors équipe)" if p.get("externe") else "")
+                    for p in _participants))
+            if _rapport:
+                _r = _rapport
+                st.markdown("📝 **Rapport reçu le "
+                            + str(_date_rapport or "?") + "** — déroulement, "
+                            "grâces, difficultés et propositions sont gardés "
+                            "dans la fiche de rapport.")
+
+            # ── la fiche demandée ───────────────────────────────────────
+            _demande = st.session_state.get("mission_fiche")
+            if _demande and _demande[1] == _mid:
+                _genre = _demande[0]
+                if _genre == "envoi":
+                    st.markdown("### 🖨️ La fiche d'envoi en mission")
+                    _rendre_fiche_imprimable(
+                        _fiche_envoi_html(_mission, nom_equipe,
+                                          _nom_par(pid), _resp_eq, _resp_par),
+                        f"fiche_envoi_mission_{_mid}.html")
+                else:
+                    if not _rapport:
+                        st.info("Le rapport n'est pas encore rempli — "
+                                "remplis-le ci-dessous, la fiche naîtra de "
+                                "tes mots.")
+                    else:
+                        st.markdown("### 🖨️ La fiche de rapport de mission")
+                        _rendre_fiche_imprimable(
+                            _fiche_rapport_html(_mission, nom_equipe,
+                                                _nom_par(pid), _resp_eq),
+                            f"fiche_rapport_mission_{_mid}.html")
+
+            # ── le rapport : remplir / corriger ─────────────────────────
+            with st.expander("📝 " + ("Corriger le rapport de mission"
+                                      if _rapport else
+                                      "Remplir le rapport de mission "
+                                      "(après la mission)")):
+                with st.form(f"form_rapport_{_mid}"):
+                    _r0 = _rapport or {}
+                    _der = st.text_area("📖 Déroulement de la mission "
+                                        "(ce qui s'est passé)",
+                                        value=_r0.get("deroulement", ""),
+                                        height=90)
+                    _gra = st.text_area("✨ Grâces reçues et moments forts",
+                                        value=_r0.get("graces", ""),
+                                        height=80)
+                    _dif = st.text_area("🌫️ Difficultés rencontrées",
+                                        value=_r0.get("difficultes", ""),
+                                        height=70)
+                    _pro = st.text_area("🌱 Propositions et suites à donner",
+                                        value=_r0.get("propositions", ""),
+                                        height=70)
+                    _noms = [str(p.get("nom") or "") for p in _participants]
+                    _eff0 = [n for n in (_r0.get("participants_effectifs")
+                                         or []) if n in _noms]
+                    _eff = st.multiselect(
+                        "👥 Personnes ayant effectivement porté la mission",
+                        _noms, default=_eff0)
+                    if st.form_submit_button(
+                            "💾 Enregistrer le rapport de mission",
+                            type="primary", width="stretch"):
+                        if not _der.strip():
+                            st.error("Raconte au moins le déroulement — c'est "
+                                     "le cœur du rapport.")
+                        else:
+                            mission_rapport_enregistrer(_mid, {
+                                "deroulement": _der.strip(),
+                                "graces": _gra.strip(),
+                                "difficultes": _dif.strip(),
+                                "propositions": _pro.strip(),
+                                "participants_effectifs": _eff})
+                            st.session_state["flash_success"] = (
+                                "✅ Rapport de mission enregistré — la fiche "
+                                "de rapport est prête à être imprimée.")
+                            st.rerun()
+
+
+def _nom_par(pid):
+    """Le nom de la paroisse de l'équipe (pour les fiches)."""
+    if not pid:
+        return None
+    try:
+        _r = c.execute("SELECT nom FROM paroisses WHERE id=?", (pid,)).fetchone()
+        return _r[0] if _r else None
+    except Exception:
+        return None
 
 
 def show_equipe():
@@ -586,8 +1105,11 @@ def show_equipe():
         # v7.8.14 — SÉLECTEUR PERSISTANT (remplace st.tabs, qui ne garde AUCUNE
         # mémoire entre rafraîchissements : chaque coche ou bouton ramenait à
         # l'onglet primaire) + 4ᵉ onglet « 🙏 Vos intentions à une équipe ».
+        # v7.10.0 — 5ᵉ onglet « ✈️ Envoi en mission » : la fiche d'envoi
+        # (personnes + objectif) et la fiche de rapport, imprimables.
         _onglets_suivi = ["📅 Agenda", "🙏 Vos intentions à une équipe",
-                          "📝 Vie de prière de l'équipe", "📊 Engagement spirituel"]
+                          "✈️ Envoi en mission", "📝 Vie de prière de l'équipe",
+                          "📊 Engagement spirituel"]
         _suivi_actif = st.radio("Section du suivi", _onglets_suivi,
                                 key="eq_suivi_onglet", horizontal=True,
                                 label_visibility="collapsed")
@@ -599,6 +1121,8 @@ def show_equipe():
         elif _suivi_actif == _onglets_suivi[1]:
             _onglet_intentions_equipe(eid)
         elif _suivi_actif == _onglets_suivi[2]:
+            _onglet_missions(eid, pid, nom_equipe)
+        elif _suivi_actif == _onglets_suivi[3]:
             enregistrer_presence_equipe(equipe_id=eid)
         else:
             # v7.9.2 — le bloc « 📿 Chaîne des dizaines » ouvre l'onglet
