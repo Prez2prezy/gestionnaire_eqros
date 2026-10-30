@@ -96,7 +96,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.10.3"
+_VERSION_APPLI = "v7.11.0"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -559,6 +559,47 @@ def _render_theme(compact=False):
     .stApp .stMarkdown .details-mystere summary { list-style:none; cursor:pointer; background:var(--c) !important; color:#ffffff !important; font-weight:bold; font-family:sans-serif !important; padding:10px 16px; font-size:1rem; }
     .stApp .stMarkdown .details-mystere summary::-webkit-details-marker { display:none; }
     @media (min-width:769px) { .stApp .stMarkdown .carte-priere .cp-photo { height:230px; } }
+    /* === v7.10.4 — TOUT LE RESTE LISIBLE AUSSI (bat le thème du navigateur) ===
+       L'Espace est peint bleu nuit : texte courant clair, notes bleu-gris
+       clair, alertes sur fond nuit, titres d'expanders clairs — quel que
+       soit le mode (clair/sombre) choisi par le téléphone du lecteur. Les
+       cartes jaunes gardent leur encre foncée (règle plus fine au-dessus). */
+    .stApp .stMarkdown { color:#e8eaf6 !important; }
+    .stApp label, .stApp label p, .stApp label div { color:#e8eaf6 !important; }
+    .stApp [data-testid="stWidgetLabel"] p { color:#e8eaf6 !important; }
+    .stApp [data-testid="stCaptionContainer"],
+    .stApp [data-testid="stCaptionContainer"] * { color:#9fa6d8 !important; }
+    .stApp [data-testid="stAlert"] .stMarkdown,
+    .stApp [data-testid="stAlert"] p,
+    .stApp [data-testid="stAlert"] div,
+    .stApp [data-testid="stAlert"] span,
+    .stApp [data-testid="stAlert"] li { color:#e8eaf6 !important; }
+    .stApp details summary, .stApp details summary p,
+    .stApp details summary div { color:#e8eaf6 !important; }
+    .stApp [data-testid="stPopoverBody"] { background:#121a45 !important;
+        border:1px solid #27306b !important; }
+    /* === v7.11.0 — LES LIBELLÉS, SOUS TOUTES LEURS FORMES ===
+       Le questionnaire se lit à la vitrine comme à la fin du livret : ses
+       libellés restent clairs sur bleu nuit quelle que soit la façon dont
+       la page dessine ses champs (toutes les formes connues), le formulaire
+       ne dessine plus de cadre clair, et ce qui s'écrit DANS un champ reste
+       foncé sur blanc — lisible dans les deux sens, quel que soit l'écran. */
+    .stApp label, .stApp label *,
+    .stApp [data-testid="stWidgetLabel"], .stApp [data-testid="stWidgetLabel"] *,
+    .stApp [data-testid="stForm"] label, .stApp [data-testid="stForm"] label *,
+    .stApp [data-testid="stTextInput"] label, .stApp [data-testid="stTextArea"] label,
+    .stApp [data-testid="stRadio"] label, .stApp [data-testid="stCheckbox"] label,
+    .stApp [data-testid="stSelectbox"] label,
+    .stApp [data-testid="stDateInput"] label { color:#e8eaf6 !important; }
+    .stApp [data-testid="stForm"] { background:transparent !important;
+        border-color:#27306b !important; }
+    .stApp .stTextInput input, .stApp .stTextArea textarea,
+    .stApp [data-baseweb="input"], .stApp [data-baseweb="textarea"] {
+        background-color:#ffffff !important; color:#12163a !important;
+        border:1px solid #3a4585 !important; }
+    .stApp .stTextInput input::placeholder,
+    .stApp .stTextArea textarea::placeholder { color:#5a6398 !important;
+        opacity:1 !important; }
     /* === LIVRET MENSUEL EN AUTONOMIE v7.8 === */
     .flt-barre { position: fixed; top: 230px; left: 0; right: 0; z-index: 600;
         background: #0a0f2c; border-bottom: 1px solid #27306b; padding: 8px 16px; }
@@ -1363,14 +1404,19 @@ def _render_questionnaire_mensuel(annee_debut, mois_pastoral,
                              "réessaie.")
 
 
-def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"):
+def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt",
+                            lecteur=None):
     """📖 Lecteur du livret — v7.8 : une section = une page.
     autonome=True  : mode plein écran (barre de titre fixe, fermeture) ;
     autonome=False : lecture encastrée (réservé à un usage interne).
     v7.8-e : titre de la page toujours visible en haut (barre fixe, mode
     autonome) · v7.8.2-e : retour en HAUT de page à chaque tour (_scroll_top
     avec nonce) · v7.8-f : sans badge de lecteurs · v7.8-g : pagination seule
-    en pied de page sous un trait fin."""
+    en pied de page sous un trait fin.
+    v7.10.4 : `lecteur` (dict est_membre/matloc/nom_membre/equipe_id/
+    paroisse_id) — à la FIN de la lecture, le questionnaire du feuillet
+    revient avec lui : celui qui n'avait pas répondu peut encore répondre,
+    où que soit le mois (feuillet du moment comme feuillets relus)."""
     sections = _feuillet_sections(annee_debut, mois_pastoral)
     if not sections:
         st.info("📖 Ce feuillet n'est pas disponible.")
@@ -1547,11 +1593,27 @@ def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"
                 '<div class="flt-pagination">Page ' + str(idx + 1) + " / "
                 + str(len(sections)) + "</div>", unsafe_allow_html=True)
 
+    # ---------- v7.10.4 — LE QUESTIONNAIRE REVIENT AVEC SON FEUILLET ----------
+    # À la DERNIÈRE page, le questionnaire du mois attend à la fin de la
+    # lecture, comme les exercices au dos d'un livret papier. Le voile reste
+    # la règle : rien ne se montre tant que le diocèse n'a pas validé (le
+    # contrôle est dans _render_questionnaire_mensuel). Celui qui répond ici
+    # nourrit le même mois que la vitrine — mêmes réponses, mêmes corrections.
+    if idx == len(sections) - 1:
+        _rd = lecteur or {}
+        _render_questionnaire_mensuel(
+            annee_debut, mois_pastoral,
+            est_membre=bool(_rd.get("est_membre")),
+            matloc=_rd.get("matloc"), nom_membre=_rd.get("nom_membre"),
+            equipe_id=_rd.get("equipe_id"), paroisse_id=_rd.get("paroisse_id"))
 
-def _render_feuillet_autonome():
+
+def _render_feuillet_autonome(lecteur=None):
     """📖 Livret ouvert EN AUTONOMIE (comme la dizaine du jour) : l'entête se
     réduit au logo + à la carte de l'espace (membre / communautaire), sans
-    bandes défilantes, sans le thème de l'année."""
+    bandes défilantes, sans le thème de l'année.
+    v7.10.4 — `lecteur` voyage : le questionnaire du feuillet attend à la fin
+    de la lecture, feuillet du moment comme feuillets relus."""
     _cle = st.session_state.get("flt_cle", "")
     try:
         _annee, _mois = (int(x) for x in str(_cle).split("-"))
@@ -1559,7 +1621,8 @@ def _render_feuillet_autonome():
         st.session_state["flt_ouvert"] = False
         st.rerun()
         return
-    _render_feuillet_livret(_annee, _mois, autonome=True, pfx="flt")
+    _render_feuillet_livret(_annee, _mois, autonome=True, pfx="flt",
+                            lecteur=lecteur)
 
 
 def _render_feuillets_archives_expanders(annee_theme, mois_courant):
@@ -4805,7 +4868,10 @@ def _corps_espace_membre(matloc_membre=None):
         if livre_ouvert:
             if st.session_state.get("flt_ouvert"):
                 # v7.8 — livret mensuel en autonomie (logo + carte espace)
-                _render_feuillet_autonome()
+                # v7.10.4 — le lecteur voyage : son questionnaire attend à la
+                # fin de la lecture (feuillet du moment comme feuillets relus).
+                _render_feuillet_autonome(lecteur={
+                    "est_membre": False, "paroisse_id": pid_pub})
                 return
             _render_dizaine_du_jour(est_membre=False)
             return
@@ -4901,7 +4967,12 @@ def _corps_espace_membre(matloc_membre=None):
     if livre_ouvert:
         if st.session_state.get("flt_ouvert"):
             # v7.8 — livret mensuel en autonomie (logo + carte espace)
-            _render_feuillet_autonome()
+            # v7.10.4 — le lecteur voyage : le membre répond à la fin de la
+            # lecture sous sa signature (MatLoc), comme dans la vitrine.
+            _render_feuillet_autonome(lecteur={
+                "est_membre": True, "matloc": membre[3],
+                "nom_membre": ((membre[1] or "") + " " + (membre[2] or "")).strip(),
+                "equipe_id": membre[10], "paroisse_id": membre[11]})
             return
         _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True,
                                 matloc=membre[3],
