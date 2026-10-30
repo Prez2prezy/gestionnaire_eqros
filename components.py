@@ -2197,6 +2197,68 @@ def bloc_chaine_seance(equipes, prefixe_cle="cs"):
 # et celles tapées à la main vivent côte à côte ; les réponses reçues se
 # lisent ici, question par question, et repartent en carnet Excel.
 # ====================================================================
+def afficher_reponses_questionnaire_feuillet(annee_debut, mois,
+                                             prefixe_cle="qf"):
+    """v7.10.4 — LECTURE DES RÉPONSES REÇUES (partagée) : question par
+    question, avec le carnet Excel du mois. Servie dans la zone « 1 Bis. »
+    (composition) et dans le nouvel onglet « 🕯️ Thème » de « 📋 Contenu
+    existant » (gestion après publication)."""
+    _resume = feuillet_reponses_resume(annee_debut, mois)
+    _n_rep_total = sum(len(q[5]) for q in _resume)
+    with st.expander("👀 Réponses reçues (" + str(_n_rep_total)
+                     + ") — lecture et carnet"):
+        if not _n_rep_total:
+            st.info("Aucune réponse pour ce mois pour le moment.")
+        else:
+            for (_qid, _ord, _q_txt, _t, _ch, _reps) in _resume:
+                if not _reps:
+                    continue
+                _compte = {}
+                for _r in _reps:
+                    _compte[_r[2]] = _compte.get(_r[2], 0) + 1
+                _entete_r = (f"Q{_ord}. "
+                             + (_q_txt[:80] + ("…" if len(_q_txt) > 80 else ""))
+                             + " — " + str(len(_reps)) + " réponse(s)")
+                with st.expander(_entete_r):
+                    if _t in ("oui_non", "choix"):
+                        for _v, _n in sorted(_compte.items(),
+                                             key=lambda x: -x[1]):
+                            _pct = round(100 * _n / max(1, len(_reps)))
+                            st.markdown("• **" + html.escape(_v or "—")
+                                        + "** — " + str(_n) + " (" + str(_pct)
+                                        + " %)")
+                    for (_nom, _typ, _rep, _d) in _reps:
+                        _qui = _nom or "Anonyme"
+                        _icone = "👤" if _typ == "membre" else "🕊️"
+                        st.markdown(
+                            '<div style="opacity:.85; margin:2px 0;">' + _icone
+                            + " <b>" + html.escape(_qui) + "</b> · "
+                            + html.escape(str(_d or ""))
+                            + " — « " + html.escape(_rep or "")
+                            + " »</div>", unsafe_allow_html=True)
+            # le carnet Excel de tout le mois
+            _lignes = []
+            for (_qid, _ord, _q_txt, _t, _ch, _reps) in _resume:
+                for (_nom, _typ, _rep, _d) in _reps:
+                    _lignes.append({"Question": f"Q{_ord}",
+                                    "Énoncé": _q_txt,
+                                    "Qui": _nom or "Anonyme",
+                                    "Profil": ("Membre" if _typ == "membre"
+                                               else "Visiteur"),
+                                    "Réponse": _rep,
+                                    "Date": _d})
+            _df_q = pd.DataFrame(_lignes)
+            _buf_q = io.BytesIO()
+            with pd.ExcelWriter(_buf_q, engine="openpyxl") as w:
+                _df_q.to_excel(w, index=False)
+            _buf_q.seek(0)
+            st.download_button(
+                "📥 Télécharger le carnet des réponses (Excel)",
+                data=_buf_q,
+                file_name=f"questionnaire_feuillet_{annee_debut}_{int(mois):02d}.xlsx",
+                key=prefixe_cle + "_export", width="stretch")
+
+
 def gerer_questionnaire_feuillet():
     st.markdown("### 1 Bis. Le questionnaire du feuillet")
     st.caption("Reprends les questions et les exercices du feuillet du mois : "
@@ -2414,57 +2476,7 @@ def gerer_questionnaire_feuillet():
                     st.error(_msg_q)
 
     # ── 4. les réponses reçues : lecture + carnet Excel ──────────────────
-    _resume = feuillet_reponses_resume(_an_q, _mois_q)
-    _n_rep_total = sum(len(q[5]) for q in _resume)
-    with st.expander("👀 Réponses reçues (" + str(_n_rep_total)
-                     + ") — lecture et carnet"):
-        if not _n_rep_total:
-            st.info("Aucune réponse pour ce mois pour le moment.")
-        else:
-            for (_qid, _ord, _q_txt, _t, _ch, _reps) in _resume:
-                if not _reps:
-                    continue
-                _compte = {}
-                for _r in _reps:
-                    _compte[_r[2]] = _compte.get(_r[2], 0) + 1
-                _entete_r = (f"Q{_ord}. "
-                             + (_q_txt[:80] + ("…" if len(_q_txt) > 80 else ""))
-                             + " — " + str(len(_reps)) + " réponse(s)")
-                with st.expander(_entete_r):
-                    if _t in ("oui_non", "choix"):
-                        for _v, _n in sorted(_compte.items(),
-                                             key=lambda x: -x[1]):
-                            _pct = round(100 * _n / max(1, len(_reps)))
-                            st.markdown("• **" + html.escape(_v or "—")
-                                        + "** — " + str(_n) + " (" + str(_pct)
-                                        + " %)")
-                    for (_nom, _typ, _rep, _d) in _reps:
-                        _qui = _nom or "Anonyme"
-                        _icone = "👤" if _typ == "membre" else "🕊️"
-                        st.markdown(
-                            '<div style="opacity:.85; margin:2px 0;">' + _icone
-                            + " <b>" + html.escape(_qui) + "</b> · "
-                            + html.escape(str(_d or ""))
-                            + " — « " + html.escape(_rep or "")
-                            + " »</div>", unsafe_allow_html=True)
-            # le carnet Excel de tout le mois
-            _lignes = []
-            for (_qid, _ord, _q_txt, _t, _ch, _reps) in _resume:
-                for (_nom, _typ, _rep, _d) in _reps:
-                    _lignes.append({"Question": f"Q{_ord}",
-                                    "Énoncé": _q_txt,
-                                    "Qui": _nom or "Anonyme",
-                                    "Profil": ("Membre" if _typ == "membre"
-                                               else "Visiteur"),
-                                    "Réponse": _rep,
-                                    "Date": _d})
-            _df_q = pd.DataFrame(_lignes)
-            _buf_q = io.BytesIO()
-            with pd.ExcelWriter(_buf_q, engine="openpyxl") as w:
-                _df_q.to_excel(w, index=False)
-            _buf_q.seek(0)
-            st.download_button(
-                "📥 Télécharger le carnet des réponses (Excel)",
-                data=_buf_q,
-                file_name=f"questionnaire_feuillet_{_an_q}_{_mois_q:02d}.xlsx",
-                key="qf_export", width="stretch")
+    # v7.10.4 — la lecture vit DÉSORMAIS dans une fonction partagée : la
+    # zone « 1 Bis. » et l'onglet « 🕯️ Thème » (Contenu existant) servent
+    # la même lecture, question par question, avec le carnet du mois.
+    afficher_reponses_questionnaire_feuillet(_an_q, _mois_q, prefixe_cle="qf")
