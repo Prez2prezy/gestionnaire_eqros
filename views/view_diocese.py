@@ -27,6 +27,7 @@ from datetime import date
 # vue paroisse et dans les équipes, comme la Zone du jour depuis la v7.9.10.
 from database import (c, commit_and_sync, safe_migrate,
                       feuillet_questionnaire_soumission,
+                      feuillet_questionnaire_existe,
                       feuillet_questions_lister)
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation,
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale,
@@ -230,7 +231,16 @@ def _gestionnaire_theme_publie():
         _etq = []
         if _inf.get("date_publication"):
             _etq.append("📖 feuillet publié")
-        if _inf:
+        # v7.11.0 — l'étiquette « 📝 questionnaire » ne se pose que sur les
+        # mois qui PORTENT un questionnaire (questions ou soumission) —
+        # avant, tous les mois la portaient, même sans rien à relire.
+        try:
+            _a_q = bool(_inf.get("questionnaire")) or \
+                bool(feuillet_questionnaire_existe(a, m)) or \
+                bool(feuillet_questionnaire_soumission(a, m))
+        except Exception:
+            _a_q = bool(_inf.get("questionnaire"))
+        if _a_q:
             _etq.append("📝 questionnaire")
         if a == _an_cour and m == _mois_cour:
             _etq.append("⭐ mois en cours")
