@@ -115,6 +115,26 @@ st.markdown("""
     .stSidebar { background-color: #FFFFFF !important; }
     .stSidebar .stMarkdown, .stSidebar label { color: #1A237E !important; }
     .stTextInput input, .stTextArea textarea, .stSelectbox select { background-color: #FFFFFF !important; color: #1A237E !important; }
+    /* === v7.10.4 — TOUT LISIBLE SUR BLANC (bat le thème sombre du navigateur) ===
+       L'Administration est peinte blanc : libellés des champs, notes,
+       alertes et titres d'expanders restent en encre bleue, les champs sur
+       fond blanc — quel que soit le mode (clair/sombre) du téléphone.
+       (Répare les textes invisibles de la chaîne d'une séance et du
+       questionnaire quand l'écran du lecteur est en mode sombre.) */
+    .stApp label, .stApp label p, .stApp label div { color: #1A237E !important; }
+    .stApp [data-testid="stWidgetLabel"] p { color: #1A237E !important; }
+    .stApp [data-testid="stCaptionContainer"],
+    .stApp [data-testid="stCaptionContainer"] * { color: #3E517A !important; }
+    .stApp [data-testid="stAlert"] { background-color: #E8EAF6 !important; }
+    .stApp [data-testid="stAlert"] .stMarkdown,
+    .stApp [data-testid="stAlert"] p,
+    .stApp [data-testid="stAlert"] div,
+    .stApp [data-testid="stAlert"] span,
+    .stApp [data-testid="stAlert"] li { color: #1A237E !important; }
+    .stApp details summary, .stApp details summary p,
+    .stApp details summary div { color: #1A237E !important; }
+    .stApp input, .stApp textarea { background-color: #FFFFFF !important;
+        color: #1A237E !important; }
     .whatsapp-link {
         display: inline-block;
         background-color: #25D366;
