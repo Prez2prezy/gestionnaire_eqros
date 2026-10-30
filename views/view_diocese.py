@@ -25,7 +25,9 @@ from datetime import date
 # paroisse, de ses membres et visiteurs — le diocèse n'a rien à voir
 # dedans. » La rubrique de réserve quitte ce menu ; la réserve vit dans la
 # vue paroisse et dans les équipes, comme la Zone du jour depuis la v7.9.10.
-from database import (c, commit_and_sync, safe_migrate)
+from database import (c, commit_and_sync, safe_migrate,
+                      feuillet_questionnaire_soumission,
+                      feuillet_questions_lister)
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation,
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale,
                       supprimer_photo, afficher_messages_flash, lien_whatsapp, URL_ESPACE_SPIRITUEL,
@@ -34,7 +36,8 @@ from services import (hash_password, generer_mot_de_passe, safe_date, afficher_s
                       sauvegarder_photo_locale)
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel,
                         afficher_whatsapp_tabs, afficher_historique_paroisse,
-                        afficher_etat_presences_paroisse, _qrcode_png_bytes)
+                        afficher_etat_presences_paroisse, _qrcode_png_bytes,
+                        afficher_reponses_questionnaire_feuillet)
 
 
 def _gestionnaire_archives_espace(texte_intro, types_contenus, prefixe):
@@ -162,6 +165,141 @@ def _gestionnaire_archives_galerie():
             if st.button("❌ Annuler", key="btn_sup_gal_non"):
                 st.session_state.pop("confirm_sup_gal", None)
                 st.rerun()
+
+
+# ====================================================================
+# v7.10.4 — L'ONGLET « 🕯️ THÈME » DE « 📋 CONTENU EXISTANT »
+# La gestion APRÈS publication du feuillet mensuel et de son questionnaire.
+# « Une fois publié, où s'affiche le questionnaire ? » — sous le feuillet, en
+# Vue d'ensemble (membres et visiteurs y répondent). « Où vont les réponses,
+# qui les voit ? » — elles s'assemblent ICI, question par question, mois par
+# mois, pour la cellule et le diocèse seuls : côté fidèles, chacun ne
+# retrouve que les siennes. La parution reste au SAS ; les retouches de
+# questions restent en « 1 Bis. » (📡 Communication).
+# ====================================================================
+_MOIS_PASTORAUX_CAP = ["Septembre", "Octobre", "Novembre", "Décembre", "Janvier",
+                       "Février", "Mars", "Avril", "Mai", "Juin", "Juillet",
+                       "Août"]
+
+
+def _gestionnaire_theme_publie():
+    """v7.10.4 — l'onglet « 🕯️ Thème » de « 📋 Contenu existant » : l'état du
+    mois (feuillet + questionnaire), les questions telles que les fidèles les
+    voient, et la lecture des réponses reçues (carnet Excel compris)."""
+    st.caption("Le feuillet du mois et son questionnaire APRÈS publication : "
+               "ce que voient les fidèles, les questions telles que parues et "
+               "les réponses reçues — mois par mois, feuillet du moment comme "
+               "mois passés. Les retouches de questions se font dans « 📡 "
+               "Communication » (zone « 1 Bis. ») ; la parution reste au SAS.")
+
+    # ── les mois connus : feuillets publiés + mois portant un questionnaire ──
+    _mois_connus = {}
+    try:
+        for (a, m, num, dp) in c.execute(
+                """SELECT annee_debut, mois, numero, date_publication
+                   FROM feuillets_publications""").fetchall():
+            _mois_connus[(int(a), int(m))] = {"numero": num,
+                                              "date_publication": dp}
+    except Exception:
+        pass
+    try:
+        for (a, m) in c.execute(
+                """SELECT DISTINCT annee_debut, mois FROM feuillet_questions"""
+        ).fetchall():
+            # marqueur explicite (un dict vide serait faux) : ce mois porte
+            # un questionnaire même sans feuillet publié
+            _mois_connus.setdefault((int(a), int(m)),
+                                    {"questionnaire": True})
+    except Exception:
+        pass
+    _an_cour, _deb, _fin = get_periode_pastorale()
+    _mois_cour = ((date.today().month - 9) % 12) + 1
+    _mois_connus.setdefault((_an_cour, _mois_cour), {})
+
+    if not _mois_connus:
+        st.info("Aucun mois du thème à relire pour le moment.")
+        return
+    _cles = sorted(_mois_connus.keys(), key=lambda t: (t[0], t[1]),
+                   reverse=True)
+    _libelles = []
+    for (a, m) in _cles:
+        _inf = _mois_connus[(a, m)]
+        _civ = a if m <= 4 else a + 1
+        _lbl = ("N° " + str(_inf.get("numero") or m) + " — "
+                + _MOIS_PASTORAUX_CAP[m - 1] + " " + str(_civ))
+        _etq = []
+        if _inf.get("date_publication"):
+            _etq.append("📖 feuillet publié")
+        if _inf:
+            _etq.append("📝 questionnaire")
+        if a == _an_cour and m == _mois_cour:
+            _etq.append("⭐ mois en cours")
+        _libelles.append(_lbl + ((" · " + " · ".join(_etq)) if _etq else ""))
+    _choix = st.selectbox("Mois à relire", _libelles, key="dio_theme_mois")
+    _an, _mo = _cles[_libelles.index(_choix)]
+    _inf_mois = _mois_connus[(_an, _mo)]
+    _civ = _an if _mo <= 4 else _an + 1
+
+    st.markdown("### 🕯️ N° " + str(_inf_mois.get("numero") or _mo) + " — "
+                + _MOIS_PASTORAUX_CAP[_mo - 1] + " " + str(_civ))
+
+    # ── 1. ce que voient les fidèles : le feuillet ────────────────────────
+    _dp = safe_date(_inf_mois.get("date_publication")) \
+        if _inf_mois.get("date_publication") else None
+    if _dp:
+        st.success("📖 Le feuillet de ce mois est publié (le "
+                   + _dp.strftime("%d/%m/%Y") + ") — il se lit dans l'Espace "
+                   "de Prière, 🕯️ Thème → 🔭 Vue d'ensemble.")
+    else:
+        st.info("📖 Pas de feuillet publié pour ce mois.")
+
+    # ── 2. le questionnaire : son état de parution ────────────────────────
+    _soum = feuillet_questionnaire_soumission(_an, _mo)
+    _statut = _soum[1] if _soum else None
+    _qs_act = feuillet_questions_lister(_an, _mo, True)
+    if _statut == "publie":
+        _dpub = safe_date(_soum[4]) if _soum[4] else None
+        st.success("📝 Le questionnaire paraît aux fidèles, juste sous le "
+                   "feuillet (validé"
+                   + (f" le {_dpub.strftime('%d/%m/%Y')}" if _dpub else "")
+                   + ") — membres et visiteurs y répondent, et le retrouvent "
+                   "à la FIN de la lecture du livret, à chaque relecture.")
+    elif _statut == "attente":
+        st.info("🟡 Questionnaire soumis — en attente de la validation du "
+                "diocèse (SAS). Les fidèles ne le voient pas encore.")
+    elif _statut == "programme":
+        st.info("🗓️ Parution du questionnaire programmée pour le "
+                f"**{_soum[5] or '?'}**.")
+    elif _statut == "refuse":
+        st.error("❌ Questionnaire non retenu"
+                 + (f" — Motif : {_soum[2]}" if _soum[2] else "")
+                 + ". Les retouches se font en « 1 Bis. » puis resoumission.")
+    else:
+        st.info("📝 Pas de questionnaire pour ce mois (ou jamais soumis).")
+
+    # ── 3. les questions telles que les fidèles les voient ────────────────
+    if _qs_act:
+        st.markdown("#### 📝 Les questions telles que parues ("
+                    + str(len(_qs_act)) + ")")
+        for (_qid, _ord, _q_txt, _t, _ch, _ob, _ac) in _qs_act:
+            _badge = ("✍️ Texte" if _t == "texte"
+                      else "🔘 Oui/Non" if _t == "oui_non" else "🔠 Choix")
+            st.write("🗨️ **Q" + str(_ord) + ".** " + _q_txt
+                     + "  ·  *" + _badge + "*"
+                     + ("  ·  obligatoire" if _ob else ""))
+        st.caption("Pour retoucher, réordonner ou retirer une question : "
+                   "« 📡 Communication » → zone « 1 Bis. Le questionnaire du "
+                   "feuillet ».")
+
+    # ── 4. les réponses reçues : ici et nulle part ailleurs ───────────────
+    st.markdown("#### 👀 Les réponses données")
+    st.caption("Qui les voit ? La cellule Communication et VOUS, dans cet "
+               "onglet — jamais les fidèles entre eux : chacun ne retrouve "
+               "que SES réponses (elles l'attendent dans le formulaire, il "
+               "peut les corriger). Elles demeurent ici mois après mois, et "
+               "le carnet les emporte à tout moment.")
+    afficher_reponses_questionnaire_feuillet(_an, _mo,
+                                             prefixe_cle="dio_theme")
 
 
 def _galerie_plus_saisie():
@@ -730,14 +868,18 @@ def show_diocese():
             # icône/texte ou d'espace en trop).
             _LBL_BANDES = "📺 Bandes défilantes actives"
             _LBL_PM = "🙏 Prières / 📖 Méditations"
+            _LBL_THEME = "🕯️ Thème"
             _LBL_GAL = "🖼️ Galerie +"
             _LBL_MU = "🎵 Musiques"
             _LBL_AUTRES = "📦 Autres contenus"
             
             # v7.9.2 — l'onglet « 🖼️ Galerie + » (archive après publication)
             # s'insère entre « 🙏 Prières / 📖 Méditations » et « 🎵 Musiques ».
+            # v7.10.4 — l'onglet « 🕯️ Thème » (gestion APRÈS publication du
+            # feuillet et de son questionnaire : réponses reçues…) se glisse
+            # entre « 🙏 Prières / 📖 Méditations » et « 🖼️ Galerie + ».
             _vue_exist = st.radio("Catégorie",
-                                  [_LBL_BANDES, _LBL_PM, _LBL_GAL, _LBL_MU, _LBL_AUTRES],
+                                  [_LBL_BANDES, _LBL_PM, _LBL_THEME, _LBL_GAL, _LBL_MU, _LBL_AUTRES],
                                   key="dio_exist_vue", horizontal=True, label_visibility="collapsed")
 
             if _vue_exist == _LBL_BANDES:
@@ -779,6 +921,11 @@ def show_diocese():
                     "publiés dans la sous-rubrique 🎵 Musiques. Cochez puis supprimez en un "
                     "seul clic (avec confirmation).",
                     ("audio",), "mu")
+
+            elif _vue_exist == _LBL_THEME:
+                # v7.10.4 — gestion APRÈS publication du feuillet et de son
+                # questionnaire : état du mois, questions parues, réponses reçues.
+                _gestionnaire_theme_publie()
 
             elif _vue_exist == _LBL_GAL:
                 # v7.9.2 — archive de la Galerie + après publication
