@@ -123,6 +123,16 @@ st.markdown("""
        questionnaire quand l'écran du lecteur est en mode sombre.) */
     .stApp label, .stApp label p, .stApp label div { color: #1A237E !important; }
     .stApp [data-testid="stWidgetLabel"] p { color: #1A237E !important; }
+    /* === v7.11.0 — libellés sous toutes leurs formes (toutes versions) === */
+    .stApp label *, .stApp [data-testid="stWidgetLabel"],
+    .stApp [data-testid="stWidgetLabel"] *,
+    .stApp [data-testid="stForm"] label, .stApp [data-testid="stForm"] label *,
+    .stApp [data-testid="stTextInput"] label, .stApp [data-testid="stTextArea"] label,
+    .stApp [data-testid="stRadio"] label, .stApp [data-testid="stCheckbox"] label,
+    .stApp [data-testid="stSelectbox"] label,
+    .stApp [data-testid="stDateInput"] label { color: #1A237E !important; }
+    .stApp [data-testid="stForm"] { background-color: #FFFFFF !important;
+        border-color: #C5CAE9 !important; }
     .stApp [data-testid="stCaptionContainer"],
     .stApp [data-testid="stCaptionContainer"] * { color: #3E517A !important; }
     .stApp [data-testid="stAlert"] { background-color: #E8EAF6 !important; }
