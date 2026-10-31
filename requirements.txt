@@ -1,8 +1,24 @@
-streamlit
-pandas
-openpyxl
-Pillow
-requests
-libsql
-cloudinary
-qrcode
+# Gestionnaire des Équipes du Rosaire — Diocèse de Grand-Bassam
+# Dépendances Python (déploiement Streamlit Cloud ou local)
+streamlit>=1.37
+pandas>=2.0
+Pillow>=10.0
+requests>=2.31
+qrcode>=7.4
+openpyxl>=3.1
+cloudinary>=1.40
+libsql-experimental>=0.0.34
+# v7.12.0 — la fiche de mission « 📄 Enregistrer en PDF »
+reportlab>=4.0
+# v7.12.0 — les rappels de la dizaine par notification (🔔)
+pywebpush>=1.14
+
+
+# streamlit
+# pandas
+# openpyxl
+# Pillow
+# requests
+# libsql
+# cludinary
+# qrcode
