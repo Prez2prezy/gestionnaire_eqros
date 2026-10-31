@@ -581,6 +581,38 @@ def init_tables_and_migrations():
         commit_and_sync()
     except Exception:
         pass
+    # v7.11.1 — L'ALERTE D'UNE SEMAINE : la républication d'un feuillet
+    # corrigé rafraîchit `date_publication` ; l'alerte 🔔 du fil, elle, se
+    # compte à partir de la PREMIÈRE diffusion et ne reste qu'UNE SEMAINE.
+    # La colonne est posée une fois ; les lignes déjà en place la reçoivent
+    # à la hauteur de leur date de publication (la meilleure disponible),
+    # puis elle ne bouge plus jamais — même après républication.
+    safe_migrate("ALTER TABLE feuillets_publications ADD COLUMN premiere_diffusion TEXT")
+    try:
+        c.execute("""UPDATE feuillets_publications
+                     SET premiere_diffusion = date_publication
+                     WHERE (premiere_diffusion IS NULL OR premiere_diffusion = '')
+                       AND date_publication IS NOT NULL""")
+        commit_and_sync()
+    except Exception:
+        pass
+    # v7.11.1 — LES MISSIONS EN PÉRIODE ET EN GROUPES : une mission court du
+    # lendemain de la dernière séance de prière jusqu'à la prochaine séance
+    # (date_debut / date_fin — date_fin vide = « jusqu'à la prochaine
+    # séance ») et une équipe peut se scinder en plusieurs groupes (A…Z).
+    # date_mission est gardé : il porte le début, pour les anciens affichages.
+    safe_migrate("ALTER TABLE missions ADD COLUMN date_debut TEXT")
+    safe_migrate("ALTER TABLE missions ADD COLUMN date_fin TEXT")
+    safe_migrate("ALTER TABLE missions ADD COLUMN groupe TEXT")
+    try:
+        c.execute("""UPDATE missions SET date_debut = date_mission
+                     WHERE (date_debut IS NULL OR date_debut = '')
+                       AND date_mission IS NOT NULL""")
+        c.execute("""UPDATE missions SET groupe = 'A'
+                     WHERE groupe IS NULL OR groupe = ''""")
+        commit_and_sync()
+    except Exception:
+        pass
 
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
     try:
@@ -2784,25 +2816,38 @@ def feuillet_reponses_resume(annee_debut, mois):
 
 def mission_creer(equipe_id, paroisse_id, titre, objectif,
                   date_mission=None, lieu=None, participants=None,
-                  auteur_nom=None):
+                  auteur_nom=None, date_debut=None, date_fin=None,
+                  groupe=None):
     """Ouvre une mission. `participants` = liste de dicts
-    {nom, matloc, contact, externe}. Retourne l'id (ou None)."""
+    {nom, matloc, contact, externe}. v7.11.1 — la mission se déroule sur
+    UNE PÉRIODE : `date_debut` (le lendemain de la dernière séance de
+    prière mensuelle) jusqu'à `date_fin` (vide = « jusqu'à la prochaine
+    séance »), et `groupe` (A…Z) porte le groupe envoyé quand l'équipe se
+    scinde. `date_mission` reste alimenté avec le début pour les anciens
+    affichages. Retourne l'id (ou None)."""
     _t = str(titre or "").strip()
     if not _t or not equipe_id:
         return None
+    _deb = str(date_debut or date_mission or "").strip() or None
+    _fin = str(date_fin or "").strip() or None
+    _grp = str(groupe or "").strip().upper()[:1] or "A"
+    if not ("A" <= _grp <= "Z"):
+        _grp = "A"
     try:
         c.execute("""INSERT INTO missions
                      (equipe_id, paroisse_id, titre, objectif, date_mission,
-                      lieu, participants, statut, date_envoi, auteur_nom)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, 'envoi', ?, ?)""",
+                      lieu, participants, statut, date_envoi, auteur_nom,
+                      date_debut, date_fin, groupe)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, 'envoi', ?, ?, ?, ?, ?)""",
                   (int(equipe_id),
                    int(paroisse_id) if paroisse_id else None,
                    _t, (str(objectif).strip() or None),
-                   (str(date_mission) if date_mission else None),
+                   _deb,
                    (str(lieu).strip() or None),
                    json.dumps(participants or [], ensure_ascii=False),
                    date.today().isoformat(),
-                   (str(auteur_nom).strip() or None)))
+                   (str(auteur_nom).strip() or None),
+                   _deb, _fin, _grp))
         commit_and_sync()
         return c.execute("""SELECT id FROM missions WHERE equipe_id=?
                             ORDER BY id DESC LIMIT 1""",
@@ -2814,18 +2859,41 @@ def mission_creer(equipe_id, paroisse_id, titre, objectif,
 
 def missions_equipe(equipe_id, tous=False):
     """[(id, titre, objectif, date_mission, lieu, participants_json,
-    statut, date_envoi, auteur_nom, rapport_json, date_rapport)] de
-    l'équipe, la plus récente d'abord. tous=False : missions non retirées."""
+    statut, date_envoi, auteur_nom, rapport_json, date_rapport,
+    date_debut, date_fin, groupe)] de l'équipe, la plus récente d'abord.
+    v7.11.1 — la période (date_debut → date_fin, vide = « jusqu'à la
+    prochaine séance ») et le groupe (A…Z) voyagent avec la mission.
+    tous=False : missions non retirées."""
     try:
         _ph = "" if tous else " AND statut != 'retiree'"
         return c.execute(
             f"""SELECT id, titre, objectif, date_mission, lieu, participants,
-                       statut, date_envoi, auteur_nom, rapport, date_rapport
+                       statut, date_envoi, auteur_nom, rapport, date_rapport,
+                       date_debut, date_fin, groupe
                 FROM missions WHERE equipe_id=?{_ph}
                 ORDER BY id DESC""", (int(equipe_id),)).fetchall()
     except Exception as e:
         logger.warning(f"missions_equipe : {e!r}")
         return []
+
+
+def mission_prochaine_seance(equipe_id, apres):
+    """v7.11.1 — la première séance de prière enregistrée APRÈS le jour
+    `apres` (chaîne de séance = la séance mensuelle de l'équipe). C'est
+    elle qui referme la période d'une mission laissée « jusqu'à la
+    prochaine séance » : dès que la séance suivante est enregistrée, la
+    mission connaît sa fin. Retourne la date (str ISO) ou None."""
+    if not apres:
+        return None
+    try:
+        _assurer_table_chaine_seances()
+        _r = c.execute("""SELECT MIN(date_seance) FROM chaine_seances
+                          WHERE equipe_id=? AND date_seance > ?""",
+                       (int(equipe_id), str(apres))).fetchone()
+        return _r[0] if _r and _r[0] else None
+    except Exception as e:
+        logger.warning(f"mission_prochaine_seance : {e!r}")
+        return None
 
 
 def mission_rapport_enregistrer(id_mission, rapport):
