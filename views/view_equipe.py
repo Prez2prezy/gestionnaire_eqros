@@ -530,10 +530,10 @@ def _fiche_rapport_html(mission, nom_equipe, nom_paroisse, resp_equipe):
         + '<div class="fm-priere">« Racontez-leur ce que le Seigneur a fait '
         'pour vous. » — Que la joie de cette mission porte du fruit.</div>'
         + '<div class="fm-signatures">'
+        + '<div class="fm-sig"><div class="fm-role">Le Responsable du groupe</div>'
+        + '<div class="fm-nom"></div></div>'
         + '<div class="fm-sig"><div class="fm-role">Le Responsable de l\u2019équipe</div>'
         + '<div class="fm-nom">' + html.escape(resp_equipe or "") + '</div></div>'
-        + '<div class="fm-sig"><div class="fm-role">Le Responsable paroissial / diocésain</div>'
-        + '<div class="fm-nom"></div></div>'
         + '</div>'
         + '<div class="fm-pied">Fiche de rapport de mission — mission « '
         + html.escape(str(mission.get("titre") or "")) + ' » · rapport noté le '
@@ -542,59 +542,334 @@ def _fiche_rapport_html(mission, nom_equipe, nom_paroisse, resp_equipe):
     return '<div class="fm-fiche" id="' + _ID_FICHE + '">' + _corps + '</div>'
 
 
-_CSS_IMPRESSION_FICHE = """
-@media print {
-    body, body * { visibility: hidden !important; }
-    #""" + _ID_FICHE + """, #""" + _ID_FICHE + """ * {
-        visibility: visible !important; }
-    #""" + _ID_FICHE + """ { position: absolute; left: 0; top: 0;
-        width: 100%; border-radius: 0; margin: 0; box-shadow: none; }
-    @page { margin: 12mm; }
-}
-"""
+def _cp1252_propre(t):
+    """Le texte prêt pour le PDF : les caractères que les polices de base
+    ne connaissent pas (emoji…) sont retirés — le papier garde le français
+    entier (accents, œ, guillemets, tirets)."""
+    _out = []
+    for _ch in str(t or ""):
+        try:
+            _ch.encode("cp1252")
+            _out.append(_ch)
+        except Exception:
+            pass
+    return "".join(_out)
 
 
-def _rendre_fiche_imprimable(fiche_html, nom_fichier):
-    """Montre la fiche, pose l'impression (elle seule sort sur le papier)
-    et offre le fichier autonome à télécharger (imprimable d'où que ce soit)."""
-    st.markdown("<style>" + _CSS_IMPRESSION_FICHE + _CSS_FICHE + "</style>",
-                unsafe_allow_html=True)
-    st.markdown(fiche_html, unsafe_allow_html=True)
+def _fiche_pdf_bytes(genre, mission, nom_equipe, nom_paroisse,
+                     sig_gauche_nom, sig_droite_nom):
+    """v7.12.0 — LE VRAI PDF DE LA FICHE (« 📄 Enregistrer en PDF ») : une
+    page A4 autonome, sobre et nette — en-tête du mouvement, bandeau
+    d'identité (équipe, paroisse, période, lieu), blocs, tableau des
+    envoyés (fiche d'envoi) et les DEUX signatures. Retourne les octets du
+    fichier, ou None si reportlab manque."""
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import mm
+        from reportlab.lib import colors
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER
+        from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
+                                        Table, TableStyle, HRFlowable,
+                                        Image as RLImage)
+        import io as _io
+    except Exception:
+        return None
+
+    _bleu = colors.HexColor("#1A237E")
+    _bleuclair = colors.HexColor("#E8EAF6")
+    _liseret = colors.HexColor("#C5CAE9")
+    _or = colors.HexColor("#C9A227")
+
+    def _sty(nom, taille=9.5, gras=False, ital=False, coul="#1a1a2e",
+             centre=False, dessus=0, dessous=3):
+        return ParagraphStyle(
+            nom, fontName="Helvetica-Bold" if gras else
+            ("Helvetica-Oblique" if ital else "Helvetica"), fontSize=taille,
+            leading=taille * 1.45, textColor=colors.HexColor(coul),
+            alignment=TA_CENTER if centre else 0, spaceBefore=dessous * 0 +
+            dessus, spaceAfter=dessous)
+
+    _s_mvt = _sty("mvt", 11, gras=True, coul="#1A237E", centre=True, dessous=1)
+    _s_dio = _sty("dio", 8.5, ital=True, coul="#4527a0", centre=True, dessous=2)
+    _s_titre = _sty("titre", 13.5, gras=True, coul="#1A237E", centre=True,
+                    dessus=6, dessous=1)
+    _s_soustitre = _sty("soustitre", 8.8, ital=True, coul="#555555",
+                        centre=True, dessous=8)
+    _s_etiq = _sty("etiq", 7.8, gras=True, coul="#1A237E", dessous=2)
+    _s_txt = _sty("txt", 9.3, dessous=6)
+    _s_priere = _sty("priere", 9, ital=True, coul="#4527a0", centre=True,
+                     dessus=8, dessous=6)
+    _s_role = _sty("role", 8.6, gras=True, coul="#1A237E", centre=True,
+                   dessous=0)
+    _s_nom = _sty("nom", 8.2, coul="#444444", centre=True, dessous=0)
+    _s_pied = _sty("pied", 7.2, coul="#888888", centre=True, dessus=10,
+                   dessous=0)
+    _s_cell = _sty("cell", 9, dessous=0)
+    _s_cell_h = _sty("cellh", 8.2, gras=True, coul="#ffffff", dessous=0)
+
+    _histoire = []          # le fil de la page
+    _logo = None
+    for _chemin in (os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "..", "images", "logo.png"),
+                    os.path.join("images", "logo.png"),
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "..", "static",
+                                 "logo_equipes_rosaire.png")):
+        if os.path.exists(_chemin):
+            _logo = _chemin
+            break
+
+    def _bloc(etiquette, texte):
+        _histoire.append(Paragraph(_cp1252_propre(etiquette), _s_etiq))
+        _cellule = Table(
+            [[Paragraph(_cp1252_propre(texte or "—"), _s_txt)]],
+            colWidths=[176 * mm])
+        _cellule.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.7, _liseret),
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FAFAFF")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+        _histoire.append(_cellule)
+        _histoire.append(Spacer(1, 5 * mm))
+
+    # ── l'en-tête du mouvement ────────────────────────────────────────
+    if _logo:
+        try:
+            from PIL import Image as PILImage
+            _l, _h = PILImage.open(_logo).size
+            _img = RLImage(_logo, width=17 * mm, height=17 * mm * _h / max(_l, 1))
+            _img.hAlign = "CENTER"
+            _histoire.append(_img)
+            _histoire.append(Spacer(1, 2 * mm))
+        except Exception:
+            pass
+    _histoire.append(Paragraph(_cp1252_propre("ÉQUIPES DU ROSAIRE"), _s_mvt))
+    _histoire.append(Paragraph(_cp1252_propre(
+        "Diocèse de Grand-Bassam — « Équipier : l\u2019évangile avec Marie ! »"),
+        _s_dio))
+    _histoire.append(HRFlowable(width="100%", thickness=1.1, color=_or,
+                                spaceBefore=2, spaceAfter=1.5))
+    _histoire.append(HRFlowable(width="100%", thickness=1.1, color=_or,
+                                spaceBefore=0, spaceAfter=4))
+
+    if genre == "envoi":
+        _titre = "FICHE D'ENVOI EN MISSION"
+        _soustitre = ("Proposition préparée par le responsable d'équipe — "
+                      "à présenter pour bénédiction et accord")
+        _role_g, _role_d = ("Le Responsable de l'équipe",
+                            "Le Responsable paroissial")
+    else:
+        _titre = "FICHE DE RAPPORT DE MISSION"
+        _soustitre = ("Retour de la mission confiée — remis par le "
+                      "responsable après la mission")
+        _role_g, _role_d = ("Le Responsable du groupe",
+                            "Le Responsable de l'équipe")
+    _histoire.append(Paragraph(_cp1252_propre(_titre), _s_titre))
+    _histoire.append(Paragraph(_cp1252_propre(_soustitre), _s_soustitre))
+
+    # ── le bandeau d'identité (équipe + groupe, paroisse, période, lieu) ──
+    _groupe = str(mission.get("groupe") or "").strip().upper()
+    _bandeau = Table(
+        [[Paragraph(_cp1252_propre("<b>Équipe :</b> " + nom_equipe
+                                   + ((" — groupe " + _groupe) if _groupe else "")),
+                    _s_cell),
+          Paragraph(_cp1252_propre("<b>Paroisse :</b> " + (nom_paroisse or "—")),
+                    _s_cell)],
+         [Paragraph(_cp1252_propre("<b>Période :</b> "
+                                   + _periode_mission_txt(mission)), _s_cell),
+          Paragraph(_cp1252_propre("<b>Lieu :</b> "
+                                   + (mission.get("lieu") or "—")), _s_cell)]],
+        colWidths=[88 * mm, 88 * mm])
+    _bandeau.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), _bleuclair),
+        ("BOX", (0, 0), (-1, -1), 0.7, _liseret),
+        ("INNERGRID", (0, 0), (-1, -1), 0.4, _liseret),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
+    _histoire.append(_bandeau)
+    _histoire.append(Spacer(1, 5 * mm))
+
+    _tampon = lambda t: _cp1252_propre(t)
+    if genre == "envoi":
+        _bloc("Objectif de la mission", mission.get("objectif") or "—")
+        _participants = mission.get("participants") or []
+        _histoire.append(Paragraph(_tampon(
+            "Personnes envoyées en mission (" + str(len(_participants)) + ")"),
+            _s_etiq))
+        _lignes_tab = [[Paragraph("N°", _s_cell_h),
+                        Paragraph("Nom et prénoms", _s_cell_h),
+                        Paragraph("N° méd.", _s_cell_h),
+                        Paragraph("Contact", _s_cell_h)]]
+        for _i, p in enumerate(_participants, start=1):
+            _hors = " (hors équipe)" if p.get("externe") else ""
+            _lignes_tab.append([
+                Paragraph(str(_i), _s_cell),
+                Paragraph(_tampon(str(p.get("nom") or "—") + _hors), _s_cell),
+                Paragraph(_tampon(str(p.get("numero_med") or "—")), _s_cell),
+                Paragraph(_tampon(str(p.get("contact") or "—")), _s_cell)])
+        if not _participants:
+            _lignes_tab.append([Paragraph("—", _s_cell),
+                                Paragraph("Personne n'est encore inscrit sur "
+                                          "cette mission.", _s_cell),
+                                Paragraph("—", _s_cell), Paragraph("—", _s_cell)])
+        _table = Table(_lignes_tab,
+                       colWidths=[12 * mm, 86 * mm, 28 * mm, 50 * mm],
+                       repeatRows=1)
+        _table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), _bleu),
+            ("GRID", (0, 0), (-1, -1), 0.5, _liseret),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+             [colors.white, colors.HexColor("#F3F5FB")]),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6)]))
+        _histoire.append(_table)
+        _histoire.append(Spacer(1, 4 * mm))
+        _histoire.append(Paragraph(_tampon(
+            "« Allez partout dans le monde, et proclamez la Bonne Nouvelle à "
+            "toute la création. » — Marc 16, 15"), _s_priere))
+        _histoire.append(Paragraph(_tampon(
+            "Que La Vierge Marie, Étoile de la nouvelle évangélisation, "
+            "accompagne chaque envoyé."), _s_priere))
+    else:
+        _r = mission.get("rapport") or {}
+        _bloc("Rappel de l'objectif", mission.get("objectif") or "—")
+        _eff = _r.get("participants_effectifs") or []
+        _qui = (" · ".join(_eff) if _eff else
+                " · ".join(str(p.get("nom") or "")
+                           for p in (mission.get("participants") or [])) or "—")
+        _bloc("Personnes ayant porté la mission", _qui)
+        _bloc("Déroulement de la mission", _r.get("deroulement") or "—")
+        _bloc("Grâces reçues et moments forts", _r.get("graces") or "—")
+        _bloc("Difficultés rencontrées", _r.get("difficultes") or "—")
+        _bloc("Propositions et suites à donner", _r.get("propositions") or "—")
+        _histoire.append(Paragraph(_tampon(
+            "« Racontez-leur ce que le Seigneur a fait pour vous. » — Que la "
+            "joie de cette mission porte du fruit."), _s_priere))
+
+    # ── les DEUX signatures ───────────────────────────────────────────
+    def _signature(role, nom):
+        _t = Table([[Paragraph(_tampon(role), _s_role)],
+                    [Spacer(1, 15 * mm)],
+                    [Paragraph(_tampon(nom or " "), _s_nom)]],
+                   rowHeights=[4.5 * mm, 15 * mm, 6 * mm],
+                   colWidths=[74 * mm])
+        _t.setStyle(TableStyle([
+            ("LINEBELOW", (0, 1), (0, 1), 0.6, colors.HexColor("#999999")),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "BOTTOM")]))
+        return _t
+
+    _sigs = Table([[_signature(_role_g, sig_gauche_nom),
+                    _signature(_role_d, sig_droite_nom)]],
+                  colWidths=[89 * mm, 89 * mm], hAlign="CENTER")
+    _sigs.setStyle(TableStyle([
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4)]))
+    _histoire.append(_sigs)
+
+    if genre == "envoi":
+        _pied = ("Fiche d'envoi en mission — préparée le "
+                 + str(mission.get("date_envoi") or "") + " par "
+                 + str(mission.get("auteur_nom") or "—"))
+    else:
+        _pied = ("Fiche de rapport de mission — mission « "
+                 + str(mission.get("titre") or "") + " » · rapport noté le "
+                 + str(mission.get("date_rapport") or ""))
+    _histoire.append(Spacer(1, 4 * mm))
+    _histoire.append(HRFlowable(width="100%", thickness=0.5,
+                                color=colors.HexColor("#E0E0E0"),
+                                spaceBefore=0, spaceAfter=3))
+    _histoire.append(Paragraph(_tampon(_pied), _s_pied))
+
+    _tampon_mem = _io.BytesIO()
+    _doc = SimpleDocTemplate(
+        _tampon_mem, pagesize=A4, leftMargin=17 * mm, rightMargin=17 * mm,
+        topMargin=14 * mm, bottomMargin=14 * mm,
+        title=_cp1252_propre(_titre), author="Équipes du Rosaire — "
+        "Diocèse de Grand-Bassam")
+    _doc.build(_histoire)
+    return _tampon_mem.getvalue()
+
+
+def _rendre_fiche_imprimable(fiche_html, nom_fichier, genre="envoi",
+                             mission=None, nom_equipe="", nom_paroisse="",
+                             sig_gauche_nom="", sig_droite_nom=""):
+    """v7.12.0 — LA FICHE PRÊTE À SORTIR : ① le bouton DÉDIÉ
+    « 📄 Enregistrer la fiche en PDF » (un vrai fichier A4, prêt à
+    imprimer, à envoyer sur WhatsApp ou à garder) ; ② l'APERÇU DANS SON
+    CADRE — la fiche vit seule dans son document (fond blanc, marges
+    A4), comme elle sortira : le bouton 🖨️ posé DANS l'aperçu n'imprime
+    qu'elle, jamais le reste de la page."""
     _c1, _c2 = st.columns(2)
     with _c1:
-        comp_html(
-            '<div style="font-family:sans-serif; text-align:center; '
-            'margin-top:2px;"><button onclick="window.parent.print()" '
-            'style="background:#1A237E; color:#fff; border:none; '
-            'border-radius:24px; padding:9px 22px; font-size:0.92rem; '
-            'font-weight:bold; cursor:pointer;">🖨️ Imprimer la fiche '
-            '(ou l\u2019enregistrer en PDF)</button></div>', height=52)
+        _pdf = None
+        if mission is not None:
+            try:
+                _pdf = _fiche_pdf_bytes(genre, mission, nom_equipe,
+                                        nom_paroisse, sig_gauche_nom,
+                                        sig_droite_nom)
+            except Exception:
+                _pdf = None
+        if _pdf:
+            st.download_button(
+                "📄 Enregistrer la fiche en PDF",
+                data=_pdf,
+                file_name=nom_fichier.rsplit(".", 1)[0] + ".pdf",
+                mime="application/pdf", width="stretch",
+                key="pdf_" + nom_fichier)
+        else:
+            st.caption("📄 Le PDF n'est pas disponible ici — l'aperçu "
+                       "ci-dessous reste imprimable.")
     with _c2:
-        _autonome = (
-            '<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'
-            '<meta name="viewport" content="width=device-width, '
-            'initial-scale=1"><title>' + html.escape(nom_fichier)
-            + '</title><style>' + _CSS_FICHE + '''
-                body { background:#f0f0f5; margin:0; padding:14px; }
-                .barre { text-align:center; margin:10px 0 16px; }
-                .barre button { background:#1A237E; color:#fff; border:none;
-                    border-radius:24px; padding:10px 24px; font-size:0.95rem;
-                    font-weight:bold; cursor:pointer; }
-                @media print {
-                    body { background:#fff; padding:0; }
-                    .barre { display:none; }
-                    .fm-fiche { border:none; margin:0; }
-                    @page { margin: 12mm; }
-                }
-            </style></head><body>'
-            '<div class="barre"><button onclick="window.print()">🖨️ Imprimer '
-            'cette fiche</button></div>'
-            + fiche_html + '</body></html>''')
-        st.download_button("📥 Télécharger la fiche (page à imprimer)",
-                           data=_autonome.encode("utf-8"),
-                           file_name=nom_fichier,
-                           mime="text/html", width="stretch",
-                           key="dl_" + nom_fichier)
+        st.markdown(
+            '<div style="font-size:0.82rem; opacity:0.8; margin-top:0.7rem;">'
+            '🖨️ L\u2019impression se lance depuis le bouton DANS l\u2019aperçu '
+            'ci-dessous : elle ne sort que la fiche.</div>',
+            unsafe_allow_html=True)
+    # l'aperçu : le document autonome DANS son cadre, à hauteur juste
+    _css_cadre = '''
+            html, body { background:#ffffff; margin:0; padding:0; }
+            .fm-fiche { margin:8px auto; max-width:820px; }
+            .barre { text-align:center; margin:10px 0 14px; }
+            .barre button { background:#1A237E; color:#fff; border:none;
+                border-radius:24px; padding:10px 26px; font-size:0.95rem;
+                font-weight:bold; cursor:pointer; }
+            @media print {
+                html, body { background:#fff; padding:0; }
+                .barre { display:none; }
+                .fm-fiche { border:none; margin:0; border-radius:0; }
+                @page { margin: 12mm; }
+            }
+        '''
+    _script_cadre = '''
+        <script>
+        function _fm_ajuster(){ try { var f = window.frameElement;
+            if (f) { f.style.height =
+              (document.documentElement.scrollHeight + 26) + 'px'; } }
+          catch(e) {} }
+        window.addEventListener('load', _fm_ajuster);
+        setTimeout(_fm_ajuster, 350); setTimeout(_fm_ajuster, 1400);
+        </script></body></html>'''
+    _autonome = (
+        '<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, '
+        'initial-scale=1"><title>' + html.escape(nom_fichier)
+        + '</title><style>' + _CSS_FICHE + _css_cadre
+        + '</style></head><body>'
+        '<div class="barre"><button onclick="window.print()">🖨️ Imprimer '
+        'la fiche</button></div>'
+        + fiche_html + _script_cadre)
+    _haut = max(1000, min(4200, 760 + len(fiche_html) // 4))
+    comp_html(_autonome, height=_haut)
 
 
 _STATUTS_MISSION = {"envoi": "🟡 Proposition prête (fiche d'envoi)",
@@ -664,9 +939,12 @@ def _onglet_missions(eid, pid, nom_equipe):
             with _c3:
                 _groupe = st.selectbox(
                     "✈️ Groupe envoyé en mission",
-                    list("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), index=0,
-                    help="L'équipe peut se scinder en plusieurs groupes : "
-                         "chaque groupe porte ses propres missions.")
+                    list("ABCDEFGHIJ"), index=0,
+                    help="L'équipe peut se scinder en plusieurs groupes "
+                         "(une équipe compte 12 membres au maximum — 20 à "
+                         "Notre Dame de l'Assomption : même par groupes de "
+                         "2, la lettre J suffit). Chaque groupe porte ses "
+                         "propres missions.")
             with _c1:
                 _lieu = st.text_input("Lieu / quartier / familles visitées")
             with _c2:
@@ -746,19 +1024,21 @@ def _onglet_missions(eid, pid, nom_equipe):
                 "d'envoi en mission naîtra de ta préparation.")
         return
     # v7.11.1 — L'ÉQUIPE SE SCINDE : les missions se rangent par groupe
-    # (A, B, … Z), chacune sous son « ✈️ Les missions de l'équipe : groupe
+    # (A, B, … J), chacune sous son « ✈️ Les missions de l'équipe N : groupe
     # X ». Une mission ancienne sans groupe connu rejoint le groupe A —
     # rien ne se perd, rien ne se déplace hors de son groupe.
+    # v7.12.0 — LE TITRE IDENTIFIE L'ÉQUIPE (« équipe 3 : groupe A ») et le
+    # compteur de missions est retiré (demande : « ce compteur est de trop »).
     _par_groupe = {}
     for _m in _missions:
         _g = str(_m[13] if len(_m) > 13 else "").strip().upper() or "A"
-        if not ("A" <= _g <= "Z"):
+        if not ("A" <= _g <= "J"):
             _g = "A"
         _par_groupe.setdefault(_g, []).append(_m)
     for _g in sorted(_par_groupe):
         _liste_g = _par_groupe[_g]
-        st.markdown("#### ✈️ Les missions de l'équipe : groupe " + _g
-                    + " (" + str(len(_liste_g)) + ")")
+        st.markdown("#### ✈️ Les missions de l'équipe " + str(eid)
+                    + " : groupe " + _g)
         for (_mid, _titre, _objectif, _date_m, _lieu, _part_json, _statut,
              _date_envoi, _auteur, _rapport_json, _date_rapport,
              _date_debut, _date_fin, _groupe_m) in _liste_g:
@@ -841,7 +1121,11 @@ def _onglet_missions(eid, pid, nom_equipe):
                             _fiche_envoi_html(_mission, nom_equipe,
                                               _nom_par(pid), _resp_eq,
                                               _resp_par),
-                            f"fiche_envoi_mission_{_mid}.html")
+                            f"fiche_envoi_mission_{_mid}.html",
+                            genre="envoi", mission=_mission,
+                            nom_equipe=nom_equipe, nom_paroisse=_nom_par(pid),
+                            sig_gauche_nom=(_resp_eq or ""),
+                            sig_droite_nom=(_resp_par or ""))
                     else:
                         if not _rapport:
                             st.info("Le rapport n'est pas encore rempli — "
@@ -853,7 +1137,12 @@ def _onglet_missions(eid, pid, nom_equipe):
                             _rendre_fiche_imprimable(
                                 _fiche_rapport_html(_mission, nom_equipe,
                                                     _nom_par(pid), _resp_eq),
-                                f"fiche_rapport_mission_{_mid}.html")
+                                f"fiche_rapport_mission_{_mid}.html",
+                                genre="rapport", mission=_mission,
+                                nom_equipe=nom_equipe,
+                                nom_paroisse=_nom_par(pid),
+                                sig_gauche_nom="",
+                                sig_droite_nom=(_resp_eq or ""))
 
                 # ── le rapport : remplir / corriger ──────────────────
                 with st.expander("📝 " + ("Corriger le rapport de mission"
