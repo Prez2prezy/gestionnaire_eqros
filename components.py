@@ -666,6 +666,30 @@ def afficher_historique_suivi(equipe_id, filtre_type="Tous"):
                     st.rerun()
 
 
+def _message_rappel_dizaine(nom, prenom, matloc=""):
+    """v7.12.1 — LA VOIX DU RAPPEL (une seule pour toute la chaîne), comme
+    tu l'as écrite : le membre salué en entier, la rose de la dizaine, et
+    LE LIEN QUI OUVRE SON ESPACE TOUT PRÊT — son MatLoc dans l'adresse,
+    plus besoin de taper le code. Sans MatLoc, le lien reste public."""
+    _matloc = str(matloc).upper().strip() if matloc else ""
+    _lien = (f"{URL_ESPACE_SPIRITUEL}/?espace=1&matloc={_matloc}"
+             if _matloc else f"{URL_ESPACE_SPIRITUEL}/?espace=1")
+    return (f"Bonjour {nom} {prenom} 🙏\n"
+            "Un petit rappel fraternel : ta dizaine du jour t'attend 🌹\n\n"
+            f"{_lien}\n\n"
+            "Que la Vierge Marie veille sur toi! 🙏")
+
+
+def _message_rappel_dizaine_visiteur(libelle):
+    """v7.12.1 — la même voix pour les visiteurs de la chaîne (« Anonyme 1 »
+    ou son nom signé) ; le lien reste public : le visiteur n'a pas de
+    MatLoc."""
+    return (f"Bonjour {libelle} 🙏\n"
+            "Un petit rappel fraternel : ta dizaine du jour t'attend 🌹\n\n"
+            f"{URL_ESPACE_SPIRITUEL}/?espace=1\n\n"
+            "Que la Vierge Marie veille sur toi! 🙏")
+
+
 def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
     # v7.8.14 — SÉLECTEUR PERSISTANT : les onglets simples perdaient la main à
     # chaque widget modifié (p.ex. l'année des rappels ramenait aux
@@ -764,10 +788,7 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
             for _m in _membres:
                 st.markdown(f"**⏳ {_m[0]} {_m[1]}** - 📍 {_m[4]} / {_m[3]}")
                 if _m[2]:
-                    _msg = (f"Bonjour {_m[1]} 🌹\n\n"
-                            "Un petit rappel fraternel : ta dizaine du jour "
-                            f"t'attend 📿\n\n{URL_ESPACE_SPIRITUEL}/?espace=1"
-                            "\n\nQue la Vierge Marie te garde. 🕊️")
+                    _msg = _message_rappel_dizaine(_m[0], _m[1], _m[5])
                     _lien_diz = lien_whatsapp(_m[2], _msg)
                     if _lien_diz:
                         st.markdown(
@@ -790,12 +811,7 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
                     _ctc_tel = _ctc.replace(" ", "").replace("-", "") \
                         .replace(".", "").replace("(", "").replace(")", "")
                     if _ctc and _ctc_tel.lstrip("+").isdigit():
-                        _msg_v = ("Bonjour 🌹\n\n"
-                                  "Un petit rappel fraternel : ta dizaine du "
-                                  "jour t'attend 📿 — l'intention du prochain "
-                                  "compte sur toi.\n\n"
-                                  f"{URL_ESPACE_SPIRITUEL}/?espace=1"
-                                  "\n\nQue la Vierge Marie te garde. 🕊️")
+                        _msg_v = _message_rappel_dizaine_visiteur(_lib)
                         _lien_v = lien_whatsapp(_ctc, _msg_v)
                         if _lien_v:
                             st.markdown(
