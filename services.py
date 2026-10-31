@@ -902,8 +902,9 @@ def executer_rondes_dizaines(force=False):
                     _lien += "&matloc=" + urllib.parse.quote(str(_mat))
                 if push_envoyer_un(
                         _ab, "📿 Ta dizaine du jour t'attend",
-                        "L'intention du prochain compte sur toi — "
-                        f"ronde de {_rdv}. Que la Vierge Marie te garde. 🕊️",
+                        "Un petit rappel fraternel : l'intention du prochain "
+                        f"compte sur toi — ronde de {_rdv}. "
+                        "Que la Vierge Marie veille sur toi! 🙏",
                         _lien):
                     _ok += 1
                 else:
