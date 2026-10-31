@@ -11,6 +11,10 @@ from database import (c, commit_and_sync, enregistrer_chaine_seance,
                       _assurer_dizaines_journal,
                       intentions_reserve_du_numero,
                       ajouter_intention_reserve, reserve_lignes,
+                      # v7.12.0 — la liste des dizaines en attente (membres
+                      # ET visiteurs dénombrés) + les rondes du jour
+                      dizaines_du_jour_attente, dizaines_ronde_derniere,
+                      HEURES_RONDES,
                       feuillet_questions_lister, feuillet_questionnaire_existe,
                       feuillet_question_ajouter, feuillet_question_modifier,
                       feuillet_question_supprimer, feuillet_question_deplacer,
@@ -721,41 +725,43 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
         # liste de ceux qui n'ont pas encore pointé leur dizaine du jour,
         # chacun avec son message WhatsApp prêt à partir (un tap du
         # responsable, le message s'ouvre déjà écrit chez le membre).
+        # v7.12.0 — LA LISTE S'ÉLARGIT ET VIT SA VIE : ① les VISITEURS de la
+        # chaîne (ceux qui ont confié une intention) rejoignent la liste,
+        # identifiés comme les membres — les anonymes s'appellent
+        # « Anonyme 1, Anonyme 2, … » selon l'index du dénombrement, avec
+        # le contact laissé à l'envoi pour le message WhatsApp ; ② la
+        # bannière des RONDES (06h00 · 12h00 · 18h00 · 21h00) dit quand la
+        # liste a été mise à jour et combien de rappels sont partis.
         if not equipe_id and not paroisse_id:
             st.info("Ouvre cette section depuis une équipe ou une paroisse : "
                     "la liste des dizaines du jour y est tenue équipe par "
                     "équipe.")
         else:
-            _ph, _prm = (("AND m.equipe_id = ?", [equipe_id]) if equipe_id
-                         else ("AND m.paroisse_id = ?", [paroisse_id]))
             _assurer_dizaines_journal()
-            try:
-                # v7.11.1 — jointures ouvertes : un membre sans paroisse (ni
-                # même sans équipe) reste rappelé — personne n'est de trop
-                # dans la chaîne.
-                _attente = c.execute(
-                    f"""SELECT m.nom, m.prenom, m.whatsapp,
-                               COALESCE(e.nom_equipe, '—'),
-                               COALESCE(p.nom, '—')
-                        FROM membres m
-                        LEFT JOIN equipes e ON m.equipe_id=e.id
-                        LEFT JOIN paroisses p ON m.paroisse_id=p.id
-                        WHERE m.statut='actif' {_ph}
-                          AND NOT EXISTS (
-                              SELECT 1 FROM dizaines_journal d
-                              WHERE d.type='membre' AND d.jour=?
-                                AND UPPER(TRIM(d.matloc))
-                                    = UPPER(TRIM(m.matloc)))
-                        ORDER BY e.nom_equipe, m.nom, m.prenom""",
-                    (*_prm, date.today().isoformat())).fetchall()
-            except Exception:
-                _attente = []
+            _membres, _visiteurs = dizaines_du_jour_attente(equipe_id,
+                                                            paroisse_id)
+            # ── la bannière des rondes (v7.12.0) ─────────────────────
+            _dernieres = dizaines_ronde_derniere()
+            _mention_ronde = " · ".join(_h.replace(":", "h")
+                                        for _h in HEURES_RONDES)
+            if _dernieres and _dernieres[0][0] == date.today().isoformat():
+                _d0 = _dernieres[0]
+                st.info("**Ronde des dizaines — " + _mention_ronde + "** — "
+                        "dernière mise à jour : **" + str(_d0[1]) + "** (servie à "
+                        + str(_d0[2] or "?") + " · " + str(_d0[3] or 0)
+                        + " membre(s), " + str(_d0[4] or 0) + " visiteur(s) en "
+                        "attente · " + str(_d0[5] or 0) + " rappel(s) 🔔 partis).",
+                        icon="⏰")
+            else:
+                st.caption("⏰ Ronde des dizaines : " + _mention_ronde
+                           + " — la liste se met à jour et le rappel part à "
+                             "chaque ronde.")
             st.caption("📿 Ceux qui n'ont pas encore fait leur dizaine "
                        "aujourd'hui — un tap, et le message part chez eux.")
-            if not _attente:
+            if not _membres and not _visiteurs:
                 st.success("📿 Tout le monde a fait sa dizaine aujourd'hui — "
                            "merci pour la chaîne ! 🕊️")
-            for _m in _attente:
+            for _m in _membres:
                 st.markdown(f"**⏳ {_m[0]} {_m[1]}** - 📍 {_m[4]} / {_m[3]}")
                 if _m[2]:
                     _msg = (f"Bonjour {_m[1]} 🌹\n\n"
@@ -772,6 +778,38 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
                     st.caption("*(pas de numéro WhatsApp enregistré — "
                                "complète-le dans 👤 Mes membres)*")
                 st.markdown("---")
+            # ── les visiteurs de la chaîne (v7.12.0) ─────────────────
+            if _visiteurs:
+                st.markdown("#### 🕯️ Les visiteurs de la chaîne")
+                st.caption("Ils ont confié une intention : en retour, ils "
+                           "font leur dizaine chaque jour — les anonymes "
+                           "portent leur numéro du dénombrement.")
+                for (_n, _lib, _ctc, _jn) in _visiteurs:
+                    st.markdown(f"**⏳ {_lib}** — clé de chaîne : jour "
+                                f"{_jn:02d}")
+                    _ctc_tel = _ctc.replace(" ", "").replace("-", "") \
+                        .replace(".", "").replace("(", "").replace(")", "")
+                    if _ctc and _ctc_tel.lstrip("+").isdigit():
+                        _msg_v = ("Bonjour 🌹\n\n"
+                                  "Un petit rappel fraternel : ta dizaine du "
+                                  "jour t'attend 📿 — l'intention du prochain "
+                                  "compte sur toi.\n\n"
+                                  f"{URL_ESPACE_SPIRITUEL}/?espace=1"
+                                  "\n\nQue la Vierge Marie te garde. 🕊️")
+                        _lien_v = lien_whatsapp(_ctc, _msg_v)
+                        if _lien_v:
+                            st.markdown(
+                                f'<a href="{_lien_v}" target="_blank" '
+                                'class="whatsapp-link">📱 Rappeler sa dizaine'
+                                '</a>', unsafe_allow_html=True)
+                    elif _ctc:
+                        st.caption(f"✉️ contact noté : {_ctc} — par e-mail, "
+                                   "pas par WhatsApp.")
+                    else:
+                        st.caption("*(aucun contact laissé avec l'intention — "
+                                   "le rappel 🔔 de l'appli le touchera s'il "
+                                   "a dit oui)*")
+                    st.markdown("---")
 
     else:
         base_url = URL_ESPACE_SPIRITUEL
