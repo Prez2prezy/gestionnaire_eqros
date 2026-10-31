@@ -215,6 +215,10 @@ def _inserer_publie(s):
                 # ancienne sans contrainte UNIQUE, et la date
                 # de publication est TOUJOURS rafraîchie à la
                 # republication d'une version corrigée.
+                # v7.11.1 — `premiere_diffusion` se pose UNE
+                # SEULE FOIS (à l'INSERT) : l'alerte 🔔 du fil
+                # compte sa semaine depuis la PREMIÈRE
+                # diffusion, même si le feuillet est republié.
                 _cur = c.execute(
                     """UPDATE feuillets_publications
                        SET numero=?, date_publication=?
@@ -224,9 +228,11 @@ def _inserer_publie(s):
                 if (_cur.rowcount or 0) == 0:
                     c.execute(
                         """INSERT INTO feuillets_publications
-                           (annee_debut, mois, numero, date_publication)
-                           VALUES (?, ?, ?, ?)""",
+                           (annee_debut, mois, numero, date_publication,
+                            premiere_diffusion)
+                           VALUES (?, ?, ?, ?, ?)""",
                         (_an_fp, _mois_fp, _mois_fp,
+                         date.today().isoformat(),
                          date.today().isoformat()))
     elif s[1] == "questionnaire":
         # v7.10.2 — publication du questionnaire : les questions vivent déjà
