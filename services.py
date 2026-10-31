@@ -662,15 +662,19 @@ def publier_soumission(s):
             # v7.8.11 — UPDATE puis INSERT (au lieu d'ON CONFLICT) : robuste
             # même sur une base ancienne sans contrainte UNIQUE, et la date de
             # publication est TOUJOURS rafraîchie à chaque republication.
+            # v7.11.1 — `premiere_diffusion`, elle, se pose UNE SEULE FOIS (à
+            # l'INSERT) : l'alerte 🔔 du fil compte sa semaine à partir de la
+            # PREMIÈRE diffusion, pas des républications.
             _cur = c.execute("""UPDATE feuillets_publications
                                 SET numero=?, date_publication=?
                                 WHERE annee_debut=? AND mois=?""",
                           (_mois_fp, _auj, _an_fp, _mois_fp))
             if (_cur.rowcount or 0) == 0:
                 c.execute("""INSERT INTO feuillets_publications
-                             (annee_debut, mois, numero, date_publication)
-                             VALUES (?, ?, ?, ?)""",
-                          (_an_fp, _mois_fp, _mois_fp, _auj))
+                             (annee_debut, mois, numero, date_publication,
+                              premiere_diffusion)
+                             VALUES (?, ?, ?, ?, ?)""",
+                          (_an_fp, _mois_fp, _mois_fp, _auj, _auj))
         elif s[1] == "evenement":  # ancien type, gardé pour l'historique
             c.execute("""INSERT INTO evenements
                          (type_evenement, date_evenement, lieu, affiche_url,
@@ -758,4 +762,3 @@ def executer_publications_programmees():
             commit_and_sync()
         except Exception as e:
             logger.warning(f"publications programmées : commit ({e!r})")
-
