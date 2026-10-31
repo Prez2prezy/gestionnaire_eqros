@@ -72,6 +72,18 @@ if _time_mod.time() - float(st.session_state.get("_reveil_programmes_ts", 0)) > 
     from services import executer_publications_programmees
     executer_publications_programmees()
 
+# --- v7.12.0 : LA RONDE DES DIZAINES (lazy cron, même mécanique) ---
+# 4 fois par jour (06h00 · 12h00 · 18h00 · 21h00 — heures de Côte
+# d'Ivoire) : la liste des dizaines en attente est mise à jour et le
+# rappel part en notification push sur les téléphones qui ont dit oui.
+if _time_mod.time() - float(st.session_state.get("_reveil_rondes_ts", 0)) > 60:
+    st.session_state["_reveil_rondes_ts"] = _time_mod.time()
+    try:
+        from services import executer_rondes_dizaines
+        executer_rondes_dizaines()
+    except Exception:
+        pass
+
 
 # --- INTERCEPTION DES LIENS SPECIAUX ---
 params = st.query_params
@@ -85,7 +97,25 @@ if espace_val:
     # Au cas où Streamlit renvoie une liste au lieu d'une chaîne
     if isinstance(espace_val, list): espace_val = espace_val[0]
     if isinstance(matloc_val, list): matloc_val = matloc_val[0]
-    
+
+    # v7.12.0 — le téléphone qui vient de dire « oui » aux rappels revient
+    # avec son abonnement dans l'adresse (?push_abo=…) : on le note, puis
+    # l'adresse est nettoyée — le fidèle ne voit rien, une seule fois.
+    _push_abo = params.get("push_abo", None)
+    if _push_abo:
+        try:
+            from database import push_abonnement_enregistrer
+            from views.view_espace_membre import _cle_lecteur_pdr, abonnement_depuis_url
+            abonnement_depuis_url(
+                _push_abo[0] if isinstance(_push_abo, list) else _push_abo,
+                _cle_lecteur_pdr(), matloc_val)
+        except Exception:
+            pass
+        try:
+            del params["push_abo"]
+        except Exception:
+            pass
+
     # v7.8.14 — icône 📿 (favicon + PWA) pour les Espaces de Prière
     from components import injecter_icone_pwa
     injecter_icone_pwa(espace=True)
