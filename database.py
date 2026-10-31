@@ -1346,13 +1346,18 @@ def _assurer_table_reserve():
             commit_and_sync()
         except Exception as e:
             logger.warning(f"_assurer_table_reserve : {e!r}")
+    # v7.12.0 — auteur_contact : le contact laissé par le fidèle (WhatsApp /
+    # e-mail) voyage avec son intention en réserve — c'est lui qui permet
+    # d'alerter le visiteur de la chaîne sur son téléphone (rappels 4×/jour).
     for _col in ("active INTEGER DEFAULT 1", "qui TEXT", "jour_naissance INTEGER",
-                 "publiee INTEGER DEFAULT 1", "date_publication TEXT"):
+                 "publiee INTEGER DEFAULT 1", "date_publication TEXT",
+                 "auteur_contact TEXT"):
         try:
             c.execute(f"ALTER TABLE intentions_reserve ADD COLUMN {_col}")
             commit_and_sync()
         except Exception:
             pass  # colonne déjà présente
+    _retroremplir_contact_reserve()
     _table_averee("intentions_reserve")
 
 
@@ -1462,7 +1467,8 @@ def traiter_intentions_du_jour(force=False):
     try:
         _assurer_table_du_jour()
         _attente = c.execute("""SELECT id, texte, auteur_nom, anonyme,
-                                       jour_naissance, equipe_id, paroisse_id
+                                       jour_naissance, equipe_id, paroisse_id,
+                                       auteur_contact
                                 FROM intentions_du_jour
                                 WHERE traitee=0 AND date_reception < ?
                                 ORDER BY id ASC""", (_auj,)).fetchall()
@@ -1473,20 +1479,24 @@ def traiter_intentions_du_jour(force=False):
         _slots = list(range(1, 21))
         _rd.shuffle(_slots)
         _remplace = set()
-        for (_zid, _txt, _nom, _anon, _jn, _eqi, _pri) in _attente:
+        for (_zid, _txt, _nom, _anon, _jn, _eqi, _pri, _ctc) in _attente:
             _slot = _slots[0]
             _slots = _slots[1:] + [_slot]     # pioche mélangée : ordre aléatoire
             if _slot not in _remplace:
                 c.execute("""UPDATE intentions_reserve SET active=0
                              WHERE numero_med=? AND active=1""", (_slot,))
                 _remplace.add(_slot)
+            # v7.12.0 — le contact du fidèle voyage avec son intention : la
+            # chaîne saura l'alerter sur son téléphone pendant ses 20 jours.
             c.execute("""INSERT INTO intentions_reserve
                          (numero_med, texte, auteur_nom, equipe_id, paroisse_id,
-                          date_ajout, active, qui, jour_naissance, publiee, date_publication)
-                         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?)""",
+                          date_ajout, active, qui, jour_naissance, publiee,
+                          date_publication, auteur_contact)
+                         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?)""",
                       (_slot, _txt, None if _anon else ((str(_nom).strip() or None) if _nom else None),
                        _eqi, _pri, _auj, "cet anonyme" if _anon else "notre prochain",
-                       int(_jn) if _jn else None, _demain))
+                       int(_jn) if _jn else None, _demain,
+                       (str(_ctc).strip() or None) if _ctc else None))
             c.execute("""UPDATE intentions_du_jour SET traitee=1, date_traitement=?
                          WHERE id=?""", (_auj, _zid))
         commit_and_sync()
@@ -1725,7 +1735,7 @@ def envoyer_intention_du_jour_en_reserve(zid, texte=None):
         _assurer_table_du_jour()
         _assurer_table_reserve()
         _row = c.execute("""SELECT texte, auteur_nom, anonyme, jour_naissance,
-                                   equipe_id, paroisse_id
+                                   equipe_id, paroisse_id, auteur_contact
                             FROM intentions_du_jour WHERE id=? AND traitee=0""",
                          (int(zid),)).fetchone()
         if not _row:
@@ -1749,14 +1759,16 @@ def envoyer_intention_du_jour_en_reserve(zid, texte=None):
                   (_slot, _auj.isoformat()))
         c.execute("""INSERT INTO intentions_reserve
                      (numero_med, texte, auteur_nom, equipe_id, paroisse_id,
-                      date_ajout, active, qui, jour_naissance, publiee, date_publication)
-                     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?)""",
+                      date_ajout, active, qui, jour_naissance, publiee,
+                      date_publication, auteur_contact)
+                     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?)""",
                   (_slot, _txt,
                    None if _anon else ((str(_row[1]).strip() or None) if _row[1] else None),
                    _row[4], _row[5], _auj.isoformat(),
                    "cet anonyme" if _anon else "notre prochain",
                    int(_row[3]) if _row[3] else None,
-                   _demain))
+                   _demain,
+                   (str(_row[6]).strip() or None) if _row[6] else None))
         c.execute("UPDATE intentions_du_jour SET traitee=1, date_traitement=? "
                   "WHERE id=?", (_auj.isoformat(), int(zid)))
         commit_and_sync()
@@ -2919,4 +2931,375 @@ def mission_supprimer(id_mission):
         return True
     except Exception as e:
         logger.warning(f"mission_supprimer : {e!r}")
+        return False
+
+
+# ======================================================================
+# v7.12.0 — LA CHAÎNE ALERTE SUR LES TÉLÉPHONES
+# ======================================================================
+# « La mise à jour de la liste de ceux qui n'ont pas encore fait leur
+# dizaine et le rappel se feront 4 fois dans la journée : 06h00 - 12h00 -
+# 18h00 - 21h00. » Et : « tout visiteur ayant déposé une intention sera
+# identifié individuellement comme les membres (les anonymes → Anonyme 1,
+# Anonyme 2, Anonyme 3, … selon l'index du dénombrement). »
+# Trois pièces s'ajoutent au cœur :
+#   ① LE DÉNOMBREMENT des visiteurs de la chaîne — chaque fidèle porteur
+#      d'une intention vivante (zone du jour non traitée + réserve active
+#      et publiée) reçoit son rang d'entrée dans la chaîne : les anonymes
+#      s'appellent Anonyme 1, Anonyme 2, Anonyme 3… ; les signés gardent
+#      leur nom. Le contact laissé à l'envoi (WhatsApp / e-mail) voyage
+#      avec l'intention (colonne auteur_contact, rétro-remplie) ;
+#   ② LES RONDES — 4 fois par jour, la liste des dizaines en attente est
+#      mise à jour et le rappel part (table dizaines_rondes, une ronde
+#      servie une seule fois quel que soit le nombre de sessions) ;
+#   ③ LES ABONNEMENTS PUSH — le téléphone qui a accepté les notifications
+#      est connu (push_abonnements) ; les clés VAPID naissent et vivent
+#      en base (parametres_app), aucune configuration à faire.
+# ----------------------------------------------------------------------
+
+_CONTACT_RESERVE_FAIT_LE = None
+
+
+def _retroremplir_contact_reserve():
+    """v7.12.0 — les intentions déjà en réserve (nées avant la colonne
+    auteur_contact) retrouvent le contact laissé par leur fidèle dans la
+    zone du jour (le plus récent du même jour de naissance). Une seule
+    passe par processus, silencieuse."""
+    global _CONTACT_RESERVE_FAIT_LE
+    _auj = date.today().isoformat()
+    if _CONTACT_RESERVE_FAIT_LE == _auj:
+        return
+    try:
+        c.execute("""UPDATE intentions_reserve SET auteur_contact = (
+                        SELECT z.auteur_contact FROM intentions_du_jour z
+                        WHERE z.jour_naissance = intentions_reserve.jour_naissance
+                          AND z.auteur_contact IS NOT NULL
+                        ORDER BY z.id DESC LIMIT 1)
+                     WHERE auteur_contact IS NULL AND jour_naissance IS NOT NULL""")
+        commit_and_sync()
+        _CONTACT_RESERVE_FAIT_LE = _auj
+    except Exception as e:
+        logger.warning(f"_retroremplir_contact_reserve : {e!r}")
+
+
+def denombrement_visiteurs_chaine(equipe_id=None, paroisse_id=None):
+    """📿 LE DÉNOMBREMENT DE LA CHAÎNE (v7.12.0) — tous les visiteurs qui
+    portent actuellement une intention vivante (zone du jour non traitée +
+    réserve active et publiée), dans l'ordre où leur intention est entrée
+    dans la chaîne : le rang N est LEUR numéro (« Anonyme 1, Anonyme 2… »,
+    stable d'un jour à l'autre ; les visiteurs signés gardent leur nom).
+    Retourne [(n, jrnais, libellé, contact, source, id_ligne)] — un rang
+    par JOUR DE NAISSANCE (la clé discrète de la chaîne ; si un même jour
+    a confié plusieurs intentions, une seule ligne compte son rang).
+    Scope : équipe OU paroisse (None = toute la chaîne)."""
+    _assurer_table_reserve()
+    _assurer_table_du_jour()
+    _eq_scope, _par_scope = "", ""
+    if equipe_id is not None:
+        _eq_scope = " AND equipe_id=?"
+        _par_scope = " AND equipe_id=?"
+    elif paroisse_id is not None:
+        _eq_scope = " AND paroisse_id=?"
+        _par_scope = " AND paroisse_id=?"
+    # DEUX branches (réserve + zone du jour) : la valeur du scope part DEUX fois
+    _prm = []
+    if equipe_id is not None:
+        _prm = [int(equipe_id), int(equipe_id)]
+    elif paroisse_id is not None:
+        _prm = [int(paroisse_id), int(paroisse_id)]
+    try:
+        _brutes = c.execute(f"""
+            SELECT 'R' AS src, id, auteur_nom, qui, jour_naissance,
+                   auteur_contact, date_ajout AS d
+            FROM intentions_reserve
+            WHERE active=1
+              AND (COALESCE(publiee,1)=1
+                   OR (publiee=0 AND date_publication IS NOT NULL))
+              AND jour_naissance IS NOT NULL{_eq_scope}
+            UNION ALL
+            SELECT 'Z' AS src, id, auteur_nom, NULL AS qui, jour_naissance,
+                   auteur_contact, date_reception AS d
+            FROM intentions_du_jour
+            WHERE traitee=0 AND jour_naissance IS NOT NULL{_par_scope}
+            ORDER BY d ASC, src ASC, id ASC""", tuple(_prm)).fetchall()
+    except Exception as e:
+        logger.warning(f"denombrement_visiteurs_chaine : {e!r}")
+        return []
+    _vus, _sortie = {}, []
+    for (_src, _id, _nom, _qui, _jn, _ctc, _d) in _brutes:
+        _jn = int(_jn) if _jn else 0
+        if not _jn or _jn in _vus:
+            continue          # un rang par jour de naissance (le plus ancien gagne)
+        _vus[_jn] = True
+        _n = len(_sortie) + 1
+        _lib = (f"Anonyme {_n}" if (_nom is None or str(_qui or "") == "cet anonyme")
+                else (str(_nom).strip() or f"Visiteur {_n}"))
+        _sortie.append((_n, _jn, _lib,
+                        (str(_ctc).strip() if _ctc else "") or "",
+                        _src, _id))
+    return _sortie
+
+
+def dizaines_du_jour_attente(equipe_id=None, paroisse_id=None):
+    """📿 LA LISTE DES DIZAINES EN ATTENTE (v7.12.0) — (membres, visiteurs)
+    qui n'ont PAS encore fait leur dizaine aujourd'hui. Les membres sont
+    les actifs de l'équipe (ou de la paroisse) ; les visiteurs sont les
+    porteurs d'une intention vivante, identifiés par le dénombrement
+    (Anonyme 1, Anonyme 2… — voir denombrement_visiteurs_chaine).
+    membres   → [(nom, prénom, whatsapp, équipe, paroisse, matloc)]
+    visiteurs → [(n, libellé, contact, jrnais)]"""
+    _assurer_dizaines_journal()
+    _jour = date.today().isoformat()
+    _membres = []
+    try:
+        if equipe_id:
+            _ph, _prm = "AND m.equipe_id=?", [int(equipe_id)]
+        elif paroisse_id:
+            _ph, _prm = "AND m.paroisse_id=?", [int(paroisse_id)]
+        else:
+            _ph, _prm = "", []
+        _membres = c.execute(
+            f"""SELECT m.nom, m.prenom, m.whatsapp,
+                       COALESCE(e.nom_equipe, '—'), COALESCE(p.nom, '—'), m.matloc
+                FROM membres m
+                LEFT JOIN equipes e ON m.equipe_id=e.id
+                LEFT JOIN paroisses p ON m.paroisse_id=p.id
+                WHERE m.statut='actif' {_ph}
+                  AND NOT EXISTS (
+                      SELECT 1 FROM dizaines_journal d
+                      WHERE d.type='membre' AND d.jour=?
+                        AND UPPER(TRIM(d.matloc)) = UPPER(TRIM(m.matloc)))
+                ORDER BY e.nom_equipe, m.nom, m.prenom""",
+            (*_prm, _jour)).fetchall()
+    except Exception as e:
+        logger.warning(f"dizaines_du_jour_attente (membres) : {e!r}")
+        _membres = []
+    _visiteurs = []
+    try:
+        for (_n, _jn, _lib, _ctc, _src, _id) in denombrement_visiteurs_chaine(
+                equipe_id, paroisse_id):
+            _pointe = c.execute(
+                """SELECT 1 FROM dizaines_journal
+                   WHERE type='visiteur' AND jour=? AND jrnais=? LIMIT 1""",
+                (_jour, _jn)).fetchone()
+            if _pointe:
+                continue
+            _visiteurs.append((_n, _lib, _ctc, _jn))
+    except Exception as e:
+        logger.warning(f"dizaines_du_jour_attente (visiteurs) : {e!r}")
+    return (_membres, _visiteurs)
+
+
+# ── LES RONDES DE LA JOURNÉE (4 fois par jour) ──────────────────────────
+HEURES_RONDES = ("06:00", "12:00", "18:00", "21:00")
+
+
+def _assurer_dizaines_rondes():
+    """Création douce de dizaines_rondes (bases distantes anciennes)."""
+    if _table_reconnue("dizaines_rondes"):
+        return
+    try:
+        c.execute("SELECT id FROM dizaines_rondes LIMIT 1")
+    except Exception:
+        c.execute("""CREATE TABLE IF NOT EXISTS dizaines_rondes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        jour TEXT NOT NULL,
+                        heure_rappel TEXT NOT NULL,
+                        servie_le TEXT,
+                        nb_membres INTEGER DEFAULT 0,
+                        nb_visiteurs INTEGER DEFAULT 0,
+                        push_ok INTEGER DEFAULT 0,
+                        push_ko INTEGER DEFAULT 0,
+                        UNIQUE(jour, heure_rappel))""")
+        commit_and_sync()
+    _table_averee("dizaines_rondes")
+
+
+def dizaines_ronde_reserver(jour, heure_rappel):
+    """Réserve la ronde (jour, heure) pour CE processus : le INSERT
+    n'aboutit qu'UNE fois quel que soit le nombre de sessions réveillées
+    (la ligne existe déjà → 0 ligne insérée → ce n'est pas nous).
+    True = c'est nous qui servons la ronde."""
+    _assurer_dizaines_rondes()
+    try:
+        _cur = c.execute("""INSERT OR IGNORE INTO dizaines_rondes
+                            (jour, heure_rappel) VALUES (?, ?)""",
+                         (str(jour), str(heure_rappel)))
+        commit_and_sync()
+        return bool(getattr(_cur, "rowcount", 0))
+    except Exception as e:
+        logger.warning(f"dizaines_ronde_reserver : {e!r}")
+        return False
+
+
+def dizaines_ronde_completer(jour, heure_rappel, servie_le,
+                             nb_membres=0, nb_visiteurs=0,
+                             push_ok=0, push_ko=0):
+    """Note le résultat de la ronde (comptages + pushes partis)."""
+    _assurer_dizaines_rondes()
+    try:
+        c.execute("""UPDATE dizaines_rondes SET servie_le=?, nb_membres=?,
+                     nb_visiteurs=?, push_ok=?, push_ko=?
+                     WHERE jour=? AND heure_rappel=?""",
+                  (str(servie_le), int(nb_membres), int(nb_visiteurs),
+                   int(push_ok), int(push_ko), str(jour), str(heure_rappel)))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"dizaines_ronde_completer : {e!r}")
+        return False
+
+
+def dizaines_ronde_derniere():
+    """La dernière ronde servie [(jour, heure, servie_le, membres,
+    visiteurs, push_ok, push_ko)], la plus récente d'abord (5 max)."""
+    _assurer_dizaines_rondes()
+    try:
+        return c.execute("""SELECT jour, heure_rappel, servie_le, nb_membres,
+                                   nb_visiteurs, push_ok, push_ko
+                            FROM dizaines_rondes WHERE servie_le IS NOT NULL
+                            ORDER BY jour DESC, heure_rappel DESC LIMIT 5"""
+                         ).fetchall()
+    except Exception as e:
+        logger.warning(f"dizaines_ronde_derniere : {e!r}")
+        return []
+
+
+# ── LES ABONNEMENTS PUSH (le téléphone qui a dit oui) ───────────────────
+def _assurer_push_abonnements():
+    """Création douce de push_abonnements (bases distantes anciennes)."""
+    if _table_reconnue("push_abonnements"):
+        return
+    try:
+        c.execute("SELECT id FROM push_abonnements LIMIT 1")
+    except Exception:
+        c.execute("""CREATE TABLE IF NOT EXISTS push_abonnements (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        cle_lecteur TEXT,
+                        matloc TEXT,
+                        jrnais INTEGER,
+                        endpoint TEXT UNIQUE,
+                        p256dh TEXT,
+                        auth TEXT,
+                        cree_le TEXT)""")
+        commit_and_sync()
+    _table_averee("push_abonnements")
+
+
+def push_abonnement_enregistrer(cle_lecteur, endpoint, p256dh, auth,
+                                matloc=None, jrnais=None):
+    """Note (ou rafraîchit) l'abonnement d'un téléphone. Un même lecteur ne
+    garde qu'une seule ligne : l'ancienne s'efface quand le téléphone
+    redit oui. Retourne True si écrit."""
+    _assurer_push_abonnements()
+    try:
+        c.execute("DELETE FROM push_abonnements WHERE cle_lecteur=?",
+                  (str(cle_lecteur or ""),))
+        c.execute("""INSERT OR REPLACE INTO push_abonnements
+                     (cle_lecteur, matloc, jrnais, endpoint, p256dh, auth, cree_le)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                  (str(cle_lecteur or ""),
+                   (str(matloc).upper().strip() if matloc else None),
+                   int(jrnais) if jrnais else None,
+                   str(endpoint or ""), str(p256dh or ""), str(auth or ""),
+                   datetime.now().isoformat(timespec="seconds")))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"push_abonnement_enregistrer : {e!r}")
+        return False
+
+
+def push_abonnement_note_jrnais(cle_lecteur, jrnais):
+    """Le visiteur a dévoilé son jour de naissance (dizaine ou intention) :
+    l'abonnement de CE téléphone connaît désormais sa clé de chaîne — les
+    rondes sauront s'il a déjà prié."""
+    _assurer_push_abonnements()
+    try:
+        c.execute("""UPDATE push_abonnements SET jrnais=?
+                     WHERE cle_lecteur=?""",
+                  (int(jrnais), str(cle_lecteur or "")))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"push_abonnement_note_jrnais : {e!r}")
+        return False
+
+
+def push_abonnements_actifs():
+    """Tous les abonnements vivants [(id, cle_lecteur, matloc, jrnais,
+    endpoint, p256dh, auth)]."""
+    _assurer_push_abonnements()
+    try:
+        return c.execute("""SELECT id, cle_lecteur, matloc, jrnais, endpoint,
+                                   p256dh, auth FROM push_abonnements
+                            ORDER BY id""").fetchall()
+    except Exception as e:
+        logger.warning(f"push_abonnements_actifs : {e!r}")
+        return []
+
+
+def push_abonnement_supprimer(endpoint):
+    """Retire un abonnement mort (le service d'envoi ne veut plus de lui)."""
+    _assurer_push_abonnements()
+    try:
+        c.execute("DELETE FROM push_abonnements WHERE endpoint=?",
+                  (str(endpoint or ""),))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"push_abonnement_supprimer : {e!r}")
+        return False
+
+
+def push_abonnement_de_cle(cle_lecteur):
+    """1 si CE téléphone (clé du lecteur) a déjà dit oui aux rappels."""
+    _assurer_push_abonnements()
+    try:
+        return 1 if c.execute(
+            "SELECT 1 FROM push_abonnements WHERE cle_lecteur=? LIMIT 1",
+            (str(cle_lecteur or ""),)).fetchone() else 0
+    except Exception as e:
+        logger.warning(f"push_abonnement_de_cle : {e!r}")
+        return 0
+
+
+# ── LES PARAMÈTRES DE LA MAISON (les clés VAPID y naissent) ─────────────
+def _assurer_parametres():
+    """Création douce de parametres_app (bases distantes anciennes)."""
+    if _table_reconnue("parametres_app"):
+        return
+    try:
+        c.execute("SELECT cle FROM parametres_app LIMIT 1")
+    except Exception:
+        c.execute("""CREATE TABLE IF NOT EXISTS parametres_app (
+                        cle TEXT PRIMARY KEY,
+                        valeur TEXT)""")
+        commit_and_sync()
+    _table_averee("parametres_app")
+
+
+def parametre_lire(cle):
+    """Lit un paramètre de la maison (None s'il n'existe pas)."""
+    _assurer_parametres()
+    try:
+        _r = c.execute("SELECT valeur FROM parametres_app WHERE cle=?",
+                       (str(cle),)).fetchone()
+        return _r[0] if _r else None
+    except Exception as e:
+        logger.warning(f"parametre_lire : {e!r}")
+        return None
+
+
+def parametre_ecrire(cle, valeur):
+    """Écrit un paramètre de la maison (idempotent)."""
+    _assurer_parametres()
+    try:
+        c.execute("""INSERT INTO parametres_app (cle, valeur) VALUES (?, ?)
+                     ON CONFLICT(cle) DO UPDATE SET valeur=excluded.valeur""",
+                  (str(cle), str(valeur)))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"parametre_ecrire : {e!r}")
         return False
