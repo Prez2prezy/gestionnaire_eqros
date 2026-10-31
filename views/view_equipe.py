@@ -14,7 +14,8 @@ from database import (c, commit_and_sync, verifier_reparer_intentions, jours_dep
                       retirer_intention_reserve, publier_reserve_due,
                       OBJECTIF_RESERVE,
                       mission_creer, missions_equipe,
-                      mission_rapport_enregistrer, mission_supprimer)
+                      mission_rapport_enregistrer, mission_supprimer,
+                      mission_prochaine_seance, derniere_chaine_seance)
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
@@ -416,20 +417,45 @@ def _entete_fiche_mission(titre_fiche, soustitre):
             + '<div class="fm-soustitre">' + soustitre + '</div>')
 
 
-def _bandeau_mission(mission, nom_equipe, nom_paroisse):
-    """Ligne d'identité de la mission (équipe, paroisse, date, lieu)."""
-    _d = str(mission.get("date_mission") or "—")
+def _periode_mission_txt(mission, eid=None):
+    """v7.11.1 — Le texte de la PÉRIODE d'une mission : « du 24/10/2026 au
+    21/11/2026 », ou « du 24/10/2026 jusqu'à la prochaine séance » tant
+    que la séance suivante n'a pas été enregistrée (dès qu'elle l'est, la
+    période se referme toute seule sur sa date). Les missions anciennes
+    (une seule date) affichent « du … » à la hauteur de leur date."""
+    _deb = str(mission.get("date_debut") or mission.get("date_mission") or "").strip()
+    _deb_txt = "—"
     try:
-        from datetime import date as _d_cls
-        _d = _d_cls.fromisoformat(str(mission["date_mission"])).strftime(
-            "%d/%m/%Y")
+        if _deb:
+            _deb_txt = safe_date(_deb).strftime("%d/%m/%Y")
     except Exception:
-        pass
+        _deb_txt = _deb or "—"
+    _fin = str(mission.get("date_fin") or "").strip()
+    if not _fin and eid and _deb:
+        _fin = mission_prochaine_seance(eid, _deb) or ""
+    if _fin:
+        try:
+            _fin_txt = safe_date(_fin).strftime("%d/%m/%Y")
+        except Exception:
+            _fin_txt = _fin
+        return f"du {_deb_txt} au {_fin_txt}"
+    return f"du {_deb_txt} jusqu'à la prochaine séance"
+
+
+def _bandeau_mission(mission, nom_equipe, nom_paroisse, eid=None):
+    """Ligne d'identité de la mission (équipe, paroisse, période, lieu).
+    v7.11.1 — la DATE laisse place à la PÉRIODE (une mission se déroule du
+    lendemain de la dernière séance de prière jusqu'à la prochaine séance)
+    et le groupe envoyé s'affiche quand l'équipe se scinde."""
+    _groupe = str(mission.get("groupe") or "").strip().upper()
+    _grp_txt = (" — groupe " + _groupe) if _groupe else ""
     return ('<div class="fm-bandeau">'
-            '<span>✈️ <b>Équipe :</b> ' + html.escape(nom_equipe) + '</span>'
+            '<span>✈️ <b>Équipe :</b> ' + html.escape(nom_equipe) + _grp_txt
+            + '</span>'
             '<span>🏘️ <b>Paroisse :</b> ' + html.escape(nom_paroisse or "—")
             + '</span>'
-            '<span>📅 <b>Date :</b> ' + _d + '</span>'
+            '<span>🗓️ <b>Période :</b> '
+            + html.escape(_periode_mission_txt(mission, eid)) + '</span>'
             '<span>📍 <b>Lieu :</b> ' + html.escape(mission.get("lieu") or "—")
             + '</span></div>')
 
@@ -579,7 +605,13 @@ def _onglet_missions(eid, pid, nom_equipe):
     """✈️ ENVOI EN MISSION — le responsable prépare l'envoi (fiche
     imprimable : personnes + objectif) puis range le retour (fiche de
     rapport imprimable). Les fiches se gardent dans l'équipe, prêtes à
-    être re-imprimées."""
+    être re-imprimées.
+    v7.11.1 — LA MISSION SE DÉROULE SUR UNE PÉRIODE : du lendemain de la
+    dernière séance de prière mensuelle jusqu'à la prochaine séance (la
+    fin se referme toute seule dès que la séance suivante est
+    enregistrée). ET L'ÉQUIPE PEUT SE SCINDER : chaque mission porte son
+    groupe (A…Z) et l'onglet se range en « ✈️ Les missions de l'équipe :
+    groupe A / groupe B / … »."""
     _info_eq = c.execute("SELECT responsable FROM equipes WHERE id=?",
                          (eid,)).fetchone()
     _resp_eq = (_info_eq[0] if _info_eq and _info_eq[0] else
@@ -589,6 +621,23 @@ def _onglet_missions(eid, pid, nom_equipe):
         _r = c.execute("SELECT responsable FROM paroisses WHERE id=?",
                        (pid,)).fetchone()
         _resp_par = _r[0] if _r else None
+
+    # v7.11.1 — le début PROPOSÉ : le lendemain de la dernière séance de
+    # prière mensuelle enregistrée (chaîne de séance) ; sans séance connue,
+    # aujourd'hui. La fin, elle, reste ouverte : « jusqu'à la prochaine
+    # séance » tant que le responsable ne la fixe pas lui-même.
+    _deb_defaut, _note_deb = date.today(), "aucune séance enregistrée pour "\
+        "l'instant — le début est proposé à aujourd'hui"
+    try:
+        _derniere = derniere_chaine_seance(eid)
+        if _derniere and _derniere[1]:
+            _ds = safe_date(_derniere[1])
+            if _ds:
+                _deb_defaut = date.fromordinal(_ds.toordinal() + 1)
+                _note_deb = ("le lendemain de la dernière séance ("
+                             + _ds.strftime("%d/%m/%Y") + ")")
+    except Exception:
+        pass
 
     with st.expander("➕ Préparer une mission (fiche d'envoi en mission)"):
         with st.form("form_mission", clear_on_submit=True):
@@ -601,11 +650,32 @@ def _onglet_missions(eid, pid, nom_equipe):
                 placeholder="Ex. : porter la prière du Rosaire aux familles "
                             "éloignées, retrouver les membres absents, "
                             "inviter de nouveaux équipiers…")
-            _c1, _c2 = st.columns(2)
+            _c1, _c2, _c3 = st.columns(3)
             with _c1:
-                _date_m = st.date_input("Date de la mission", value=None)
+                _date_deb = st.date_input(
+                    "🗓️ Début de la mission", value=_deb_defaut,
+                    help="Proposé d'office : " + _note_deb + ".")
             with _c2:
+                _date_fin = st.date_input(
+                    "Fin de la mission (facultatif)", value=None,
+                    help="Laisse vide : la mission court jusqu'à la "
+                         "prochaine séance de prière — dès qu'elle est "
+                         "enregistrée, la période se referme sur sa date.")
+            with _c3:
+                _groupe = st.selectbox(
+                    "✈️ Groupe envoyé en mission",
+                    list("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), index=0,
+                    help="L'équipe peut se scinder en plusieurs groupes : "
+                         "chaque groupe porte ses propres missions.")
+            with _c1:
                 _lieu = st.text_input("Lieu / quartier / familles visitées")
+            with _c2:
+                st.markdown(
+                    '<div style="font-size:0.82rem; opacity:0.75; '
+                    'margin-top:0.6rem;">🛐 Une mission se déroule du '
+                    'lendemain de la dernière séance de prière mensuelle '
+                    'jusqu\u2019à la prochaine.</div>',
+                    unsafe_allow_html=True)
             _membres = c.execute(
                 """SELECT id, matloc, nom, prenom, numero_meditation,
                           whatsapp FROM membres
@@ -629,6 +699,9 @@ def _onglet_missions(eid, pid, nom_equipe):
                              "fiche — écris-le.")
                 elif not _choisis and not _hors.strip():
                     st.error("Liste au moins une personne envoyée en mission.")
+                elif (_date_deb and _date_fin and _date_fin < _date_deb):
+                    st.error("La fin de la mission ne peut pas précéder son "
+                             "début.")
                 else:
                     _participants = []
                     for _lbl in _choisis:
@@ -647,14 +720,21 @@ def _onglet_missions(eid, pid, nom_equipe):
                                                   "contact": "", "externe": 1})
                     _mid = mission_creer(
                         eid, pid, _titre.strip(), _objectif.strip(),
-                        date_mission=(_date_m.isoformat() if _date_m else None),
+                        date_mission=(_date_deb.isoformat() if _date_deb
+                                      else None),
                         lieu=(_lieu.strip() or None),
                         participants=_participants,
-                        auteur_nom=st.session_state.get('username'))
+                        auteur_nom=st.session_state.get('username'),
+                        date_debut=(_date_deb.isoformat() if _date_deb
+                                    else None),
+                        date_fin=(_date_fin.isoformat() if _date_fin
+                                  else None),
+                        groupe=_groupe)
                     if _mid:
                         st.session_state["flash_success"] = (
-                            "✈️ Mission ouverte ! Ta fiche d'envoi est prête "
-                            "juste en dessous — imprime-la.")
+                            "✈️ Mission ouverte pour le groupe " + _groupe
+                            + " ! Ta fiche d'envoi est prête juste en "
+                              "dessous — imprime-la.")
                         st.rerun()
                     else:
                         st.error("La mission n'a pas pu être ouverte — "
@@ -665,140 +745,161 @@ def _onglet_missions(eid, pid, nom_equipe):
         st.info("Aucune mission pour le moment — ouvre la première : la fiche "
                 "d'envoi en mission naîtra de ta préparation.")
         return
-    st.markdown("#### ✈️ Les missions de l'équipe (" + str(len(_missions))
-                + ")")
-    for (_mid, _titre, _objectif, _date_m, _lieu, _part_json, _statut,
-         _date_envoi, _auteur, _rapport_json, _date_rapport) in _missions:
-        try:
-            _participants = json.loads(_part_json or "[]")
-        except Exception:
-            _participants = []
-        try:
-            _rapport = json.loads(_rapport_json or "{}")
-        except Exception:
-            _rapport = {}
-        _mission = {"id": _mid, "titre": _titre, "objectif": _objectif,
-                    "date_mission": _date_m, "lieu": _lieu,
-                    "participants": _participants, "statut": _statut,
-                    "date_envoi": _date_envoi, "auteur_nom": _auteur,
-                    "rapport": _rapport, "date_rapport": _date_rapport}
-        _d_aff = _date_m or "date à fixer"
-        _badge = _STATUTS_MISSION.get(_statut, _statut)
-        with st.expander("✈️ " + _titre + " — " + str(_d_aff)
-                         + "   ·   " + _badge):
-            _c1, _c2, _c3 = st.columns(3)
-            with _c1:
-                if st.button("🖨️ Fiche d'envoi", key=f"mi_env_{_mid}",
-                             width="stretch", type="primary"):
-                    st.session_state["mission_fiche"] = ("envoi", _mid)
-            with _c2:
-                if st.button("📝 Rapport de mission", key=f"mi_rap_{_mid}",
-                             width="stretch"):
-                    st.session_state["mission_fiche"] = ("rapport", _mid)
-            with _c3:
-                if st.button("🗑️ Supprimer", key=f"mi_del_{_mid}",
-                             width="stretch",
-                             help="Retire définitivement cette mission "
-                                  "(essai erroné)."):
-                    st.session_state["mission_suppr"] = _mid
-            if st.session_state.get("mission_suppr") == _mid:
-                st.warning("Retirer définitivement « " + _titre + " » et son "
-                           "rapport ?")
-                _c1, _c2 = st.columns(2)
+    # v7.11.1 — L'ÉQUIPE SE SCINDE : les missions se rangent par groupe
+    # (A, B, … Z), chacune sous son « ✈️ Les missions de l'équipe : groupe
+    # X ». Une mission ancienne sans groupe connu rejoint le groupe A —
+    # rien ne se perd, rien ne se déplace hors de son groupe.
+    _par_groupe = {}
+    for _m in _missions:
+        _g = str(_m[13] if len(_m) > 13 else "").strip().upper() or "A"
+        if not ("A" <= _g <= "Z"):
+            _g = "A"
+        _par_groupe.setdefault(_g, []).append(_m)
+    for _g in sorted(_par_groupe):
+        _liste_g = _par_groupe[_g]
+        st.markdown("#### ✈️ Les missions de l'équipe : groupe " + _g
+                    + " (" + str(len(_liste_g)) + ")")
+        for (_mid, _titre, _objectif, _date_m, _lieu, _part_json, _statut,
+             _date_envoi, _auteur, _rapport_json, _date_rapport,
+             _date_debut, _date_fin, _groupe_m) in _liste_g:
+            try:
+                _participants = json.loads(_part_json or "[]")
+            except Exception:
+                _participants = []
+            try:
+                _rapport = json.loads(_rapport_json or "{}")
+            except Exception:
+                _rapport = {}
+            _mission = {"id": _mid, "titre": _titre, "objectif": _objectif,
+                        "date_mission": _date_m, "lieu": _lieu,
+                        "participants": _participants, "statut": _statut,
+                        "date_envoi": _date_envoi, "auteur_nom": _auteur,
+                        "rapport": _rapport, "date_rapport": _date_rapport,
+                        "date_debut": _date_debut, "date_fin": _date_fin,
+                        "groupe": _groupe_m}
+            _periode = _periode_mission_txt(_mission, eid)
+            _badge = _STATUTS_MISSION.get(_statut, _statut)
+            with st.expander("✈️ " + _titre + " — " + _periode
+                             + "   ·   " + _badge):
+                _c1, _c2, _c3 = st.columns(3)
                 with _c1:
-                    if st.button("✅ Oui, retirer", key=f"mi_del_ok_{_mid}",
-                                 width="stretch"):
-                        mission_supprimer(_mid)
-                        st.session_state.pop("mission_suppr", None)
-                        st.session_state["flash_success"] = (
-                            "🗑️ Mission retirée.")
-                        st.rerun()
+                    if st.button("🖨️ Fiche d'envoi", key=f"mi_env_{_mid}",
+                                 width="stretch", type="primary"):
+                        st.session_state["mission_fiche"] = ("envoi", _mid)
                 with _c2:
-                    if st.button("↩️ Non, la garder", key=f"mi_del_no_{_mid}",
+                    if st.button("📝 Rapport de mission", key=f"mi_rap_{_mid}",
                                  width="stretch"):
-                        st.session_state.pop("mission_suppr", None)
-                        st.rerun()
-
-            st.markdown("🎯 **Objectif :** " + (_objectif or "—"))
-            st.markdown("📍 **Lieu :** " + (_lieu or "—") + "  ·  📅 **Date :** "
-                        + str(_d_aff))
-            if _participants:
-                st.caption("👥 " + " · ".join(
-                    str(p.get("nom") or "?")
-                    + (" (hors équipe)" if p.get("externe") else "")
-                    for p in _participants))
-            if _rapport:
-                _r = _rapport
-                st.markdown("📝 **Rapport reçu le "
-                            + str(_date_rapport or "?") + "** — déroulement, "
-                            "grâces, difficultés et propositions sont gardés "
-                            "dans la fiche de rapport.")
-
-            # ── la fiche demandée ───────────────────────────────────────
-            _demande = st.session_state.get("mission_fiche")
-            if _demande and _demande[1] == _mid:
-                _genre = _demande[0]
-                if _genre == "envoi":
-                    st.markdown("### 🖨️ La fiche d'envoi en mission")
-                    _rendre_fiche_imprimable(
-                        _fiche_envoi_html(_mission, nom_equipe,
-                                          _nom_par(pid), _resp_eq, _resp_par),
-                        f"fiche_envoi_mission_{_mid}.html")
-                else:
-                    if not _rapport:
-                        st.info("Le rapport n'est pas encore rempli — "
-                                "remplis-le ci-dessous, la fiche naîtra de "
-                                "tes mots.")
-                    else:
-                        st.markdown("### 🖨️ La fiche de rapport de mission")
-                        _rendre_fiche_imprimable(
-                            _fiche_rapport_html(_mission, nom_equipe,
-                                                _nom_par(pid), _resp_eq),
-                            f"fiche_rapport_mission_{_mid}.html")
-
-            # ── le rapport : remplir / corriger ─────────────────────────
-            with st.expander("📝 " + ("Corriger le rapport de mission"
-                                      if _rapport else
-                                      "Remplir le rapport de mission "
-                                      "(après la mission)")):
-                with st.form(f"form_rapport_{_mid}"):
-                    _r0 = _rapport or {}
-                    _der = st.text_area("📖 Déroulement de la mission "
-                                        "(ce qui s'est passé)",
-                                        value=_r0.get("deroulement", ""),
-                                        height=90)
-                    _gra = st.text_area("✨ Grâces reçues et moments forts",
-                                        value=_r0.get("graces", ""),
-                                        height=80)
-                    _dif = st.text_area("🌫️ Difficultés rencontrées",
-                                        value=_r0.get("difficultes", ""),
-                                        height=70)
-                    _pro = st.text_area("🌱 Propositions et suites à donner",
-                                        value=_r0.get("propositions", ""),
-                                        height=70)
-                    _noms = [str(p.get("nom") or "") for p in _participants]
-                    _eff0 = [n for n in (_r0.get("participants_effectifs")
-                                         or []) if n in _noms]
-                    _eff = st.multiselect(
-                        "👥 Personnes ayant effectivement porté la mission",
-                        _noms, default=_eff0)
-                    if st.form_submit_button(
-                            "💾 Enregistrer le rapport de mission",
-                            type="primary", width="stretch"):
-                        if not _der.strip():
-                            st.error("Raconte au moins le déroulement — c'est "
-                                     "le cœur du rapport.")
-                        else:
-                            mission_rapport_enregistrer(_mid, {
-                                "deroulement": _der.strip(),
-                                "graces": _gra.strip(),
-                                "difficultes": _dif.strip(),
-                                "propositions": _pro.strip(),
-                                "participants_effectifs": _eff})
+                        st.session_state["mission_fiche"] = ("rapport", _mid)
+                with _c3:
+                    if st.button("🗑️ Supprimer", key=f"mi_del_{_mid}",
+                                 width="stretch",
+                                 help="Retire définitivement cette mission "
+                                      "(essai erroné)."):
+                        st.session_state["mission_suppr"] = _mid
+                if st.session_state.get("mission_suppr") == _mid:
+                    st.warning("Retirer définitivement « " + _titre + " » et "
+                               "son rapport ?")
+                    _c1, _c2 = st.columns(2)
+                    with _c1:
+                        if st.button("✅ Oui, retirer", key=f"mi_del_ok_{_mid}",
+                                     width="stretch"):
+                            mission_supprimer(_mid)
+                            st.session_state.pop("mission_suppr", None)
                             st.session_state["flash_success"] = (
-                                "✅ Rapport de mission enregistré — la fiche "
-                                "de rapport est prête à être imprimée.")
+                                "🗑️ Mission retirée.")
                             st.rerun()
+                    with _c2:
+                        if st.button("↩️ Non, la garder",
+                                     key=f"mi_del_no_{_mid}",
+                                     width="stretch"):
+                            st.session_state.pop("mission_suppr", None)
+                            st.rerun()
+
+                st.markdown("🎯 **Objectif :** " + (_objectif or "—"))
+                st.markdown("🗓️ **Période :** " + _periode
+                            + "  ·  📍 **Lieu :** " + (_lieu or "—"))
+                if _participants:
+                    st.caption("👥 " + " · ".join(
+                        str(p.get("nom") or "?")
+                        + (" (hors équipe)" if p.get("externe") else "")
+                        for p in _participants))
+                if _rapport:
+                    _r = _rapport
+                    st.markdown("📝 **Rapport reçu le "
+                                + str(_date_rapport or "?") + "** — "
+                                "déroulement, grâces, difficultés et "
+                                "propositions sont gardés dans la fiche de "
+                                "rapport.")
+
+                # ── la fiche demandée ────────────────────────────────
+                _demande = st.session_state.get("mission_fiche")
+                if _demande and _demande[1] == _mid:
+                    _genre = _demande[0]
+                    if _genre == "envoi":
+                        st.markdown("### 🖨️ La fiche d'envoi en mission")
+                        _rendre_fiche_imprimable(
+                            _fiche_envoi_html(_mission, nom_equipe,
+                                              _nom_par(pid), _resp_eq,
+                                              _resp_par),
+                            f"fiche_envoi_mission_{_mid}.html")
+                    else:
+                        if not _rapport:
+                            st.info("Le rapport n'est pas encore rempli — "
+                                    "remplis-le ci-dessous, la fiche naîtra "
+                                    "de tes mots.")
+                        else:
+                            st.markdown(
+                                "### 🖨️ La fiche de rapport de mission")
+                            _rendre_fiche_imprimable(
+                                _fiche_rapport_html(_mission, nom_equipe,
+                                                    _nom_par(pid), _resp_eq),
+                                f"fiche_rapport_mission_{_mid}.html")
+
+                # ── le rapport : remplir / corriger ──────────────────
+                with st.expander("📝 " + ("Corriger le rapport de mission"
+                                          if _rapport else
+                                          "Remplir le rapport de mission "
+                                          "(après la mission)")):
+                    with st.form(f"form_rapport_{_mid}"):
+                        _r0 = _rapport or {}
+                        _der = st.text_area("📖 Déroulement de la mission "
+                                            "(ce qui s'est passé)",
+                                            value=_r0.get("deroulement", ""),
+                                            height=90)
+                        _gra = st.text_area("✨ Grâces reçues et moments forts",
+                                            value=_r0.get("graces", ""),
+                                            height=80)
+                        _dif = st.text_area("🌫️ Difficultés rencontrées",
+                                            value=_r0.get("difficultes", ""),
+                                            height=70)
+                        _pro = st.text_area(
+                            "🌱 Propositions et suites à donner",
+                            value=_r0.get("propositions", ""), height=70)
+                        _noms = [str(p.get("nom") or "")
+                                 for p in _participants]
+                        _eff0 = [n for n in (_r0.get("participants_effectifs")
+                                             or []) if n in _noms]
+                        _eff = st.multiselect(
+                            "👥 Personnes ayant effectivement porté la "
+                            "mission", _noms, default=_eff0)
+                        if st.form_submit_button(
+                                "💾 Enregistrer le rapport de mission",
+                                type="primary", width="stretch"):
+                            if not _der.strip():
+                                st.error("Raconte au moins le déroulement — "
+                                         "c'est le cœur du rapport.")
+                            else:
+                                mission_rapport_enregistrer(_mid, {
+                                    "deroulement": _der.strip(),
+                                    "graces": _gra.strip(),
+                                    "difficultes": _dif.strip(),
+                                    "propositions": _pro.strip(),
+                                    "participants_effectifs": _eff})
+                                st.session_state["flash_success"] = (
+                                    "✅ Rapport de mission enregistré — la "
+                                    "fiche de rapport est prête à être "
+                                    "imprimée.")
+                                st.rerun()
 
 
 def _nom_par(pid):
