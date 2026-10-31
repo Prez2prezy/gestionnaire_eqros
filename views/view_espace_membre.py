@@ -88,15 +88,22 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       marquer_carte_vue, carte_deja_vue, dizaine_visiteur_pointee,
                       feuillet_questions_lister, feuillet_reponses_enregistrer,
                       feuillet_reponses_de_cle, importer_dizaines_hors_ligne,
+                      # v7.12.0 — les rappels de la dizaine sur le téléphone
+                      push_abonnement_enregistrer, push_abonnement_de_cle,
+                      push_abonnement_note_jrnais,
                       # v7.10.2 — le questionnaire SOUMIS au diocèse
                       feuillet_questionnaire_publie)
-from services import safe_date, compter_visite, lien_whatsapp, urls_galerie
+from services import (safe_date, compter_visite, lien_whatsapp, urls_galerie,
+                      URL_ESPACE_SPIRITUEL)
+
+import logging
+logger = logging.getLogger(__name__)
 from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
 
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.11.1"
+_VERSION_APPLI = "v7.12.0"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -415,6 +422,9 @@ def _render_theme(compact=False):
     [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: #9fa6d8 !important; }
     [data-testid="stExpander"] { background-color: #121a45 !important; border: 1px solid #27306b !important; border-radius: 12px !important; }
     details, [data-testid="stExpanderDetails"] { background-color: transparent !important; }
+    [data-testid="stExpander"] summary,
+    [data-testid="stExpanderToggleVisible"],
+    [data-testid="stExpander"] > div { background-color: transparent !important; }
     summary, [data-testid="stExpander"] p { color: #e8eaf6 !important; }
     [data-baseweb="tab-list"] { border-bottom-color: #27306b !important; }
     [data-baseweb="tab"] p { color: #e8eaf6 !important; font-weight: 600 !important; }
@@ -422,6 +432,7 @@ def _render_theme(compact=False):
     [data-baseweb="tab-highlight"] { background-color: #7b1fa2 !important; }
     .stButton > button { background-color: #1a2150 !important; color: #e8eaf6 !important; border: 1px solid #2a3160 !important; }
     .stButton > button[kind="primary"] { background-color: #4527a0 !important; border-color: #5e35b1 !important; color: #ffffff !important; }
+    .stApp [data-testid="stDownloadButton"] > button { background-color: #1a2150 !important; color: #e8eaf6 !important; border: 1px solid #2a3160 !important; }
     [data-testid="stAlert"] { background-color: #151b3d !important; }
     [data-testid="stAlert"] p { color: #e8eaf6 !important; }
     [data-testid="stPopover"] { width: fit-content !important; max-width: 260px !important; margin-left: 0 !important; }
@@ -3153,6 +3164,12 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
             if "diz_jrnais" not in st.session_state:
                 return
             jrnais = st.session_state["diz_jrnais"]
+            # v7.12.0 — le jour de naissance dévoilé alimente l'abonnement
+            # push de CE téléphone : les rondes sauront s'il a déjà prié.
+            try:
+                push_abonnement_note_jrnais(_cle_lecteur_pdr(), jrnais)
+            except Exception:
+                pass
             num = jrnais - 20 if jrnais > 20 else jrnais
 
     mysteres_jour = get_mysteres_du_jour(num)
@@ -3768,6 +3785,160 @@ def _cle_lecteur_pdr():
         "utf-8", "ignore")).hexdigest()[:24]
 
 
+# ====================================================================
+# v7.12.0 — LES RAPPELS DE LA DIZAINE SUR LE TÉLÉPHONE
+# ====================================================================
+# « Peut-on alerter directement une personne sur son téléphone pour faire
+# sa dizaine ? » — la suite de la route : le rappel CALENDRIER (.ics, le
+# téléphone sonne tout seul chaque jour) et la NOTIFICATION de l'appli
+# (le téléphone qui a dit oui reçoit le rappel aux 4 rondes : 06h00,
+# 12h00, 18h00, 21h00). Une seule carte, membres et visiteurs.
+# ====================================================================
+def abonnement_depuis_url(donnees_b64, cle_lecteur, matloc=None):
+    """Le téléphone qui vient de dire « oui » revient avec son abonnement
+    posé dans l'adresse (?push_abo=…, base64url de {endpoint, keys}) : on
+    le décode et on le note. Retourne True si l'abonnement est écrit."""
+    try:
+        _s = str(donnees_b64).replace("-", "+").replace("_", "/")
+        _s += "=" * (-len(_s) % 4)
+        _d = json.loads(base64.b64decode(_s).decode("utf-8"))
+        _endpoint = str(_d.get("endpoint") or "").strip()
+        _keys = _d.get("keys") or {}
+        _p256dh = str(_keys.get("p256dh") or "").strip()
+        _auth = str(_keys.get("auth") or "").strip()
+        if not (_endpoint and _p256dh and _auth):
+            return False
+        return push_abonnement_enregistrer(cle_lecteur, _endpoint, _p256dh,
+                                           _auth, matloc=matloc)
+    except Exception as _e:
+        logger.warning(f"abonnement_depuis_url : {_e!r}")
+        return False
+
+
+def _fichier_rappel_ics(heure="18:00"):
+    """Le rendez-vous récurrent « Ma dizaine du jour » (.ics) : ajouté
+    UNE fois au calendrier du téléphone, il sonne CHAQUE JOUR à l'heure
+    choisie — même sans internet, même sans ouvrir l'appli."""
+    try:
+        _h, _m = str(heure).split(":")[:2]
+    except Exception:
+        _h, _m = "18", "00"
+    _auj = date.today()
+    _txt_desc = ("L'intention du prochain t'attend dans la CHAÎNE DE PRIÈRE "
+                 "UNIVERSELLE — ouvre ton Espace de Prière : "
+                 + URL_ESPACE_SPIRITUEL + "/?espace=1")
+    _txt_desc = _txt_desc.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,")
+    _lignes = [
+        "BEGIN:VCALENDAR", "VERSION:2.0",
+        "PRODID:-//Equipes du Rosaire//Rappel dizaine//FR", "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH", "BEGIN:VEVENT",
+        f"UID:dizaine-{_h}{_m}-{_auj.strftime('%Y%m%d')}@equipesrosaire",
+        f"DTSTAMP:{_auj.strftime('%Y%m%d')}T000000Z",
+        f"DTSTART:{_auj.strftime('%Y%m%d')}T{_h}{_m}00",
+        "DURATION:PT15M", "RRULE:FREQ=DAILY",
+        "SUMMARY:📿 Ma dizaine du jour",
+        f"DESCRIPTION:{_txt_desc}",
+        "BEGIN:VALARM", "TRIGGER:-PT0M", "ACTION:DISPLAY",
+        "DESCRIPTION:📿 Ma dizaine du jour", "END:VALARM",
+        "END:VEVENT", "END:VCALENDAR",
+    ]
+    return "\r\n".join(_lignes) + "\r\n"
+
+
+def _carte_rappels_dizaine(est_membre=False, matloc=None, ouvert=False):
+    """🔔 LA CARTE DES RAPPELS (v7.12.0) — sur l'accueil de l'Espace :
+    ① le rendez-vous calendrier (.ics à ajouter une fois) ; ② la
+    notification de l'appli (le téléphone dit oui une fois, les rondes de
+    06h00/12h00/18h00/21h00 le réveillent tant qu'il n'a pas prié).
+    Membres et visiteurs ont la même carte."""
+    _cle = _cle_lecteur_pdr()
+    _deja = 0
+    try:
+        _deja = push_abonnement_de_cle(_cle)
+    except Exception:
+        pass
+    with st.expander("🔔 Me rappeler ma dizaine sur mon téléphone",
+                     expanded=bool(ouvert)):
+        st.caption("La chaîne fait sa ronde 4 fois par jour : **06h00 · "
+                   "12h00 · 18h00 · 21h00**. Choisis comment ton téléphone "
+                   "te réveille — les deux canaux peuvent vivre ensemble.")
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            st.markdown("**📅 Le rendez-vous du calendrier**")
+            _heure = st.radio("Heure du rappel", ["06:00", "12:00", "18:00",
+                                                  "21:00"],
+                              index=2, horizontal=True,
+                              key="rappel_ics_heure",
+                              label_visibility="collapsed")
+            st.download_button(
+                "📅 Poser le rappel (fichier calendrier)",
+                data=_fichier_rappel_ics(_heure).encode("utf-8"),
+                file_name=f"rappel_dizaine_{_heure.replace(':', 'h')}.ics",
+                mime="text/calendar", width="stretch",
+                key="dl_rappel_ics")
+            st.caption("Ajoute-le une seule fois : ton téléphone sonnera "
+                       "chaque jour, même sans internet.")
+        with _c2:
+            st.markdown("**🔔 La notification de l'application**")
+            if _deja:
+                st.success("✅ Ce téléphone a dit oui — il recevra le rappel "
+                           "aux 4 rondes tant que ta dizaine attend.")
+            else:
+                try:
+                    from services import vapid_cles
+                    _cle_pub = (vapid_cles()[1] or "")
+                except Exception:
+                    _cle_pub = ""
+                if _cle_pub:
+                    _mat_js = urllib.parse.quote(str(matloc)) if matloc else ""
+                    _js = """
+<div style="text-align:center;"><button id="btn_push_ro" onclick="activer_push_ro()"
+ style="background:#1A237E; color:#fff; border:1px solid #FFD700;
+ border-radius:24px; padding:9px 18px; font-weight:bold; font-size:0.9rem;
+ cursor:pointer;">🔔 Dire oui aux rappels</button></div>
+<div id="etat_push_ro" style="color:#9fa6d8; font-size:0.78rem; text-align:center;
+ margin-top:6px;"></div>
+<script>
+function _b64u_en_octets_ro(s){ s=s.replace(/-/g,'+').replace(/_/g,'/');
+ while(s.length%4) s+='='; var brut=atob(s); var t=new Uint8Array(brut.length);
+ for(var i=0;i<brut.length;i++) t[i]=brut.charCodeAt(i); return t; }
+async function activer_push_ro(){
+  var etat=document.getElementById('etat_push_ro');
+  try {
+    if(!('serviceWorker' in navigator)||!('PushManager' in window)){
+      etat.textContent='Ce navigateur ne connaît pas encore les rappels — le rendez-vous du calendrier reste là pour toi.'; return; }
+    var perm = await Notification.requestPermission();
+    if(perm!=='granted'){ etat.textContent='Les notifications restent silencieuses — tu pourras dire oui plus tard.'; return; }
+    etat.textContent='Un instant…';
+    var reg = await navigator.serviceWorker.register('/app/static/sw.js?v=7120');
+    await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.getSubscription();
+    if(!sub){ sub = await reg.pushManager.subscribe({userVisibleOnly:true,
+      applicationServerKey:_b64u_en_octets_ro('%CLE%')}); }
+    var j = sub.toJSON();
+    var charge = btoa(unescape(encodeURIComponent(JSON.stringify({endpoint:j.endpoint, keys:j.keys}))))
+      .replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');
+    var u = new URL(window.parent.location.href);
+    u.searchParams.set('push_abo', charge);%MATLOC%
+    window.parent.location.href = u.href;
+  } catch(e) { etat.textContent='Le oui n\'a pas pu être noté — réessaie dans un instant.'; }
+}
+</script>"""
+                    _js = _js.replace("%CLE%", _cle_pub)
+                    _js = (_js.replace("%MATLOC%",
+                                       f"\n    u.searchParams.set('matloc', '{_mat_js}');"
+                                       ) if _mat_js else _js.replace(
+                                           "%MATLOC%", ""))
+                    _comp_html(_js, height=96)
+                else:
+                    st.caption("Les notifications ne sont pas encore "
+                               "disponibles — le rendez-vous du calendrier "
+                               "reste là pour toi.")
+                st.caption("Sur iPhone : installe d'abord l'appli depuis la "
+                           "page d'installation, puis dis oui (iOS 16.4 ou "
+                           "plus).")
+
+
 def _alerte_feuillet_fil(lien_theme=None):
     """v7.8-h · v7.8.2-h — Alerte « nouveau feuillet » en tête du fil d'actualité.
     v7.11.1 — visible UNE SEMAINE à partir de la PREMIÈRE diffusion du
@@ -4205,6 +4376,12 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                             # chaîne du fidèle (il ne priera jamais sa propre
                             # intention) et le CTA « prier ma dizaine » s'affiche.
                             st.session_state["diz_jrnais"] = int(_jour)
+                            # v7.12.0 — l'abonnement push de CE téléphone connaît
+                            # désormais son jour de naissance (les rondes sauront).
+                            try:
+                                push_abonnement_note_jrnais(_cle_lecteur_pdr(), int(_jour))
+                            except Exception:
+                                pass
                             st.session_state["int_derniere"] = int(_jour)
                             st.session_state["flash_success"] = (
                                 "🙏 Votre intention a été confiée à " + str(_eq[1])
@@ -4932,6 +5109,9 @@ def _corps_espace_membre(matloc_membre=None):
             _render_dizaine_du_jour(est_membre=False)
             if st.session_state.get("diz_ouvert"):
                 return
+            # v7.12.0 — la carte des rappels (calendrier + notification) :
+            # le visiteur de la chaîne arme son téléphone une fois pour tout.
+            _carte_rappels_dizaine(est_membre=False)
             _lien_theme_pub = ("?espace=1&nav=1&r=2"
                                + (f"&p={pid_pub}" if pid_pub else ""))
             _render_fil_actualites(pid=pid_pub, lien_theme=_lien_theme_pub)
@@ -5109,6 +5289,9 @@ def _corps_espace_membre(matloc_membre=None):
                                 equipe_id=membre[10], paroisse_id=membre[11])
         if st.session_state.get("diz_ouvert"):
             return
+        # v7.12.0 — la carte des rappels (calendrier + notification) sous la
+        # dizaine du jour : le membre arme son téléphone une fois pour tout.
+        _carte_rappels_dizaine(est_membre=True, matloc=membre[3])
         _lien_theme_m = ("?espace=1&matloc=" + str(matloc_membre)
                          + (f"&p={pid_m}" if pid_m else "") + "&nav=1&r=1")
         _render_fil_actualites(pid=pid_m, lien_theme=_lien_theme_m,
