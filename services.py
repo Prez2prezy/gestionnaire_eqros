@@ -762,3 +762,159 @@ def executer_publications_programmees():
             commit_and_sync()
         except Exception as e:
             logger.warning(f"publications programmées : commit ({e!r})")
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+# v7.12.0 — LA RONDE DES DIZAINES (4 fois par jour) & LE PUSH
+# ============================================================
+# « La mise à jour de la liste de ceux qui n'ont pas encore fait leur
+# dizaine et le rappel se feront 4 fois dans la journée : 06h00 - 12h00 -
+# 18h00 - 21h00. » Le rappel automatique part par NOTIFICATION PUSH sur
+# les téléphones qui ont dit oui (🔔), et la liste est tenue à jour pour
+# le canal WhatsApp du responsable (bouton 📱, un tap par personne).
+# Les heures sont celles de Côte d'Ivoire (UTC+0 — l'hébergeur tourne
+# déjà à l'heure ivoirienne).
+
+VAPID_CLE = "push_vapid_prive"
+VAPID_PUBLIQUE = "push_vapid_publique"
+VAPID_SUJET = "mailto:equipesrosaire@diocese-grandbassam.org"
+
+
+def vapid_cles():
+    """Les clés VAPID de la maison : elles naissent UNE fois (courbe P-256,
+    générée localement) et vivent en base (parametres_app) — rien à
+    configurer, aucune clé à copier. Retourne (privée, publique) en
+    base64url, ou (None, None) si le paquet de chiffrement manque."""
+    _prive = database.parametre_lire(VAPID_CLE)
+    _publique = database.parametre_lire(VAPID_PUBLIQUE)
+    if _prive and _publique:
+        return (_prive, _publique)
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+        import base64 as _b64
+
+        def _b64u(bruts):
+            return _b64.urlsafe_b64encode(bruts).decode("ascii").rstrip("=")
+
+        _cle = ec.generate_private_key(ec.SECP256R1())
+        _prive = _b64u(_cle.private_numbers().private_value.to_bytes(32, "big"))
+        _publique = _b64u(_cle.public_key().public_bytes(
+            Encoding.X962, PublicFormat.UncompressedPoint))
+        database.parametre_ecrire(VAPID_CLE, _prive)
+        database.parametre_ecrire(VAPID_PUBLIQUE, _publique)
+        logger.info("push : clés VAPID générées et posées en base")
+        return (_prive, _publique)
+    except Exception as e:
+        logger.warning(f"push : clés VAPID impossibles ({e!r})")
+        return (None, None)
+
+
+def push_envoyer_un(abonnement, titre, corps, lien="/?espace=1"):
+    """Envoie UNE notification push à un téléphone abonné. abonnement :
+    (id, cle_lecteur, matloc, jrnais, endpoint, p256dh, auth). Un téléphone
+    qui a désinstallé ou retiré la permission (404/410) est retiré de la
+    liste. Retourne True si le rappel est parti."""
+    try:
+        from pywebpush import webpush, WebPushException
+    except ImportError:
+        logger.warning("push : le paquet pywebpush n'est pas installé")
+        return False
+    _prive, _publique = vapid_cles()
+    if not _prive:
+        return False
+    _endpoint, _p256dh, _auth = abonnement[4], abonnement[5], abonnement[6]
+    if not _endpoint or not _p256dh or not _auth:
+        return False
+    try:
+        webpush(
+            subscription_info={"endpoint": _endpoint,
+                               "keys": {"p256dh": _p256dh, "auth": _auth}},
+            data=__import__("json").dumps(
+                {"titre": titre, "corps": corps, "lien": lien},
+                ensure_ascii=False),
+            vapid_private_key=_prive,
+            vapid_claims={"sub": VAPID_SUJET})
+        return True
+    except WebPushException as e:
+        _code = getattr(getattr(e, "response", None), "status_code", None)
+        if _code in (404, 410):
+            database.push_abonnement_supprimer(_endpoint)
+            logger.info(f"push : abonnement retiré (HTTP {_code})")
+        else:
+            logger.warning(f"push : envoi impossible ({e!r})")
+        return False
+    except Exception as e:
+        logger.warning(f"push : envoi impossible ({e!r})")
+        return False
+
+
+def executer_rondes_dizaines(force=False):
+    """v7.12.0 — LA RONDE DES DIZAINES (lazy cron, comme les publications
+    programmées) : au chargement d'une page, si un des 4 rendez-vous du
+    jour est atteint (06h00, 12h00, 18h00, 21h00 — heures de Côte
+    d'Ivoire) et pas encore servi, la ronde part : la liste de ceux qui
+    n'ont pas encore fait leur dizaine est mise à jour et le rappel est
+    envoyé en notification push aux téléphones qui ont dit oui. Une ronde
+    n'est servie qu'UNE fois (réclamation en base). Aucune exception ne
+    remonte vers la page qui l'appelle."""
+    try:
+        _maint = datetime.utcnow()      # la Côte d'Ivoire vit à l'heure UTC
+        _jour = _maint.strftime("%Y-%m-%d")
+        _heure = _maint.strftime("%H:%M")
+        _rdv = None
+        for _h in database.HEURES_RONDES:
+            if _heure >= _h:
+                _rdv = _h
+        if not _rdv:
+            return
+        if not database.dizaines_ronde_reserver(_jour, _rdv):
+            return                      # déjà servie (ou en cours ailleurs)
+        _membres, _visiteurs = database.dizaines_du_jour_attente()
+        _nb_m, _nb_v = len(_membres), len(_visiteurs)
+        _ok = _ko = 0
+        for _ab in database.push_abonnements_actifs():
+            try:
+                (_aid, _cle, _mat, _jn, _endpoint, _p256dh, _auth) = _ab
+                _en_attente = True
+                if _mat:
+                    _en_attente = not database.dizaine_deja_pointee(_mat)
+                elif _jn:
+                    _en_attente = not bool(c.execute(
+                        """SELECT 1 FROM dizaines_journal
+                           WHERE type='visiteur' AND jour=? AND jrnais=? LIMIT 1""",
+                        (_jour, int(_jn))).fetchone())
+                if not _en_attente:
+                    continue            # il/elle a prié : pas de rappel
+                _lien = URL_ESPACE_SPIRITUEL + "/?espace=1"
+                if _mat:
+                    _lien += "&matloc=" + urllib.parse.quote(str(_mat))
+                if push_envoyer_un(
+                        _ab, "📿 Ta dizaine du jour t'attend",
+                        "L'intention du prochain compte sur toi — "
+                        f"ronde de {_rdv}. Que la Vierge Marie te garde. 🕊️",
+                        _lien):
+                    _ok += 1
+                else:
+                    _ko += 1
+            except Exception as e:
+                _ko += 1
+                logger.warning(f"rondes : abonnement #{_ab[0]} — {e!r}")
+        database.dizaines_ronde_completer(
+            _jour, _rdv, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            _nb_m, _nb_v, _ok, _ko)
+        logger.info(f"rondes : {_rdv} servie — {_nb_m} membre(s) et "
+                    f"{_nb_v} visiteur(s) en attente, {_ok} push parti(s)")
+    except Exception as e:
+        logger.warning(f"rondes des dizaines : {e!r}")
