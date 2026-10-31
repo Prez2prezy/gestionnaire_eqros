@@ -96,7 +96,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.11.0"
+_VERSION_APPLI = "v7.11.1"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -3770,14 +3770,18 @@ def _cle_lecteur_pdr():
 
 def _alerte_feuillet_fil(lien_theme=None):
     """v7.8-h · v7.8.2-h — Alerte « nouveau feuillet » en tête du fil d'actualité.
-    Visible 45 jours après la publication (couvre un mois pastoral complet) ;
-    le clic OUVRE DIRECTEMENT le livret du feuillet annoncé (lien profond
-    ?flt=1&fa=ANNÉE&fm=MOIS — v7.8.4, même mécanisme que les liens
-    d'archive) ; « 📌 Marquer comme lue » la masque pour la session en
-    cours. Blindage v7.8.3 : pas d'alerte si le feuillet annoncé n'a
-    aucune section saisie."""
+    v7.11.1 — visible UNE SEMAINE à partir de la PREMIÈRE diffusion du
+    feuillet (colonne `premiere_diffusion`, posée une seule fois : une
+    républication d'une version corrigée ne rallonge ni ne rouvre rien) ;
+    pendant cette semaine, elle revient chaque jour tant qu'elle n'est pas
+    marquée lue ce jour-là. Le clic OUVRE DIRECTEMENT le livret du feuillet
+    annoncé (lien profond ?flt=1&fa=ANNÉE&fm=MOIS — v7.8.4, même mécanisme
+    que les liens d'archive) ; « 📌 Marquer comme lue » la masque pour la
+    session en cours. Blindage v7.8.3 : pas d'alerte si le feuillet annoncé
+    n'a aucune section saisie."""
     try:
-        _pubs = c.execute("""SELECT annee_debut, mois, numero, date_publication
+        _pubs = c.execute("""SELECT annee_debut, mois, numero, date_publication,
+                                    premiere_diffusion
                              FROM feuillets_publications
                              ORDER BY annee_debut DESC, mois DESC""").fetchall()
     except Exception:
@@ -3789,11 +3793,13 @@ def _alerte_feuillet_fil(lien_theme=None):
     # septembre après celui d'octobre ne renvoie plus l'alerte sur septembre.
     # Une publication dont la date est illisible est considérée comme « à
     # annoncer » (sans mention de date) : auto-réparation des lignes à date
-    # mal formatée. Hors délai de 45 jours : pas d'alerte.
+    # mal formatée. v7.11.1 — la semaine se compte depuis la PREMIÈRE
+    # diffusion (repli : date_publication) ; hors délai de 7 jours : pas
+    # d'alerte.
     pub, _dpub = None, None
     for _p in _pubs:
-        _d = safe_date(_p[3])
-        if _d is None or (date.today() - _d).days <= 45:
+        _d = safe_date((_p[4] or "") or _p[3])
+        if _d is None or (date.today() - _d).days <= 7:
             pub, _dpub = _p, _d
             break
     if not pub:
@@ -3837,7 +3843,9 @@ def _alerte_feuillet_fil(lien_theme=None):
     # N°, mois, thème de l'année et le bouton d'ouverture.
     _mention = "🔔 Nouveau : le feuillet mensuel de prière est disponible !"
     if _dpub:
-        _mention += " · publié le " + _dpub.strftime("%d/%m/%Y")
+        # v7.11.1 — la mention porte la PREMIÈRE diffusion (celle qui ouvre
+        # la semaine d'affichage) : une républication ne change pas l'horloge.
+        _mention += " · en diffusion depuis le " + _dpub.strftime("%d/%m/%Y")
     st.markdown(_couverture_feuillet_html(
         pub[0], pub[1], compact=True, lien=_lien, titre_haut=_mention),
         unsafe_allow_html=True)
