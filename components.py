@@ -8,6 +8,7 @@ import urllib.parse
 from datetime import date, timedelta
 from database import (c, commit_and_sync, enregistrer_chaine_seance,
                       derniere_chaine_seance, historique_chaines_seance,
+                      _assurer_dizaines_journal,
                       intentions_reserve_du_numero,
                       ajouter_intention_reserve, reserve_lignes,
                       feuillet_questions_lister, feuillet_questionnaire_existe,
@@ -665,7 +666,8 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
     # v7.8.14 — SÉLECTEUR PERSISTANT : les onglets simples perdaient la main à
     # chaque widget modifié (p.ex. l'année des rappels ramenait aux
     # Anniversaires). Le radio retient la section active toute la session.
-    _lbl_wa = ["🎂 Anniversaires", "📢 Rappels réabonnement", "📿 Espace de prière"]
+    _lbl_wa = ["🎂 Anniversaires", "📢 Rappels réabonnement",
+               "📿 Dizaines du jour", "📿 Espace de prière"]
     _wa_actif = st.radio("Section", _lbl_wa, key="wa_onglet", horizontal=True,
                          label_visibility="collapsed")
     st.markdown("---")
@@ -711,6 +713,65 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
                     if lien: st.markdown(f'<a href="{lien}" target="_blank" class="whatsapp-link">📱 Rappeler</a>', unsafe_allow_html=True)
                 st.markdown("---")
         else: st.success(f"🎉 Tous à jour pour {periode_affichage(annee)} !")
+
+    elif _wa_actif == _lbl_wa[2]:
+        # v7.11.1 — LES DIZAINES DU JOUR : « Peut-on alerter directement une
+        # personne sur son téléphone pour faire sa dizaine ? » — voilà le
+        # canal qui marche partout, aujourd'hui, sans rien installer : la
+        # liste de ceux qui n'ont pas encore pointé leur dizaine du jour,
+        # chacun avec son message WhatsApp prêt à partir (un tap du
+        # responsable, le message s'ouvre déjà écrit chez le membre).
+        if not equipe_id and not paroisse_id:
+            st.info("Ouvre cette section depuis une équipe ou une paroisse : "
+                    "la liste des dizaines du jour y est tenue équipe par "
+                    "équipe.")
+        else:
+            _ph, _prm = (("AND m.equipe_id = ?", [equipe_id]) if equipe_id
+                         else ("AND m.paroisse_id = ?", [paroisse_id]))
+            _assurer_dizaines_journal()
+            try:
+                # v7.11.1 — jointures ouvertes : un membre sans paroisse (ni
+                # même sans équipe) reste rappelé — personne n'est de trop
+                # dans la chaîne.
+                _attente = c.execute(
+                    f"""SELECT m.nom, m.prenom, m.whatsapp,
+                               COALESCE(e.nom_equipe, '—'),
+                               COALESCE(p.nom, '—')
+                        FROM membres m
+                        LEFT JOIN equipes e ON m.equipe_id=e.id
+                        LEFT JOIN paroisses p ON m.paroisse_id=p.id
+                        WHERE m.statut='actif' {_ph}
+                          AND NOT EXISTS (
+                              SELECT 1 FROM dizaines_journal d
+                              WHERE d.type='membre' AND d.jour=?
+                                AND UPPER(TRIM(d.matloc))
+                                    = UPPER(TRIM(m.matloc)))
+                        ORDER BY e.nom_equipe, m.nom, m.prenom""",
+                    (*_prm, date.today().isoformat())).fetchall()
+            except Exception:
+                _attente = []
+            st.caption("📿 Ceux qui n'ont pas encore fait leur dizaine "
+                       "aujourd'hui — un tap, et le message part chez eux.")
+            if not _attente:
+                st.success("📿 Tout le monde a fait sa dizaine aujourd'hui — "
+                           "merci pour la chaîne ! 🕊️")
+            for _m in _attente:
+                st.markdown(f"**⏳ {_m[0]} {_m[1]}** - 📍 {_m[4]} / {_m[3]}")
+                if _m[2]:
+                    _msg = (f"Bonjour {_m[1]} 🌹\n\n"
+                            "Un petit rappel fraternel : ta dizaine du jour "
+                            f"t'attend 📿\n\n{URL_ESPACE_SPIRITUEL}/?espace=1"
+                            "\n\nQue la Vierge Marie te garde. 🕊️")
+                    _lien_diz = lien_whatsapp(_m[2], _msg)
+                    if _lien_diz:
+                        st.markdown(
+                            f'<a href="{_lien_diz}" target="_blank" '
+                            'class="whatsapp-link">📱 Rappeler sa dizaine</a>',
+                            unsafe_allow_html=True)
+                else:
+                    st.caption("*(pas de numéro WhatsApp enregistré — "
+                               "complète-le dans 👤 Mes membres)*")
+                st.markdown("---")
 
     else:
         base_url = URL_ESPACE_SPIRITUEL
