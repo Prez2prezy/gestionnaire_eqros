@@ -1854,9 +1854,15 @@ def injecter_icone_pwa(espace=False):
     et MÉMOIRE DU FIDÈLE — le raccourci ouvert sans matloc retrouve le
     dernier lien personnel (localStorage navigateur, côté espace seul).
     v7.9.10 — favicon + icône iPhone INCORPORÉS dans la page (data URI :
-    aucun 404, aucun cache possible) et manifeste versionné ?v=7910 ;
+    aucun 404, aucun cache possible) et manifeste versionné ;
     les pages d'installation static/install_rosaire*.html offrent le bon
-    visage dès le premier octet pour le geste « Ajouter à l'écran d'accueil »."""
+    visage dès le premier octet pour le geste « Ajouter à l'écran d'accueil ».
+    v7.12.2 — LE RACCOURCI POUR DE BON : manifeste versionné ?v=7122 et
+    passeur des rappels enregistré silencieusement dès l'arrivée (côté
+    espace) — le téléphone tient sa « vraie application » ; la page
+    d'installation pose désormais l'app d'un seul bouton (« Installer
+    l'application »), puis s'efface toute seule devant l'Espace quand on
+    ouvre le raccourci."""
     # v7.9.9 — cache-busting du manifeste : le navigateur retient le
     # manifeste par URL ; une adresse qui évolue à chaque version l'invite à
     # relire les bons noms et les bonnes icônes au prochain
@@ -1866,12 +1872,14 @@ def injecter_icone_pwa(espace=False):
     # l'icône iPhone ne sont plus des adresses mais des IMAGES INCORPORÉES
     # (données base64 dans la page elle-même) — rien ne peut les manquer,
     # ni un dossier hors d'atteinte, ni une mémoire du navigateur. Le
-    # manifeste, lui, reste une adresse versionnée (?v=7910) : c'est lui
+    # manifeste, lui, reste une adresse versionnée (?v=7122) : c'est lui
     # qui habille le raccourci Android. Et si le raccourci est posé pendant
     # l'écran de chargement (avant que la page n'ait son visage), les pages
     # d'installation livrées dans static/ servent le bon visage DÈS LE
-    # PREMIER OCTET.
-    _ver_pwa = "7910"
+    # PREMIER OCTET — et posent désormais une VRAIE application d'un seul
+    # bouton (v7.12.2), puis s'effacent devant l'Espace à la prochaine
+    # ouverture.
+    _ver_pwa = "7122"
 
     def _icon_data(nom_fichier):
         """v7.9.10 — l'icône lue sur le disque et INCORPORÉE en base64 :
@@ -1968,6 +1976,25 @@ def injecter_icone_pwa(espace=False):
       try { u = new URL(f.location.href); } catch(e) { return; }
       u.searchParams.set('matloc', memo);
       try { f.location.replace(u.toString()); } catch(e) {}
+    })();
+    </script>
+    """
+    # v7.12.2 — LE PASSEUR S'INSTALLE DÈS L'ARRIVÉE (côté espace seul) :
+    # le téléphone qui regarde la page tient désormais une « vraie
+    # application » (installable, menu ⋮ « Installer l'application »), et
+    # les rondes 🔔 peuvent frapper même quand l'app est fermée. Silencieux
+    # : une demande de rien, jamais de permission, jamais d'erreur visible.
+    # L'administration, elle, n'a AUCUN passeur (comme aucune mémoire).
+        _js += """
+    <script>
+    (function(){
+      try {
+        var f = null;
+        try { f = window.parent; } catch(e) { return; }
+        if (!f || !f.navigator || !('serviceWorker' in f.navigator)) { return; }
+        f.navigator.serviceWorker
+          .register('/app/static/sw.js?v=7122').catch(function(){ });
+      } catch(e) { }
     })();
     </script>
     """
