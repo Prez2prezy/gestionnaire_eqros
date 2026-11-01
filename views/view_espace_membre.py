@@ -103,7 +103,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.12.1"
+_VERSION_APPLI = "v7.12.2"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -3910,7 +3910,7 @@ async function activer_push_ro(){
     var perm = await Notification.requestPermission();
     if(perm!=='granted'){ etat.textContent='Les notifications restent silencieuses — tu pourras dire oui plus tard.'; return; }
     etat.textContent='Un instant…';
-    var reg = await navigator.serviceWorker.register('/app/static/sw.js?v=7120');
+    var reg = await navigator.serviceWorker.register('/app/static/sw.js?v=7122');
     await navigator.serviceWorker.ready;
     var sub = await reg.pushManager.getSubscription();
     if(!sub){ sub = await reg.pushManager.subscribe({userVisibleOnly:true,
@@ -5071,7 +5071,7 @@ def _corps_espace_membre(matloc_membre=None):
                         '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · ' + _VERSION_APPLI + '</div>'
                         '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-la sous la main : pose le raccourci depuis la '
                         '<a href="/app/static/install_rosaire.html" target="_self" style="color:#4A148C; font-weight:bold;">page d\'installation</a>'
-                        ' — menu ⋮ → «&nbsp;Ajouter à l\'écran d\'accueil&nbsp;» (rien à y attendre, elle porte déjà le bon visage).</div></div>', unsafe_allow_html=True)
+                        ' — le bouton or «&nbsp;Installer l\'application&nbsp;» t\'y attend (sinon menu ⋮ → «&nbsp;Ajouter à l\'écran d\'accueil&nbsp;») ; rien à y attendre, elle porte déjà le bon visage, et l\'icône ouvre directement ton Espace.</div></div>', unsafe_allow_html=True)
 
         if rub == "📿 Rosaire":
             if sub == "Le Rosaire thématique":
