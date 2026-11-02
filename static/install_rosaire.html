@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rosaire</title>
+<meta name="description" content="Rosaire — Les Équipes du Rosaire, Diocèse de Grand-Bassam : posez le raccourci de l'Espace de Prière sur votre écran d'accueil.">
+<meta name="theme-color" content="#1A237E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Rosaire">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest_espace.json?v=7122">
+<link rel="icon" href="icon_espace_32.png?v=7122" sizes="32x32">
+<link rel="shortcut icon" href="icon_espace_32.png?v=7122" sizes="32x32">
+<link rel="apple-touch-icon" href="icon_espace_180.png?v=7122" sizes="180x180">
+<script>
+/* v7.12.2 — LA PAGE S'EFFACE DEVANT L'ESPACE : quand elle est ouverte
+   DEPUIS le raccourci (plein écran, sans barres), elle reconduit le
+   fidèle immédiatement vers son Espace de Prière — la carte d'installation
+   ne réapparaît jamais après la pose. Ouverte dans le navigateur (pour
+   poser le raccourci), elle reste sagement à sa place. */
+(function(){
+  function _cible_rosaire(){
+    var u = new URL('/?espace=1', location.origin);
+    try {
+      var q = new URLSearchParams(location.search);
+      var ml = (q.get('matloc') || '').trim().toUpperCase();
+      var p = (q.get('p') || '').trim();
+      if (p) { u.searchParams.set('p', p); }
+      try {
+        if (ml) {
+          localStorage.setItem('rosaire_matloc', ml);
+        } else {
+          var memo = (localStorage.getItem('rosaire_matloc') || '').trim().toUpperCase();
+          if (memo) { ml = memo; }
+        }
+      } catch(e) {}
+      if (ml) { u.searchParams.set('matloc', ml); }
+    } catch(e) {}
+    return u.toString();
+  }
+  try {
+    var debout = (window.matchMedia &&
+      (window.matchMedia('(display-mode: standalone)').matches ||
+       window.matchMedia('(display-mode: minimal-ui)').matches)) ||
+      window.navigator.standalone === true;
+    if (debout) { location.replace(_cible_rosaire()); return; }
+  } catch(e) {}
+  window._cible_rosaire = _cible_rosaire;
+})();
+</script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { min-height:100%; }
+  body {
+    background:linear-gradient(165deg,#0d1440 0%,#1A237E 60%,#283593 100%);
+    color:#e8eaf6; font-family:Georgia,'Times New Roman',serif;
+    display:flex; align-items:center; justify-content:center; padding:22px 14px;
+  }
+  .carte {
+    max-width:420px; width:100%; text-align:center;
+    background:rgba(255,255,255,.05); border:1px solid #FFD700;
+    border-radius:18px; padding:30px 22px 24px 22px;
+    box-shadow:0 10px 34px rgba(0,0,0,.5);
+  }
+  .carte img { width:84px; height:84px; border-radius:18px;
+    box-shadow:0 4px 14px rgba(0,0,0,.45); }
+  h1 { color:#FFFFFF; font-size:1.5rem; letter-spacing:.06em; margin-top:12px; }
+  .dio { color:#FFD54F; font-size:.82rem; letter-spacing:.05em; margin-top:6px; }
+  .wv {
+    display:none; margin:14px 0 4px 0; padding:10px 12px;
+    background:rgba(255,213,79,.12); border:1px solid #FFD54F;
+    border-radius:12px; color:#FFE082; font-size:.82rem; line-height:1.65;
+    text-align:left;
+  }
+  ol { text-align:left; margin:20px 8px 18px 30px; line-height:1.9; font-size:.92rem; color:#dbe1f5; }
+  ol b { color:#FFD54F; }
+  .btn {
+    display:block; background:linear-gradient(135deg,#FFD700,#C9A227); color:#1A237E;
+    text-decoration:none; font-weight:bold; font-size:1.02rem;
+    padding:14px 18px; border-radius:999px; margin:6px 4px 12px 4px;
+    box-shadow:0 4px 16px rgba(0,0,0,.35);
+  }
+  button.btn { border:none; cursor:pointer; width:calc(100% - 8px);
+    font-family:Georgia,'Times New Roman',serif; }
+  .btn:active { transform:scale(.98); }
+  .note { color:#9fa6d8; font-size:.78rem; line-height:1.7; }
+  #bloc_installer { display:none; margin-top:14px; }
+  #note_installer { margin-top:8px; }
+  #note_installer.ok { color:#A5D6A7; font-weight:bold; }
+</style>
+</head>
+<body>
+<div class="carte">
+  <img src="icon_espace_512.png?v=7122" alt="Rosaire">
+  <h1>Rosaire</h1>
+  <div class="dio">LES ÉQUIPES DU ROSAIRE — DIOCÈSE DE GRAND-BASSAM</div>
+  <div id="bandeau_wv" class="wv">👁️ Tu regardes cette page <b>depuis une autre application</b> (WhatsApp, Instagram…). Touche d'abord <b>⋮ → «&nbsp;Ouvrir dans le navigateur&nbsp;»</b> (ou <b>⋯</b> en haut), puis pose le raccourci ici — le geste n'existe que dans le navigateur.</div>
+  <div id="bloc_installer">
+    <button id="installer" class="btn" type="button">📲 Installer l'application</button>
+    <div id="note_installer" class="note">Le téléphone connaît le geste : touche, accepte, c'est posé — plein écran, au bon visage.</div>
+  </div>
+  <ol>
+    <li>Touchez le menu <b>⋮</b> du navigateur (ou <b>Partager</b> sur iPhone).</li>
+    <li>Choisissez <b>«&nbsp;Ajouter à l'écran d'accueil&nbsp;»</b> — le raccourci prend son vrai visage&nbsp;: <b>Rosaire</b> et son chapelet doré.</li>
+    <li>Validez — <b>c'est tout</b> : à chaque ouverture, vous arrivez directement dans l'Espace de Prière.</li>
+  </ol>
+  <a id="ouvrir" class="btn" href="/?espace=1">📿 Ouvrir l'application</a>
+  <div class="note">Sur cette page il n'y a rien à attendre&nbsp;: elle porte déjà le visage de l'application. Posez le raccourci tranquillement — et la prochaine fois que vous toucherez l'icône, cette page s'effacera toute seule devant votre Espace.</div>
+</div>
+<script>
+(function(){
+  /* le bouton « Ouvrir » porte toujours le bon lien (matloc + p mémorisés) */
+  try {
+    var a = document.getElementById('ouvrir');
+    if (a && window._cible_rosaire) { a.href = window._cible_rosaire(); }
+  } catch(e) {}
+
+  /* v7.12.2 — veille navigateur intégré : WhatsApp, Instagram, Facebook…
+     n'offrent pas le geste ; on l'annonce avant les étapes. */
+  try {
+    var ua = navigator.userAgent || '';
+    if (/(; wv\)|FB_IAB|FBAN|FBAV|FBSN|Instagram|WhatsApp|Telegram|Snapchat|TikTok)/i.test(ua)) {
+      var b = document.getElementById('bandeau_wv');
+      if (b) { b.style.display = 'block'; }
+    }
+  } catch(e) {}
+
+  /* v7.12.2 — LE CHEMIN D'OR : quand le téléphone sait installer, il
+     l'annonce — un vrai bouton « Installer l'application » qui pose une
+     VRAIE application (icône au bon visage, ouverture plein écran direct
+     sur l'Espace, jamais la page d'installation). */
+  var _pose = null;
+  try {
+    window.addEventListener('beforeinstallprompt', function(e){
+      e.preventDefault();
+      _pose = e;
+      var bl = document.getElementById('bloc_installer');
+      if (bl) { bl.style.display = 'block'; }
+    });
+  } catch(e) {}
+  try {
+    var _btn = document.getElementById('installer');
+    if (_btn) {
+      _btn.addEventListener('click', function(){
+        if (!_pose) { return; }
+        _pose.prompt();
+        _pose.userChoice.then(function(r){
+          var n = document.getElementById('note_installer');
+          if (r && r.outcome === 'accepted') {
+            if (n) { n.textContent = '✅ Posée ! L\'icône attend sur ton écran d\'accueil — elle ouvre ton Espace tout pr\u00eat.';
+                     n.className = 'note ok'; }
+          } else {
+            if (n) { n.textContent = 'Aucun souci : le geste ⋮ ci-dessous pose le raccourci tout aussi bien.'; }
+          }
+        }).catch(function(){});
+      });
+    }
+  } catch(e) {}
+  try {
+    window.addEventListener('appinstalled', function(){
+      var n = document.getElementById('note_installer');
+      if (n) { n.textContent = '✅ Posée ! L\'icône attend sur ton écran d\'accueil — elle ouvre ton Espace tout pr\u00eat.';
+               n.className = 'note ok'; }
+      setTimeout(function(){
+        try { location.replace(window._cible_rosaire ? window._cible_rosaire() : '/?espace=1'); }
+        catch(e) {}
+      }, 1400);
+    });
+  } catch(e) {}
+
+  /* v7.12.2 — le passeur de notifications s'installe aussi ici : la page
+     devient une « vraie application » aux yeux du téléphone, et les rondes
+     🔔 pourront frapper même quand l'app est fermée. */
+  try {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/app/static/sw.js?v=7122').catch(function(){});
+    }
+  } catch(e) {}
+})();
+</script>
+</body>
+</html>
