@@ -1835,6 +1835,55 @@ def ajouter_intention_reserve(numero_med, texte, auteur_nom=None,
         return (False, "L'ajout n'a pas pu aboutir — réessayez dans un instant.")
 
 
+def remplacer_intention_reserve(numero_med, texte, auteur_nom=None,
+                                equipe_id=None, paroisse_id=None):
+    """REMPLACE l'intention en place d'un N° méd. (v7.12.4) — « une intention
+    de la chaîne de la dernière séance remplace l'ancienne et reste visible
+    dès son enregistrement chez le N° méd. qui la porte ». Le remplacement se
+    fait EN PLACE (la ligne la plus ancienne encore active est réécrite) :
+    l'ordre de la réserve est préservé — l'intention remplacée reste à sa
+    place de principale, le surplus du N° (les autres intentions) ne bouge
+    pas ; s'il n'y a rien en place, l'intention est simplement ajoutée.
+    Retourne (ok, message) prêt à être affiché."""
+    _assurer_table_reserve()
+    _num = _numero_med_normale(numero_med)
+    if _num is None:
+        return (False, "Le N° méd. doit être un chiffre entre 1 et 20.")
+    _txt = str(texte or "").strip()
+    if not _txt:
+        return (False, "Le texte de l'intention est obligatoire.")
+    if len(_txt) > 500:
+        return (False, "L'intention est trop longue (500 caractères maximum).")
+    try:
+        _row = c.execute("""SELECT id FROM intentions_reserve
+                            WHERE numero_med=? AND active=1
+                            ORDER BY id ASC LIMIT 1""", (_num,)).fetchone()
+        if _row:
+            c.execute("""UPDATE intentions_reserve
+                         SET texte=?, auteur_nom=?, equipe_id=?, date_ajout=?
+                         WHERE id=?""",
+                      (_txt,
+                       (str(auteur_nom).strip() or None) if auteur_nom else None,
+                       equipe_id, date.today().isoformat(), _row[0]))
+            commit_and_sync()
+            return (True, "✏️ L'intention du N° méd. " + str(_num) + " a été "
+                          "remplacée : la nouvelle est visible sous le maillon.")
+        c.execute("""INSERT INTO intentions_reserve
+                     (numero_med, texte, auteur_nom, equipe_id, paroisse_id,
+                      date_ajout, active, qui, jour_naissance)
+                     VALUES (?, ?, ?, ?, ?, ?, 1, NULL, NULL)""",
+                  (_num, _txt,
+                   (str(auteur_nom).strip() or None) if auteur_nom else None,
+                   equipe_id, paroisse_id, date.today().isoformat()))
+        commit_and_sync()
+        return (True, "📚 L'intention du N° méd. " + str(_num) + " est en "
+                      "place : visible sous le maillon.")
+    except Exception as e:
+        logger.warning(f"remplacer_intention_reserve : {e!r}")
+        return (False, "Le remplacement n'a pas pu aboutir — réessayez dans "
+                       "un instant.")
+
+
 def retirer_intention_reserve(rid, equipe_id=None):
     """Retire une intention de la réserve (v7.9.3). Si equipe_id est fourni,
     le retrait est refusé pour une ligne d'une autre équipe (prudence).
