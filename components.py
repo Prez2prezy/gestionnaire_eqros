@@ -10,7 +10,8 @@ from database import (c, commit_and_sync, enregistrer_chaine_seance,
                       derniere_chaine_seance, historique_chaines_seance,
                       _assurer_dizaines_journal,
                       intentions_reserve_du_numero,
-                      ajouter_intention_reserve, reserve_lignes,
+                      ajouter_intention_reserve, remplacer_intention_reserve,
+                      reserve_lignes,
                       # v7.12.0 — la liste des dizaines en attente (membres
                       # ET visiteurs dénombrés) + les rondes du jour
                       dizaines_du_jour_attente, dizaines_ronde_derniere,
@@ -2089,13 +2090,18 @@ def bloc_chaine_seance(equipes, prefixe_cle="cs"):
     afficher_messages_flash()
     st.markdown("---")
     st.markdown("### ⛓️ Chaîne de la dernière séance")
-    st.caption("À la prière mensuelle, les membres PRÉSENTS PHYSIQUEMENT forment une "
-               "chaîne : le voisin de droite devient le « prochain » de chacun, qui "
-               "prie pour lui jusqu'à la prochaine séance. L'ordre change à chaque "
-               "séance : notez ici la chaîne du jour — elle remplace l'ancienne et "
-               "reste visible de tout le bureau ; c'est elle qui pourvoit la "
-               "📚 réserve d'intentions. 🤫 Les intentions se portent, elles ne se "
-               "commentent pas.")
+    # v7.12.4 — la note au mot près demandé : trois paragraphes — la chaîne,
+    # le remplacement de l'intention (visible dès son enregistrement chez le
+    # N° méd. qui la porte), et le secret des intentions.
+    st.caption("À la prière mensuelle, les membres PRÉSENTS PHYSIQUEMENT forment "
+               "une chaîne : le voisin de droite devient le « prochain » de celui "
+               "de la gauche, qui prie pour lui jusqu'à la prochaine séance. "
+               "L'ordre peut varier d'une séance à l'autre.\n\n"
+               "À noter qu'une intention de la chaîne de la dernière séance "
+               "remplace l'ancienne et reste visible dès son enregistrement chez "
+               "le N° méd. qui la porte — c'est elle qui pourvoit la 📚 réserve "
+               "d'intentions.\n\n"
+               "🤫 Les intentions se portent, elles ne se commentent pas.")
     if not equipes:
         st.info("Aucune équipe : la chaîne de séance attend au moins une équipe.")
         return
@@ -2206,6 +2212,62 @@ def bloc_chaine_seance(equipes, prefixe_cle="cs"):
                   'Enregistrée le ' + html.escape(str(_d_enr or "?")) + ' — la chaîne se '
                   'referme sur le premier membre.</div></div>',
                 unsafe_allow_html=True)
+            # v7.12.4 — METTRE À JOUR LES INTENTIONS DE LA DERNIÈRE SÉANCE :
+            # « une intention de la chaîne de la dernière séance remplace
+            # l'ancienne et reste visible dès son enregistrement chez le
+            # N° méd. qui la porte ». Maillon par maillon, prérempli avec ce
+            # que le N° porte déjà : ce qui change est remplacé, le surplus
+            # du N° reste intact, et la carte relit la réserve aussitôt.
+            with st.expander("✏️ Mettre à jour les intentions de la dernière séance"):
+                st.caption("Pour chaque maillon, l'intention du prochain : l'ancienne "
+                           "s'efface, la nouvelle la remplace et devient visible "
+                           "aussitôt sous le maillon. Laissez tel quel ce qui ne "
+                           "change pas — le surplus du N° méd. reste intact.")
+                _int_maj = {}
+                for _i, _n in enumerate(_nums):
+                    _ns = _nums[(_i + 1) % len(_nums)]
+                    try:
+                        _int_maj[_ns] = intentions_reserve_du_numero(_ns)
+                    except Exception:
+                        _int_maj[_ns] = []
+                    _intention_en_place = (str(_int_maj[_ns][0][0])
+                                           if _int_maj[_ns] else "")
+                    st.markdown('<div style="font-size:0.9rem; margin:12px 0 2px 0;">'
+                                'Maillon ' + str(_i + 1) + ' · N° ' + str(_n).zfill(2)
+                                + ' — <b>' + html.escape(_num2nom[_n]) + '</b> prie '
+                                  'pour <b>' + html.escape(_num2nom[_ns]) + '</b> — '
+                                  'N° méd. ' + str(_ns) + '.</div>',
+                                unsafe_allow_html=True)
+                    st.text_input(
+                        "🕯️ L'intention de " + _num2nom[_ns] + " (N° méd. " + str(_ns) + ")",
+                        value=_intention_en_place, key=f"{prefixe_cle}_maj_{_ns}",
+                        max_chars=500)
+                if st.button("✏️ Enregistrer les mises à jour", type="primary",
+                             key=f"{prefixe_cle}_maj_save"):
+                    _n_maj = 0
+                    for _i, _n in enumerate(_nums):
+                        _ns = _nums[(_i + 1) % len(_nums)]
+                        _nouveau = str(st.session_state.get(
+                            f"{prefixe_cle}_maj_{_ns}", "") or "").strip()
+                        _ancien = (str(_int_maj[_ns][0][0])
+                                   if _int_maj.get(_ns) else "")
+                        if _nouveau and _nouveau != _ancien:
+                            _ok_m, _msg_m = remplacer_intention_reserve(
+                                _ns, _nouveau, auteur_nom=_num2nom.get(_ns),
+                                equipe_id=_eid)
+                            if _ok_m:
+                                _n_maj += 1
+                            else:
+                                st.warning(_msg_m)
+                    for _n_m in _int_maj:
+                        st.session_state.pop(f"{prefixe_cle}_maj_{_n_m}", None)
+                    st.session_state["flash_success"] = (
+                        "✏️ " + str(_n_maj) + " intention(s) mise(s) à jour — la carte "
+                        "de la chaîne les relit aussitôt sous le maillon."
+                        if _n_maj else
+                        "Rien à mettre à jour : les intentions du prochain étaient "
+                        "déjà à jour.")
+                    st.rerun()
         else:
             st.warning("⚠️ La dernière chaîne enregistrée contient des N° méd. qui ne "
                        "correspondent plus aux membres actifs de l'équipe (membres "
