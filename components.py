@@ -1863,7 +1863,18 @@ def injecter_icone_pwa(espace=False):
     espace) — le téléphone tient sa « vraie application » ; la page
     d'installation pose désormais l'app d'un seul bouton (« Installer
     l'application »), puis s'efface toute seule devant l'Espace quand on
-    ouvre le raccourci."""
+    ouvre le raccourci.
+    v7.13.0 — UNE SEULE ICÔNE, LE VISAGE DE L'ESPACE : les deux manifestes
+    (espace et administration) portent désormais LE MÊME manifeste unifié
+    — l'icône posée depuis n'importe quelle page s'appelle « Rosaire »,
+    porte le chapelet doré et ouvre TOUJOURS l'Espace de prière
+    (start_url /?espace=1) ; l'Administration reste jointe par l'appui
+    long sur l'icône (raccourcis du manifeste) ou par l'adresse. Fini le
+    raccourci qui n'ouvrait que la partie Administration : les deux
+    manifestes rivaux sous le même nom de domaine faisaient barrage l'un
+    à l'autre, et pendant la panne du service statique le manifeste de
+    l'Espace était illisible — celui de l'Administration, en cache,
+    prenait sa place."""
     # v7.9.9 — cache-busting du manifeste : le navigateur retient le
     # manifeste par URL ; une adresse qui évolue à chaque version l'invite à
     # relire les bons noms et les bonnes icônes au prochain
@@ -1880,7 +1891,7 @@ def injecter_icone_pwa(espace=False):
     # PREMIER OCTET — et posent désormais une VRAIE application d'un seul
     # bouton (v7.12.2), puis s'effacent devant l'Espace à la prochaine
     # ouverture.
-    _ver_pwa = "7122"
+    _ver_pwa = "7130"
 
     def _icon_data(nom_fichier):
         """v7.9.10 — l'icône lue sur le disque et INCORPORÉE en base64 :
@@ -1994,7 +2005,7 @@ def injecter_icone_pwa(espace=False):
         try { f = window.parent; } catch(e) { return; }
         if (!f || !f.navigator || !('serviceWorker' in f.navigator)) { return; }
         f.navigator.serviceWorker
-          .register('/app/static/sw.js?v=7122').catch(function(){ });
+          .register('/app/static/sw.js?v=7130').catch(function(){ });
       } catch(e) { }
     })();
     </script>
@@ -2255,6 +2266,9 @@ def bloc_chaine_seance(equipes, prefixe_cle="cs"):
                             _ok_m, _msg_m = remplacer_intention_reserve(
                                 _ns, _nouveau, auteur_nom=_num2nom.get(_ns),
                                 equipe_id=_eid)
+                            # v7.13.0 — remplacer_intention_reserve marque
+                            # d'office la ligne 'chaine' (prioritaire,
+                            # héritée, visible de facto) : rien à faire ici.
                             if _ok_m:
                                 _n_maj += 1
                             else:
@@ -2332,7 +2346,11 @@ def bloc_chaine_seance(equipes, prefixe_cle="cs"):
             for _i, _n in enumerate(_nums_aper):
                 _ns = _nums_aper[(_i + 1) % len(_nums_aper)]
                 _cle_i = f"{prefixe_cle}_int_{_ns}"
-                _cles_intentions[_ns] = _cle_i
+                # v7.13.0 — chaque zone porte sa marque d'origine : l'intention
+                # d'un maillon naît 'chaine' (prioritaire, héritée, visible de
+                # facto) ; celle d'un présent spirituellement naît 'visiteur'
+                # (accueillie comme celle des visiteurs — le surplus).
+                _cles_intentions[_ns] = (_cle_i, "chaine")
                 _deja = _cpt_res_eq.get(_ns, 0)
                 st.markdown('<div style="font-size:0.9rem; margin:12px 0 2px 0;">Maillon '
                             + str(_i + 1) + ' · N° ' + str(_n).zfill(2) + ' — <b>'
@@ -2359,7 +2377,7 @@ def bloc_chaine_seance(equipes, prefixe_cle="cs"):
                             "chaîne) — accueillies comme celles des visiteurs :")
                 for _an_abs in _abs_ap:
                     _cle_a = f"{prefixe_cle}_abs_{_an_abs}"
-                    _cles_intentions[_an_abs] = _cle_a
+                    _cles_intentions[_an_abs] = (_cle_a, "visiteur")
                     _deja_a = _cpt_res_eq.get(_an_abs, 0)
                     st.text_input(
                         "N° " + str(_an_abs).zfill(2) + " — " + _num2nom[_an_abs]
@@ -2396,14 +2414,19 @@ def bloc_chaine_seance(equipes, prefixe_cle="cs"):
                             # hauteur du N° méd. de la personne PRIÉE (le prochain
                             # du maillon), et celles des présents spirituellement
                             # à la leur. JAMAIS par la 🕯️ Zone du jour.
+                            # v7.13.0 — chaque arrivée porte sa marque d'origine :
+                            # 'chaine' pour les maillons (prioritaire dans le
+                            # tirage, héritée par l'absent, visible de facto),
+                            # 'visiteur' pour les présents spirituellement (le
+                            # surplus) — les quatre règles de la Chaîne.
                             _nb_int = 0
-                            for _num_i, _cle_i in _cles_intentions.items():
+                            for _num_i, (_cle_i, _src_i) in _cles_intentions.items():
                                 _txt_i = str(st.session_state.get(_cle_i, "") or "").strip()
                                 if not _txt_i:
                                     continue
                                 _ok_i, _msg_i = ajouter_intention_reserve(
                                     _num_i, _txt_i, auteur_nom=_num2nom.get(_num_i),
-                                    equipe_id=_eid)
+                                    equipe_id=_eid, source=_src_i)
                                 if _ok_i:
                                     _nb_int += 1
                                 else:
