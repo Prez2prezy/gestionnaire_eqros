@@ -3516,6 +3516,87 @@ def dizaines_ronde_derniere():
         return []
 
 
+def _assurer_dizaines_rondes_equipes():
+    """v7.13.2 — la table miroir des rondes VÉCUES PAR ÉQUIPE : la bannière
+    d'une équipe doit parler de SON équipe (sa liste d'attente, ses rappels
+    🔔), jamais du diocèse. Création douce, idempotente, aucune donnée
+    existante n'est touchée."""
+    if _table_reconnue("dizaines_rondes_equipes"):
+        return
+    try:
+        c.execute("SELECT id FROM dizaines_rondes_equipes LIMIT 1")
+    except Exception:
+        c.execute("""CREATE TABLE IF NOT EXISTS dizaines_rondes_equipes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        jour TEXT NOT NULL,
+                        heure_rappel TEXT NOT NULL,
+                        equipe_id INTEGER NOT NULL,
+                        servie_le TEXT,
+                        nb_membres INTEGER DEFAULT 0,
+                        nb_visiteurs INTEGER DEFAULT 0,
+                        push_ok INTEGER DEFAULT 0,
+                        push_ko INTEGER DEFAULT 0,
+                        UNIQUE(jour, heure_rappel, equipe_id))""")
+        commit_and_sync()
+    _table_averee("dizaines_rondes_equipes")
+
+
+def dizaines_ronde_equipe_completer(jour, heure_rappel, equipe_id, servie_le,
+                                    nb_membres=0, nb_visiteurs=0,
+                                    push_ok=0, push_ko=0):
+    """Note (ou re-note) le résultat de la ronde (jour, heure) POUR UNE
+    ÉQUIPE (v7.13.2) : les comptages de SA liste d'attente et les rappels
+    🔔 partis vers ses membres. Donnée dérivée, réécrite à chaque ronde."""
+    _assurer_dizaines_rondes_equipes()
+    try:
+        c.execute("""INSERT OR REPLACE INTO dizaines_rondes_equipes
+                     (jour, heure_rappel, equipe_id, servie_le, nb_membres,
+                      nb_visiteurs, push_ok, push_ko)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                  (str(jour), str(heure_rappel), int(equipe_id), str(servie_le),
+                   int(nb_membres), int(nb_visiteurs), int(push_ok),
+                   int(push_ko)))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"dizaines_ronde_equipe_completer : {e!r}")
+        return False
+
+
+def dizaines_ronde_equipe_derniere(equipe_id=None, paroisse_id=None):
+    """Les dernières rondes servies POUR UNE ÉQUIPE (ou agrégées pour une
+    paroisse, v7.13.2) — même forme que dizaines_ronde_derniere :
+    [(jour, heure, servie_le, membres, visiteurs, push_ok, push_ko)].
+    Vide tant que la première ronde post-v7.13.2 n'est pas passée : la
+    bannière retombe alors sur la mention horaire simple."""
+    _assurer_dizaines_rondes_equipes()
+    try:
+        if equipe_id:
+            return c.execute("""SELECT jour, heure_rappel, servie_le,
+                                       nb_membres, nb_visiteurs, push_ok,
+                                       push_ko
+                                FROM dizaines_rondes_equipes
+                                WHERE equipe_id=? AND servie_le IS NOT NULL
+                                ORDER BY jour DESC, heure_rappel DESC
+                                LIMIT 5""",
+                             (int(equipe_id),)).fetchall()
+        if paroisse_id:
+            return c.execute("""SELECT jour, heure_rappel, MAX(servie_le),
+                                       SUM(nb_membres), SUM(nb_visiteurs),
+                                       SUM(push_ok), SUM(push_ko)
+                                FROM dizaines_rondes_equipes r
+                                JOIN equipes e ON r.equipe_id=e.id
+                                WHERE e.paroisse_id=?
+                                  AND r.servie_le IS NOT NULL
+                                GROUP BY jour, heure_rappel
+                                ORDER BY jour DESC, heure_rappel DESC
+                                LIMIT 5""",
+                             (int(paroisse_id),)).fetchall()
+    except Exception as e:
+        logger.warning(f"dizaines_ronde_equipe_derniere : {e!r}")
+    return []
+
+
 # ── LES ABONNEMENTS PUSH (le téléphone qui a dit oui) ───────────────────
 def _assurer_push_abonnements():
     """Création douce de push_abonnements (bases distantes anciennes)."""
