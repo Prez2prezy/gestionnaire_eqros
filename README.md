@@ -1707,6 +1707,25 @@ sélections ordinaires, il s'est égaré au versement dans le dépôt.
   posés directement dans le dépôt, confirmés.
 - `_VERSION_APPLI = "v7.13.1"` ; aucun changement de schéma.
 
+### 39. v7.13.2 — Le titre rendu à son or, la Ronde rendue à son équipe
+
+- **🙏 Le titre « Vos intentions à une équipe » est doré POUR DE BON** :
+  une fois la carte hissée en titre du dépliant, elle quittait le conteneur
+  où vivait sa règle d'or — et une règle blanche, plus spécifique, prenait
+  le dessus. L'or est désormais posé DEUX FOIS (dans le style de la page,
+  par identifiant, et dans la bannière elle-même, en ligne) : il suit la
+  carte partout, dès le premier rendu, sur tous les navigateurs.
+- **⏰ La Ronde des dizaines regarde la bonne maison** : au niveau d'une
+  équipe, la bannière (06h00 · 12h00 · 18h00 · 21h00) parle DÉSORMAIS DE
+  CETTE ÉQUIPE — sa liste d'attente (membres + visiteurs accueillis) et ses
+  rappels 🔔 partis ; au niveau d'une paroisse, les comptages de ses
+  équipes ; le niveau diocèse garde la ronde globale. Une petite table
+  miroir (`dizaines_rondes_equipes` — création douce idempotente, aucune
+  donnée existante touchée) est remplie par chaque ronde ; jusqu'à la
+  première ronde de la journée, la bannière d'une équipe retombe sur la
+  mention horaire simple.
+- `_VERSION_APPLI = "v7.13.2"` ; `libsql-experimental` reste épinglé.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
