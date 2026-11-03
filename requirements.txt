@@ -7,7 +7,9 @@ requests>=2.31
 qrcode>=7.4
 openpyxl>=3.1
 cloudinary>=1.40
-libsql-experimental>=0.0.34
+# v7.13.1 — version épinglée : les récentes rapportaient un rowcount
+# cumulatif non fiable (le réveil des programmées se faisait muet).
+libsql-experimental==0.0.55
 # v7.12.0 — la fiche de mission « 📄 Enregistrer en PDF »
 reportlab>=4.0
 # v7.12.0 — les rappels de la dizaine par notification (🔔)
