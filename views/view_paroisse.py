@@ -21,6 +21,8 @@ from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, su
                       enregistrer_abonnement, verifier_abonnement, periode_affichage, 
                       generer_matricule_unique, get_periode_pastorale, lien_whatsapp, URL_ESPACE_SPIRITUEL,
                       synchroniser_menu_session, lire_menu_session, afficher_messages_flash)
+# v7.13.0 — lignes d'intercession sans redondance
+from components import ligne_intercession
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, afficher_historique_suivi, 
                         afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales)
 
@@ -231,9 +233,9 @@ def _onglet_coins_intentions(pid, equipes):
     # Nom} : … », « intercède pour cet anonyme : … », « intercède : … »
     # (universelle). Le texte est échappé (aucun HTML ne passe).
     _txt_prochain, _qui_prochain = intention_du_prochain_detail(jour_visiteur=None)
-    _ligne_apercu = (("🕯️ Vierge Marie, mère de Dieu, intercède pour " + _qui_prochain
-                      + " : " + _txt_prochain) if _qui_prochain
-                     else ("🕯️ Vierge Marie, mère de Dieu, intercède : " + _txt_prochain))
+    # v7.13.0 — aperçu SANS REDONDANCE : quand l'intention nomme déjà sa
+    # bénéficiaire, la ligne ne répète pas son nom deux fois.
+    _ligne_apercu = ligne_intercession(_qui_prochain, _txt_prochain)
     st.markdown(
         '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
         ' border:1px solid #FFD700; border-radius:12px; padding:14px 16px; margin:8px 0;">'
