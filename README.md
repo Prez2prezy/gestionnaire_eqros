@@ -1611,6 +1611,82 @@ sélections ordinaires, il s'est égaré au versement dans le dépôt.
   s'il n'y a rien en place, l'intention est posée).
 - `_VERSION_APPLI = "v7.12.4"` ; aucun changement de schéma.
 
+### 26. v7.13.0 — La ⛓️ Chaîne de la dernière séance applique ses quatre règles, et l'icône Rosaire ne se dédouble plus 📿
+
+- **⛓️ Les quatre règles de la Chaîne de la dernière séance** (la note
+  demandée, implémentée de bout en bout) :
+  - **PRIORITÉ** : les intentions issues de la ⛓️ Chaîne sont
+    **prioritaires dans l'intention du prochain** lors de l'égrenage de
+    la dizaine. Chaque intention de la réserve porte désormais sa marque
+    d'origine (`source` : `'chaine'` / `'visiteur'`) ; le tirage
+    (`intention_reserve_pour_numero`, `intentions_reserve_du_numero`)
+    ordonne **la chaîne d'abord**, les autres ensuite — la ligne
+    principale du livret porte l'intention de la chaîne, quoi qu'il
+    arrive au même N° méd.
+  - **HÉRITAGE** : un équipier a **toujours** une intention du prochain,
+    même absent de 2-3 prières mensuelles consécutives. L'enregistrement
+    d'une nouvelle chaîne ne libère plus les intentions de membres
+    antérieures que des N° méd. **présents physiquement** dans la
+    nouvelle chaîne (et leurs anciens attachements reviennent au tirage
+    pour que la nouvelle intention s'affiche aussitôt) ; les **absents**
+    gardent l'intention portée à leur dernière séance comme un héritage —
+    elle reste en réserve, prioritaire, visible sous l'attachement
+    comme après son expiration, **jusqu'à leur présence physique** à une
+    prière mensuelle. Le message d'enregistrement le nomme : « Les
+    absents gardent la leur en héritage (N) — elle les attend jusqu'à
+    leur retour. 🪶 ». Dans la foulée, `purger_reserve_expiree` n'emporte
+    plus JAMAIS une intention de chaîne : l'horloge des 20 jours ne
+    s'applique qu'aux intentions de visiteurs et aux vieilles lignes
+    orphelines (la vie de la chaîne, elle, commence et finit avec les
+    séances). La libération d'avant ne travaillait en fait jamais (le
+    filtre `publiee IS NULL` n'y prenait que les très vieilles lignes) :
+    la purge des 20 jours emportait les intentions de membres au bout de
+    trois semaines — le mal que l'héritage guérit.
+  - **DE FACTO** : dès l'enregistrement dans la réserve, l'intention
+    **s'affiche aussitôt** comme intention du prochain dans le lot de la
+    dizaine à égrener — `ajouter_intention_reserve` et
+    `remplacer_intention_reserve` insèrent `publiee=1` (l'attente de
+    00h00 ne concerne que la 🕯️ Zone du jour, son sas), et les
+    attachements périmés des présents sont rendus au tirage au moment de
+    la saisie : la nouvelle intention est lue à l'égrenage suivant, sans
+    délai ni geste.
+  - **LE SURPLUS, C'EST LE VISITEUR** : l'intention du visiteur du même
+    N° méd. se range TOUJOURS après celle de la chaîne — elle apparaît
+    dans le surplus (« 🕯️ Et elle intercède aussi … »), jamais à la
+    place de l'intention de chaîne.
+- **Où ça se voit** : la saisie des intentions maillon par maillon pose
+  chaque arrivée avec sa marque (`'chaine'` pour les maillons,
+  `'visiteur'` pour les présents spirituellement — accueillies comme
+  celles des visiteurs) ; `remplacer_intention_reserve` (la mise à jour
+  de la dernière séance) reprend la ligne de chaîne si elle existe, la
+  marque `'chaine'` dans tous les cas, et reste visible immédiatement ;
+  la carte de la chaîne et la grille des compteurs lisent l'ordre
+  chaîne-d'abord.
+- **Rétro-marquage doux** (`_retro_marquer_source_reserve`, une passe par
+  processus) : les intentions déjà en réserve portent la marque selon
+  l'heuristique éprouvée (équipe notée + « qui » ni anonyme ni visiteur =
+  chaîne) — les héritages passés prennent leur rang SANS aucun geste.
+- **📿 UNE SEULE ICÔNE, LE VISAGE DE L'ESPACE** (le raccourci qui
+  n'ouvrait que la partie Administration) : les deux manifestes
+  (`manifest_espace.json`, `manifest_admin.json`) portent désormais LE
+  MÊME manifeste unifié — nom « Rosaire — Les Équipes du Rosaire »,
+  `start_url /?espace=1`, icônes du chapelet doré, et deux
+  **raccourcis** (`shortcuts`) : 📿 Espace de prière et 🔑 Administration.
+  L'icône posée depuis n'importe quelle page s'appelle « Rosaire » et
+  ouvre l'Espace de prière ; l'Administration reste jointe par l'appui
+  long sur l'icône ou par l'adresse. La page `install_rosaire_admin.html`
+  devient une porte vers la même application (textes, redirection et
+  icônes alignés sur l'Espace) ; version PWA avancée à `?v=7130` et
+  `sw.js?v=7130` pour que les téléphones relisent les bons visages.
+  Rappel du réflexe sur le téléphone : **supprimer l'ancien raccourci**
+  (il garde pour toujours le visage qu'il avait au moment où il a été
+  posé), puis menu ⋮ → « Ajouter à l'écran d'accueil » APRÈS déploiement
+  (et lorsque le service statique de l'hébergeur sera guéri — voir la
+  panne en cours, indépendante de l'application).
+- `_VERSION_APPLI = "v7.13.0"` ; changement de schéma : UN ajout en
+  ALTER doux (idempotent) — colonne `source TEXT` à `intentions_reserve`
+  (+ rétro-marquage automatique). Zéro action Cloud, comme toujours.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
