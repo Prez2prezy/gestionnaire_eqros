@@ -105,7 +105,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.1"
+_VERSION_APPLI = "v7.13.2"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -4235,6 +4235,12 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
         ' background:linear-gradient(135deg,#1A237E,#4527a0) !important; }'
         'div[data-testid="stExpander"]:has(#int-or-marker) summary p {'
         ' color:#FFD000 !important; font-weight:600 !important; }'
+        '/* v7.13.2 — une fois hissée dans le résumé, la bannière ne se trouve'
+        '   plus sous .stMarkdown : sa règle dorée perdait face à la règle'
+        '   blanche des summaries (plus spécifique). Or posé PAR IDENTIFIANT,'
+        '   plus fort que tout, dès le premier rendu. */'
+        '#int-bann-carte .dpl-titre-g { color:#FFD000 !important;'
+        ' font-family:Georgia,serif !important; font-weight:bold !important; }'
         '</style>', unsafe_allow_html=True)
     # v7.9.17 — DEMANDE UTILISATRICE : la rubrique est CONTENUE DANS UN
     # DÉPLIANT, comme « 📿 Découvrez les Équipes du Rosaire ! ». L'expander
@@ -4263,7 +4269,9 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                 '<div id="int-bann-carte" style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
                 ' border:2px solid #FFD700; border-radius:15px; padding:16px;'
                 ' text-align:center; margin:2px 4px 10px 4px;">'
-                '<div class="dpl-titre-g" style="font-size:clamp(1.05rem, 4.5vw, 1.25rem);">'
+                '<div class="dpl-titre-g" style="color:#FFD000 !important;'
+                ' font-family:Georgia,serif !important; font-weight:bold !important;'
+                ' font-size:clamp(1.05rem, 4.5vw, 1.25rem);">'
                 '🙏 Vos intentions à une équipe</div>'
                 '<div style="color:#ffffff; font-size:clamp(0.85rem, 3.6vw, 1rem);'
                 ' margin-top:6px; line-height:1.6;">'
