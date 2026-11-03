@@ -1212,7 +1212,7 @@ def pointer_dizaine(matloc=None, nom=None, jrnais=None, equipe_id=None,
             if not matloc:
                 return ("erreur", "Membre non identifié.")
             if dizaine_deja_pointee(matloc):
-                return ("deja", "📿 Merci Sainte Mère pour ton aide de ce jour! — À demain! 🕊️")
+                return ("deja", "📿 Merci Sainte Mère de Dieu pour ton aide de ce jour ! — À demain! 🕊️")
             c.execute("""INSERT INTO dizaines_journal
                          (matloc, nom, type, jrnais, equipe_id, paroisse_id, jour, heure)
                          VALUES (?, ?, 'membre', NULL, ?, ?, ?, ?)""",
@@ -1995,9 +1995,14 @@ def retirer_intention_reserve(rid, equipe_id=None):
                             (rid,)).fetchone()
             if not _eq or _eq[0] != equipe_id:
                 return False
-        cur = c.execute("DELETE FROM intentions_reserve WHERE id=?", (rid,))
+        # v7.13.1 — retrait confirmé PAR LECTURE (le rowcount du conducteur
+        # distant n'est pas fiable) : la ligne est-elle encore là ?
+        if not c.execute("SELECT 1 FROM intentions_reserve WHERE id=?",
+                         (rid,)).fetchone():
+            return False
+        c.execute("DELETE FROM intentions_reserve WHERE id=?", (rid,))
         commit_and_sync()
-        return bool(getattr(cur, "rowcount", 0))
+        return True
     except Exception as e:
         logger.warning(f"retirer_intention_reserve : {e!r}")
         return False
@@ -2141,14 +2146,23 @@ def enregistrer_chaine_seance(equipe_id, date_seance, ordre_nums, absents_nums=N
         # correction de saisie non plus). Les intentions des VISITEURS ne
         # bougent pas : elles suivent leur règle à elles (20 jours).
         try:
-            _lib = c.execute("""UPDATE intentions_reserve SET active=0
-                                WHERE equipe_id=? AND active=1
-                                  AND (date_ajout IS NULL OR date_ajout < ?)
-                                  AND publiee IS NULL
-                                  AND (qui IS NULL OR qui NOT IN
-                                       ('cet anonyme', 'notre prochain'))""",
-                              (int(equipe_id), date.today().isoformat()))
-            _n_lib = int(getattr(_lib, "rowcount", 0) or 0)
+            # v7.13.1 — le compte des libérées se prend PAR LECTURE avant la
+            # mise à jour (le rowcount du conducteur distant n'est pas fiable).
+            _n_lib = int(c.execute("""SELECT COUNT(*) FROM intentions_reserve
+                                      WHERE equipe_id=? AND active=1
+                                        AND (date_ajout IS NULL OR date_ajout < ?)
+                                        AND publiee IS NULL
+                                        AND (qui IS NULL OR qui NOT IN
+                                             ('cet anonyme', 'notre prochain'))""",
+                                   (int(equipe_id),
+                                    date.today().isoformat())).fetchone()[0])
+            c.execute("""UPDATE intentions_reserve SET active=0
+                         WHERE equipe_id=? AND active=1
+                           AND (date_ajout IS NULL OR date_ajout < ?)
+                           AND publiee IS NULL
+                           AND (qui IS NULL OR qui NOT IN
+                                ('cet anonyme', 'notre prochain'))""",
+                      (int(equipe_id), date.today().isoformat()))
         except Exception as e:
             logger.warning(f"enregistrer_chaine_seance (libération) : {e!r}")
             _n_lib = 0
@@ -3448,17 +3462,22 @@ def _assurer_dizaines_rondes():
 
 
 def dizaines_ronde_reserver(jour, heure_rappel):
-    """Réserve la ronde (jour, heure) pour CE processus : le INSERT
-    n'aboutit qu'UNE fois quel que soit le nombre de sessions réveillées
-    (la ligne existe déjà → 0 ligne insérée → ce n'est pas nous).
+    """Réserve la ronde (jour, heure) pour CE processus : la décision se
+    prend PAR LECTURE (v7.13.1 — le rowcount du conducteur distant récent
+    n'est pas fiable) : si la ligne existe déjà, ce n'est pas nous.
     True = c'est nous qui servons la ronde."""
     _assurer_dizaines_rondes()
     try:
-        _cur = c.execute("""INSERT OR IGNORE INTO dizaines_rondes
-                            (jour, heure_rappel) VALUES (?, ?)""",
-                         (str(jour), str(heure_rappel)))
+        _deja = c.execute("""SELECT 1 FROM dizaines_rondes
+                             WHERE jour=? AND heure_rappel=?""",
+                          (str(jour), str(heure_rappel))).fetchone()
+        if _deja:
+            return False
+        c.execute("""INSERT INTO dizaines_rondes
+                     (jour, heure_rappel) VALUES (?, ?)""",
+                  (str(jour), str(heure_rappel)))
         commit_and_sync()
-        return bool(getattr(_cur, "rowcount", 0))
+        return True
     except Exception as e:
         logger.warning(f"dizaines_ronde_reserver : {e!r}")
         return False
