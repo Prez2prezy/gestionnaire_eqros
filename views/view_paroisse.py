@@ -435,7 +435,7 @@ def _tableau_de_bord_paroisse(pid, nom_p):
         with st.expander("ℹ️ Comment lire les dizaines ?"):
             st.caption("Chaque équipier (ou visiteur) qui termine « 🕯️ Un jour, "
                        "une dizaine » dans l'Espace de Prière peut appuyer sur "
-                       "« ✅ Merci Sainte Mère pour ton aide de ce jour! ». Le membre est "
+                       "« ✅ Merci Sainte Mère de Dieu pour ton aide de ce jour ! ». Le membre est "
                        "pointé 1 fois/jour (son équipe le voit), le visiteur compte "
                        "un passage anonyme.")
 
