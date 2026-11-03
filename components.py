@@ -15,6 +15,7 @@ from database import (c, commit_and_sync, enregistrer_chaine_seance,
                       # v7.12.0 — la liste des dizaines en attente (membres
                       # ET visiteurs dénombrés) + les rondes du jour
                       dizaines_du_jour_attente, dizaines_ronde_derniere,
+                      dizaines_ronde_equipe_derniere,
                       HEURES_RONDES,
                       feuillet_questions_lister, feuillet_questionnaire_existe,
                       feuillet_question_ajouter, feuillet_question_modifier,
@@ -766,7 +767,19 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
             _membres, _visiteurs = dizaines_du_jour_attente(equipe_id,
                                                             paroisse_id)
             # ── la bannière des rondes (v7.12.0) ─────────────────────
-            _dernieres = dizaines_ronde_derniere()
+            # v7.13.2 — LA BANNIÈRE RESPECTE LA PORTÉE : au niveau d une
+            # équipe elle parle de l équipe (sa liste, ses rappels 🔔),
+            # au niveau paroisse des comptages de ses équipes ; le diocèse
+            # garde la ronde globale. Tant que la première ronde du jour
+            # n a pas noté l équipe, mention horaire simple.
+            if equipe_id:
+                _dernieres = dizaines_ronde_equipe_derniere(
+                    equipe_id=equipe_id)
+            elif paroisse_id:
+                _dernieres = dizaines_ronde_equipe_derniere(
+                    paroisse_id=paroisse_id)
+            else:
+                _dernieres = dizaines_ronde_derniere()
             _mention_ronde = " · ".join(_h.replace(":", "h")
                                         for _h in HEURES_RONDES)
             if _dernieres and _dernieres[0][0] == date.today().isoformat():
@@ -1880,7 +1893,7 @@ def injecter_icone_pwa(espace=False):
     # PREMIER OCTET — et posent désormais une VRAIE application d'un seul
     # bouton (v7.12.2), puis s'effacent devant l'Espace à la prochaine
     # ouverture.
-    _ver_pwa = "7130"
+    _ver_pwa = "7132"
 
     def _icon_data(nom_fichier):
         """v7.9.10 — l'icône lue sur le disque et INCORPORÉE en base64 :
