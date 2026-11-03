@@ -902,9 +902,20 @@ def executer_rondes_dizaines(force=False):
         _membres, _visiteurs = database.dizaines_du_jour_attente()
         _nb_m, _nb_v = len(_membres), len(_visiteurs)
         _ok = _ko = 0
+        # v7.13.2 — les rappels 🔔 de la ronde sont comptés AUSSI équipe par
+        # équipe (l équipe du membre, connue par son MatLoc) : chaque équipe
+        # verra SES rappels partis, pas ceux du diocèse.
+        _eq_ok, _eq_ko = {}, {}
         for _ab in database.push_abonnements_actifs():
             try:
                 (_aid, _cle, _mat, _jn, _endpoint, _p256dh, _auth) = _ab
+                # v7.13.2 — l équipe du membre abonné (pour compter SES rappels)
+                _eq_abo = None
+                if _mat:
+                    try:
+                        _eq_abo = database.fiche_membre_chaine(_mat)[0]
+                    except Exception:
+                        _eq_abo = None
                 _en_attente = True
                 if _mat:
                     _en_attente = not database.dizaine_deja_pointee(_mat)
@@ -925,14 +936,32 @@ def executer_rondes_dizaines(force=False):
                         "Que la Vierge Marie veille sur toi! 🙏",
                         _lien):
                     _ok += 1
+                    if _eq_abo:
+                        _eq_ok[_eq_abo] = _eq_ok.get(_eq_abo, 0) + 1
                 else:
                     _ko += 1
+                    if _eq_abo:
+                        _eq_ko[_eq_abo] = _eq_ko.get(_eq_abo, 0) + 1
             except Exception as e:
                 _ko += 1
                 logger.warning(f"rondes : abonnement #{_ab[0]} — {e!r}")
         database.dizaines_ronde_completer(
             _jour, _rdv, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
             _nb_m, _nb_v, _ok, _ko)
+        # v7.13.2 — la ronde vécue ÉQUIPE PAR ÉQUIPE : la liste d attente de
+        # chaque équipe (membres + visiteurs accueillis par ses intentions)
+        # et ses rappels 🔔 partis sont notés à part — la bannière d une
+        # équipe parle de l équipe, jamais du diocèse.
+        try:
+            _servie_le = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            for (_tid,) in c.execute("SELECT id FROM equipes").fetchall():
+                _mt_eq, _vt_eq = database.dizaines_du_jour_attente(
+                    equipe_id=_tid)
+                database.dizaines_ronde_equipe_completer(
+                    _jour, _rdv, _tid, _servie_le, len(_mt_eq), len(_vt_eq),
+                    _eq_ok.get(_tid, 0), _eq_ko.get(_tid, 0))
+        except Exception as e:
+            logger.warning(f"rondes par équipe : {e!r}")
         logger.info(f"rondes : {_rdv} servie — {_nb_m} membre(s) et "
                     f"{_nb_v} visiteur(s) en attente, {_ok} push parti(s)")
     except Exception as e:
