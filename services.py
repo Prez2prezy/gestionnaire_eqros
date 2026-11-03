@@ -695,7 +695,10 @@ def executer_publications_programmees():
     re-vérification Python de l'échéance (aujourd'hui < date_publication_prevue
     → la ligne est laissée en place, JAMAIS publiée avant l'heure),
     auto-réparation des réclamations bloquées, traçabilité de la décision,
-    et AUCUNE exception ne remonte vers la page qui l'appelle."""
+    et AUCUNE exception ne remonte vers la page qui l'appelle.
+    v7.13.1 — la réclamation se fait PAR JETON relu (jamais par rowcount,
+    devenu non fiable chez le conducteur distant) et la fonction REND son
+    compte : le nombre de publications effectuées."""
     try:
         _migrer_colonnes_programmation()
         _maint_s = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -718,24 +721,31 @@ def executer_publications_programmees():
         # 2e verrou — re-parse Python : aucun format inattendu ne part.
         rows = [r for r in rows if _lire_prevue(r[11]) is not None]
         if not rows:
-            return
+            return 0
     except Exception as e:
         logger.warning(f"publications programmées : balayage impossible ({e!r})")
-        return
+        return 0
     _maint_s2 = datetime.now().strftime("%Y-%m-%d %H:%M")
     _n = 0
     for s in rows:
         try:
-            # RÉCLAMATION anti-course : la mise à jour doit toucher
-            # EXACTEMENT 1 ligne ; sinon une autre session l'a prise.
-            _cur = c.execute("""UPDATE soumissions_comm
-                                SET statut='prog_auto_en_cours', date_decision=?
-                                WHERE id=? AND statut='programme'
-                                  AND date_publication_prevue IS NOT NULL
-                                  AND date_publication_prevue <= ?""",
-                             (_maint_s2, s[0], _maint_s2))
-            if (_cur.rowcount or 0) != 1:
-                continue
+            # v7.13.1 — RÉCLAMATION PAR JETON, insensible au conducteur :
+            # libsql récent rapporte un rowcount cumulatif non fiable et la
+            # porte « != 1 » rendait le réveil muet (panne du 02/11). La
+            # réclamation pose un JETON UNIQUE puis se RELIT : seule la
+            # session qui retrouve SON jeton publie — jamais le rowcount.
+            _jeton = "auto:" + os.urandom(8).hex()
+            c.execute("""UPDATE soumissions_comm
+                         SET statut='prog_auto_en_cours', date_decision=?,
+                             auteur_decision=?
+                         WHERE id=? AND statut='programme'
+                           AND date_publication_prevue IS NOT NULL
+                           AND date_publication_prevue <= ?""",
+                     (_maint_s2, _jeton, s[0], _maint_s2))
+            _pose = c.execute("""SELECT auteur_decision FROM soumissions_comm
+                                  WHERE id=?""", (s[0],)).fetchone()
+            if not _pose or str(_pose[0] or "") != _jeton:
+                continue  # réclamée par une autre session
             if publier_soumission(s):
                 c.execute("""UPDATE soumissions_comm SET statut='publie',
                              auteur_decision=? WHERE id=?""",
@@ -762,6 +772,14 @@ def executer_publications_programmees():
             commit_and_sync()
         except Exception as e:
             logger.warning(f"publications programmées : commit ({e!r})")
+    # v7.13.1 — le réveil se fait connaître : le journal (Manage app) dit
+    # combien d'échéances étaient dues et combien sont parties. Et il rend
+    # son compte au bouton « ⏰ Réveiller la programmation maintenant ».
+    try:
+        logger.info(f"publications programmées : {len(rows)} due(s), {_n} publiée(s)")
+    except Exception:
+        pass
+    return _n
 
 
 
