@@ -7,7 +7,8 @@ import streamlit as st
 import html
 from datetime import date, datetime, time
 from database import c, commit_and_sync, safe_migrate
-from services import envoyer_notification_telegram, publier_soumission
+from services import (envoyer_notification_telegram, publier_soumission,
+                       executer_publications_programmees)
 
 
 LIBELLES = {"priere": "🙏 Prière", "meditation": "📖 Méditation",
@@ -548,6 +549,22 @@ def show_validation_communication():
     except Exception:
         _programmees = []
     st.markdown(f"### 🗓️ Programmées ({len(_programmees)})")
+    # v7.13.1 — LE RÉVEIL À LA MAIN : le réveil passe tout seul à chaque
+    # ouverture de l'application ; ce bouton le déclenche à la demande et
+    # dit ce qu'il a fait — la programmation se vérifie d'un œil.
+    if st.button("⏰ Réveiller la programmation maintenant",
+                 key="prog_reveil_manuel"):
+        _n_rv = executer_publications_programmees()
+        commit_and_sync()
+        if _n_rv:
+            st.session_state["flash_success"] = (
+                "⏰ Réveil fait : " + str(_n_rv) + " publication(s) effectuée(s) "
+                "à l'heure dite. ✅")
+        else:
+            st.session_state["flash_success"] = (
+                "⏰ Réveil fait : aucune publication n'était due — tout est à "
+                "l'heure. 🕊️")
+        st.rerun()
     if not _programmees:
         st.caption("Aucune publication programmée. Utilisez « 🗓️ Programmer la publication » "
                    "dans une soumission en attente pour la diffuser à une date/heure choisie.")
