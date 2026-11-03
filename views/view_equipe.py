@@ -44,7 +44,7 @@ def _bloc_dizaines_equipe(eid):
     jour, sans jamais les nommer)."""
     st.markdown("#### 📿 Chaîne des dizaines — aujourd'hui")
     st.caption("Le pointage est volontaire : chaque équipier le fait en fin de « 🕯️ Un jour, "
-               "une dizaine » (bouton « ✅ Merci Sainte Mère pour ton aide de ce jour! », ou "
+               "une dizaine » (bouton « ✅ Merci Sainte Mère de Dieu pour ton aide de ce jour ! », ou "
                "« ✕ Terminer » en fin de mystère — v7.9.3). Il atteste d'une dizaine égrenée "
                "dans l'application — le contenu de la prière, lui, reste personnel.")
     _mbr, _vis, _liste = stats_dizaines_jour(equipe_id=eid)
