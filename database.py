@@ -1349,16 +1349,53 @@ def _assurer_table_reserve():
     # v7.12.0 — auteur_contact : le contact laissé par le fidèle (WhatsApp /
     # e-mail) voyage avec son intention en réserve — c'est lui qui permet
     # d'alerter le visiteur de la chaîne sur son téléphone (rappels 4×/jour).
+    # v7.13.0 — source : d'où vient l'intention ('chaine' = posée par la
+    # ⛓️ Chaîne de la dernière séance ou sa mise à jour ; 'visiteur' = reçue
+    # d'un visiteur / présent spirituellement ; NULL = anciennes lignes
+    # avant la marque). C'est elle qui porte les quatre règles de la
+    # Chaîne : priorité au tirage, héritage des absents, visibilité de
+    # facto, visiteur en surplus.
     for _col in ("active INTEGER DEFAULT 1", "qui TEXT", "jour_naissance INTEGER",
                  "publiee INTEGER DEFAULT 1", "date_publication TEXT",
-                 "auteur_contact TEXT"):
+                 "auteur_contact TEXT", "source TEXT"):
         try:
             c.execute(f"ALTER TABLE intentions_reserve ADD COLUMN {_col}")
             commit_and_sync()
         except Exception:
             pass  # colonne déjà présente
+    _retro_marquer_source_reserve()
     _retroremplir_contact_reserve()
     _table_averee("intentions_reserve")
+
+
+# v7.13.0 — le rétro-marquage des sources ne tourne qu'UNE FOIS par
+# processus (idempotent de toute façon : seules les lignes sans marque
+# sont lues, et seules celles des équipes reçoivent la marque 'chaine').
+_SOURCE_MARQUEE_FAIT = False
+
+
+def _retro_marquer_source_reserve():
+    """RÉTRO-MARQUAGE DOUX (v7.13.0) : les intentions déjà en réserve ne
+    portent pas la marque d'origine — l'heuristique éprouvée distingue les
+    intentions des MEMBRES (posées par les chaînes passées, équipe notée,
+    « qui » ni anonyme ni visiteur) des intentions de VISITEURS (entrées
+    par le sas de la Zone du jour, « qui » = 'cet anonyme'/'notre prochain').
+    Les premières deviennent source='chaine' : elles reprennent d'office
+    leur place de prioritaires et d'héritage, sans attendre la prochaine
+    saisie de chaîne. Silencieux, idempotent, une passe par processus."""
+    global _SOURCE_MARQUEE_FAIT
+    if _SOURCE_MARQUEE_FAIT:
+        return
+    try:
+        c.execute("""UPDATE intentions_reserve SET source='chaine'
+                     WHERE source IS NULL AND active=1
+                       AND equipe_id IS NOT NULL
+                       AND (qui IS NULL OR qui NOT IN
+                            ('cet anonyme', 'notre prochain'))""")
+        commit_and_sync()
+    except Exception as e:
+        logger.warning(f"_retro_marquer_source_reserve : {e!r}")
+    _SOURCE_MARQUEE_FAIT = True
 
 
 def _assurer_table_du_jour():
@@ -1707,10 +1744,15 @@ def purger_reserve_expiree(force=False):
         _assurer_table_reserve()
         _limite = date.fromordinal(
             date.today().toordinal() - DUREE_RESERVE_VISITEUR).isoformat()
+        # v7.13.0 — les intentions de la ⛓️ CHAÎNE (source='chaine') n'ont
+        # PAS d'horloge : elles vivent jusqu'à la prochaine séance (libérées
+        # par la nouvelle saisie, présents seulement) et restent en héritage
+        # pour les absents — jamais emportées par les 20 jours du visiteur.
         _cur = c.execute("""UPDATE intentions_reserve SET active=0
                             WHERE active=1
                               AND date_ajout IS NOT NULL
                               AND date_ajout <= ?
+                              AND COALESCE(source,'') <> 'chaine'
                               AND (publiee IS NOT NULL
                                    OR qui IN ('cet anonyme', 'notre prochain')
                                    OR equipe_id IS NULL)""", (_limite,))
@@ -1793,7 +1835,7 @@ def _numero_med_normale(jour):
 
 def ajouter_intention_reserve(numero_med, texte, auteur_nom=None,
                               equipe_id=None, paroisse_id=None,
-                              jour_naissance=None, qui=None):
+                              jour_naissance=None, qui=None, source=None):
     """Ajoute une intention à la réserve d'un N° méd. (v7.9.3).
     v7.9.4 — UNE intention par N° méd. (règle d'origine).
     v7.9.19 — LE SURPLUS EST LE BIENVENU : un N° méd. peut porter plusieurs
@@ -1815,14 +1857,19 @@ def ajouter_intention_reserve(numero_med, texte, auteur_nom=None,
         _deja = c.execute("""SELECT COUNT(*) FROM intentions_reserve
                              WHERE numero_med=? AND active=1""",
                           (_num,)).fetchone()[0]
+        # v7.13.0 — publiee=1 dès l'insertion (RÈGLE DE FACTO : une intention
+        # enregistrée dans la réserve s'affiche aussitôt comme intention du
+        # prochain dans le lot de la dizaine à égrener — seule la Zone du
+        # jour suit son sas à 00h00) ; la marque d'origine voyage avec elle.
         c.execute("""INSERT INTO intentions_reserve
                      (numero_med, texte, auteur_nom, equipe_id, paroisse_id,
-                      date_ajout, active, qui, jour_naissance)
-                     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                      date_ajout, active, qui, jour_naissance, publiee, source)
+                     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 1, ?)""",
                   (_num, _txt, (str(auteur_nom).strip() or None) if auteur_nom else None,
                    equipe_id, paroisse_id, date.today().isoformat(),
                    (str(qui).strip() or None) if qui else None,
-                   int(jour_naissance) if jour_naissance else None))
+                   int(jour_naissance) if jour_naissance else None,
+                   (str(source).strip() or None) if source else None))
         commit_and_sync()
         if _deja:
             return (True, "📚 Intention ajoutée à la réserve du N° méd. " + str(_num)
@@ -1857,10 +1904,14 @@ def remplacer_intention_reserve(numero_med, texte, auteur_nom=None,
     try:
         _row = c.execute("""SELECT id FROM intentions_reserve
                             WHERE numero_med=? AND active=1
-                            ORDER BY id ASC LIMIT 1""", (_num,)).fetchone()
+                            ORDER BY CASE WHEN source='chaine' THEN 0 ELSE 1 END,
+                                     id ASC LIMIT 1""", (_num,)).fetchone()
         if _row:
+            # v7.13.0 — la ligne reprise devient (reste) une intention de
+            # CHAÎNE : prioritaire et héritée jusqu'à la prochaine séance.
             c.execute("""UPDATE intentions_reserve
-                         SET texte=?, auteur_nom=?, equipe_id=?, date_ajout=?
+                         SET texte=?, auteur_nom=?, equipe_id=?, date_ajout=?,
+                             source='chaine', publiee=1
                          WHERE id=?""",
                       (_txt,
                        (str(auteur_nom).strip() or None) if auteur_nom else None,
@@ -1870,8 +1921,8 @@ def remplacer_intention_reserve(numero_med, texte, auteur_nom=None,
                           "remplacée : la nouvelle est visible sous le maillon.")
         c.execute("""INSERT INTO intentions_reserve
                      (numero_med, texte, auteur_nom, equipe_id, paroisse_id,
-                      date_ajout, active, qui, jour_naissance)
-                     VALUES (?, ?, ?, ?, ?, ?, 1, NULL, NULL)""",
+                      date_ajout, active, qui, jour_naissance, publiee, source)
+                     VALUES (?, ?, ?, ?, ?, ?, 1, NULL, NULL, 1, 'chaine')""",
                   (_num, _txt,
                    (str(auteur_nom).strip() or None) if auteur_nom else None,
                    equipe_id, paroisse_id, date.today().isoformat()))
@@ -1990,8 +2041,13 @@ def enregistrer_chaine_seance(equipe_id, date_seance, ordre_nums, absents_nums=N
     """Enregistre la chaîne d'une séance (v7.9.18). ordre_nums : liste d'entiers
     (N° méd.) dans l'ordre de la chaîne — le dernier reprend le premier.
     absents_nums : liste optionnelle des « présents spirituellement » (hors
-    chaîne). Retourne (ok, message) prêt à afficher."""
+    chaîne). Retourne (ok, message) prêt à afficher.
+    v7.13.0 — LES QUATRE RÈGLES DE LA CHAÎNE : les intentions des membres
+    PRÉSENTS cèdent leur place (la nouvelle séance les remplace), celles des
+    ABSENTS restent en HÉRITAGE jusqu'à leur retour ; les attachements des
+    présents reviennent au tirage (visibles de facto)."""
     _assurer_table_chaine_seances()
+    _assurer_table_reserve()   # v7.13.0 — la colonne source existe SÛREMENT
     try:
         _ordre = [int(n) for n in (ordre_nums or [])]
     except (TypeError, ValueError):
@@ -2014,25 +2070,49 @@ def enregistrer_chaine_seance(equipe_id, date_seance, ordre_nums, absents_nums=N
                    ",".join(str(n) for n in _ordre),
                    ",".join(str(n) for n in _abs) if _abs else None,
                    datetime.now().strftime("%Y-%m-%d %H:%M")))
-        # v7.9.20 — LA NOUVELLE SAISIE LIBÈRE LES INTENTIONS DES MEMBRES :
-        # celles posées dans la chaîne précédente ont vécu « jusqu'à la
-        # prochaine séance » — la séance venue, elles quittent la réserve
-        # (celles notées à CETTE séance suivent juste après, avec date_ajout
-        # du jour : elles ne sont pas touchées ; celles du jour même, d'une
-        # correction de saisie non plus). Les intentions des VISITEURS ne
+        # v7.13.0 — L'HÉRITAGE DES ABSENTS (la règle de la ⛓️ Chaîne de la
+        # dernière séance) : la nouvelle saisie ne libère les intentions de
+        # membres antérieures que des N° méd. PRÉSENTS dans la chaîne — leur
+        # nouvelle intention prend la place. Les absents (présents
+        # spirituellement ou non notés) GARDENT l'intention portée à leur
+        # dernière séance comme un HÉRITAGE : elle reste en réserve,
+        # prioritaire et visible, jusqu'à ce qu'ils soient physiquement
+        # présents à une prière mensuelle. Les intentions des VISITEURS ne
         # bougent pas : elles suivent leur règle à elles (20 jours).
+        # (Corrige aussi la libération d'avant : le filtre « publiee IS NULL »
+        # n'y prenait que les très vieilles lignes — les intentions de la
+        # séance précédente n'étaient en fait jamais libérées ici.)
+        _pres = ",".join(str(n) for n in _ordre)
         try:
             _lib = c.execute("""UPDATE intentions_reserve SET active=0
                                 WHERE equipe_id=? AND active=1
                                   AND (date_ajout IS NULL OR date_ajout < ?)
-                                  AND publiee IS NULL
-                                  AND (qui IS NULL OR qui NOT IN
-                                       ('cet anonyme', 'notre prochain'))""",
+                                  AND (source='chaine' OR (source IS NULL AND
+                                       (qui IS NULL OR qui NOT IN
+                                        ('cet anonyme', 'notre prochain'))))
+                                  AND numero_med IN ({})""".format(_pres),
                               (int(equipe_id), date.today().isoformat()))
             _n_lib = int(getattr(_lib, "rowcount", 0) or 0)
         except Exception as e:
             logger.warning(f"enregistrer_chaine_seance (libération) : {e!r}")
             _n_lib = 0
+        # v7.13.0 — LES ATTACHEMENTS DES PRÉSENTS REVIENNENT AU TIRAGE : la
+        # nouvelle séance est de fait une NOUVELLE intention du prochain pour
+        # eux (visibles aussitôt, règle de facto) — l'ancienne attribution
+        # (période précédente) céderait la place et masquerait la nouvelle.
+        # Les ABSENTS gardent le leur : leur héritage continue sans à-coup.
+        try:
+            _matlocs = c.execute("""SELECT matloc FROM membres
+                                    WHERE equipe_id=? AND statut='actif'
+                                      AND CAST(numero_meditation AS INTEGER)
+                                          IN ({})""".format(_pres),
+                                 (int(equipe_id),)).fetchall()
+            for _m in _matlocs:
+                if _m and _m[0]:
+                    c.execute("DELETE FROM attributions_prochain WHERE cle=?",
+                              ("M:" + str(_m[0]),))
+        except Exception as e:
+            logger.warning(f"enregistrer_chaine_seance (attachements) : {e!r}")
         commit_and_sync()
         # v7.9.19 — la phrase demandée : « X prie pour Y — N° méd. Z. »
         _msg = ("Chaîne de la séance enregistrée : chaque membre prie pour "
@@ -2040,6 +2120,22 @@ def enregistrer_chaine_seance(equipe_id, date_seance, ordre_nums, absents_nums=N
         if _n_lib:
             _msg += (" Les intentions de la précédente séance ("
                      + str(_n_lib) + ") ont quitté la réserve.")
+        # v7.13.0 — le message nomme l'héritage : les absents continuent de
+        # porter l'intention de leur dernière séance jusqu'à leur retour.
+        try:
+            _n_her = c.execute("""SELECT COUNT(*) FROM intentions_reserve
+                                  WHERE equipe_id=? AND active=1
+                                    AND source='chaine'
+                                    AND date_ajout IS NOT NULL
+                                    AND date_ajout < ?""",
+                                (int(equipe_id),
+                                 date.today().isoformat())).fetchone()[0]
+        except Exception:
+            _n_her = 0
+        if _n_her:
+            _msg += (" Les absents gardent la leur en héritage ("
+                     + str(_n_her) + ") — elle les attend jusqu'à leur "
+                       "retour. 🪶")
         return (True, _msg)
     except Exception as e:
         logger.warning(f"enregistrer_chaine_seance : {e!r}")
@@ -2082,7 +2178,10 @@ def intention_reserve_pour_numero(numero_med, cycle=None, jour_exclu=None):
     normal ; stock tournant élargi quand les demandes abondent) et la règle
     d'or s'applique aussi ici : jour_exclu (jour de naissance du lecteur)
     écarte l'intention qu'il a lui-même confiée. La rotation suit la fenêtre
-    glissante de 20 jours quand plusieurs intentions coexistent au même N°."""
+    glissante de 20 jours quand plusieurs intentions coexistent au même N°.
+    v7.13.0 — LA PRIORITÉ DE LA CHAÎNE : une intention de la ⛓️ Chaîne
+    (source='chaine') posée à ce N° méd. EST la principale — toujours ; la
+    rotation par cycle ne joue que parmi les intentions de visiteurs."""
     _num = _numero_med_normale(numero_med)
     if _num is None:
         return None
@@ -2095,23 +2194,31 @@ def intention_reserve_pour_numero(numero_med, cycle=None, jour_exclu=None):
         # nourrit plus le tirage.
         publier_reserve_due()
         purger_reserve_expiree()
-        rows = c.execute("""SELECT texte, qui, auteur_nom, jour_naissance
+        rows = c.execute("""SELECT texte, qui, auteur_nom, jour_naissance, source
                             FROM intentions_reserve
                             WHERE numero_med=? AND active=1
                               AND (publiee IS NULL OR publiee<>0)
-                            ORDER BY id ASC""", (_num,)).fetchall()
+                            ORDER BY CASE WHEN source='chaine' THEN 0 ELSE 1 END,
+                                     id ASC""", (_num,)).fetchall()
         if jour_exclu is not None:
             rows = [r for r in rows
                     if r[3] is None or int(r[3]) != int(jour_exclu)]
         if not rows:
             return None
-        if cycle is None:
-            cycle = (date.today() - date(2024, 1, 1)).days // 20
-        _i = int(cycle) % len(rows)
-        _qui = (str(rows[_i][1] or "").strip()
-                or str(rows[_i][2] or "").strip()
+        # v7.13.0 — LA PRIORITÉ DE LA CHAÎNE : une intention de la ⛓️ Chaîne
+        # au N° méd. EST la principale (aucune rotation ne la déloge) ; la
+        # rotation par cycle de 20 jours ne joue que parmi les visiteuses.
+        _chaine_rows = [r for r in rows if r[4] == "chaine"]
+        if _chaine_rows:
+            _sel = _chaine_rows[0]
+        else:
+            if cycle is None:
+                cycle = (date.today() - date(2024, 1, 1)).days // 20
+            _sel = rows[int(cycle) % len(rows)]
+        _qui = (str(_sel[1] or "").strip()
+                or str(_sel[2] or "").strip()
                 or "notre prochain")
-        return (str(rows[_i][0]).strip(), _qui)
+        return (str(_sel[0]).strip(), _qui)
     except Exception as e:
         logger.warning(f"intention_reserve_pour_numero : {e!r}")
         return None
@@ -2139,7 +2246,8 @@ def intentions_reserve_du_numero(numero_med, texte_exclu=None, jour_exclu=None,
                             FROM intentions_reserve
                             WHERE numero_med=? AND active=1
                               AND (publiee IS NULL OR publiee<>0)
-                            ORDER BY id ASC""", (_num,)).fetchall()
+                            ORDER BY CASE WHEN source='chaine' THEN 0 ELSE 1 END,
+                                     id ASC""", (_num,)).fetchall()
     except Exception as e:
         logger.warning(f"intentions_reserve_du_numero : {e!r}")
         return []
