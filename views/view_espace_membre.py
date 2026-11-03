@@ -105,7 +105,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.0"
+_VERSION_APPLI = "v7.13.1"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -3028,7 +3028,8 @@ def _recuperer_dizaines_hors_ligne(est_membre=False, matloc=None,
 def _rendre_page_pointage(est_membre=False, matloc=None, nom_membre=None,
                           equipe_id=None, paroisse_id=None, jrnais=None,
                           idx_merci=None):
-    """v7.13.0 — L'AVANT-DERNIÈRE PAGE DU LIVRE, au mot près de la demande :
+    """v7.13.1 — LA DERNIÈRE PAGE DE CONTENU DU LIVRE, au mot près de la
+    demande (sous le parchemin jaune du Gloria) :
     « 📿 La chaîne compte sur Toi » seulement — la présence du jour et la
     gratitude envers La Vierge Marie pour l'écoute, avec le bouton
     « ✅ Merci Sainte Mère pour ton aide de ce jour ! ». Le clic (comme
@@ -3044,10 +3045,15 @@ def _rendre_page_pointage(est_membre=False, matloc=None, nom_membre=None,
                 unsafe_allow_html=True)
     if est_membre:
         if dizaine_deja_pointee(matloc):
-            st.info("✅ Ta présence du jour est marquée — le remerciement "
-                    "t'attend à la page suivante. 🕊️")
+            st.info("✅ Ta présence du jour est déjà marquée — À demain! 🕊️")
+            if st.button("✕ Terminer", key="diz_pointage_m_fermer",
+                         width="stretch"):
+                st.session_state["flash_success"] = "📿 À demain! 🕊️"
+                st.session_state["diz_ouvert"] = False
+                st.session_state["diz_page"] = 0
+                st.rerun()
         else:
-            if st.button("✅ Merci Sainte Mère pour ton aide de ce jour!",
+            if st.button("✅ Merci Sainte Mère de Dieu pour ton aide de ce jour !",
                          key="diz_pointage_m", width="stretch", type="primary"):
                 _st, _msg = pointer_dizaine(matloc=matloc, nom=nom_membre,
                                             equipe_id=equipe_id, paroisse_id=paroisse_id,
@@ -3065,10 +3071,15 @@ def _rendre_page_pointage(est_membre=False, matloc=None, nom_membre=None,
         if not _deja_v and jrnais:
             _deja_v = bool(dizaine_visiteur_pointee(jrnais))
         if _deja_v:
-            st.info("✅ Ta présence du jour est marquée — le remerciement "
-                    "t'attend à la page suivante. 🕊️")
+            st.info("✅ Ta présence du jour est déjà marquée — À demain! 🕊️")
+            if st.button("✕ Terminer", key="diz_pointage_v_fermer",
+                         width="stretch"):
+                st.session_state["flash_success"] = "📿 À demain! 🕊️"
+                st.session_state["diz_ouvert"] = False
+                st.session_state["diz_page"] = 0
+                st.rerun()
         else:
-            if st.button("✅ Merci Sainte Mère pour ton aide de ce jour!",
+            if st.button("✅ Merci Sainte Mère de Dieu pour ton aide de ce jour !",
                          key="diz_pointage_v", width="stretch", type="primary"):
                 _st, _msg = pointer_dizaine(jrnais=jrnais, paroisse_id=paroisse_id,
                                             est_membre=False)
@@ -3285,11 +3296,10 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
         pages.append({"t": "gloria", "m": m})
         if m["id"] == 20:
             pages.append({"t": "outro"})
-    # v7.13.0 — LES DEUX DERNIÈRES PAGES DU LIVRE : l'ancienne page finale
-    # (le pointage) devient l'AVANT-dernière, réduite à « 📿 La chaîne
-    # compte sur Toi » ; une NOUVELLE dernière page accueille le
-    # remerciement, sans les textes de la prière.
-    pages.append({"t": "pointage"})
+    # v7.13.1 — LA DERNIÈRE PAGE AJOUTÉE : le remerciement. Le pointage,
+    # lui, vit désormais SUR la dernière page de contenu — le parchemin
+    # jaune du Gloria (ou de la Salve Regina le jour du N° 20) — juste
+    # sous « 📿 La chaîne compte sur Toi ».
     pages.append({"t": "merci"})
 
     if "diz_page" not in st.session_state or st.session_state["diz_page"] >= len(pages):
@@ -3316,10 +3326,8 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
             f'<div style="color:#1A237E; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">FIN DU ROSAIRE</div>'
             f'{_diz_txt(DIZ_OUTRO, "#1a1a1a")}</div>')
 
-    elif page["t"] == "pointage":
-        html_page = ""  # v7.13.0 — rendu interactif juste après la page
     elif page["t"] == "merci":
-        html_page = ""  # v7.13.0 — rendu interactif juste après la page
+        html_page = ""  # v7.13.1 — rendu interactif juste après la page
 
     else:
         tete = (
@@ -3390,21 +3398,24 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
 
         html_page = tete + corps + '</div>'
 
-    if page["t"] == "pointage":
-        # v7.13.0 — l'AVANT-dernière page : « 📿 La chaîne compte sur Toi »
-        # seulement ; le clic ouvre la page du remerciement.
+    if page["t"] == "merci":
+        # v7.13.1 — la page du remerciement.
+        _rendre_page_merci(est_membre=est_membre, matloc=matloc)
+    else:
+        st.markdown(html_page, unsafe_allow_html=True)
+    _scroll_top(f"p{idx}")
+
+    # v7.13.1 — LE POINTAGE SUR LE PARCHEMIN JAUNE : la DERNIÈRE page de
+    # contenu porte elle-même « 📿 La chaîne compte sur Toi » et le bouton
+    # « ✅ Merci Sainte Mère de Dieu pour ton aide de ce jour ! » — sans
+    # Suivant, sans ✕ Terminer, sans expander (en veilleuse). Le clic
+    # ouvre la page du remerciement.
+    if page["t"] != "merci" and idx == len(pages) - 2:
         _rendre_page_pointage(est_membre=est_membre, matloc=matloc,
                               nom_membre=nom_membre, equipe_id=equipe_id,
                               paroisse_id=paroisse_id,
                               jrnais=st.session_state.get("diz_jrnais"),
                               idx_merci=idx + 1)
-    elif page["t"] == "merci":
-        # v7.13.0 — la NOUVELLE dernière page : « 📿 Ta dizaine est
-        # capitale pour la chaîne — … — À demain! 🕊️ »
-        _rendre_page_merci(est_membre=est_membre, matloc=matloc)
-    else:
-        st.markdown(html_page, unsafe_allow_html=True)
-    _scroll_top(f"p{idx}")
 
     # --- Navigation : ON NE RECULE PAS quand on égrène une dizaine ☺️ ---
     # v7.9.3 — CHAQUE MYSTÈRE A SA FIN (la page GLORIA PATRI, « dernière
@@ -3412,41 +3423,37 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
     # CÔTÉ de « Suivant ▶ ». Le cliquer note la dizaine en toute discrétion
     # (cause incognito — « en cliquant dessus, il est pointé ») et referme
     # le livre : celui qui s'arrête après un seul mystère est compté aussi.
-    c_av, c_term = st.columns(2)
-    with c_av:
-        if page["t"] == "merci":
-            # v7.13.0 — la toute dernière page se referme d'un bouton.
-            if st.button("✕ Terminer", key=f"diz_end_{idx}", width="stretch"):
-                st.session_state["flash_success"] = "📿 À demain! 🕊️"
-                st.session_state["diz_ouvert"] = False
-                st.session_state["diz_page"] = 0
-                st.rerun()
-        elif idx < len(pages) - 1:
-            if st.button("Suivant ▶", key=f"diz_next_{idx}", width="stretch", type="primary"):
+    if page["t"] == "merci":
+        # v7.13.1 — « ✕ Terminer » referme le livre et ramène au fil de
+        # l'actualité.
+        if st.button("✕ Terminer", key=f"diz_end_{idx}", width="stretch",
+                     type="primary"):
+            st.session_state["flash_success"] = "📿 À demain! 🕊️"
+            st.session_state["diz_ouvert"] = False
+            st.session_state["diz_page"] = 0
+            st.rerun()
+    elif idx < len(pages) - 2:
+        # v7.13.1 — PAS de bouton sur la dernière page de contenu (elle
+        # porte le pointage) ni sur la page du merci : seul le bouton ✅
+        # (puis « ✕ Terminer ») commande la suite.
+        c_av, c_term = st.columns(2)
+        with c_av:
+            if st.button("Suivant ▶", key=f"diz_next_{idx}", width="stretch",
+                         type="primary"):
                 st.session_state["diz_page"] = idx + 1
                 st.rerun()
-    with c_term:
-        if page["t"] == "pointage":
-            # v7.13.0 — « ✕ Terminer » mène lui aussi à la page du merci :
-            # le pointage discret d'abord (comme avant), puis le remerciement.
-            if st.button("✕ Terminer", key=f"diz_fin_{idx}", width="stretch"):
-                _pointage_incognito(est_membre=est_membre, matloc=matloc,
-                                    nom_membre=nom_membre, equipe_id=equipe_id,
-                                    paroisse_id=paroisse_id,
-                                    jrnais=st.session_state.get("diz_jrnais"))
-                st.session_state["diz_page"] = idx + 1
-                st.rerun()
-        elif page["t"] == "gloria" and idx < len(pages) - 1:
-            if st.button("✕ Terminer", key=f"diz_fin_{idx}", width="stretch"):
-                _pointage_incognito(est_membre=est_membre, matloc=matloc,
-                                    nom_membre=nom_membre, equipe_id=equipe_id,
-                                    paroisse_id=paroisse_id,
-                                    jrnais=st.session_state.get("diz_jrnais"))
-                # v7.9.6 — discrétion identique à la sortie de fin de livre.
-                st.session_state["flash_success"] = "📿 À demain! 🕊️"
-                st.session_state["diz_ouvert"] = False
-                st.session_state["diz_page"] = 0
-                st.rerun()
+        with c_term:
+            if page["t"] == "gloria" and idx < len(pages) - 2:
+                if st.button("✕ Terminer", key=f"diz_fin_{idx}", width="stretch"):
+                    _pointage_incognito(est_membre=est_membre, matloc=matloc,
+                                        nom_membre=nom_membre, equipe_id=equipe_id,
+                                        paroisse_id=paroisse_id,
+                                        jrnais=st.session_state.get("diz_jrnais"))
+                    # v7.9.6 — discrétion identique à la sortie de fin de livre.
+                    st.session_state["flash_success"] = "📿 À demain! 🕊️"
+                    st.session_state["diz_ouvert"] = False
+                    st.session_state["diz_page"] = 0
+                    st.rerun()
 
 
 def _render_pdf_inline(url_pdf):
@@ -4218,6 +4225,16 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
         '.int-depliant-or summary p, .int-depliant-or summary div {'
         ' color:#FFD000 !important; font-weight:600 !important; }'
         '.int-depliant-or details { background:transparent !important; }'
+        '/* v7.13.1 — le visage doré dès le premier rendu, même si le script'
+        '   tarde : le cadre et le titre sont dorés par CSS (:has), et le'
+        '   script hisse ensuite la carte complète en titre du dépliant. */'
+        'div[data-testid="stExpander"]:has(#int-or-marker) { border:2px solid #FFD700'
+        ' !important; border-radius:15px !important; background:#121a45 !important;'
+        ' overflow:hidden; }'
+        'div[data-testid="stExpander"]:has(#int-or-marker) summary {'
+        ' background:linear-gradient(135deg,#1A237E,#4527a0) !important; }'
+        'div[data-testid="stExpander"]:has(#int-or-marker) summary p {'
+        ' color:#FFD000 !important; font-weight:600 !important; }'
         '</style>', unsafe_allow_html=True)
     # v7.9.17 — DEMANDE UTILISATRICE : la rubrique est CONTENUE DANS UN
     # DÉPLIANT, comme « 📿 Découvrez les Équipes du Rosaire ! ». L'expander
@@ -4442,12 +4459,19 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
             # v7.9.19 — le mini-script ajoute AUSSI la mini-ligne du dépliant
             # de découverte (« cliquez pour déplier ▾ » / « cliquez pour
             # replier ▴ ») sous le titre, retournée à chaque clic.
+            # v7.13.1 — le script est PATIENT : il réessaie jusqu'à 10 s
+            # (le DOM de l'expander monte de façon asynchrone) et le CSS
+            # :has ci-dessus garantit déjà le visage doré entre-temps.
             # v7.8.16 — via stcompat (st.iframe) : height=0 est borné à 1 px.
             try:
                 _comp_html(
                     "<script>(function(){"
                     "var d=window.parent.document;"
-                    "var m=d.getElementById('int-or-marker'); if(!m) return;"
+                    "var essais=0;"
+                    "function poser(){"
+                    "essais++;"
+                    "var m=d.getElementById('int-or-marker');"
+                    "if(!m){ if(essais<50){ setTimeout(poser, 200); } return; }"
                     "var w=m.closest('div[data-testid=\"stVerticalBlock\"]'); if(!w) return;"
                     "w.classList.add('int-cadre-or');"
                     "var e=m.closest('div[data-testid=\"stExpander\"]')"
@@ -4463,6 +4487,7 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                     "var s=e.querySelector('summary');"
                     "if(s){"
                     "var b=d.getElementById('int-bann-carte');"
+                    "if(!b){ if(essais<50){ setTimeout(poser, 200); } return; }"
                     "if(b && b.parentElement!==s){"
                     "b.style.border='none';"
                     "b.style.borderBottom='2px solid #FFD700';"
@@ -4485,8 +4510,10 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                     "cons.textContent= ouvert ? 'cliquez pour replier ▴' :"
                     " 'cliquez pour déplier ▾';};"
                     "maj();"
-                    "s.addEventListener('click', function(){ setTimeout(maj, 60); });}"
-                    "})();</script>", height=0)
+                    "s.addEventListener('click', function(){ setTimeout(maj, 60); });"
+                    "}else{ if(essais<50){ setTimeout(poser, 200); } }"
+                    "}"
+                    "poser();})();</script>", height=0)
             except Exception:
                 pass
 
@@ -4535,9 +4562,9 @@ def _carte_vidéo_a_la_demande():
 
 
 def _carte_memoire_membre(matloc=None):
-    """v7.13.0 — LA MÉMOIRE DU TABLEAU DU MEMBRE, dans le fil de
-    l'actualité, dans un cadre bien doré : sa propre ligne du 📋 tableau de
-    la chaîne, jour par jour (les 14 derniers jours), avec le compteur du
+    """v7.13.1 — « 📿 Mémoire de mes dizaines », cadre bien doré posé entre
+    la carte de bienvenue et « 📿 Ta dizaine du jour » : les 14 derniers
+    jours (le plus récent d'abord, ✨03/11 → 02/11 → …), le compteur du
     mois et la flamme des jours de suite. La fidélité se voit — sans jamais
     surveiller."""
     if not matloc:
@@ -4548,7 +4575,7 @@ def _carte_memoire_membre(matloc=None):
     except Exception:
         return
     _cases = ""
-    for (_j, _fait) in _serie:
+    for (_j, _fait) in reversed(_serie):  # v7.13.1 — le jour récent d'abord
         try:
             _lib = date.fromisoformat(_j).strftime("%d/%m")
         except Exception:
@@ -4568,9 +4595,9 @@ def _carte_memoire_membre(matloc=None):
         '<div style="background:#121a45; border:2px solid #FFD700; border-radius:15px;'
         ' padding:14px 16px; margin:10px;">'
         '<div style="color:#FFD000; font-weight:bold; font-size:1rem;">'
-        '📿 Ma mémoire du tableau</div>'
+        '📿 Mémoire de mes dizaines</div>'
         '<div style="color:#8a93c9; font-size:0.78rem; margin-top:2px;">'
-        'Ta ligne du tableau de la chaîne — les 14 derniers jours</div>'
+        'Ta fidélité du jour — les 14 derniers jours</div>'
         '<div style="display:flex; flex-wrap:wrap; gap:5px; margin:10px 0 6px 0;">'
         + _cases + '</div>'
         '<div style="color:#e8eaf6; font-size:0.85rem; margin-top:6px;">📿 '
@@ -4641,10 +4668,6 @@ def _render_fil_actualites(pid=None, lien_theme=None, equipe_membre_id=None,
             _render_pdf_inline(url_pdf)
     else:
         st.info("Aucun contenu spirituel n'a encore été publié.")
-
-    # v7.13.0 — LA MÉMOIRE DU TABLEAU DU MEMBRE, dans le fil, dans un cadre
-    # bien doré (membres seulement ; le fil des visiteurs reste tel quel).
-    _carte_memoire_membre(matloc)
 
     # v7.9.18 — LES ACTUALITÉS RENTRENT DANS LE FIL : les publications
     # « 📰 actualite » (enseignements, salves, affiches…) du diocèse et de
@@ -5293,6 +5316,10 @@ def _corps_espace_membre(matloc_membre=None):
                     '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-le sous la main : pose le raccourci depuis la '
                     '<a href="/app/static/install_rosaire.html?espace=1&matloc=' + urllib.parse.quote(str(matloc_membre)) + '" target="_self" style="color:#4A148C; font-weight:bold;">page d\'installation</a>'
                     ' — menu ⋮ → «&nbsp;Ajouter à l\'écran d\'accueil&nbsp;».</div></div>', unsafe_allow_html=True)
+
+        # v7.13.1 — « 📿 Mémoire de mes dizaines » entre la carte de
+        # bienvenue et « 📿 Ta dizaine du jour ».
+        _carte_memoire_membre(matloc_membre)
 
     if rub == "📅 Mes évènements":
         if membre[10] is None:
