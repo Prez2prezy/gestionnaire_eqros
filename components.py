@@ -676,7 +676,7 @@ def _message_rappel_dizaine(nom, prenom, matloc=""):
     _lien = (f"{URL_ESPACE_SPIRITUEL}/?espace=1&matloc={_matloc}"
              if _matloc else f"{URL_ESPACE_SPIRITUEL}/?espace=1")
     return (f"Bonjour {nom} {prenom} 🙏\n"
-            "Un petit rappel fraternel : ta dizaine du jour t'attend 🌹\n\n"
+            "Un petit rappel fraternel : ta dizaine du jour t'attend. Va sur ta page perso en cliquant sur ce lien 🌹\n\n"
             f"{_lien}\n\n"
             "Que la Vierge Marie veille sur toi! 🙏")
 
@@ -686,7 +686,7 @@ def _message_rappel_dizaine_visiteur(libelle):
     ou son nom signé) ; le lien reste public : le visiteur n'a pas de
     MatLoc."""
     return (f"Bonjour {libelle} 🙏\n"
-            "Un petit rappel fraternel : ta dizaine du jour t'attend 🌹\n\n"
+            "Un petit rappel fraternel : ta dizaine du jour t'attend. Clique sur ce lien 🌹\n\n"
             f"{URL_ESPACE_SPIRITUEL}/?espace=1\n\n"
             "Que la Vierge Marie veille sur toi! 🙏")
 
