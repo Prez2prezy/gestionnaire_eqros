@@ -1672,6 +1672,41 @@ sélections ordinaires, il s'est égaré au versement dans le dépôt.
 - `_VERSION_APPLI = "v7.13.0"` ; schéma : colonne `source` ajoutée à
   `intentions_reserve` (ALTER doux idempotent, aucune autre migration).
 
+### 38. v7.13.1 — La programmation retrouvée, le parchemin qui porte le pointage
+
+- **⏰ LA PROGRAMMATION EN PANNE — trouvée et réparée** : le conducteur de
+  base distante (`libsql-experimental`, réinstallé à sa dernière version
+  lors du redéploiement de la réparation) rapporte un `rowcount` cumulatif
+  non fiable ; la réclamation anti-course du réveil (« != 1 ») se croyait
+  toujours devancée et le réveil devenait MUET — les publications
+  programmées n'étaient plus jamais effectuées. Désormais la réclamation
+  se fait PAR JETON relu (jamais par rowcount), le réveil journalise son
+  compte (dûes / publiées) et rend son compte à l'appelant ; les réservations
+  de rondes de rappels, le retrait en réserve et le compte des intentions
+  libérées passent eux aussi PAR LECTURE. `libsql-experimental` est épinglé
+  (`==0.0.55`). Un bouton « ⏰ Réveiller la programmation maintenant »
+  accompagne « 🗓️ Programmées » : il déclenche le réveil à la main et dit
+  ce qu'il a fait.
+- **📖 Le parchemin jaune porte le pointage** : la dernière page de contenu
+  du livre (le GLORIA PATRI et ses deux invocations — ou la Salve Regina le
+  jour du N° 20) accueille SOUS la prière « 📿 La chaîne compte sur Toi » et
+  le bouton « ✅ Merci Sainte Mère de Dieu pour ton aide de ce jour ! » —
+  sans Suivant, sans ✕ Terminer, sans expander. Le clic ouvre la page du
+  remerciement (« 📿 Ta dizaine est capitale… — À demain! 🕊️ ») dont le
+  bouton « ✕ Terminer » ramène au fil de l'actualité. La sortie « déjà
+  marquée » est prévue (message + ✕ Terminer).
+- **📿 « Mémoire de mes dizaines »** (ex « Ma mémoire du tableau ») : la
+  carte dorée se pose entre la carte de bienvenue et « 📿 Ta dizaine du
+  jour », les jours les plus récents d'abord (✨03/11 → 02/11 → …).
+- **🙏 La carte « Vos intentions à une équipe » n'est plus un pis-aller** :
+  le titre est DORÉ dès le premier rendu (CSS `:has` — plus d'attente du
+  script), et le script patiente jusqu'à 10 s pour hisser la carte dorée
+  complète en titre du dépliant.
+- **🌹 Les textes des rappels** (membre : « …Va sur ta page perso en
+  cliquant sur ce lien 🌹 » ; visiteur : « …Clique sur ce lien 🌹 ») —
+  posés directement dans le dépôt, confirmés.
+- `_VERSION_APPLI = "v7.13.1"` ; aucun changement de schéma.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
