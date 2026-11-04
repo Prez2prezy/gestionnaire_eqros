@@ -877,7 +877,11 @@ def show_paroisse():
                 afficher_etat_presences_globales(equipe_id=eid2)
     elif menu == "💬 WhatsApp":
         st.markdown(f'<h2 style="color:#1A237E;">💬 Messages WhatsApp - {nom_p}</h2>', unsafe_allow_html=True)
-        afficher_whatsapp_tabs(equipe_id=None)
+        # v7.13.1 — LA SECTION RESPIRE SA PAROISSE : la paroisse courante
+        # est passée aux quatre onglets (Anniversaires, Rappels
+        # réabonnement, Dizaines du jour, Espace de prière) — les membres
+        # d'une autre paroisse n'y apparaissent plus jamais.
+        afficher_whatsapp_tabs(equipe_id=None, paroisse_id=pid)
 
     elif menu == "📥 Export Excel":
         st.markdown(f'<h2 style="color:#1A237E;">📥 Export des membres - {nom_p}</h2>', unsafe_allow_html=True)
