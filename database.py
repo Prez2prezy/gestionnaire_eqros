@@ -3696,6 +3696,101 @@ def push_abonnement_de_cle(cle_lecteur):
         return 0
 
 
+# ── LES LIAISONS TELEGRAM (le compte qui a dit oui au rappel) ────────────
+def _assurer_telegram_liaisons():
+    """Création douce de telegram_liaisons (bases distantes anciennes)."""
+    if _table_reconnue("telegram_liaisons"):
+        return
+    try:
+        c.execute("SELECT id FROM telegram_liaisons LIMIT 1")
+    except Exception:
+        c.execute("""CREATE TABLE IF NOT EXISTS telegram_liaisons (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        chat_id TEXT UNIQUE,
+                        matloc TEXT,
+                        nom TEXT,
+                        lie_le TEXT)""")
+        commit_and_sync()
+    _table_averee("telegram_liaisons")
+
+
+def telegram_liaison_enregistrer(chat_id, matloc, nom=None):
+    """Le compte qui a envoyé « /start <MatLoc> » au bot est apparié à CE
+    membre — une seule ligne par compte : la nouvelle liaison remplace
+    l'ancienne (un même Telegram suit un seul membre). Le compte n'aura
+    JAMAIS autre chose que le rappel de sa dizaine : la porte ne
+    s'ouvre que de l'intérieur (il a écrit le premier)."""
+    _assurer_telegram_liaisons()
+    try:
+        c.execute("DELETE FROM telegram_liaisons WHERE chat_id=?",
+                  (str(chat_id),))
+        c.execute("""INSERT INTO telegram_liaisons
+                     (chat_id, matloc, nom, lie_le) VALUES (?, ?, ?, ?)""",
+                  (str(chat_id), str(matloc).upper().strip(),
+                   (str(nom).strip() or None) if nom else None,
+                   datetime.now().isoformat(timespec="seconds")))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"telegram_liaison_enregistrer : {e!r}")
+        return False
+
+
+def telegram_liaison_de_matloc(matloc):
+    """Le chat_id apparié à CE membre (None s'il n'a pas encore dit oui)."""
+    _assurer_telegram_liaisons()
+    try:
+        _r = c.execute("""SELECT chat_id FROM telegram_liaisons
+                          WHERE matloc=? LIMIT 1""",
+                       (str(matloc).upper().strip(),)).fetchone()
+        return _r[0] if _r else None
+    except Exception as e:
+        logger.warning(f"telegram_liaison_de_matloc : {e!r}")
+        return None
+
+
+def telegram_liaisons_actifs():
+    """Toutes les liaisons vivantes [(chat_id, matloc, nom)]."""
+    _assurer_telegram_liaisons()
+    try:
+        return c.execute("""SELECT chat_id, matloc, nom FROM telegram_liaisons
+                            ORDER BY id""").fetchall()
+    except Exception as e:
+        logger.warning(f"telegram_liaisons_actifs : {e!r}")
+        return []
+
+
+def telegram_liaison_retirer(chat_id):
+    """Le compte a dit /stop (ou a fermé la porte au bot) : plus aucun
+    rappel ne repartira vers lui."""
+    _assurer_telegram_liaisons()
+    try:
+        c.execute("DELETE FROM telegram_liaisons WHERE chat_id=?",
+                  (str(chat_id),))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"telegram_liaison_retirer : {e!r}")
+        return False
+
+
+def membre_nom_de_matloc(matloc):
+    """« Nom Prénom » du membre portant CE MatLoc (None si inconnu) — sert
+    à saluer poliment le rappel Telegram comme le font les messages
+    WhatsApp de la maison."""
+    try:
+        _r = c.execute("""SELECT nom, prenom FROM membres
+                          WHERE UPPER(TRIM(matloc))=? LIMIT 1""",
+                       (str(matloc).upper().strip(),)).fetchone()
+        if not _r:
+            return None
+        return (" ".join([str(_r[0] or "").strip(),
+                          str(_r[1] or "").strip()]).strip() or None)
+    except Exception as e:
+        logger.warning(f"membre_nom_de_matloc : {e!r}")
+        return None
+
+
 # ── LES PARAMÈTRES DE LA MAISON (les clés VAPID y naissent) ─────────────
 def _assurer_parametres():
     """Création douce de parametres_app (bases distantes anciennes)."""
