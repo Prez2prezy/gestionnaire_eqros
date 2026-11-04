@@ -1726,6 +1726,56 @@ sélections ordinaires, il s'est égaré au versement dans le dépôt.
   mention horaire simple.
 - `_VERSION_APPLI = "v7.13.2"` ; `libsql-experimental` reste épinglé.
 
+### 41. v7.13.4 — L'espace du visiteur (21 jours), les rappels qui portent l'adresse du cœur, et les guides de la maison
+
+*Merci La Vierge Marie — trois chantiers dans un même souffle : l'espace du
+fidèle qui confie son intention, le rappel Telegram qui porte enfin LE lien
+du membre (celui avec le MatLoc), et deux guides pour transmettre la
+maison.*
+
+- **🕊️ L'espace visiteur temporaire (21 jours)** — tout fidèle qui dépose
+  une intention dans « 🙏 Vos intentions à une équipe » reçoit, juste après
+  l'envoi, une clé et un lien (`?espace=1&vis=CLÉ`) : SA page à lui :
+  * son intention relue (datée, nommée à l'équipe, anonyme si anonyme) ;
+  * sa carte dorée « 📿 Mémoire de mes dizaines » (miroir visiteur de la
+    carte du membre : 14 jours, compteur du mois, flamme 🔥) — portée par
+    son jour de naissance, la même clé que le sas de la chaîne ;
+  * « 📿 Ta dizaine du jour » avec le CTA qui ouvre le livret DÉJÀ
+    positionné au mystère du jour — le sas est franchi d'avance (son jour
+    de naissance est posé en session) : rien à retaper ;
+  * la carte 🔔 des rappels (calendrier + notification), comme pour tous ;
+  * PAS les rubriques complètes — « comme un membre, mais juste pour
+    faire sa dizaine » : le reste de la vie de l'app ne le concerne pas ;
+  * à 21 jours, l'espace s'achève doucement : écran de remerciement et le
+    retour vers l'Espace de Prière (aucune suppression : la table garde
+    tout) ;
+  * les 21 jours sont affichés (« ouvert encore N jour(s), jusqu'au
+    JJ/MM/AAAA ») ; la page visiteur est épurée aussi de la carte vidéo ;
+    lien inconnu → un mot doux, et la porte de l'Espace de Prière reste
+    là.
+  * schéma : table `espaces_visiteurs` (création douce idempotente : cle,
+    nom, contact, jrnais, intention_id, equipe_id, paroisse_id,
+    date_creation, date_expiration) — aucune table existante touchée.
+- **✈️ Telegram — le lien du MEMBRE, celui avec le MatLoc, partout** :
+  * l'accueil apparié (« 📿 C'est noté ! ») porte désormais le lien de
+    l'Espace du membre pré-rempli (`?espace=1&matloc=…`) — celui qui
+    ouvrait l'Espace communautaire n'était pas LE sien ;
+  * le rappel de ronde annonce « Ouvre ton Espace tout prêt : » avant le
+    lien (le lien MatLoc était déjà là — la phrase le rend évident) ;
+  * **le bouton « ✈️ Recevoir le rappel par Telegram » est lisible pour
+    de bon** : le CSS global des liens (`.stApp .stMarkdown a`, lilas
+    `!important`) écrasait son style inline — le sélecteur l'épargne
+    désormais (`a:not(.btn-telegram-ro)`) et le bouton porte le bleu nuit
+    maison, l'encre blanche posée en `!important`, le liseré or : lisible
+    en mode clair comme sombre.
+- **📖 Les guides de la maison** (livrés à part, dans le dossier de la
+  livraison) : « Guide d'utilisation — Partie administrative » (les quatre
+  accès : équipe, paroisse, diocèse, communication) et « Guide
+  d'utilisation — Partie Espace » (visiteur, membre, espace visiteur de
+  21 jours) — à imprimer, partager, adapter.
+- `_VERSION_APPLI = "v7.13.4"` ; schéma : table `espaces_visiteurs`
+  (création douce idempotente, aucune table existante modifiée).
+
 ### 40. v7.13.3 — Le fond bleu clair retrouvé, la Ronde qui parle sur Telegram
 
 - **⏰ Ronde des dizaines : le fond bleu clair est RETROUVÉ pour de bon** :
