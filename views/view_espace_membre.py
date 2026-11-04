@@ -87,6 +87,9 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       prise_en_charge_automatique, verser_intention_du_jour,
                       pointer_dizaine, dizaine_deja_pointee, compteur_dizaines_mois,
                       serie_dizaines_membre,
+                      # v7.13.4 — l'espace visiteur temporaire (21 jours)
+                      espace_visiteur_de_cle, espace_visiteur_jours_restants,
+                      serie_dizaines_visiteur, compteur_dizaines_mois_visiteur,
                       marquer_carte_vue, carte_deja_vue, dizaine_visiteur_pointee,
                       feuillet_questions_lister, feuillet_reponses_enregistrer,
                       feuillet_reponses_de_cle, importer_dizaines_hors_ligne,
@@ -105,7 +108,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.3"
+_VERSION_APPLI = "v7.13.4"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -420,7 +423,27 @@ def _render_theme(compact=False):
     .stApp .stMarkdown, .stApp .stMarkdown p, .stApp .stMarkdown li, .stApp .stMarkdown span,
     .stApp .stMarkdown h1, .stApp .stMarkdown h2, .stApp .stMarkdown h3, .stApp .stMarkdown h4,
     .stApp .stMarkdown strong, .stApp .stMarkdown em { color: #e8eaf6 !important; }
-    .stApp .stMarkdown a { color: #b39ddb !important; }
+    /* v7.13.4 — les liens ordinaires restent lilas, MAIS le bouton Telegram
+       (class btn-telegram-ro) porte SA couleur : plus jamais de texte lilas
+       écrasé par ce sélecteur sur le bouton. */
+    .stApp .stMarkdown a:not(.btn-telegram-ro) { color: #b39ddb !important; }
+    /* v7.13.4 — LE BOUTON LISIBLE POUR DE BON (leçon de la démo réelle) :
+       Streamlit retire les déclarations !important des styles EN LIGNE —
+       l'encre blanche du style inline ne partait jamais au rendu, et le
+       bleu-lien du thème gagnait (encre bleue sur bleu nuit : illisible,
+       c'est exactement ce que l'œil avisé avait vu). La règle vit donc ICI,
+       dans la feuille du module : classe au lieu de style inline — rien ne
+       la retire, et l'encre blanche gagne pour de bon, clair comme sombre. */
+    .stApp a.btn-telegram-ro, .stApp a.btn-telegram-ro span {
+        display: inline-block !important;
+        background: #1A237E !important;
+        color: #ffffff !important;
+        padding: 11px 24px !important;
+        border-radius: 30px !important;
+        border: 1px solid #FFD700 !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.28) !important;
+        font-weight: bold !important;
+        text-decoration: none !important; }
     [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: #9fa6d8 !important; }
     [data-testid="stExpander"] { background-color: #121a45 !important; border: 1px solid #27306b !important; border-radius: 12px !important; }
     details, [data-testid="stExpanderDetails"] { background-color: transparent !important; }
@@ -3973,7 +3996,7 @@ async function activer_push_ro(){
     var perm = await Notification.requestPermission();
     if(perm!=='granted'){ etat.textContent='Les notifications restent silencieuses — tu pourras dire oui plus tard.'; return; }
     etat.textContent='Un instant…';
-    var reg = await navigator.serviceWorker.register('/app/static/sw.js?v=7133');
+    var reg = await navigator.serviceWorker.register('/app/static/sw.js?v=7134');
     await navigator.serviceWorker.ready;
     var sub = await reg.pushManager.getSubscription();
     if(!sub){ sub = await reg.pushManager.subscribe({userVisibleOnly:true,
@@ -4028,12 +4051,20 @@ async function activer_push_ro(){
                 _lien_tg = ("https://t.me/" + _bot_tg + "?start="
                             + urllib.parse.quote(
                                 str(matloc).upper().strip()))
+                # v7.13.4 — LE BOUTON LISIBLE POUR DE BON : bleu nuit maison,
+                # encre blanche portée en !important (le sélecteur global des
+                # liens ne peut plus l'écraser), liseré or. Lisible dans les
+                # deux modes, clair comme sombre.
                 st.markdown(
                     '<a href="' + html.escape(_lien_tg) + '" target="_blank" '
-                    'style="display:inline-block; background:#2AABEE;'
-                    ' color:#ffffff; padding:10px 22px; border-radius:30px;'
+                    'class="btn-telegram-ro" '
+                    'style="display:inline-block; background:#1A237E;'
+                    ' color:#ffffff !important; padding:11px 24px;'
+                    ' border-radius:30px; border:1px solid #FFD700;'
+                    ' box-shadow:0 2px 8px rgba(0,0,0,0.28);'
                     ' font-weight:bold; text-decoration:none; margin-top:4px;">'
-                    '✈️ Recevoir le rappel par Telegram</a>',
+                    '<span style="color:#ffffff !important;">'
+                    '✈️ Recevoir le rappel par Telegram</span></a>',
                     unsafe_allow_html=True)
                 st.caption("Un tap : Telegram s\u2019ouvre, tu appuies sur "
                            "« Démarrer » — le message y est déjà écrit, "
@@ -4380,6 +4411,35 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                             'Égrenez votre dizaine et portez l’intention du prochain dans'
                             ' la chaîne de prière universelle.</div></div>',
                             unsafe_allow_html=True)
+                # v7.13.4 — L'ESPACE PERSONNEL DU VISITEUR : sa clé est née
+                # à l'envoi ; le lien est là, sous l'invitation à prier. Il
+                # ouvre sa page à lui : intention relue, mémoire de ses
+                # dizaines, livret du jour positionné — 21 jours.
+                _cle_vis_n = st.session_state.get("vis_cle_nouvelle")
+                if _cle_vis_n:
+                    _lien_vis = ("?espace=1&vis="
+                                 + urllib.parse.quote(str(_cle_vis_n)))
+                    st.markdown(
+                        '<div style="background:#121a45; border:2px solid #FFD700;'
+                        ' border-radius:12px; padding:12px 14px; margin:0 4px 10px 4px;'
+                        ' text-align:center;">'
+                        '<div style="color:#FFD000; font-weight:bold; font-size:1rem;">'
+                        '🕊️ Ton espace personnel est prêt</div>'
+                        '<div style="color:#e8eaf6; font-size:0.85rem; margin-top:5px;'
+                        ' line-height:1.6;">Ton intention y est relue, ta « 📿 Mémoire de'
+                        ' mes dizaines » y tiendra ta fidélité, et le livret du jour y'
+                        ' t’attend — ouvert pour toi pendant <b>21 jours</b>.</div>'
+                        '<a href="' + _lien_vis + '" target="_self"'
+                        ' style="display:inline-block; background:#1A237E; color:#ffffff'
+                        ' !important; padding:10px 24px; border-radius:30px;'
+                        ' border:1px solid #FFD700; font-weight:bold;'
+                        ' text-decoration:none; margin-top:10px;">'
+                        '<span style="color:#ffffff !important;">🕊️ Ouvrir mon espace'
+                        ' personnel</span></a>'
+                        '<div style="color:#8a93c9; font-size:0.74rem; margin-top:8px;">'
+                        'Garde la page sous la main : menu ⋮ du navigateur →'
+                        ' « Ajouter à l’écran d’accueil » (ou en favori).</div></div>',
+                        unsafe_allow_html=True)
                 if st.button("📿 Prier ma dizaine maintenant", key="int_cta_dizaine",
                              type="primary", width="stretch"):
                     st.session_state["diz_jrnais"] = int(_jn_cta)
@@ -4483,6 +4543,16 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                                       (_eq[0], _txt.strip(), None if _anon else _auteur,
                                        (_contact or "").strip(),
                                        1 if _anon else 0, int(_jour), date.today().isoformat()))
+                            # v7.13.4 — l'id de l'intention (pour l'espace visiteur)
+                            _id_intention = None
+                            try:
+                                _r_id = c.execute("""SELECT id FROM intentions_equipes
+                                                     WHERE auteur_contact=?
+                                                     ORDER BY id DESC LIMIT 1""",
+                                                  ((_contact or "").strip(),)).fetchone()
+                                _id_intention = _r_id[0] if _r_id else None
+                            except Exception:
+                                _id_intention = None
                             commit_and_sync()
                             # v7.9.4 — LA ZONE DU JOUR : l'intention confiée aujourd'hui
                             # y est recueillie ; v7.9.10 — le SAS : la paroisse est notée
@@ -4511,6 +4581,22 @@ def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None)
                                 push_abonnement_note_jrnais(_cle_lecteur_pdr(), int(_jour))
                             except Exception:
                                 pass
+                            # v7.13.4 — L'ESPACE PERSONNEL DU VISITEUR (21 jours) :
+                            # sa clé naît à l'envoi ; le lien apparaîtra sous la
+                            # carte dorée. Si l'ouverture n'a pas pu être notée,
+                            # rien ne bloque : l'intention est déjà en sécurité.
+                            try:
+                                from database import espace_visiteur_creer as _evc
+                                _cle_vis = _evc(nom=None if _anon else _auteur,
+                                                contact=(_contact or "").strip(),
+                                                jrnais=int(_jour),
+                                                intention_id=_id_intention,
+                                                equipe_id=_eq[0],
+                                                paroisse_id=(_eq[2] if len(_eq) > 2 else None))
+                            except Exception:
+                                _cle_vis = None
+                            if _cle_vis:
+                                st.session_state["vis_cle_nouvelle"] = _cle_vis
                             st.session_state["int_derniere"] = int(_jour)
                             st.session_state["flash_success"] = (
                                 "🙏 Votre intention a été confiée à " + str(_eq[1])
@@ -5112,6 +5198,169 @@ def _render_pied_de_page(matloc_membre=None):
 
 
 # ====================================================================
+# v7.13.4 — L'ESPACE VISITEUR TEMPORAIRE (21 JOURS)
+# Le fidèle qui vient de confier une intention reçoit un lien
+# (?espace=1&vis=CLÉ) : sa page à lui — intention relue, mémoire de ses
+# dizaines, livret du jour positionné — épurée, sans les rubriques
+# complètes. 21 jours, puis l'espace s'achève doucement.
+# ====================================================================
+def _carte_memoire_visiteur(jrnais):
+    """« 📿 Mémoire de mes dizaines » du visiteur — l'écho de la carte du
+    membre (v7.13.4) : les 14 derniers jours, le compteur du mois, la
+    flamme. Le même cadre doré, porté par son jour de naissance."""
+    try:
+        _serie = serie_dizaines_visiteur(jrnais, 14)
+        _mois, _flamme = compteur_dizaines_mois_visiteur(jrnais)
+    except Exception:
+        return
+    _cases = ""
+    for (_j, _fait) in reversed(_serie):
+        try:
+            _lib = date.fromisoformat(_j).strftime("%d/%m")
+        except Exception:
+            _lib = _j[5:]
+        _auj = "✨" if _j == date.today().isoformat() else ""
+        _cases += ('<div style="min-width:42px; flex:1 0 42px; background:'
+                   + ("#1b2a5e" if _fait else "#121a45")
+                   + '; border:1px solid ' + ("#FFD700" if _fait else "#27306b")
+                   + '; border-radius:8px; padding:5px 2px; text-align:center;">'
+                     '<div style="color:' + ("#FFD000" if _fait else "#5a6398")
+                   + '; font-weight:bold; font-size:0.82rem;">'
+                   + ("✅" if _fait else "·") + '</div>'
+                     '<div style="color:#8a93c9; font-size:0.62rem;">' + _auj
+                   + _lib + '</div></div>')
+    _total = sum(1 for (_j, _f) in _serie if _f)
+    st.markdown(
+        '<div style="background:#121a45; border:2px solid #FFD700; border-radius:15px;'
+        ' padding:14px 16px; margin:10px;">'
+        '<div style="color:#FFD000; font-weight:bold; font-size:1rem;">'
+        '📿 Mémoire de mes dizaines</div>'
+        '<div style="color:#8a93c9; font-size:0.78rem; margin-top:2px;">'
+        'Ta fidélité du jour — les 14 derniers jours</div>'
+        '<div style="display:flex; flex-wrap:wrap; gap:5px; margin:10px 0 6px 0;">'
+        + _cases + '</div>'
+        '<div style="color:#e8eaf6; font-size:0.85rem; margin-top:6px;">📿 '
+        + str(_total) + ' dizaine(s) sur 14 jours · ' + str(_mois) + ' ce mois'
+        + (" · 🔥 " + str(_flamme) + " jour(s) de suite" if _flamme else "")
+        + '</div></div>', unsafe_allow_html=True)
+
+
+def _render_espace_visiteur(esv):
+    """La page du visiteur de 21 jours (v7.13.4) : bandeau, intention relue,
+    mémoire, livret du jour positionné, rappels. Épurée — « comme un membre,
+    mais juste pour faire sa dizaine »."""
+    (_id_v, _cle_v, _nom_v, _contact_v, _jrn_v, _id_int_v, _eq_v, _par_v,
+     _dc_v, _df_v) = esv
+    _jrs, _fin_iso = espace_visiteur_jours_restants(_df_v)
+    # ── 21 jours achevés : l'écran doux de l'achèvement ────────────────
+    if _jrs <= 0:
+        _render_header(masquer_bandes=True, rubriques=None, pid=_par_v)
+        st.markdown(
+            '<div style="background:#121a45; border:2px solid #FFD700; border-radius:15px;'
+            ' padding:18px; text-align:center; margin:12px;">'
+            '<div style="color:#FFD000; font-weight:bold; font-size:1.1rem;">'
+            '🕊️ Ton espace de 21 jours s’est achevé</div>'
+            '<div style="color:#e8eaf6; font-size:0.92rem; margin-top:8px; line-height:1.7;">'
+            'Merci pour ces jours de prière ! La chaîne de l’Espace de Prière reste '
+            'ouverte : confie une nouvelle intention, ou pose le raccourci de l’appli '
+            'pour revenir chaque jour — une équipe t’y accueille toujours.</div>'
+            '<a href="?espace=1" target="_self" style="display:inline-block;'
+            ' background:#1A237E; color:#ffffff !important; padding:10px 24px;'
+            ' border-radius:30px; border:1px solid #FFD700; font-weight:bold;'
+            ' text-decoration:none; margin-top:12px;">'
+            '<span style="color:#ffffff !important;">📿 Retourner à l’Espace de'
+            ' Prière</span></a></div>', unsafe_allow_html=True)
+        return
+    # ── sas déjà franchi : son jour de naissance est posé d'avance ─────
+    if not st.session_state.get("diz_jrnais"):
+        st.session_state["diz_jrnais"] = int(_jrn_v or 1)
+    # ── bandeau de l'espace ─────────────────────────────────────────────
+    try:
+        _fin_aff = date.fromisoformat(str(_fin_iso)[:10]).strftime("%d/%m/%Y")
+    except Exception:
+        _fin_aff = str(_df_v or "")[:10]
+    _bienvenue = ("🕊️ Bienvenue, " + str(_nom_v or "ami de la chaîne") + " !")
+    _render_header(masquer_bandes=True, rubriques=None, pid=_par_v)
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+        ' border:2px solid #FFD700; border-radius:15px; padding:16px;'
+        ' text-align:center; margin:6px 4px 10px 4px;">'
+        '<div style="color:#FFD000; font-family:Georgia,serif; font-weight:bold;'
+        ' font-size:clamp(1.05rem, 4.5vw, 1.25rem);">' + _bienvenue + '</div>'
+        '<div style="color:#ffffff; font-size:0.9rem; margin-top:6px; line-height:1.6;">'
+        'Ton espace personnel — ouvert encore <b>' + str(_jrs) + ' jour(s)</b>,'
+        ' jusqu’au ' + _fin_aff + '</div>'
+        '<div style="display:inline-block; margin-top:8px; background:rgba(255,215,0,0.14);'
+        ' border:1px solid #FFD700; border-radius:20px; padding:5px 14px;'
+        ' color:#FFD000; font-size:0.78rem;">Relis ton intention, médite ta dizaine'
+        ' du jour — la Vierge Marie veille sur toi 🙏</div></div>',
+        unsafe_allow_html=True)
+    # ── son intention relue ─────────────────────────────────────────────
+    if _id_int_v:
+        try:
+            _itn = c.execute("""SELECT texte, date_soumission, anonyme, equipe_id
+                                FROM intentions_equipes WHERE id=? LIMIT 1""",
+                             (int(_id_int_v),)).fetchone()
+        except Exception:
+            _itn = None
+        if _itn:
+            _nom_eq = None
+            try:
+                _r_eq = c.execute("SELECT nom_equipe FROM equipes WHERE id=? LIMIT 1",
+                                  (_itn[3],)).fetchone()
+                _nom_eq = _r_eq[0] if _r_eq else None
+            except Exception:
+                _nom_eq = None
+            _d_itn = safe_date(_itn[1]) if _itn[1] else None
+            st.markdown(
+                '<div style="background:#121a45; border:1px solid #27306b;'
+                ' border-radius:12px; padding:12px 14px; margin:0 4px 10px 4px;">'
+                '<div style="color:#8a93c9; font-size:0.78rem;">🕊️ Ton intention confiée'
+                + ((" le " + _d_itn.strftime("%d/%m/%Y")) if _d_itn else "")
+                + ((" à l’équipe " + html.escape(str(_nom_eq))) if _nom_eq else "")
+                + '</div>'
+                '<div style="color:#e8eaf6; font-size:0.95rem; margin-top:6px;'
+                ' line-height:1.6; font-style:italic;">« '
+                + html.escape(str(_itn[0] or "")) + ' »</div></div>',
+                unsafe_allow_html=True)
+    # ── le livre ouvert (CTA cliqué) : la page entière au livret ───────
+    if st.session_state.get("flt_ouvert"):
+        _render_feuillet_autonome(lecteur={"est_membre": False,
+                                           "paroisse_id": _par_v})
+        return
+    if st.session_state.get("diz_ouvert"):
+        _render_dizaine_du_jour(est_membre=False, paroisse_id=_par_v)
+        return
+    # ── le CTA du jour : le livret s'ouvre au mystère du jour ─────────
+    st.markdown('<div id="ev-cta-zone"></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+        ' border:2px solid #FFD700; border-radius:15px; padding:16px;'
+        ' text-align:center; margin:2px 4px 10px 4px;">'
+        '<div class="dpl-titre-g" style="color:#FFD000 !important;'
+        ' font-family:Georgia,serif !important; font-weight:bold !important;'
+        ' font-size:clamp(1.05rem, 4.5vw, 1.25rem);">📿 Ta dizaine du jour</div>'
+        '<div style="color:#ffffff; font-size:0.88rem; margin-top:6px; line-height:1.6;">'
+        'Ton livret t’attend, déjà positionné au mystère du jour — égrene ta dizaine,'
+        ' porte ton prochain dans la chaîne.</div></div>',
+        unsafe_allow_html=True)
+    _deja_v = bool(dizaine_visiteur_pointee(_jrn_v or 1))
+    if _deja_v:
+        st.success("📿 Merci Sainte Mère de Dieu pour ton aide de ce jour ! "
+                   "— À demain! 🕊️")
+    else:
+        if st.button("📿 Égrener ma dizaine maintenant", key="ev_cta_dizaine",
+                     type="primary", width="stretch"):
+            st.session_state["diz_ouvert"] = True
+            st.session_state["diz_page"] = 0
+            st.session_state.pop("flt_ouvert", None)
+            st.rerun()
+    # ── mémoire + rappels ───────────────────────────────────────────────
+    _carte_memoire_visiteur(_jrn_v or 1)
+    _carte_rappels_dizaine(est_membre=False)
+
+
+# ====================================================================
 # PAGE PRINCIPALE
 # ====================================================================
 def show_espace_membre(matloc_membre=None):
@@ -5132,6 +5381,13 @@ def show_espace_membre(matloc_membre=None):
     # v7.10.1 — accueil SEULEMENT : ni livre ouvert (dizaine, livret), ni
     # autre rubrique (Rosaire, Thème, Galerie, Archives, évènements…).
     if not (st.session_state.get("diz_ouvert") or st.session_state.get("flt_ouvert")):
+        # v7.13.4 — la page visiteur (21 jours) reste épurée : pas de carte vidéo.
+        _vis_q = st.query_params.get("vis")
+        if isinstance(_vis_q, list):
+            _vis_q = _vis_q[0] if _vis_q else None
+        if _vis_q:
+            _render_pied_de_page(matloc_membre)
+            return
         try:
             _rub_v = _lire_nav(RUBRIQUES_MEMBRE if matloc_membre
                                else RUBRIQUES_PUBLIC)[0]
@@ -5204,6 +5460,21 @@ def _corps_espace_membre(matloc_membre=None):
     msg_warn = st.session_state.pop("flash_warning", None)
     if msg_warn:
         st.warning(msg_warn)
+
+    # ====== ÉTAT 1 BIS : L'ESPACE VISITEUR TEMPORAIRE (v7.13.4) ======
+    # Arrivé par le lien reçu à l'envoi de son intention (?espace=1&vis=CLÉ)
+    # : sa page à lui, épurée. Inconnu ou achevé : un mot doux, puis rien.
+    _vis_brut = st.query_params.get("vis")
+    if isinstance(_vis_brut, list):
+        _vis_brut = _vis_brut[0] if _vis_brut else None
+    if _vis_brut:
+        _esv = espace_visiteur_de_cle(_vis_brut)
+        if not _esv:
+            st.warning("🕊️ Ce lien d'espace n'est plus reconnu — pas d'inquiétude : "
+                       "l'Espace de Prière t'est toujours ouvert.")
+            return
+        _render_espace_visiteur(_esv)
+        return
 
     # ================= ÉTAT 1 : VUE PUBLIQUE =================
     if not matloc_membre:
