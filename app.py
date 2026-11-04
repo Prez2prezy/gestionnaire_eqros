@@ -84,6 +84,19 @@ if _time_mod.time() - float(st.session_state.get("_reveil_rondes_ts", 0)) > 60:
     except Exception:
         pass
 
+# --- v7.13.1 : L'ÉCOUTE TELEGRAM (lazy, même mécanique) ---
+# Les « /start <MatLoc> » envoyés au bot sont récoltés au fil des
+# chargements de page (au plus une fois par minute) : c'est ce qui
+# appaire chaque compte à son membre, sans que personne n'ait à
+# taper son code. Rien ne part vers personne sans son /start.
+if _time_mod.time() - float(st.session_state.get("_reveil_telegram_ts", 0)) > 60:
+    st.session_state["_reveil_telegram_ts"] = _time_mod.time()
+    try:
+        from services import telegram_recolter_liaisons
+        telegram_recolter_liaisons()
+    except Exception:
+        pass
+
 
 # --- INTERCEPTION DES LIENS SPECIAUX ---
 params = st.query_params
