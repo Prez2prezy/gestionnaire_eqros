@@ -1925,7 +1925,7 @@ def injecter_icone_pwa(espace=False):
     # PREMIER OCTET — et posent désormais une VRAIE application d'un seul
     # bouton (v7.12.2), puis s'effacent devant l'Espace à la prochaine
     # ouverture.
-    _ver_pwa = "7133"
+    _ver_pwa = "7134"
 
     def _icon_data(nom_fichier):
         """v7.9.10 — l'icône lue sur le disque et INCORPORÉE en base64 :
@@ -2074,7 +2074,7 @@ def injecter_icone_pwa(espace=False):
         try { f = window.parent; } catch(e) { return; }
         if (!f || !f.navigator || !('serviceWorker' in f.navigator)) { return; }
         f.navigator.serviceWorker
-          .register('/app/static/sw.js?v=7122').catch(function(){ });
+          .register('/app/static/sw.js?v=7134').catch(function(){ });
       } catch(e) { }
     })();
     </script>
