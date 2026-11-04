@@ -759,9 +759,22 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
         # bannière des RONDES (06h00 · 12h00 · 18h00 · 21h00) dit quand la
         # liste a été mise à jour et combien de rappels sont partis.
         if not equipe_id and not paroisse_id:
-            st.info("Ouvre cette section depuis une équipe ou une paroisse : "
-                    "la liste des dizaines du jour y est tenue équipe par "
-                    "équipe.")
+            # v7.13.3 — le message dit enfin CE QUE CONTIENT la section :
+            # la liste tenue équipe par équipe, le message prêt à partir,
+            # la bannière des rondes — valable depuis une équipe, une
+            # paroisse ou le diocèse.
+            st.info("📿 **La liste des dizaines du jour** se tient ÉQUIPE "
+                    "PAR ÉQUIPE, dès qu'on l'ouvre depuis une équipe, une "
+                    "paroisse ou le diocèse. Tu y retrouves : ⏳ les membres "
+                    "et les visiteurs de la chaîne qui n'ont pas encore "
+                    "médité leur dizaine du jour, chacun avec son message "
+                    "WhatsApp prêt à partir (un tap, et le message s'ouvre "
+                    "déjà écrit chez lui) ; ⏰ la bannière des rondes "
+                    "(06h00 · 12h00 · 18h00 · 21h00), qui dit quand la "
+                    "liste a été mise à jour et combien de rappels sont "
+                    "déjà partis ; 🕊️ et le vert « tout le monde a fait "
+                    "sa dizaine » quand la chaîne est au complet.",
+                    icon="📿")
         else:
             _assurer_dizaines_journal()
             _membres, _visiteurs = dizaines_du_jour_attente(equipe_id,
@@ -784,18 +797,37 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
                                         for _h in HEURES_RONDES)
             if _dernieres and _dernieres[0][0] == date.today().isoformat():
                 _d0 = _dernieres[0]
-                st.info("**Ronde des dizaines — " + _mention_ronde + "** — "
-                        "dernière mise à jour : **" + str(_d0[1]) + "** (servie à "
-                        + str(_d0[2] or "?") + " · " + str(_d0[3] or 0)
-                        + " membre(s), " + str(_d0[4] or 0) + " visiteur(s) en "
-                        "attente · " + str(_d0[5] or 0) + " rappel(s) 🔔 partis).",
-                        icon="⏰")
+                # v7.13.3 — LE FOND BLEU CLAIR REVIENT POUR DE BON : il est
+                # porté par le bloc lui-même (inline), plus par un st.info
+                # dont l'habillage dépendait du thème de l'écran. La portée
+                # de la v7.13.2 est intacte : équipe / paroisse / diocèse.
+                st.markdown(
+                    '<div style="background:#E8EAF6; border:1px solid #9FA8DA;'
+                    ' border-radius:10px; padding:12px 16px; color:#1A237E;'
+                    ' line-height:1.55; margin:2px 0 8px 0;">'
+                    '⏰ <b>Ronde des dizaines — ' + _mention_ronde + '</b> — '
+                    'dernière mise à jour : <b>' + str(_d0[1]) + '</b> (servie à '
+                    + str(_d0[2] or "?") + " · " + str(_d0[3] or 0)
+                    + " membre(s), " + str(_d0[4] or 0) + " visiteur(s) en "
+                    "attente · " + str(_d0[5] or 0) + " rappel(s) 🔔 partis"
+                    " — push et Telegram).</div>",
+                    unsafe_allow_html=True)
             else:
-                st.caption("⏰ Ronde des dizaines : " + _mention_ronde
-                           + " — la liste se met à jour et le rappel part à "
-                             "chaque ronde.")
-            st.caption("📿 Ceux qui n'ont pas encore fait leur dizaine "
-                       "aujourd'hui — un tap, et le message part chez eux.")
+                # v7.13.3 — la mention horaire porte AUSSI le fond bleu
+                # clair en dur : c'est elle qu'une équipe voyait (sans
+                # fond) en attendant sa première ronde notée.
+                st.markdown(
+                    '<div style="background:#E8EAF6; border:1px solid #9FA8DA;'
+                    ' border-radius:10px; padding:12px 16px; color:#1A237E;'
+                    ' line-height:1.55; margin:2px 0 8px 0;">'
+                    '⏰ <b>Ronde des dizaines — ' + _mention_ronde
+                    + '</b> — la liste se met à jour et le rappel part à '
+                      "chaque ronde.</div>",
+                    unsafe_allow_html=True)
+            st.caption("📿 Ici, la tenue ÉQUIPE PAR ÉQUIPE de ceux qui "
+                       "n'ont pas encore médité leur dizaine du jour — "
+                       "membres et visiteurs de la chaîne : un tap, et le "
+                       "message s'ouvre déjà écrit chez lui.")
             if not _membres and not _visiteurs:
                 st.success("📿 Tout le monde a fait sa dizaine aujourd'hui — "
                            "merci pour la chaîne ! 🕊️")
@@ -1893,7 +1925,7 @@ def injecter_icone_pwa(espace=False):
     # PREMIER OCTET — et posent désormais une VRAIE application d'un seul
     # bouton (v7.12.2), puis s'effacent devant l'Espace à la prochaine
     # ouverture.
-    _ver_pwa = "7132"
+    _ver_pwa = "7133"
 
     def _icon_data(nom_fichier):
         """v7.9.10 — l'icône lue sur le disque et INCORPORÉE en base64 :
