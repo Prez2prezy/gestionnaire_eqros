@@ -1726,6 +1726,57 @@ sélections ordinaires, il s'est égaré au versement dans le dépôt.
   mention horaire simple.
 - `_VERSION_APPLI = "v7.13.2"` ; `libsql-experimental` reste épinglé.
 
+### 40. v7.13.3 — Le fond bleu clair retrouvé, la Ronde qui parle sur Telegram
+
+- **⏰ Ronde des dizaines : le fond bleu clair est RETROUVÉ pour de bon** :
+  la bannière porte son fond bleu clair `#E8EAF6` (liseré `#9FA8DA`, encre
+  `#1A237E`) DANS son propre bloc HTML — plus par un `st.info` dont
+  l'habillage dépendait du thème de l'écran. **La mention horaire** (celle
+  qu'une équipe voyait en attendant sa première ronde notée depuis la
+  v7.13.2) **porte elle aussi le fond bleu clair en dur**. La portée de la
+  v7.13.2 est intacte : équipe / paroisse / diocèse. La bannière annonce
+  désormais « rappels partis — push et Telegram ».
+- **✈️ LA RONDE PARLE AUSSI SUR TELEGRAM (rappels 100 % automatiques)** :
+  * le bot de la maison (celui des notifications, token déjà en secrets)
+    gagne une OREILLE : `telegram_recolter_liaisons` lit au fil des
+    chargements de page (au plus une fois par minute, même charpente
+    lazy-cron que les rondes) les « /start <MatLoc> » — le membre n'a
+    qu'à toucher « Démarrer » sur le message déjà écrit par le lien ;
+  * table `telegram_liaisons` (migration douce idempotente) : chat_id,
+    matloc, nom, lie_le — un compte suit un membre, /stop le retire,
+    403 (porte fermée) aussi ;
+  * à chaque ronde (06h00 · 12h00 · 18h00 · 21h00), chaque compte
+    apparié dont la dizaine attend reçoit le même rappel fraternel que
+    sur WhatsApp — la voix de la maison, le lien avec MatLoc pré-rempli ;
+    les envois sont comptés ÉQUIPE PAR ÉQUIPE dans la miroir de la
+    v7.13.2 (comme les push) ;
+  * **confidentialité** : rien ne part vers personne sans son /start (la
+    porte ne s'ouvre que de l'intérieur) ; les publications restent au
+    chat des responsables — la boîte d'un membre ne reçoit QUE le rappel
+    de sa dizaine, jamais rien d'autre ;
+  * dans la carte « 🔔 Me rappeler ma dizaine sur mon téléphone » de
+    l'Espace, la troisième voie « ✈️ Ou par Telegram » : bouton
+    « ✈️ Recevoir le rappel par Telegram » (membres), état « Ton
+    Telegram est à l'écoute » quand c'est apparié ;
+  * `/stop` remet le silence ; un code inconnu n'appaire personne.
+- **💬 WhatsApp de paroisse : la fuite est fermée** — la vue paroisse
+  passe la paroisse courante aux quatre onglets (🎂 Anniversaires,
+  📢 Rappels réabonnement, 📿 Dizaines du jour, 📿 Espace de prière) :
+  les membres d'une autre paroisse n'y apparaissent plus jamais. Le
+  diocèse, lui, voit tout (voulu).
+- **📿 Dizaines du jour : la section se raconte** — ouverte sans équipe
+  ni paroisse (vue diocèse), elle dit enfin CE QU'ELLE CONTIENT : la
+  liste tenue ÉQUIPE PAR ÉQUIPE, les membres et visiteurs en attente,
+  le message WhatsApp prêt à partir, la bannière des rondes ; la ligne
+  d'invitation des vues équipe/paroisse est élargie au même ton.
+- **✅ Le bouton « ✅ Merci Sainte Mère de Dieu pour ton aide de ce
+  jour ! » est un vrai bouton** : une consigne l'annonce (« 👆 Touche ce
+  bouton pour marquer ta présence du jour — la page du remerciement
+  s'ouvrira ensuite ») pour le membre comme pour le visiteur — fini la
+  double perception confirmation/bouton.
+- `_VERSION_APPLI = "v7.13.3"` ; schéma : table `telegram_liaisons`
+  (création douce idempotente, aucune table existante modifiée).
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
