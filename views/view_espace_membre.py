@@ -105,7 +105,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.2"
+_VERSION_APPLI = "v7.13.3"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -3053,6 +3053,14 @@ def _rendre_page_pointage(est_membre=False, matloc=None, nom_membre=None,
                 st.session_state["diz_page"] = 0
                 st.rerun()
         else:
+            # v7.13.3 — LE BOUTON EST UN VRAI BOUTON : la consigne dit ce
+            # qu'il fait — marquer la présence du jour et ouvrir la page
+            # du remerciement. Fini la double perception.
+            st.markdown('<div style="text-align:center; color:#e8eaf6;'
+                        ' font-size:0.85rem; margin:0 4px 6px 4px;">'
+                        '👆 Touche ce bouton pour marquer ta présence du'
+                        ' jour — la page du remerciement s\u2019ouvrira'
+                        ' ensuite.</div>', unsafe_allow_html=True)
             if st.button("✅ Merci Sainte Mère de Dieu pour ton aide de ce jour !",
                          key="diz_pointage_m", width="stretch", type="primary"):
                 _st, _msg = pointer_dizaine(matloc=matloc, nom=nom_membre,
@@ -3079,6 +3087,11 @@ def _rendre_page_pointage(est_membre=False, matloc=None, nom_membre=None,
                 st.session_state["diz_page"] = 0
                 st.rerun()
         else:
+            st.markdown('<div style="text-align:center; color:#e8eaf6;'
+                        ' font-size:0.85rem; margin:0 4px 6px 4px;">'
+                        '👆 Touche ce bouton pour marquer ta présence du'
+                        ' jour — la page du remerciement s\u2019ouvrira'
+                        ' ensuite.</div>', unsafe_allow_html=True)
             if st.button("✅ Merci Sainte Mère de Dieu pour ton aide de ce jour !",
                          key="diz_pointage_v", width="stretch", type="primary"):
                 _st, _msg = pointer_dizaine(jrnais=jrnais, paroisse_id=paroisse_id,
@@ -3960,7 +3973,7 @@ async function activer_push_ro(){
     var perm = await Notification.requestPermission();
     if(perm!=='granted'){ etat.textContent='Les notifications restent silencieuses — tu pourras dire oui plus tard.'; return; }
     etat.textContent='Un instant…';
-    var reg = await navigator.serviceWorker.register('/app/static/sw.js?v=7122');
+    var reg = await navigator.serviceWorker.register('/app/static/sw.js?v=7133');
     await navigator.serviceWorker.ready;
     var sub = await reg.pushManager.getSubscription();
     if(!sub){ sub = await reg.pushManager.subscribe({userVisibleOnly:true,
@@ -3987,6 +4000,54 @@ async function activer_push_ro(){
                 st.caption("Sur iPhone : installe d'abord l'appli depuis la "
                            "page d'installation, puis dis oui (iOS 16.4 ou "
                            "plus).")
+        # v7.13.3 — ✈️ LA TROISIÈME VOIE : LE RAPPEL PAR TELEGRAM (membres).
+        # Un lien, « Démarrer », et c'est en marche pour de bon : le rappel
+        # part tout seul aux 4 rondes tant que la dizaine attend — et la
+        # boîte ne reçoit QUE lui, jamais les publications (elles restent
+        # au chat des responsables).
+        st.markdown("---")
+        st.markdown("**✈️ Ou par Telegram**")
+        try:
+            from services import telegram_bot_nom as _tg_nom
+            _bot_tg = (_tg_nom() or "").strip()
+        except Exception:
+            _bot_tg = ""
+        if est_membre and matloc:
+            _lie_tg = False
+            try:
+                from database import telegram_liaison_de_matloc as _tg_de
+                _lie_tg = bool(_tg_de(matloc))
+            except Exception:
+                _lie_tg = False
+            if _lie_tg:
+                st.success("✅ Ton Telegram est à l\u2019écoute — le rappel "
+                           "partira tout seul aux 4 rondes tant que ta "
+                           "dizaine attend. Ta boîte ne recevra que lui, "
+                           "jamais les publications.")
+            elif _bot_tg:
+                _lien_tg = ("https://t.me/" + _bot_tg + "?start="
+                            + urllib.parse.quote(
+                                str(matloc).upper().strip()))
+                st.markdown(
+                    '<a href="' + html.escape(_lien_tg) + '" target="_blank" '
+                    'style="display:inline-block; background:#2AABEE;'
+                    ' color:#ffffff; padding:10px 22px; border-radius:30px;'
+                    ' font-weight:bold; text-decoration:none; margin-top:4px;">'
+                    '✈️ Recevoir le rappel par Telegram</a>',
+                    unsafe_allow_html=True)
+                st.caption("Un tap : Telegram s\u2019ouvre, tu appuies sur "
+                           "« Démarrer » — le message y est déjà écrit, "
+                           "c\u2019est tout. Le rappel partira tout seul aux "
+                           "4 rondes tant que ta dizaine attend.")
+            else:
+                st.caption("✈️ Le rappel Telegram arrive dans un instant — "
+                           "reviens un peu plus tard, ou garde le "
+                           "rendez-vous du calendrier : il fait déjà le "
+                           "travail.")
+        else:
+            st.caption("✈️ Le rappel Telegram est offert aux membres de la "
+                       "chaîne ; les visiteurs gardent le rendez-vous du "
+                       "calendrier et la notification de l\u2019appli.")
 
 
 def _alerte_feuillet_fil(lien_theme=None):
