@@ -161,6 +161,157 @@ def envoyer_notification_telegram(message):
         return False
 
 
+def telegram_token():
+    """Le token du bot de la maison (st.secrets) — None s'il n'est pas posé :
+    tout le reste des rappels Telegram reste alors sagement silencieux."""
+    try:
+        return st.secrets.get("TELEGRAM_BOT_TOKEN") or None
+    except Exception:
+        return None
+
+
+def telegram_bot_nom():
+    """Le nom du bot (sans @), demandé une fois par session au bot lui-même
+    (getMe) : il sert à bâtir le lien d'appairage t.me/…?start=<MatLoc>
+    que le membre n'a qu'à toucher — le message y est déjà écrit."""
+    _en_session = st.session_state.get("_tg_bot_nom")
+    if _en_session:
+        return _en_session
+    _tok = telegram_token()
+    if not _tok:
+        return None
+    try:
+        _r = requests.get(f"https://api.telegram.org/bot{_tok}/getMe", timeout=8)
+        if _r.status_code == 200:
+            _nom = str((_r.json().get("result") or {}).get("username") or "")
+            if _nom:
+                st.session_state["_tg_bot_nom"] = _nom
+            return _nom or None
+    except Exception as e:
+        print(f"Telegram getMe : exception — {e}")
+    return None
+
+
+def telegram_envoyer_chat(chat_id, texte):
+    """Envoie UN message Telegram à UN compte apparié. True si parti ;
+    si le compte a fermé la porte au bot (403), sa liaison est retirée —
+    aucun rappel ne repartira vers lui, sans bruit."""
+    _tok = telegram_token()
+    if not _tok or not chat_id:
+        return False
+    try:
+        _r = requests.post(f"https://api.telegram.org/bot{_tok}/sendMessage",
+                           json={"chat_id": str(chat_id), "text": texte},
+                           timeout=10)
+        if _r.status_code == 403:
+            try:
+                database.telegram_liaison_retirer(chat_id)
+            except Exception:
+                pass
+            return False
+        if _r.status_code != 200:
+            print(f"Telegram : échec HTTP {_r.status_code} — {_r.text[:200]}")
+            return False
+        return True
+    except Exception as e:
+        print(f"Telegram : exception — {e}")
+        return False
+
+
+_TG_RECOLTE_TS = [0]
+
+
+def telegram_recolter_liaisons(force=False):
+    """L'OREILLE TELEGRAM (v7.13.3) : les « /start <MatLoc> » envoyés au bot
+    sont récoltés au fil des chargements de page (au plus une fois par
+    minute — même charpente que les rondes), et chaque compte est apparié
+    au membre portant ce MatLoc. Le lien de l'Espace écrit déjà le message :
+    le membre n'a qu'à toucher « Démarrer ». Un /start nu reçoit l'accueil,
+    /stop retire la liaison ; un code inconnu n'appaire personne. Rien ne
+    part vers personne sans son /start — la porte ne s'ouvre que de
+    l'intérieur."""
+    import time as _t
+    if not force and _t.time() - float(_TG_RECOLTE_TS[0]) < 60:
+        return
+    _TG_RECOLTE_TS[0] = _t.time()
+    _tok = telegram_token()
+    if not _tok:
+        return
+    try:
+        _r = requests.get(f"https://api.telegram.org/bot{_tok}/getUpdates",
+                          params={"timeout": 0}, timeout=10)
+        if _r.status_code != 200:
+            return
+        _ups = (_r.json().get("result") or [])
+        _max_id = 0
+        _nouveautes = 0
+        for _u in _ups:
+            try:
+                _max_id = max(_max_id, int(_u.get("update_id") or 0))
+            except Exception:
+                continue
+            _msg = _u.get("message") or {}
+            _chat = _msg.get("chat") or {}
+            _cid = str(_chat.get("id") or "")
+            _txt = str(_msg.get("text") or "").strip()
+            if not _cid or not _txt:
+                continue
+            _mots = _txt.split()
+            _cmd = _mots[0].lower().lstrip("/") if _mots else ""
+            if _cmd == "start":
+                if len(_mots) > 1:
+                    _code = _mots[1].upper().strip()
+                    _nom_resolu = database.membre_nom_de_matloc(_code)
+                    if _nom_resolu:
+                        database.telegram_liaison_enregistrer(
+                            _cid, _code, nom=_nom_resolu)
+                        _nouveautes += 1
+                        telegram_envoyer_chat(
+                            _cid,
+                            "📿 C'est noté ! Ton rappel de dizaine est en "
+                            "marche : il partira tout seul aux 4 rondes du "
+                            "jour (06h00 · 12h00 · 18h00 · 21h00) tant que "
+                            "ta dizaine attend.\n\n"
+                            "Ta boîte ne recevra que "
+                            "ce rappel — jamais les publications. Que la "
+                            "Vierge Marie veille sur toi! 🙏")
+                    else:
+                        telegram_envoyer_chat(
+                            _cid,
+                            "Ce code n'a pas été reconnu. 🙏\n\n"
+                            "Ouvre ton "
+                            "Espace de Prière et touche « ✈️ Recevoir le "
+                            "rappel par Telegram » : le message est déjà "
+                            "écrit, tu n'as qu'à l'envoyer.\n\n"
+                            + URL_ESPACE_SPIRITUEL + "/?espace=1")
+                else:
+                    telegram_envoyer_chat(
+                        _cid,
+                        "Bienvenue! 🙏\n\n"
+                        "Pour recevoir le rappel de ta "
+                        "dizaine du jour, ouvre ton Espace de Prière et "
+                        "touche « ✈️ Recevoir le rappel par Telegram » "
+                        "dans la carte « 🔔 Me rappeler ma dizaine sur "
+                        "mon téléphone ».\n\n"
+                        + URL_ESPACE_SPIRITUEL + "/?espace=1")
+            elif _cmd in ("stop", "stoprappel"):
+                database.telegram_liaison_retirer(_cid)
+                telegram_envoyer_chat(
+                    _cid,
+                    "C'est retiré — tu ne recevras plus de rappel ici. "
+                    "À quand tu veux : le même lien de ton Espace remet "
+                    "la marche en route. 🙏")
+        if _max_id:
+            requests.get(f"https://api.telegram.org/bot{_tok}/getUpdates",
+                         params={"timeout": 0, "offset": _max_id + 1},
+                         timeout=10)
+        if _nouveautes:
+            logger.info(f"telegram : {_nouveautes} nouvelle(s) "
+                        "liaison(s) appariée(s)")
+    except Exception as e:
+        print(f"Telegram récolte : exception — {e}")
+
+
 # ============================================================
 # MEDIAS (Cloudinary / local)
 # ============================================================
@@ -945,6 +1096,45 @@ def executer_rondes_dizaines(force=False):
             except Exception as e:
                 _ko += 1
                 logger.warning(f"rondes : abonnement #{_ab[0]} — {e!r}")
+        # v7.13.3 — LA RONDE PARLE AUSSI SUR TELEGRAM : chaque compte
+        # apparié (« /start <MatLoc> » une fois pour toutes) reçoit le même
+        # rappel fraternel, sans aucun tap — et rien d'autre que lui : les
+        # publications restent au chat des responsables, les boîtes des
+        # membres ne reçoivent jamais rien d'autre. Les envois sont comptés
+        # avec les push, équipe par équipe (même miroir que la v7.13.2).
+        try:
+            for (_cid_tg, _mat_tg, _nom_tg) in database.telegram_liaisons_actifs():
+                try:
+                    if not _mat_tg or database.dizaine_deja_pointee(_mat_tg):
+                        continue
+                    _eq_tg = None
+                    try:
+                        _eq_tg = database.fiche_membre_chaine(_mat_tg)[0]
+                    except Exception:
+                        _eq_tg = None
+                    _lien_t = (URL_ESPACE_SPIRITUEL
+                               + "/?espace=1&matloc="
+                               + urllib.parse.quote(str(_mat_tg)))
+                    _salut = ("Bonjour " + str(_nom_tg or "") + " 🙏"
+                              if _nom_tg else "Bonjour 🙏")
+                    if telegram_envoyer_chat(
+                            _cid_tg,
+                            _salut + "\n"
+                            "Un petit rappel fraternel : ta dizaine du jour "
+                            "t'attend 🌹\n\n" + _lien_t + "\n\n"
+                            "Que la Vierge Marie veille sur toi! 🙏"):
+                        _ok += 1
+                        if _eq_tg:
+                            _eq_ok[_eq_tg] = _eq_ok.get(_eq_tg, 0) + 1
+                    else:
+                        _ko += 1
+                        if _eq_tg:
+                            _eq_ko[_eq_tg] = _eq_ko.get(_eq_tg, 0) + 1
+                except Exception as e:
+                    _ko += 1
+                    logger.warning(f"rondes : telegram {_cid_tg} — {e!r}")
+        except Exception as e:
+            logger.warning(f"rondes : boucle telegram — {e!r}")
         database.dizaines_ronde_completer(
             _jour, _rdv, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
             _nb_m, _nb_v, _ok, _ko)
