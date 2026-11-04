@@ -1440,8 +1440,39 @@ def _assurer_table_reserve():
             commit_and_sync()
         except Exception:
             pass  # colonne déjà présente
+    _retro_marquer_source_reserve()
     _retroremplir_contact_reserve()
     _table_averee("intentions_reserve")
+
+
+# v7.13.4 — le rétro-marquage des sources ne tourne qu'UNE FOIS par
+# processus (idempotent de toute façon : seules les lignes sans marque
+# sont touchées). v7.13.0 retrouvé — il avait été égaré en route.
+_SOURCE_MARQUEE_FAIT = False
+
+
+def _retro_marquer_source_reserve():
+    """RÉTRO-MARQUAGE DOUX (v7.13.0) : les intentions déjà en réserve ne
+    portent pas la marque d'origine — l'heuristique éprouvée distingue les
+    intentions des MEMBRES (posées par les chaînes passées, équipe notée,
+    « qui » ni anonyme ni visiteur) des intentions de VISITEURS (entrées
+    par le sas de la Zone du jour, « qui » = 'cet anonyme'/'notre prochain').
+    Les premières deviennent source='chaine' : elles reprennent d'office
+    leur place de prioritaires et d'héritage, sans attendre la prochaine
+    saisie de chaîne. Silencieux, idempotent, une passe par processus."""
+    global _SOURCE_MARQUEE_FAIT
+    if _SOURCE_MARQUEE_FAIT:
+        return
+    try:
+        c.execute("""UPDATE intentions_reserve SET source='chaine'
+                     WHERE source IS NULL AND active=1
+                       AND equipe_id IS NOT NULL
+                       AND (qui IS NULL OR qui NOT IN
+                            ('cet anonyme', 'notre prochain'))""")
+        commit_and_sync()
+    except Exception as e:
+        logger.warning(f"_retro_marquer_source_reserve : {e!r}")
+    _SOURCE_MARQUEE_FAIT = True
 
 
 def _assurer_table_du_jour():
@@ -1790,10 +1821,16 @@ def purger_reserve_expiree(force=False):
         _assurer_table_reserve()
         _limite = date.fromordinal(
             date.today().toordinal() - DUREE_RESERVE_VISITEUR).isoformat()
+        # v7.13.4 — LES INTENTIONS DE LA ⛓️ CHAÎNE N'ONT PAS D'HORLOGE
+        # (v7.13.0, retrouvé) : source='chaine' n'est JAMAIS emportée par les
+        # 20 jours du visiteur — elle vit jusqu'à la prochaine séance
+        # (libérées par la nouvelle saisie, présents seulement) et reste en
+        # héritage pour les absents.
         _cur = c.execute("""UPDATE intentions_reserve SET active=0
                             WHERE active=1
                               AND date_ajout IS NOT NULL
                               AND date_ajout <= ?
+                              AND COALESCE(source,'') <> 'chaine'
                               AND (publiee IS NOT NULL
                                    OR qui IN ('cet anonyme', 'notre prochain')
                                    OR equipe_id IS NULL)""", (_limite,))
@@ -2145,24 +2182,31 @@ def enregistrer_chaine_seance(equipe_id, date_seance, ordre_nums, absents_nums=N
         # du jour : elles ne sont pas touchées ; celles du jour même, d'une
         # correction de saisie non plus). Les intentions des VISITEURS ne
         # bougent pas : elles suivent leur règle à elles (20 jours).
+        # v7.13.4 — LA PORTÉE ET LE FILTRE RETROUVÉS (v7.13.0) : seules les
+        # vieilles intentions des N° méd. PRÉSENTS dans la nouvelle chaîne
+        # quittent la réserve — les absents gardent la leur en héritage ; et
+        # le filtre des publiées est celui des rangées PUBLIÉES (elles
+        # naissent publiee=1 : « publiee IS NULL » ne matchait rien et la
+        # libération ne libérait jamais rien depuis la v7.13.1).
+        _n_lib = 0
         try:
             # v7.13.1 — le compte des libérées se prend PAR LECTURE avant la
             # mise à jour (le rowcount du conducteur distant n'est pas fiable).
-            _n_lib = int(c.execute("""SELECT COUNT(*) FROM intentions_reserve
-                                      WHERE equipe_id=? AND active=1
-                                        AND (date_ajout IS NULL OR date_ajout < ?)
-                                        AND publiee IS NULL
-                                        AND (qui IS NULL OR qui NOT IN
-                                             ('cet anonyme', 'notre prochain'))""",
-                                   (int(equipe_id),
-                                    date.today().isoformat())).fetchone()[0])
-            c.execute("""UPDATE intentions_reserve SET active=0
-                         WHERE equipe_id=? AND active=1
-                           AND (date_ajout IS NULL OR date_ajout < ?)
-                           AND publiee IS NULL
-                           AND (qui IS NULL OR qui NOT IN
-                                ('cet anonyme', 'notre prochain'))""",
-                      (int(equipe_id), date.today().isoformat()))
+            _lib_where = """equipe_id=? AND active=1
+                            AND (date_ajout IS NULL OR date_ajout < ?)
+                            AND (source='chaine' OR (source IS NULL AND
+                                 (qui IS NULL OR qui NOT IN
+                                  ('cet anonyme', 'notre prochain'))))"""
+            _lib_prm = [int(equipe_id), date.today().isoformat()]
+            if _ordre:
+                _lib_where += (" AND numero_med IN ("
+                               + ",".join("?" * len(_ordre)) + ")")
+                _lib_prm += [int(n) for n in _ordre]
+            _n_lib = int(c.execute("SELECT COUNT(*) FROM intentions_reserve "
+                                   "WHERE " + _lib_where,
+                                   _lib_prm).fetchone()[0])
+            c.execute("UPDATE intentions_reserve SET active=0 WHERE "
+                      + _lib_where, _lib_prm)
         except Exception as e:
             logger.warning(f"enregistrer_chaine_seance (libération) : {e!r}")
             _n_lib = 0
@@ -2173,6 +2217,23 @@ def enregistrer_chaine_seance(equipe_id, date_seance, ordre_nums, absents_nums=N
         if _n_lib:
             _msg += (" Les intentions de la précédente séance ("
                      + str(_n_lib) + ") ont quitté la réserve.")
+        # v7.13.4 — le message nomme l'héritage (v7.13.0 retrouvé) : les
+        # absents continuent de porter l'intention de leur dernière séance
+        # jusqu'à leur retour.
+        try:
+            _n_her = int(c.execute("""SELECT COUNT(*) FROM intentions_reserve
+                                      WHERE equipe_id=? AND active=1
+                                        AND source='chaine'
+                                        AND date_ajout IS NOT NULL
+                                        AND date_ajout < ?""",
+                                    (int(equipe_id),
+                                     date.today().isoformat())).fetchone()[0])
+        except Exception:
+            _n_her = 0
+        if _n_her:
+            _msg += (" Les absents gardent la leur en héritage ("
+                     + str(_n_her) + ") — elle les attend jusqu'à leur "
+                       "retour. 🪶")
         return (True, _msg)
     except Exception as e:
         logger.warning(f"enregistrer_chaine_seance : {e!r}")
@@ -2355,7 +2416,9 @@ def intention_reserve_pour_numero(numero_med, cycle=None, jour_exclu=None,
     identiques. nom_exclu complète la règle d'or côté membre (son nom de
     fiche). en_place=True rend l'intention EN PLACE (la plus ancienne encore
     active — celle que la chaîne a posée et que le remplacement réécrit sur
-    place) au lieu du stock tournant."""
+    place) au lieu du stock tournant. v7.13.4 — LA PRIORITÉ DE LA CHAÎNE
+    rétablie (v7.13.0) : une intention de la ⛓️ Chaîne posée à ce N° méd. EST
+    la principale — la rotation ne joue que parmi les visiteuses."""
     _num = _numero_med_normale(numero_med)
     if _num is None:
         return None
@@ -2368,7 +2431,7 @@ def intention_reserve_pour_numero(numero_med, cycle=None, jour_exclu=None,
         # nourrit plus le tirage.
         publier_reserve_due()
         purger_reserve_expiree()
-        _sql = """SELECT texte, qui, auteur_nom, jour_naissance
+        _sql = """SELECT texte, qui, auteur_nom, jour_naissance, source
                   FROM intentions_reserve
                   WHERE numero_med=? AND active=1
                     AND (publiee IS NULL OR publiee<>0)"""
@@ -2383,16 +2446,25 @@ def intention_reserve_pour_numero(numero_med, cycle=None, jour_exclu=None,
                     if not _est_propre_a(r[1], r[2], r[3], nom_exclu, jour_exclu)]
         if not rows:
             return None
-        if en_place:
-            _i = 0
+        # v7.13.4 — LA PRIORITÉ DE LA CHAÎNE (v7.13.0, retrouvée) : une
+        # intention de la ⛓️ Chaîne (source='chaine') posée à ce N° méd. EST
+        # la principale — toujours, pour le membre comme pour le visiteur ;
+        # la rotation par cycle de 20 jours ne joue que parmi les intentions
+        # de visiteurs. en_place=True rend la même rangée : celle que la
+        # chaîne a posée et que le remplacement réécrit sur place.
+        _ch_rows = [r for r in rows if r[4] == "chaine"]
+        if _ch_rows:
+            _sel = _ch_rows[0]
+        elif en_place:
+            _sel = rows[0]
         else:
             if cycle is None:
                 cycle = (date.today() - date(2024, 1, 1)).days // 20
-            _i = int(cycle) % len(rows)
-        _qui = (str(rows[_i][1] or "").strip()
-                or str(rows[_i][2] or "").strip()
+            _sel = rows[int(cycle) % len(rows)]
+        _qui = (str(_sel[1] or "").strip()
+                or str(_sel[2] or "").strip()
                 or "notre prochain")
-        return (str(rows[_i][0]).strip(), _qui)
+        return (str(_sel[0]).strip(), _qui)
     except Exception as e:
         logger.warning(f"intention_reserve_pour_numero : {e!r}")
         return None
@@ -3830,3 +3902,141 @@ def parametre_ecrire(cle, valeur):
     except Exception as e:
         logger.warning(f"parametre_ecrire : {e!r}")
         return False
+
+
+# ────────────────────────────────────────────────────────────────────────
+# v7.13.4 — L'ESPACE VISITEUR TEMPORAIRE (21 JOURS)
+# Le fidèle qui vient de confier une intention reçoit un espace à lui :
+# son intention relue, sa « 📿 Mémoire de mes dizaines », le livret du
+# jour déjà positionné — comme un membre, juste pour prier sa dizaine.
+# 21 jours, puis l'espace s'achève doucement. Migration DOUCE : la table
+# naît si elle n'existe pas ; rien d'autre n'est touché.
+# ────────────────────────────────────────────────────────────────────────
+def _assurer_espaces_visiteurs():
+    """Création douce de espaces_visiteurs (bases distantes anciennes)."""
+    if _table_reconnue("espaces_visiteurs"):
+        return
+    try:
+        c.execute("SELECT id FROM espaces_visiteurs LIMIT 1")
+    except Exception:
+        c.execute("""CREATE TABLE IF NOT EXISTS espaces_visiteurs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        cle TEXT UNIQUE,
+                        nom TEXT,
+                        contact TEXT,
+                        jrnais INTEGER,
+                        intention_id INTEGER,
+                        equipe_id INTEGER,
+                        paroisse_id INTEGER,
+                        date_creation TEXT,
+                        date_expiration TEXT)""")
+        commit_and_sync()
+    _table_averee("espaces_visiteurs")
+
+
+def espace_visiteur_creer(nom=None, contact=None, jrnais=None,
+                          intention_id=None, equipe_id=None,
+                          paroisse_id=None, jours=21):
+    """Ouvre un espace visiteur de 21 jours et renvoie sa clé (None si
+    l'ouverture n'a pas pu être notée — l'intention, elle, est déjà en
+    sécurité). La clé est aléatoire : elle vit dans le lien du fidèle."""
+    _assurer_espaces_visiteurs()
+    try:
+        import secrets as _sec
+        _cle = "V" + _sec.token_hex(5).upper()
+        _deb = date.today()
+        _fin = date.fromordinal(_deb.toordinal() + int(jours))
+        c.execute("""INSERT INTO espaces_visiteurs
+                     (cle, nom, contact, jrnais, intention_id, equipe_id,
+                      paroisse_id, date_creation, date_expiration)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                  (_cle, (str(nom).strip() or None) if nom else None,
+                   (str(contact).strip() or None) if contact else None,
+                   int(jrnais) if jrnais else None,
+                   int(intention_id) if intention_id else None,
+                   int(equipe_id) if equipe_id else None,
+                   int(paroisse_id) if paroisse_id else None,
+                   _deb.isoformat(), _fin.isoformat()))
+        commit_and_sync()
+        return _cle
+    except Exception as e:
+        logger.warning(f"espace_visiteur_creer : {e!r}")
+        return None
+
+
+def espace_visiteur_de_cle(cle):
+    """La ligne de l'espace visiteur porté par CETTE clé (None si inconnue)
+    — (id, cle, nom, contact, jrnais, intention_id, equipe_id, paroisse_id,
+    date_creation, date_expiration)."""
+    _assurer_espaces_visiteurs()
+    _k = str(cle or "").strip()
+    if not _k:
+        return None
+    try:
+        return c.execute("""SELECT id, cle, nom, contact, jrnais,
+                                   intention_id, equipe_id, paroisse_id,
+                                   date_creation, date_expiration
+                            FROM espaces_visiteurs WHERE cle=? LIMIT 1""",
+                         (_k,)).fetchone()
+    except Exception as e:
+        logger.warning(f"espace_visiteur_de_cle : {e!r}")
+        return None
+
+
+def espace_visiteur_jours_restants(date_expiration):
+    """(jours restants, date d'expiration ISO) — 0 jour restant le dernier
+    jour, et au-delà : l'espace s'achève."""
+    try:
+        _fin = date.fromisoformat(str(date_expiration)[:10])
+        _n = (_fin - date.today()).days
+        return (max(0, _n), _fin.isoformat())
+    except Exception:
+        return (0, None)
+
+
+def serie_dizaines_visiteur(jrnais, nb_jours=14):
+    """v7.13.4 — LA MÉMOIRE DU VISITEUR : [(jour ISO, 1/0)] de ses dizaines
+    pointées (type='visiteur', jour de naissance) sur les nb_jours derniers
+    jours, le plus ancien d'abord — l'écho du membre, pour sa carte dorée."""
+    try:
+        _assurer_dizaines_journal()
+        _j = int(jrnais)
+        _deb = date.fromordinal(date.today().toordinal() - int(nb_jours) + 1).isoformat()
+        _rows = c.execute("""SELECT jour FROM dizaines_journal
+                              WHERE type='visiteur' AND jrnais=? AND jour>=?""",
+                          (_j, _deb)).fetchall()
+        _faits = {r[0] for r in _rows}
+        _serie = []
+        for _i in range(int(nb_jours)):
+            _d = date.fromordinal(date.today().toordinal() - int(nb_jours) + 1 + _i).isoformat()
+            _serie.append((_d, 1 if _d in _faits else 0))
+        return _serie
+    except Exception as e:
+        logger.warning(f"serie_dizaines_visiteur : {e!r}")
+        return [(date.fromordinal(date.today().toordinal() - int(nb_jours) + 1 + i).isoformat(), 0)
+                for i in range(int(nb_jours))]
+
+
+def compteur_dizaines_mois_visiteur(jrnais):
+    """Nombre de dizaines du visiteur CE MOIS + flamme des jours consécutifs
+    (miroir visiteur de compteur_dizaines_mois, v7.13.4)."""
+    try:
+        _assurer_dizaines_journal()
+        _j = int(jrnais)
+        _deb = date.today().replace(day=1).isoformat()
+        _n = c.execute("""SELECT COUNT(*) FROM dizaines_journal
+                          WHERE type='visiteur' AND jrnais=? AND jour>=?""",
+                       (_j, _deb)).fetchone()[0]
+        _flamme = 0
+        for _i in range(0, 60):
+            _d = date.fromordinal(date.today().toordinal() - _i).isoformat()
+            if c.execute("""SELECT 1 FROM dizaines_journal
+                            WHERE type='visiteur' AND jrnais=? AND jour=?
+                            LIMIT 1""", (_j, _d)).fetchone():
+                _flamme += 1
+            else:
+                break
+        return (_n, _flamme)
+    except Exception as e:
+        logger.warning(f"compteur_dizaines_mois_visiteur : {e!r}")
+        return (0, 0)
