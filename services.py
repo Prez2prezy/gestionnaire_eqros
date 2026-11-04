@@ -272,6 +272,9 @@ def telegram_recolter_liaisons(force=False):
                             "marche : il partira tout seul aux 4 rondes du "
                             "jour (06h00 · 12h00 · 18h00 · 21h00) tant que "
                             "ta dizaine attend.\n\n"
+                            "Ton Espace s'ouvre tout prêt, ici :\n"
+                            + URL_ESPACE_SPIRITUEL + "/?espace=1&matloc="
+                            + urllib.parse.quote(str(_code)) + "\n\n"
                             "Ta boîte ne recevra que "
                             "ce rappel — jamais les publications. Que la "
                             "Vierge Marie veille sur toi! 🙏")
@@ -1121,7 +1124,9 @@ def executer_rondes_dizaines(force=False):
                             _cid_tg,
                             _salut + "\n"
                             "Un petit rappel fraternel : ta dizaine du jour "
-                            "t'attend 🌹\n\n" + _lien_t + "\n\n"
+                            "t'attend 🌹\n"
+                            "Ouvre ton Espace tout prêt :\n\n" + _lien_t
+                            + "\n\n"
                             "Que la Vierge Marie veille sur toi! 🙏"):
                         _ok += 1
                         if _eq_tg:
