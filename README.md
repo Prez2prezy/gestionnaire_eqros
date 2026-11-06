@@ -1876,6 +1876,40 @@ maison.*
 - `_VERSION_APPLI = "v7.13.8"` ; aucun changement de schéma ; aucun
   changement de fichier statique (`_ver_pwa` reste 7136).
 
+### 44. v7.13.9 — Le manifeste de la même origine : l'icône porte enfin son nom, et les gestes viennent à la page
+
+- **📿 L'icône posée ne s'appelle plus « Streamlit »** : les captures du
+  terrain (dialogue d'installation nommant « Streamlit », bateau rouge ;
+  icône ouvrant la page des responsables) ont montré que l'URI `data:` —
+  une adresse SANS origine — était écartée par Chrome au moment
+  d'installer : le raccourci repartait sans manifeste et ouvrait la
+  racine… c'est-à-dire l'Administration. Le manifeste voyage désormais
+  en **`blob:`** — une pièce jointe fabriquée PAR la page, portant
+  l'adresse du site elle-même (même origine) — avec secours `data:` puis
+  `/app/static/` (`injecter_icone_pwa`, `_ver_pwa` → 7139). L'icône posée
+  depuis l'Espace ouvre l'Espace du fidèle (start_url avec matloc) ;
+  celle posée depuis l'Administration ouvre l'Administration.
+- **📲 Les gestes viennent à la page, plus aucun voyage obligatoire** :
+  les badges de bienvenue (membre et communautaire) portent un déplieur
+  « Les gestes, ici même — sans changer de page » (Android ⋮ / iPhone
+  Partager) ; le lien vers la page d'installation (bouton or) reste le
+  chemin doré. Fini l'attente qui tournait quand la salle dormait.
+- **🔑 La barre latérale de l'Administration dit les gestes elle-même** :
+  le lien vers `/app/static/install_rosaire_admin.html` (répondu par la
+  coquille HTML — le voyage tournait puis retenait l'Administration) est
+  remplacé par un expander « 📲 Poser le raccourci — les gestes », avec
+  le mot honnête : l'icône posée d'ici ouvre l'Administration ; celle de
+  l'Espace se pose depuis l'Espace.
+- **🕊️ La page d'installation dit les deux pièges** : la vieille icône
+  « Streamlit » posée par un essai d'avant (appui long → Supprimer, puis
+  reposer) et le temps de patience quand la page revient après une pause.
+- **Cohérence statique** : `manifest_*.json` (?v=7139) et pages
+  `install_rosaire*.html` passent au motif blob: — prêtes si le service
+  statique de la plateforme revient.
+- `_VERSION_APPLI = "v7.13.9"` ; aucun changement de schéma ; aucun
+  changement de données — la base vit chez l'hébergeur, on n'y touche
+  jamais.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
