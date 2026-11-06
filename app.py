@@ -130,8 +130,10 @@ if espace_val:
             pass
 
     # v7.8.14 — icône 📿 (favicon + PWA) pour les Espaces de Prière
+    # v7.13.6 — le manifeste voyage personnalisé : si un matloc est dans
+    # l'adresse, le start_url de l'icône posée ouvre SON Espace tout prêt.
     from components import injecter_icone_pwa
-    injecter_icone_pwa(espace=True)
+    injecter_icone_pwa(espace=True, matloc=matloc_val)
 
     from views.view_espace_membre import show_espace_membre
     show_espace_membre(matloc_val)
