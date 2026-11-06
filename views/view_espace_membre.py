@@ -108,7 +108,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.7"
+_VERSION_APPLI = "v7.13.8"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -5398,18 +5398,25 @@ def _render_espace_visiteur(esv):
 # PAGE PRINCIPALE
 # ====================================================================
 def _render_page_installateur(matloc_membre=None):
-    """v7.13.6 — LA PAGE D'INSTALLATION VIT DANS L'APPLICATION.
-    La bannière d'accueil promettait « le bouton or Installer l'application »
-    sur la page d'installation ; celle-ci vivait dans static/…, et le service
-    statique de la plateforme répond par la coquille HTML depuis novembre
-    2026 (constat v7.13.0 — seul le manifeste avait été rendu incassable).
-    La page est désormais rendue PAR l'application (?espace=1&installer=1) :
-    plus aucune dépendance au service statique. Le bouton or est un vrai
-    bouton : quand le téléphone annonce qu'il sait installer
-    (beforeinstallprompt, gardé en réserve côté page par injecter_icone_pwa),
-    il déclenche l'installation native — sinon les gestes du menu ⋮ /
-    Partager prennent le relais. Et le manifeste injecté porte le matloc du
-    fidèle : l'icône posée ouvre SON Espace, tout prêt."""
+    """v7.13.6 — LA PAGE D'INSTALLATION VIT DANS L'APPLICATION ;
+    v7.13.8 — LE BOUTON OR NE SE CACHE PLUS. La bannière d'accueil
+    promettait « le bouton or Installer l'application » sur la page
+    d'installation ; celle-ci vivait dans static/…, et le service statique
+    de la plateforme répond par la coquille HTML depuis novembre 2026
+    (constat v7.13.0 — seul le manifeste avait été rendu incassable).
+    La page est rendue PAR l'application (?espace=1&installer=1) : plus
+    aucune dépendance au service statique. En v7.13.6/7 le bouton or était
+    TIMIDE : il ne s'affichait que si le navigateur annonçait savoir
+    installer (beforeinstallprompt) — sur un navigateur silencieux
+    (ordinateur typiquement) il s'effaçait après quelques secondes, et la
+    carte jaune promettait un bouton absent (constat du fidèle : « Je ne
+    vois pas aucun bouton », capture sur PC). Désormais le bouton or reste
+    TOUJOURS visible ; au toucher, il déclenche l'installation native si
+    l'annonce est là (gardée en réserve côté page par injecter_icone_pwa),
+    sinon il conduit LUI-MÊME aux gestes du menu (défilement doux + halo
+    doré sur la carte) — même résultat, même visage doré. Et le manifeste
+    injecté porte le matloc du fidèle : l'icône posée ouvre SON Espace,
+    tout prêt."""
     _ml = ""
     if matloc_membre:
         try:
@@ -5431,13 +5438,17 @@ def _render_page_installateur(matloc_membre=None):
         ' <b style="color:#FFD54F;">un geste, et tu y es</b> — plein écran,'
         ' sans jamais retaper d\'adresse.</div></div>',
         unsafe_allow_html=True)
-    # v7.13.6 — LE BOUTON OR : il ne s'affiche que si le téléphone a annoncé
-    # savoir installer (annonce gardée en réserve par injecter_icone_pwa).
-    # Sinon, après un temps de patience, les gestes du menu prennent le
-    # relais — le résultat est le même, le visage aussi.
+    # v7.13.8 — LE BOUTON OR NE SE CACHE PLUS : il est là dès la première
+    # seconde, sur tous les écrans (téléphones ET ordinateurs). Au toucher :
+    # installation native si le navigateur a annoncé savoir faire (annonce
+    # gardée en réserve par injecter_icone_pwa) ; sinon il conduit LUI-MÊME
+    # aux gestes du menu — même résultat, même visage doré. Fini la promesse
+    # d'un bouton absent (capture du fidèle : « Je ne vois pas aucun
+    # bouton »). S'il ne vient pas, la note honnête l'explique, sous le
+    # bouton qui reste.
     _zone = """
     <div id="zone_or" style="text-align:center; margin:2px 0 0 0;">
-      <button id="btn_or" type="button" style="display:none; background:linear-gradient(135deg,#FFD700,#C9A227); color:#1A237E; border:none; cursor:pointer; font-weight:bold; font-size:1.05rem; padding:14px 24px; border-radius:999px; box-shadow:0 4px 16px rgba(0,0,0,.3); font-family:Georgia,'Times New Roman',serif;">📲 Installer l&#8217;application</button>
+      <button id="btn_or" type="button" style="display:inline-block; background:linear-gradient(135deg,#FFD700,#C9A227); color:#1A237E; border:none; cursor:pointer; font-weight:bold; font-size:1.05rem; padding:14px 24px; border-radius:999px; box-shadow:0 4px 16px rgba(0,0,0,.3); font-family:Georgia,'Times New Roman',serif;">📲 Installer l&#8217;application</button>
       <div id="note_or" style="display:none; color:#c7cdf5; font-size:0.9rem; line-height:1.65; padding:8px 6px;"></div>
     </div>
     <script>
@@ -5454,61 +5465,77 @@ def _render_page_installateur(matloc_membre=None):
           note.textContent = "\u2705 Pos\u00e9e ! L'ic\u00f4ne attend sur ton \u00e9cran d'accueil \u2014 elle ouvre ton Espace tout pr\u00eat.";
         } catch(e) {}
       }
-      function retombe(){
+      function guide(){
         try {
-          btn.style.display = 'none';
           note.style.display = 'block';
-          note.textContent = 'Ton t\u00e9l\u00e9phone pose le raccourci par son menu : suis les gestes ci-dessous \u2014 m\u00eame r\u00e9sultat, m\u00eame visage dor\u00e9.';
+          note.style.color = '#c7cdf5';
+          note.style.fontWeight = 'normal';
+          note.textContent = "👇 Suis les gestes juste en dessous \u2014 m\u00eame r\u00e9sultat, m\u00eame visage dor\u00e9.";
+        } catch(e) {}
+        try {
+          var carte = w.document.querySelector('.inst-carte');
+          if (carte) {
+            try { carte.scrollIntoView({behavior:'smooth', block:'start'}); } catch(e2) {}
+            try {
+              carte.style.outline = '3px solid #FFD700';
+              setTimeout(function(){ try { carte.style.outline = ''; } catch(e3) {} }, 2600);
+            } catch(e4) {}
+          }
         } catch(e) {}
       }
-      function montre(pose){
+      function silencieux(){
         try {
-          btn.style.display = 'inline-block';
-          note.style.display = 'none';
-          btn.onclick = function(){
-            if (pose && typeof pose.prompt === 'function') {
-              try { pose.prompt(); } catch(e) { retombe(); return; }
-              try {
-                pose.userChoice.then(function(r){
-                  if (r && r.outcome === 'accepted') { posee(); }
-                }).catch(function(){});
-              } catch(e) {}
-            } else { retombe(); }
-          };
-        } catch(e) { retombe(); }
+          note.style.display = 'block';
+          note.style.color = '#c7cdf5';
+          note.style.fontWeight = 'normal';
+          note.textContent = "Ici, le navigateur ne propose pas la demande automatique \u2014 touche le bouton, je t'emm\u00e8ne aux gestes : m\u00eame r\u00e9sultat, m\u00eame visage dor\u00e9.";
+        } catch(e) {}
       }
+      /* v7.13.8 — la décision se prend AU TOUCHER : si l'annonce est arrivée
+         entre-temps, l'installation native part ; sinon le bouton guide. */
+      btn.onclick = function(){
+        var P = null;
+        try { P = (w.__rosaire_install && w.__rosaire_install.pose) || null; } catch(e) {}
+        if (P && typeof P.prompt === 'function') {
+          try { P.prompt(); } catch(e) { guide(); return; }
+          try {
+            P.userChoice.then(function(r){
+              if (r && r.outcome === 'accepted') { posee(); }
+            }).catch(function(){});
+          } catch(e) {}
+        } else { guide(); }
+      };
       try {
-        var R = w.__rosaire_install;
-        if (R && R.pose) { montre(R.pose); }
-        else if (R) {
-          R.suite.push(function(p){ montre(p); });
-          setTimeout(function(){ if (!R.pose) { retombe(); } }, 1500);
-        } else {
-          /* les composants se dessinent chacun à leur rythme : la réserve
-             n'est peut-être pas encore posée — on patiente un peu avant
-             de laisser les gestes du menu prendre le relais */
-          var _essais = 0;
-          var _att = setInterval(function(){
-            var R2 = null;
-            try { R2 = w.__rosaire_install; } catch(e) {}
-            if (R2 && R2.pose) { clearInterval(_att); montre(R2.pose); return; }
-            if (R2) {
-              clearInterval(_att);
-              R2.suite.push(function(p){ montre(p); });
-              setTimeout(function(){ if (!R2.pose) { retombe(); } }, 1500);
-              return;
-            }
-            _essais++;
-            if (_essais > 13) { clearInterval(_att); retombe(); }
-          }, 150);
-        }
+        var cache_note = function(){ try { note.style.display = 'none'; } catch(e1) {} };
+        var branche = function(R2){
+          try { R2.suite.push(function(){ cache_note(); }); } catch(e1) {}
+        };
+        var _vu = false;
+        var _att = setInterval(function(){
+          var R2 = null;
+          try { R2 = w.__rosaire_install; } catch(e1) {}
+          if (R2 && !_vu) {
+            _vu = true;
+            clearInterval(_att);
+            branche(R2);
+            if (R2.pose) { cache_note(); }
+          }
+        }, 150);
+        /* après un temps de patience sans annonce : la note honnête s'affiche
+           SOUS le bouton, qui reste là, lui — plus jamais de bouton absent */
+        setTimeout(function(){
+          try { clearInterval(_att); } catch(e1) {}
+          var R3 = null;
+          try { R3 = w.__rosaire_install; } catch(e1) {}
+          if (!(R3 && R3.pose)) { silencieux(); }
+        }, 3000);
         w.addEventListener('appinstalled', function(){ posee(); });
-      } catch(e) { retombe(); }
+      } catch(e) { silencieux(); }
     })();
     </script>
     """
     try:
-        _comp_html(_zone, height=120)
+        _comp_html(_zone, height=155)
     except Exception:
         pass
     # v7.13.7 — LE CHEMIN LE PLUS SIMPLE écrit AVANT les gestes de secours,
@@ -5516,10 +5543,11 @@ def _render_page_installateur(matloc_membre=None):
     # ne survit pas aux règles !important du thème — leçon ✈️ v7.13.4).
     st.markdown(
         '<div class="inst-pouce">👉 <b>Le plus simple :</b> touche le bouton'
-        ' or «&nbsp;Installer l\'application&nbsp;» juste au-dessus — quand le'
+        ' or «&nbsp;Installer l\'application&nbsp;» juste au-dessus — si le'
         ' téléphone demande confirmation, réponds <b>«&nbsp;Installer&nbsp;»</b>,'
-        ' et l\'icône 📿 se pose toute seule. Les gestes ci-dessous ne sont'
-        ' que le chemin du secours : même résultat, même visage doré.</div>',
+        ' et l\'icône 📿 se pose toute seule. Si rien ne s\'ouvre, le bouton'
+        ' t\'emmène lui-même aux gestes du menu, juste en dessous : même'
+        ' résultat, même visage doré.</div>',
         unsafe_allow_html=True)
     st.markdown(
         '<div class="inst-carte">'
@@ -5537,6 +5565,22 @@ def _render_page_installateur(matloc_membre=None):
         '<div class="inst-note">'
         '🕊️ Reste bien sur cette page pendant le geste : l\'icône rouvrira'
         ' exactement cette adresse — ton Espace de Prière, tout prêt.</div></div>',
+        unsafe_allow_html=True)
+    # v7.13.8 — LES GESTES DE L'ORDINATEUR : le fidèle regarde aussi la page
+    # depuis un PC (capture : « Je ne vois pas aucun bouton ») — la page lui
+    # parle désormais à lui aussi, sans promettre l'icône du téléphone.
+    st.markdown(
+        '<div class="inst-carte" style="margin-top:10px;">'
+        '<div class="inst-titre">Ordinateur — Chrome / Edge 💻</div>'
+        '<ol>'
+        '<li>Regarde la barre d\'adresse : une icône d\'installation s\'y'
+        ' montre peut-être — clique-la, puis <b>«&nbsp;Installer&nbsp;»</b>.</li>'
+        '<li>Sinon, ouvre le menu <b>⋮</b>, puis <b>«&nbsp;Enregistrer et'
+        ' partager&nbsp;»</b> → <b>«&nbsp;Installer l\'application&nbsp;»</b>'
+        ' — ou <b>«&nbsp;Créer un raccourci&nbsp;»</b>.</li></ol>'
+        '<div class="inst-note">🕊️ Sur ordinateur, l\'Espace vit très bien'
+        ' dans son onglet : garde-le en favori ⭐. L\'icône sur l\'écran'
+        ' d\'accueil, elle, attend les téléphones.</div></div>',
         unsafe_allow_html=True)
     st.markdown(
         '<div style="text-align:center; margin:14px 4px 6px 4px;">'
