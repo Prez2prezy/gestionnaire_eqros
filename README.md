@@ -1851,6 +1851,31 @@ maison.*
 - `_VERSION_APPLI = "v7.13.7"` ; aucun changement de schéma ; aucun
   changement de fichier statique (`_ver_pwa` reste 7136).
 
+### 43. v7.13.8 — Le bouton or qui ne disparaît plus, et les gestes de l'ordinateur
+
+- **📲 Le bouton or est là pour de bon, sur tous les écrans** : en
+  v7.13.6/7 il ne s'affichait que si le navigateur annonçait savoir
+  installer (`beforeinstallprompt`) — sur un navigateur silencieux
+  (ordinateur typiquement) il s'effaçait après quelques secondes et la
+  carte jaune promettait un bouton absent (constat du fidèle, capture à
+  l'appui : « Juste au-dessus, je ne vois pas aucun bouton »). Le bouton
+  reste désormais TOUJOURS visible ; la décision se prend au toucher :
+  installation native quand l'annonce est là, sinon le bouton conduit
+  LUI-MÊME aux gestes du menu (défilement doux + halo doré autour de la
+  carte des gestes), avec la note honnête sous le bouton.
+- **💻 Une carte « Ordinateur — Chrome / Edge » rejoint les gestes
+  Android/iPhone** : icône d'installation dans la barre d'adresse, menu
+  ⋮ → « Enregistrer et partager » → « Installer l'application » (ou
+  « Créer un raccourci ») — et le mot doux : sur ordinateur, l'Espace vit
+  très bien dans son onglet, l'icône de l'écran d'accueil attend les
+  téléphones.
+- **👉 La carte jaune dit la vérité des deux mondes** : « si le téléphone
+  demande confirmation, réponds "Installer" ; si rien ne s'ouvre, le
+  bouton t'emmène lui-même aux gestes du menu — même résultat, même
+  visage doré. »
+- `_VERSION_APPLI = "v7.13.8"` ; aucun changement de schéma ; aucun
+  changement de fichier statique (`_ver_pwa` reste 7136).
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
