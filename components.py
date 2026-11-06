@@ -1918,7 +1918,16 @@ def injecter_icone_pwa(espace=False, matloc=None):
     de la page d'installation intégrée (?espace=1&installer=1 — rendue
     PAR l'application, sans dépendre du service statique de la
     plateforme, en panne depuis novembre 2026) la réclame et déclenche
-    l'installation native d'un seul toucher."""
+    l'installation native d'un seul toucher.
+    v7.13.9 — LE MANIFESTE DE LA MÊME ORIGINE : le manifeste voyage en
+    « blob » (une pièce jointe fabriquée PAR la page, portant l'adresse
+    du site elle-même). Les captures du terrain ont montré le téléphone
+    installer « Streamlit » au lieu de « Rosaire » : l'URI data: (une
+    adresse SANS origine) était laissée de côté par Chrome au moment
+    d'installer, et le raccourci repartait sans notre manifeste — il
+    ouvrait alors la racine, c'est-à-dire l'Administration. Le blob:
+    est reçu comme un fichier du site même ; ordre de secours conservé :
+    blob: → data: → adresse /app/static/."""
     # v7.9.9 — cache-busting du manifeste : le navigateur retient le
     # manifeste par URL ; une adresse qui évolue à chaque version l'invite à
     # relire les bons noms et les bonnes icônes au prochain
@@ -1935,7 +1944,7 @@ def injecter_icone_pwa(espace=False, matloc=None):
     # PREMIER OCTET — et posent désormais une VRAIE application d'un seul
     # bouton (v7.12.2), puis s'effacent devant l'Espace à la prochaine
     # ouverture.
-    _ver_pwa = "7136"
+    _ver_pwa = "7139"
 
     def _icon_data(nom_fichier):
         """v7.9.10 — l'icône lue sur le disque et INCORPORÉE en base64 :
@@ -2016,19 +2025,51 @@ def injecter_icone_pwa(espace=False, matloc=None):
       lien('apple-touch-icon', ICO180, '180x180');
       var m = d.querySelector('link[rel="manifest"]');
       if (!m) { m = d.createElement('link'); m.rel = 'manifest'; d.head.appendChild(m); }
-      /* v7.13.0 — le manifeste INCASSABLE : porté par la page elle-même
-         (URI data:, adresses absolues) — l'icône posée ouvre le bon côté
-         même quand le service statique de la plateforme trébuche. */
+      /* v7.13.9 — le manifeste DE LA MÊME ORIGINE : la page fabrique son
+         propre manifeste en « blob » (pièce jointe portant l'adresse du
+         site) — reçu par le téléphone comme un fichier du site même,
+         là où l'URI data: (sans origine) était écartée au moment
+         d'installer. Adresses absolues ; ordre de secours :
+         blob: → data: → adresse /app/static/. */
       try {
-        var ORIG = location.origin;
+        /* v7.13.9 — L'ORIGINE VRAIE : lue depuis la fenêtre de la PAGE
+           (le composant vit dans une iframe « srcdoc » où location.origin
+           vaut la chaîne « null » — le vieux manifeste data: héritait du
+           même défaut et son start_url commençait par « null/ » !).
+           d.baseURI (l'adresse de la page) sert de seconde corde. */
+        var ORIG = '';
+        try { ORIG = d.defaultView.location.origin; } catch (eO) { }
+        if (!ORIG || ORIG === 'null') {
+          try { ORIG = new URL(d.baseURI).origin; } catch (eO2) { }
+        }
+        if (!ORIG || ORIG === 'null') {
+          try { ORIG = window.parent.location.origin; } catch (eO3) { }
+        }
+        if (!ORIG || ORIG === 'null') { ORIG = location.origin; }
         var man = { name: '%NOMLONG%', short_name: LIB,
                     description: 'Gestionnaire des Equipes du Rosaire — Diocèse de Grand-Bassam',
                     start_url: ORIG + '%START%', id: ORIG + '%START%',
                     scope: ORIG + '/', lang: 'fr', display: 'standalone',
                     background_color: '#0d1440', theme_color: '#1A237E',
                     icons: %ICONS% };
-        m.href = 'data:application/manifest+json;charset=utf-8,'
-                 + encodeURIComponent(JSON.stringify(man));
+        var _txt = JSON.stringify(man);
+        var _w = null;
+        try { _w = d.defaultView || window.parent || window; } catch (e0) { _w = window; }
+        if (!_w) { _w = window; }
+        var _pose = false;
+        try {
+          var _B = _w.Blob || Blob;
+          var _U = _w.URL || URL;
+          var _b = new _B([_txt], { type: 'application/manifest+json' });
+          var _u = _U.createObjectURL(_b);
+          if (_u && String(_u).indexOf('blob:') === 0) { m.href = _u; _pose = true; }
+        } catch (e1) { }
+        if (!_pose) {
+          try {
+            m.href = 'data:application/manifest+json;charset=utf-8,'
+                     + encodeURIComponent(_txt);
+          } catch (e2) { m.href = MANIF; }
+        }
       } catch (e) { m.href = MANIF; }
       var t = d.querySelector('meta[name="theme-color"]');
       if (!t) { t = d.createElement('meta'); t.name = 'theme-color'; d.head.appendChild(t); }
