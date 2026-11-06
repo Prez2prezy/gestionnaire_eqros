@@ -108,7 +108,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.4"
+_VERSION_APPLI = "v7.13.6"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -5363,6 +5363,148 @@ def _render_espace_visiteur(esv):
 # ====================================================================
 # PAGE PRINCIPALE
 # ====================================================================
+def _render_page_installateur(matloc_membre=None):
+    """v7.13.6 — LA PAGE D'INSTALLATION VIT DANS L'APPLICATION.
+    La bannière d'accueil promettait « le bouton or Installer l'application »
+    sur la page d'installation ; celle-ci vivait dans static/…, et le service
+    statique de la plateforme répond par la coquille HTML depuis novembre
+    2026 (constat v7.13.0 — seul le manifeste avait été rendu incassable).
+    La page est désormais rendue PAR l'application (?espace=1&installer=1) :
+    plus aucune dépendance au service statique. Le bouton or est un vrai
+    bouton : quand le téléphone annonce qu'il sait installer
+    (beforeinstallprompt, gardé en réserve côté page par injecter_icone_pwa),
+    il déclenche l'installation native — sinon les gestes du menu ⋮ /
+    Partager prennent le relais. Et le manifeste injecté porte le matloc du
+    fidèle : l'icône posée ouvre SON Espace, tout prêt."""
+    _ml = ""
+    if matloc_membre:
+        try:
+            _ml = "&matloc=" + urllib.parse.quote(str(matloc_membre).upper().strip())
+        except Exception:
+            _ml = ""
+    _retour = "?espace=1" + _ml + "&nav=1"
+    st.markdown(
+        '<div style="background:linear-gradient(160deg,#0d1440 0%,#1A237E 60%,#283593 100%);'
+        ' border:2px solid #FFD700; border-radius:18px; padding:24px 18px 20px 18px;'
+        ' text-align:center; margin:12px 4px; box-shadow:0 10px 34px rgba(0,0,0,.45);">'
+        '<div style="font-size:2.4rem; line-height:1;">📿</div>'
+        '<div style="color:#FFFFFF; font-family:Georgia,serif; font-weight:bold;'
+        ' font-size:1.35rem; letter-spacing:.06em; margin-top:10px;">Rosaire</div>'
+        '<div style="color:#FFD54F; font-size:.8rem; letter-spacing:.05em; margin-top:5px;">'
+        'LES ÉQUIPES DU ROSAIRE — DIOCÈSE DE GRAND-BASSAM</div>'
+        '<div style="color:#e8eaf6; font-size:.92rem; margin-top:14px; line-height:1.75;">'
+        'Pose l\'icône de l\'Espace de Prière sur ton écran d\'accueil :'
+        ' <b style="color:#FFD54F;">un geste, et tu y es</b> — plein écran,'
+        ' sans jamais retaper d\'adresse.</div></div>',
+        unsafe_allow_html=True)
+    # v7.13.6 — LE BOUTON OR : il ne s'affiche que si le téléphone a annoncé
+    # savoir installer (annonce gardée en réserve par injecter_icone_pwa).
+    # Sinon, après un temps de patience, les gestes du menu prennent le
+    # relais — le résultat est le même, le visage aussi.
+    _zone = """
+    <div id="zone_or" style="text-align:center; margin:2px 0 0 0;">
+      <button id="btn_or" type="button" style="display:none; background:linear-gradient(135deg,#FFD700,#C9A227); color:#1A237E; border:none; cursor:pointer; font-weight:bold; font-size:1.05rem; padding:14px 24px; border-radius:999px; box-shadow:0 4px 16px rgba(0,0,0,.3); font-family:Georgia,'Times New Roman',serif;">📲 Installer l&#8217;application</button>
+      <div id="note_or" style="display:none; color:#3E517A; font-size:0.85rem; line-height:1.65; padding:8px 6px;"></div>
+    </div>
+    <script>
+    (function(){
+      var w = window.parent;
+      var btn = document.getElementById('btn_or');
+      var note = document.getElementById('note_or');
+      function posee(){
+        try {
+          btn.style.display = 'none';
+          note.style.display = 'block';
+          note.style.color = '#1b5e20';
+          note.style.fontWeight = 'bold';
+          note.textContent = "\u2705 Pos\u00e9e ! L'ic\u00f4ne attend sur ton \u00e9cran d'accueil \u2014 elle ouvre ton Espace tout pr\u00eat.";
+        } catch(e) {}
+      }
+      function retombe(){
+        try {
+          btn.style.display = 'none';
+          note.style.display = 'block';
+          note.textContent = 'Ton t\u00e9l\u00e9phone pose le raccourci par son menu : suis les gestes ci-dessous \u2014 m\u00eame r\u00e9sultat, m\u00eame visage dor\u00e9.';
+        } catch(e) {}
+      }
+      function montre(pose){
+        try {
+          btn.style.display = 'inline-block';
+          note.style.display = 'none';
+          btn.onclick = function(){
+            if (pose && typeof pose.prompt === 'function') {
+              try { pose.prompt(); } catch(e) { retombe(); return; }
+              try {
+                pose.userChoice.then(function(r){
+                  if (r && r.outcome === 'accepted') { posee(); }
+                }).catch(function(){});
+              } catch(e) {}
+            } else { retombe(); }
+          };
+        } catch(e) { retombe(); }
+      }
+      try {
+        var R = w.__rosaire_install;
+        if (R && R.pose) { montre(R.pose); }
+        else if (R) {
+          R.suite.push(function(p){ montre(p); });
+          setTimeout(function(){ if (!R.pose) { retombe(); } }, 1500);
+        } else {
+          /* les composants se dessinent chacun à leur rythme : la réserve
+             n'est peut-être pas encore posée — on patiente un peu avant
+             de laisser les gestes du menu prendre le relais */
+          var _essais = 0;
+          var _att = setInterval(function(){
+            var R2 = null;
+            try { R2 = w.__rosaire_install; } catch(e) {}
+            if (R2 && R2.pose) { clearInterval(_att); montre(R2.pose); return; }
+            if (R2) {
+              clearInterval(_att);
+              R2.suite.push(function(p){ montre(p); });
+              setTimeout(function(){ if (!R2.pose) { retombe(); } }, 1500);
+              return;
+            }
+            _essais++;
+            if (_essais > 13) { clearInterval(_att); retombe(); }
+          }, 150);
+        }
+        w.addEventListener('appinstalled', function(){ posee(); });
+      } catch(e) { retombe(); }
+    })();
+    </script>
+    """
+    try:
+        _comp_html(_zone, height=120)
+    except Exception:
+        pass
+    st.markdown(
+        '<div style="background:#f8f6ff; border:1px solid #d1c4e9; border-radius:14px;'
+        ' padding:16px 18px; margin:12px 4px; text-align:left;">'
+        '<div style="color:#4A148C; font-weight:bold; font-size:.95rem;">Android — Chrome 🤖</div>'
+        '<ol style="color:#3E517A; line-height:1.9; font-size:.9rem; margin:6px 0 0 18px; padding:0;">'
+        '<li>Touche le menu <b>⋮</b> en haut à droite du navigateur.</li>'
+        '<li>Choisis <b>«&nbsp;Installer l\'application&nbsp;»</b> — ou'
+        ' <b>«&nbsp;Ajouter à l\'écran d\'accueil&nbsp;»</b>.</li>'
+        '<li>Confirme : l\'icône 📿 se pose toute seule.</li></ol>'
+        '<div style="color:#4A148C; font-weight:bold; font-size:.95rem; margin-top:14px;">iPhone — Safari 🍎</div>'
+        '<ol style="color:#3E517A; line-height:1.9; font-size:.9rem; margin:6px 0 0 18px; padding:0;">'
+        '<li>Touche le bouton <b>Partager</b> ⬆️ (le carré avec la flèche).</li>'
+        '<li>Fais défiler, choisis <b>«&nbsp;Sur l\'écran d\'accueil&nbsp;»</b>.</li>'
+        '<li>Touche <b>«&nbsp;Ajouter&nbsp;»</b> : l\'icône 📿 se pose.</li></ol>'
+        '<div style="color:#6a1b9a; font-size:.84rem; margin-top:12px; line-height:1.7;">'
+        '🕊️ Reste bien sur cette page pendant le geste : l\'icône rouvrira'
+        ' exactement cette adresse — ton Espace de Prière, tout prêt.</div></div>',
+        unsafe_allow_html=True)
+    st.markdown(
+        '<div style="text-align:center; margin:14px 4px 6px 4px;">'
+        '<a href="' + _retour + '" target="_self"'
+        ' style="display:inline-block; background:linear-gradient(135deg,#FFD700,#C9A227);'
+        ' color:#1A237E; font-weight:bold; padding:12px 26px; border-radius:999px;'
+        ' text-decoration:none; box-shadow:0 4px 16px rgba(0,0,0,.3);">'
+        '◀️ Revenir à l\'Espace de Prière</a></div>',
+        unsafe_allow_html=True)
+
+
 def show_espace_membre(matloc_membre=None):
     """Point d'entrée de l'Espace de Prière (v7.9.3) : le corps de page
     (_corps_espace_membre, code d'origine inchangé), PUIS le pied de page
@@ -5380,7 +5522,13 @@ def show_espace_membre(matloc_membre=None):
     _corps_espace_membre(matloc_membre)
     # v7.10.1 — accueil SEULEMENT : ni livre ouvert (dizaine, livret), ni
     # autre rubrique (Rosaire, Thème, Galerie, Archives, évènements…).
-    if not (st.session_state.get("diz_ouvert") or st.session_state.get("flt_ouvert")):
+    # v7.13.6 — la page d'installation reste tout à l'installation : pas de
+    # carte vidéo avant le pied de page.
+    _inst_q = st.query_params.get("installer")
+    if isinstance(_inst_q, list):
+        _inst_q = _inst_q[0] if _inst_q else None
+    if not (st.session_state.get("diz_ouvert") or st.session_state.get("flt_ouvert")) \
+            and _inst_q != "1":
         # v7.13.4 — la page visiteur (21 jours) reste épurée : pas de carte vidéo.
         _vis_q = st.query_params.get("vis")
         if isinstance(_vis_q, list):
@@ -5461,6 +5609,29 @@ def _corps_espace_membre(matloc_membre=None):
     if msg_warn:
         st.warning(msg_warn)
 
+    # v7.13.6 — LA PAGE D'INSTALLATION INTÉGRÉE : (?espace=1&installer=1)
+    # la bannière d'accueil y envoie le fidèle — le bouton or et les gestes
+    # du menu y attendent, rendus PAR l'application (le service statique de
+    # la plateforme, en panne, n'est plus jamais sollicité). Un matloc
+    # présent et reconnu personnalise le manifeste ET le retour.
+    _installeur = st.query_params.get("installer")
+    if isinstance(_installeur, list):
+        _installeur = _installeur[0] if _installeur else None
+    if _installeur == "1":
+        _ml_inst = None
+        if isinstance(matloc_membre, str) and matloc_membre.strip():
+            try:
+                _ml_inst = str(matloc_membre).upper().strip()
+                _ok_ml = c.execute(
+                    "SELECT 1 FROM membres WHERE matloc=? AND statut='actif' LIMIT 1",
+                    (_ml_inst,)).fetchone()
+                if not _ok_ml:
+                    _ml_inst = None
+            except Exception:
+                _ml_inst = None
+        _render_page_installateur(_ml_inst)
+        return
+
     # ====== ÉTAT 1 BIS : L'ESPACE VISITEUR TEMPORAIRE (v7.13.4) ======
     # Arrivé par le lien reçu à l'envoi de son intention (?espace=1&vis=CLÉ)
     # : sa page à lui, épurée. Inconnu ou achevé : un mot doux, puis rien.
@@ -5534,7 +5705,7 @@ def _corps_espace_membre(matloc_membre=None):
                         '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
                         '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · ' + _VERSION_APPLI + '</div>'
                         '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-la sous la main : pose le raccourci depuis la '
-                        '<a href="/app/static/install_rosaire.html" target="_self" style="color:#4A148C; font-weight:bold;">page d\'installation</a>'
+                        '<a href="?espace=1&installer=1&nav=1" target="_self" style="color:#4A148C; font-weight:bold;">page d\'installation</a>'
                         ' — le bouton or «&nbsp;Installer l\'application&nbsp;» t\'y attend (sinon menu ⋮ → «&nbsp;Ajouter à l\'écran d\'accueil&nbsp;») ; rien à y attendre, elle porte déjà le bon visage, et l\'icône ouvre directement ton Espace.</div></div>', unsafe_allow_html=True)
 
         if rub == "📿 Rosaire":
@@ -5654,8 +5825,8 @@ def _corps_espace_membre(matloc_membre=None):
                     '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
                     '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · ' + _VERSION_APPLI + '</div>'
                     '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-le sous la main : pose le raccourci depuis la '
-                    '<a href="/app/static/install_rosaire.html?espace=1&matloc=' + urllib.parse.quote(str(matloc_membre)) + '" target="_self" style="color:#4A148C; font-weight:bold;">page d\'installation</a>'
-                    ' — menu ⋮ → «&nbsp;Ajouter à l\'écran d\'accueil&nbsp;».</div></div>', unsafe_allow_html=True)
+                    '<a href="?espace=1&matloc=' + urllib.parse.quote(str(matloc_membre)) + '&installer=1&nav=1" target="_self" style="color:#4A148C; font-weight:bold;">page d\'installation</a>'
+                    ' — le bouton or «&nbsp;Installer l\'application&nbsp;» t\'y attend (sinon menu ⋮ → «&nbsp;Ajouter à l\'écran d\'accueil&nbsp;»), et l\'icône ouvre directement ton Espace.</div></div>', unsafe_allow_html=True)
 
         # v7.13.1 — « 📿 Mémoire de mes dizaines » entre la carte de
         # bienvenue et « 📿 Ta dizaine du jour ».
