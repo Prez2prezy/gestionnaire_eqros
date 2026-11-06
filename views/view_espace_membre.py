@@ -108,7 +108,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.8"
+_VERSION_APPLI = "v7.13.9"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -766,6 +766,22 @@ def _render_theme(compact=False):
         border-radius:12px; padding:10px 14px; margin:12px 4px;
         font-size:.9rem; line-height:1.65; text-align:left; }
     .stApp .stMarkdown .inst-pouce b { color:#8d6e08 !important; }
+    /* v7.13.9 — LE DÉPLIEUR DES GESTES DANS LES BADGES : encres portées
+       PAR LA FEUILLE (leçon ✈️ v7.13.4 / gestes v7.13.7 — l'encre en ligne
+       ne survit pas aux règles !important du thème). */
+    .stApp .stMarkdown .inst-deplieur { margin-top:8px; text-align:left; }
+    .stApp .stMarkdown .inst-deplieur summary {
+        color:#4A148C !important; font-weight:bold !important;
+        cursor:pointer; font-size:.85rem; }
+    .stApp .stMarkdown .inst-deplieur ol { margin:8px 0 0 18px; padding:0; }
+    .stApp .stMarkdown .inst-deplieur li { color:#3E517A !important;
+        line-height:1.65; font-size:.85rem; }
+    .stApp .stMarkdown .inst-deplieur li b { color:#1A237E !important; }
+    .stApp .stMarkdown .inst-deplieur .inst-deplieur-note {
+        color:#6a1b9a !important; margin-top:8px; font-size:.85rem;
+        line-height:1.65; }
+    .stApp .stMarkdown .inst-deplieur .inst-deplieur-note b {
+        color:#4A148C !important; }
     .stApp a.inst-retour, .stApp a.inst-retour span {
         display:inline-block !important;
         background:linear-gradient(135deg,#FFD700,#C9A227) !important;
@@ -5582,6 +5598,24 @@ def _render_page_installateur(matloc_membre=None):
         ' dans son onglet : garde-le en favori ⭐. L\'icône sur l\'écran'
         ' d\'accueil, elle, attend les téléphones.</div></div>',
         unsafe_allow_html=True)
+    # v7.13.9 — LES DEUX PETITS PIÈGES DU TERRAIN, DITS AU MOT PRÈS :
+    # l'ancienne icône « Streamlit » posée par un essai d'avant (elle garde
+    # son ancienne adresse — seule une suppression la libère), et le temps
+    # de patience quand la page revient après une pause (la salle s'éveille).
+    st.markdown(
+        '<div class="inst-carte" style="padding:14px 16px;">'
+        '<div class="inst-titre">Deux mots qui évitent les pièges 🕊️</div>'
+        '<ol style="margin:8px 0 0 18px; padding:0; text-align:left; line-height:1.7;">'
+        '<li><b>Une icône déjà posée t\'emmène ailleurs</b> — la page des'
+        ' responsables, ou le nom «&nbsp;Streamlit&nbsp;» avec le bateau'
+        ' rouge ? C\'était un essai d\'avant : appui long sur cette icône →'
+        ' <b>Supprimer</b> (ou «&nbsp;Désinstaller&nbsp;»), puis repose la'
+        ' nouvelle depuis cette page-ci : elle ouvrira ton Espace.</li>'
+        '<li><b>La page tourne un long moment avant de paraître ?</b>'
+        ' Laisse la roue finir son tour : c\'est le réveil de la salle après'
+        ' une pause — la fois suivante, elle est déjà debout.</li>'
+        '</ol></div>',
+        unsafe_allow_html=True)
     st.markdown(
         '<div style="text-align:center; margin:14px 4px 6px 4px;">'
         '<a class="inst-retour" href="' + _retour + '" target="_self">'
@@ -5790,7 +5824,16 @@ def _corps_espace_membre(matloc_membre=None):
                         '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · ' + _VERSION_APPLI + '</div>'
                         '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-la sous la main : pose le raccourci depuis la '
                         '<a href="?espace=1&installer=1&nav=1" target="_self" style="color:#4A148C; font-weight:bold;">page d\'installation</a>'
-                        ' — le bouton or «&nbsp;Installer l\'application&nbsp;» t\'y attend (sinon menu ⋮ → «&nbsp;Ajouter à l\'écran d\'accueil&nbsp;») ; rien à y attendre, elle porte déjà le bon visage, et l\'icône ouvre directement ton Espace.</div></div>', unsafe_allow_html=True)
+                        ' — le bouton or «&nbsp;Installer l\'application&nbsp;» t\'y attend, et l\'icône posée ouvre directement ton Espace.'
+                        # v7.13.9 — les gestes ICI AUSSI, sans changer de page
+                        # (encres portées par les classes de la feuille).
+                        '<details class="inst-deplieur"><summary>Les gestes, ici même — sans changer de page</summary>'
+                        '<ol>'
+                        '<li>Menu <b>⋮</b> du navigateur → <b>«&nbsp;Installer l\'application&nbsp;»</b> — ou «&nbsp;Ajouter à l\'écran d\'accueil&nbsp;».</li>'
+                        '<li>iPhone : bouton <b>Partager</b> ⬆️ → <b>«&nbsp;Sur l\'écran d\'accueil&nbsp;»</b> → «&nbsp;Ajouter&nbsp;».</li>'
+                        '<li>Confirme : l\'icône 📿 se pose et ouvre l\'Espace communautaire.</li></ol>'
+                        '<div class="inst-deplieur-note">🕊️ Une icône <i>«&nbsp;Streamlit&nbsp;»</i> (le bateau rouge) déjà posée par un essai d\'avant ? Appui long dessus → <b>Supprimer</b> (ou «&nbsp;Désinstaller&nbsp;»), puis repose la nouvelle depuis la page d\'installation : elle porte le visage 📿.</div>'
+                        '</details></div></div>', unsafe_allow_html=True)
 
         if rub == "📿 Rosaire":
             if sub == "Le Rosaire thématique":
@@ -5910,7 +5953,19 @@ def _corps_espace_membre(matloc_membre=None):
                     '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · ' + _VERSION_APPLI + '</div>'
                     '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-le sous la main : pose le raccourci depuis la '
                     '<a href="?espace=1&matloc=' + urllib.parse.quote(str(matloc_membre)) + '&installer=1&nav=1" target="_self" style="color:#4A148C; font-weight:bold;">page d\'installation</a>'
-                    ' — le bouton or «&nbsp;Installer l\'application&nbsp;» t\'y attend (sinon menu ⋮ → «&nbsp;Ajouter à l\'écran d\'accueil&nbsp;»), et l\'icône ouvre directement ton Espace.</div></div>', unsafe_allow_html=True)
+                    ' — le bouton or «&nbsp;Installer l\'application&nbsp;» t\'y attend, et l\'icône posée ouvre directement ton Espace.'
+                    # v7.13.9 — LES GESTES VIVENT ICI : plus aucune obligation de
+                    # changer de page (le voyage tournait longtemps quand la salle
+                    # dormait) — le déplieur porte les gestes sous les yeux, et dit
+                    # aussi le ménage de l'ancienne icône « Streamlit ». Encres
+                    # portées par les classes de la feuille (.inst-deplieur).
+                    '<details class="inst-deplieur"><summary>Les gestes, ici même — sans changer de page</summary>'
+                    '<ol>'
+                    '<li>Menu <b>⋮</b> du navigateur → <b>«&nbsp;Installer l\'application&nbsp;»</b> — ou «&nbsp;Ajouter à l\'écran d\'accueil&nbsp;».</li>'
+                    '<li>iPhone : bouton <b>Partager</b> ⬆️ → <b>«&nbsp;Sur l\'écran d\'accueil&nbsp;»</b> → «&nbsp;Ajouter&nbsp;».</li>'
+                    '<li>Confirme : l\'icône 📿 se pose et ouvre ton Espace, tout prêt.</li></ol>'
+                    '<div class="inst-deplieur-note">🕊️ Une icône <i>«&nbsp;Streamlit&nbsp;»</i> (le bateau rouge) déjà posée par un essai d\'avant ? Appui long dessus → <b>Supprimer</b> (ou «&nbsp;Désinstaller&nbsp;»), puis repose la nouvelle depuis la page d\'installation : elle porte le visage 📿.</div>'
+                    '</details></div></div>', unsafe_allow_html=True)
 
         # v7.13.1 — « 📿 Mémoire de mes dizaines » entre la carte de
         # bienvenue et « 📿 Ta dizaine du jour ».
