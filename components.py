@@ -1887,7 +1887,7 @@ def gerer_feuillet_mensuel():
     _bloc_feuillet_diocese(themes, MOIS_NOMS)
 
 
-def injecter_icone_pwa(espace=False):
+def injecter_icone_pwa(espace=False, matloc=None):
     """v7.8.14 — FAVICON + PWA DYNAMIQUES : 📿 pour les Espaces de Prière
     (?espace=… et page réponse membre ?e=…), 🔑 pour l'Administration (connexion
     + rôles diocèse / paroisse / équipe / communication). L'icône Streamlit
@@ -1903,12 +1903,22 @@ def injecter_icone_pwa(espace=False):
     aucun 404, aucun cache possible) et manifeste versionné ;
     les pages d'installation static/install_rosaire*.html offrent le bon
     visage dès le premier octet pour le geste « Ajouter à l'écran d'accueil ».
-    v7.12.2 — LE RACCOURCI POUR DE BON : manifeste versionné ?v=7122 et
+    v7.12.2 — LE RACCOURCI POUR DE BON : manifeste versionné et
     passeur des rappels enregistré silencieusement dès l'arrivée (côté
     espace) — le téléphone tient sa « vraie application » ; la page
     d'installation pose désormais l'app d'un seul bouton (« Installer
     l'application »), puis s'efface toute seule devant l'Espace quand on
-    ouvre le raccourci."""
+    ouvre le raccourci.
+    v7.13.6 — LE MANIFESTE PERSONNALISÉ ET LE GESTE EN RÉSERVE : quand un
+    membre regarde une page (?espace=1&matloc=…), le start_url du
+    manifeste porte SON matloc — l'icône posée ouvre SON Espace, même
+    sans mémoire de navigateur. Et dès que le téléphone annonce qu'il
+    sait installer (beforeinstallprompt), l'annonce est gardée en
+    réserve dans la fenêtre (window.__rosaire_install) : le bouton or
+    de la page d'installation intégrée (?espace=1&installer=1 — rendue
+    PAR l'application, sans dépendre du service statique de la
+    plateforme, en panne depuis novembre 2026) la réclame et déclenche
+    l'installation native d'un seul toucher."""
     # v7.9.9 — cache-busting du manifeste : le navigateur retient le
     # manifeste par URL ; une adresse qui évolue à chaque version l'invite à
     # relire les bons noms et les bonnes icônes au prochain
@@ -1925,7 +1935,7 @@ def injecter_icone_pwa(espace=False):
     # PREMIER OCTET — et posent désormais une VRAIE application d'un seul
     # bouton (v7.12.2), puis s'effacent devant l'Espace à la prochaine
     # ouverture.
-    _ver_pwa = "7134"
+    _ver_pwa = "7136"
 
     def _icon_data(nom_fichier):
         """v7.9.10 — l'icône lue sur le disque et INCORPORÉE en base64 :
@@ -1967,6 +1977,17 @@ def injecter_icone_pwa(espace=False):
     _ico192 = _icon_data(_pfx + "192.png") or "/app/static/" + _pfx + "192.png"
     _ico512 = _icon_data(_pfx + "512.png") or "/app/static/" + _pfx + "512.png"
     _start = "/?espace=1" if espace else "/"
+    # v7.13.6 — LE MANIFESTE PERSONNALISÉ : sur les pages d'un membre
+    # (?espace=1&matloc=…), le start_url du manifeste porte SON matloc —
+    # l'icône posée par « Installer l'application » ou par le menu ⋮
+    # rouvre SON Espace, tout prêt, sans même dépendre de la mémoire du
+    # navigateur. (Le visiteur public garde ?espace=1.)
+    if espace and matloc:
+        try:
+            _start = "/?espace=1&matloc=" + urllib.parse.quote(
+                str(matloc).upper().strip())
+        except Exception:
+            _start = "/?espace=1"
     _nom_long = ("Rosaire — Espaces de prière" if espace
                  else "Rosaire — Administration")
     _icons_js = _json.dumps([
@@ -2036,6 +2057,33 @@ def injecter_icone_pwa(espace=False):
     # 100 % navigateur (localStorage local) : rien côté serveur, aucune
     # trace, aucune migration — et l'administration n'a AUCUNE mémoire.
     if espace:
+        # v7.13.6 — LE GESTE D'OR EN RÉSERVE : quand le téléphone annonce
+        # qu'il sait installer (beforeinstallprompt), l'annonce est gardée
+        # DANS la fenêtre (window.__rosaire_install). Le bouton or de la
+        # page d'installation intégrée (?espace=1&installer=1) la
+        # réclamera — même s'il se dessine après l'annonce. Aucun
+        # preventDefault : le téléphone garde aussi ses chemins habituels
+        # (menu ⋮, icône de la barre d'adresse).
+        _js += """
+    <script>
+    (function(){
+      var w = null;
+      try { w = window.parent; } catch(e) { w = window; }
+      if (!w) { w = window; }
+      try {
+        if (!w.__rosaire_install) {
+          w.__rosaire_install = { pose: null, suite: [] };
+          w.addEventListener('beforeinstallprompt', function(e){
+            var R = w.__rosaire_install;
+            R.pose = e;
+            var s = R.suite; R.suite = [];
+            for (var i = 0; i < s.length; i++) { try { s[i](e); } catch(_) {} }
+          });
+        }
+      } catch(e) {}
+    })();
+    </script>
+    """
         _js += """
     <script>
     (function(){
@@ -2074,7 +2122,7 @@ def injecter_icone_pwa(espace=False):
         try { f = window.parent; } catch(e) { return; }
         if (!f || !f.navigator || !('serviceWorker' in f.navigator)) { return; }
         f.navigator.serviceWorker
-          .register('/app/static/sw.js?v=7134').catch(function(){ });
+          .register('/app/static/sw.js?v=7136').catch(function(){ });
       } catch(e) { }
     })();
     </script>
