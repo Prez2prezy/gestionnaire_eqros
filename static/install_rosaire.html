@@ -4,22 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Rosaire</title>
-<meta name="description" content="Rosaire — Les Équipes du Rosaire, Diocèse de Grand-Bassam : posez le raccourci de l'Espace de Prière sur votre écran d'accueil.">
+<meta name="description" content="Rosaire â€” Les Ã‰quipes du Rosaire, DiocÃ¨se de Grand-Bassam : posez le raccourci de l'Espace de PriÃ¨re sur votre Ã©cran d'accueil.">
 <meta name="theme-color" content="#1A237E">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Rosaire">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="manifest" href="manifest_espace.json?v=7122">
-<link rel="icon" href="icon_espace_32.png?v=7122" sizes="32x32">
-<link rel="shortcut icon" href="icon_espace_32.png?v=7122" sizes="32x32">
-<link rel="apple-touch-icon" href="icon_espace_180.png?v=7122" sizes="180x180">
+<link rel="manifest" href="manifest_espace.json?v=7136">
+<link rel="icon" href="icon_espace_32.png?v=7136" sizes="32x32">
+<link rel="shortcut icon" href="icon_espace_32.png?v=7136" sizes="32x32">
+<link rel="apple-touch-icon" href="icon_espace_180.png?v=7136" sizes="180x180">
 <script>
-/* v7.12.2 — LA PAGE S'EFFACE DEVANT L'ESPACE : quand elle est ouverte
-   DEPUIS le raccourci (plein écran, sans barres), elle reconduit le
-   fidèle immédiatement vers son Espace de Prière — la carte d'installation
-   ne réapparaît jamais après la pose. Ouverte dans le navigateur (pour
-   poser le raccourci), elle reste sagement à sa place. */
+/* v7.12.2 â€” LA PAGE S'EFFACE DEVANT L'ESPACE : quand elle est ouverte
+   DEPUIS le raccourci (plein Ã©cran, sans barres), elle reconduit le
+   fidÃ¨le immÃ©diatement vers son Espace de PriÃ¨re â€” la carte d'installation
+   ne rÃ©apparaÃ®t jamais aprÃ¨s la pose. Ouverte dans le navigateur (pour
+   poser le raccourci), elle reste sagement Ã  sa place. */
 (function(){
   function _cible_rosaire(){
     var u = new URL('/?espace=1', location.origin);
@@ -48,6 +48,42 @@
     if (debout) { location.replace(_cible_rosaire()); return; }
   } catch(e) {}
   window._cible_rosaire = _cible_rosaire;
+})();
+</script>
+<script>
+/* v7.13.6 â€” LE MANIFESTE INCASSABLE ET PERSONNALISÃ‰ : il voyage dans la
+   page (URI data:) au lieu de dÃ©pendre du service statique de la
+   plateforme â€” et son start_url porte le matloc du fidÃ¨le (mÃ©morisÃ© ou
+   prÃ©sent dans l'adresse) : l'icÃ´ne posÃ©e ici ouvre SON Espace, tout
+   prÃªt. En cas d'imprÃ©vu, le lien manifest_espace.json ci-dessus reste
+   en secours. */
+(function(){
+  try {
+    var ORIG = location.origin;
+    var cible = window._cible_rosaire ? window._cible_rosaire()
+                                      : (ORIG + '/?espace=1');
+    var man = {
+      name: 'Rosaire â€” Espaces de priÃ¨re',
+      short_name: 'Rosaire',
+      description: 'Espace de PriÃ¨re des Ã‰quipes du Rosaire â€” DiocÃ¨se de Grand-Bassam',
+      start_url: cible, id: cible,
+      scope: ORIG + '/', lang: 'fr', display: 'standalone',
+      background_color: '#0d1440', theme_color: '#1A237E',
+      icons: [
+        { src: ORIG + '/app/static/icon_espace_192.png?v=7136',
+          sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: ORIG + '/app/static/icon_espace_512.png?v=7136',
+          sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: ORIG + '/app/static/icon_espace_512.png?v=7136',
+          sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+      ]
+    };
+    var ml = document.querySelector('link[rel="manifest"]');
+    if (ml) {
+      ml.href = 'data:application/manifest+json;charset=utf-8,'
+                + encodeURIComponent(JSON.stringify(man));
+    }
+  } catch (e) {}
 })();
 </script>
 <style>
@@ -93,32 +129,32 @@
 </head>
 <body>
 <div class="carte">
-  <img src="icon_espace_512.png?v=7122" alt="Rosaire">
+  <img src="icon_espace_512.png?v=7136" alt="Rosaire">
   <h1>Rosaire</h1>
-  <div class="dio">LES ÉQUIPES DU ROSAIRE — DIOCÈSE DE GRAND-BASSAM</div>
-  <div id="bandeau_wv" class="wv">👁️ Tu regardes cette page <b>depuis une autre application</b> (WhatsApp, Instagram…). Touche d'abord <b>⋮ → «&nbsp;Ouvrir dans le navigateur&nbsp;»</b> (ou <b>⋯</b> en haut), puis pose le raccourci ici — le geste n'existe que dans le navigateur.</div>
+  <div class="dio">LES Ã‰QUIPES DU ROSAIRE â€” DIOCÃˆSE DE GRAND-BASSAM</div>
+  <div id="bandeau_wv" class="wv">ðŸ‘ï¸ Tu regardes cette page <b>depuis une autre application</b> (WhatsApp, Instagramâ€¦). Touche d'abord <b>â‹® â†’ Â«&nbsp;Ouvrir dans le navigateur&nbsp;Â»</b> (ou <b>â‹¯</b> en haut), puis pose le raccourci ici â€” le geste n'existe que dans le navigateur.</div>
   <div id="bloc_installer">
-    <button id="installer" class="btn" type="button">📲 Installer l'application</button>
-    <div id="note_installer" class="note">Le téléphone connaît le geste : touche, accepte, c'est posé — plein écran, au bon visage.</div>
+    <button id="installer" class="btn" type="button">ðŸ“² Installer l'application</button>
+    <div id="note_installer" class="note">Le tÃ©lÃ©phone connaÃ®t le geste : touche, accepte, c'est posÃ© â€” plein Ã©cran, au bon visage.</div>
   </div>
   <ol>
-    <li>Touchez le menu <b>⋮</b> du navigateur (ou <b>Partager</b> sur iPhone).</li>
-    <li>Choisissez <b>«&nbsp;Ajouter à l'écran d'accueil&nbsp;»</b> — le raccourci prend son vrai visage&nbsp;: <b>Rosaire</b> et son chapelet doré.</li>
-    <li>Validez — <b>c'est tout</b> : à chaque ouverture, vous arrivez directement dans l'Espace de Prière.</li>
+    <li>Touchez le menu <b>â‹®</b> du navigateur (ou <b>Partager</b> sur iPhone).</li>
+    <li>Choisissez <b>Â«&nbsp;Ajouter Ã  l'Ã©cran d'accueil&nbsp;Â»</b> â€” le raccourci prend son vrai visage&nbsp;: <b>Rosaire</b> et son chapelet dorÃ©.</li>
+    <li>Validez â€” <b>c'est tout</b> : Ã  chaque ouverture, vous arrivez directement dans l'Espace de PriÃ¨re.</li>
   </ol>
-  <a id="ouvrir" class="btn" href="/?espace=1">📿 Ouvrir l'application</a>
-  <div class="note">Sur cette page il n'y a rien à attendre&nbsp;: elle porte déjà le visage de l'application. Posez le raccourci tranquillement — et la prochaine fois que vous toucherez l'icône, cette page s'effacera toute seule devant votre Espace.</div>
+  <a id="ouvrir" class="btn" href="/?espace=1">ðŸ“¿ Ouvrir l'application</a>
+  <div class="note">Sur cette page il n'y a rien Ã  attendre&nbsp;: elle porte dÃ©jÃ  le visage de l'application. Posez le raccourci tranquillement â€” et la prochaine fois que vous toucherez l'icÃ´ne, cette page s'effacera toute seule devant votre Espace.</div>
 </div>
 <script>
 (function(){
-  /* le bouton « Ouvrir » porte toujours le bon lien (matloc + p mémorisés) */
+  /* le bouton Â« Ouvrir Â» porte toujours le bon lien (matloc + p mÃ©morisÃ©s) */
   try {
     var a = document.getElementById('ouvrir');
     if (a && window._cible_rosaire) { a.href = window._cible_rosaire(); }
   } catch(e) {}
 
-  /* v7.12.2 — veille navigateur intégré : WhatsApp, Instagram, Facebook…
-     n'offrent pas le geste ; on l'annonce avant les étapes. */
+  /* v7.12.2 â€” veille navigateur intÃ©grÃ© : WhatsApp, Instagram, Facebookâ€¦
+     n'offrent pas le geste ; on l'annonce avant les Ã©tapes. */
   try {
     var ua = navigator.userAgent || '';
     if (/(; wv\)|FB_IAB|FBAN|FBAV|FBSN|Instagram|WhatsApp|Telegram|Snapchat|TikTok)/i.test(ua)) {
@@ -127,9 +163,9 @@
     }
   } catch(e) {}
 
-  /* v7.12.2 — LE CHEMIN D'OR : quand le téléphone sait installer, il
-     l'annonce — un vrai bouton « Installer l'application » qui pose une
-     VRAIE application (icône au bon visage, ouverture plein écran direct
+  /* v7.12.2 â€” LE CHEMIN D'OR : quand le tÃ©lÃ©phone sait installer, il
+     l'annonce â€” un vrai bouton Â« Installer l'application Â» qui pose une
+     VRAIE application (icÃ´ne au bon visage, ouverture plein Ã©cran direct
      sur l'Espace, jamais la page d'installation). */
   var _pose = null;
   try {
@@ -149,10 +185,10 @@
         _pose.userChoice.then(function(r){
           var n = document.getElementById('note_installer');
           if (r && r.outcome === 'accepted') {
-            if (n) { n.textContent = '✅ Posée ! L\'icône attend sur ton écran d\'accueil — elle ouvre ton Espace tout pr\u00eat.';
+            if (n) { n.textContent = 'âœ… PosÃ©e ! L\'icÃ´ne attend sur ton Ã©cran d\'accueil â€” elle ouvre ton Espace tout pr\u00eat.';
                      n.className = 'note ok'; }
           } else {
-            if (n) { n.textContent = 'Aucun souci : le geste ⋮ ci-dessous pose le raccourci tout aussi bien.'; }
+            if (n) { n.textContent = 'Aucun souci : le geste â‹® ci-dessous pose le raccourci tout aussi bien.'; }
           }
         }).catch(function(){});
       });
@@ -161,7 +197,7 @@
   try {
     window.addEventListener('appinstalled', function(){
       var n = document.getElementById('note_installer');
-      if (n) { n.textContent = '✅ Posée ! L\'icône attend sur ton écran d\'accueil — elle ouvre ton Espace tout pr\u00eat.';
+      if (n) { n.textContent = 'âœ… PosÃ©e ! L\'icÃ´ne attend sur ton Ã©cran d\'accueil â€” elle ouvre ton Espace tout pr\u00eat.';
                n.className = 'note ok'; }
       setTimeout(function(){
         try { location.replace(window._cible_rosaire ? window._cible_rosaire() : '/?espace=1'); }
@@ -170,12 +206,12 @@
     });
   } catch(e) {}
 
-  /* v7.12.2 — le passeur de notifications s'installe aussi ici : la page
-     devient une « vraie application » aux yeux du téléphone, et les rondes
-     🔔 pourront frapper même quand l'app est fermée. */
+  /* v7.12.2 â€” le passeur de notifications s'installe aussi ici : la page
+     devient une Â« vraie application Â» aux yeux du tÃ©lÃ©phone, et les rondes
+     ðŸ”” pourront frapper mÃªme quand l'app est fermÃ©e. */
   try {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/app/static/sw.js?v=7122').catch(function(){});
+      navigator.serviceWorker.register('/app/static/sw.js?v=7136').catch(function(){});
     }
   } catch(e) {}
 })();
