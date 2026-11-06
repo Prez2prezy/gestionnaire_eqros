@@ -108,7 +108,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.6"
+_VERSION_APPLI = "v7.13.7"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -426,7 +426,9 @@ def _render_theme(compact=False):
     /* v7.13.4 — les liens ordinaires restent lilas, MAIS le bouton Telegram
        (class btn-telegram-ro) porte SA couleur : plus jamais de texte lilas
        écrasé par ce sélecteur sur le bouton. */
-    .stApp .stMarkdown a:not(.btn-telegram-ro) { color: #b39ddb !important; }
+    /* v7.13.7 — le bouton « ◀️ Revenir à l'Espace de Prière » porte SA
+       classe : il n'est plus repeint lilas par le sélecteur des liens. */
+    .stApp .stMarkdown a:not(.btn-telegram-ro):not(.inst-retour) { color: #b39ddb !important; }
     /* v7.13.4 — LE BOUTON LISIBLE POUR DE BON (leçon de la démo réelle) :
        Streamlit retire les déclarations !important des styles EN LIGNE —
        l'encre blanche du style inline ne partait jamais au rendu, et le
@@ -739,6 +741,38 @@ def _render_theme(compact=False):
         .stApp .stMarkdown .carte-priere .fe-bande-photo { flex:0 0 34%;
             max-width:34%; }
     }
+    /* === v7.13.7 — LA PAGE D'INSTALLATION LISIBLE POUR DE BON ===
+       Même leçon que le bouton ✈️ (v7.13.4) : l'encre des styles EN LIGNE
+       ne survit pas aux règles !important de cette feuille (Streamlit
+       retire les !important des styles en ligne) — sur la carte claire,
+       les gestes Android/iPhone (li, b) étaient repeints lavande clair,
+       et le bouton ◀️ (un <a>) était repeint lilas sur or. Tout passe
+       désormais par des classes de la feuille : rien ne les retire,
+       l'encre tient clair comme sombre. */
+    .stApp .stMarkdown .inst-carte { background:#f8f6ff !important;
+        border:1px solid #d1c4e9 !important; border-radius:14px !important;
+        padding:16px 18px !important; margin:12px 4px !important;
+        text-align:left; }
+    .stApp .stMarkdown .inst-carte .inst-titre { color:#4A148C !important;
+        font-weight:bold !important; font-size:.95rem !important; }
+    .stApp .stMarkdown .inst-carte ol { margin:6px 0 0 18px; padding:0; }
+    .stApp .stMarkdown .inst-carte li { color:#3E517A !important;
+        line-height:1.9; font-size:.9rem; }
+    .stApp .stMarkdown .inst-carte li b { color:#1A237E !important; }
+    .stApp .stMarkdown .inst-carte .inst-note { color:#6a1b9a !important;
+        font-size:.84rem !important; margin-top:12px; line-height:1.7; }
+    .stApp .stMarkdown .inst-pouce { color:#8d6e08 !important;
+        background:#FFFDE7 !important; border:1.5px dashed #C9A227;
+        border-radius:12px; padding:10px 14px; margin:12px 4px;
+        font-size:.9rem; line-height:1.65; text-align:left; }
+    .stApp .stMarkdown .inst-pouce b { color:#8d6e08 !important; }
+    .stApp a.inst-retour, .stApp a.inst-retour span {
+        display:inline-block !important;
+        background:linear-gradient(135deg,#FFD700,#C9A227) !important;
+        color:#1A237E !important; font-weight:bold !important;
+        padding:12px 26px !important; border-radius:999px !important;
+        text-decoration:none !important;
+        box-shadow:0 4px 16px rgba(0,0,0,.3) !important; }
     </style>""", unsafe_allow_html=True)
 
 
@@ -5404,7 +5438,7 @@ def _render_page_installateur(matloc_membre=None):
     _zone = """
     <div id="zone_or" style="text-align:center; margin:2px 0 0 0;">
       <button id="btn_or" type="button" style="display:none; background:linear-gradient(135deg,#FFD700,#C9A227); color:#1A237E; border:none; cursor:pointer; font-weight:bold; font-size:1.05rem; padding:14px 24px; border-radius:999px; box-shadow:0 4px 16px rgba(0,0,0,.3); font-family:Georgia,'Times New Roman',serif;">📲 Installer l&#8217;application</button>
-      <div id="note_or" style="display:none; color:#3E517A; font-size:0.85rem; line-height:1.65; padding:8px 6px;"></div>
+      <div id="note_or" style="display:none; color:#c7cdf5; font-size:0.9rem; line-height:1.65; padding:8px 6px;"></div>
     </div>
     <script>
     (function(){
@@ -5415,7 +5449,7 @@ def _render_page_installateur(matloc_membre=None):
         try {
           btn.style.display = 'none';
           note.style.display = 'block';
-          note.style.color = '#1b5e20';
+          note.style.color = '#a5d6a7';
           note.style.fontWeight = 'bold';
           note.textContent = "\u2705 Pos\u00e9e ! L'ic\u00f4ne attend sur ton \u00e9cran d'accueil \u2014 elle ouvre ton Espace tout pr\u00eat.";
         } catch(e) {}
@@ -5477,30 +5511,36 @@ def _render_page_installateur(matloc_membre=None):
         _comp_html(_zone, height=120)
     except Exception:
         pass
+    # v7.13.7 — LE CHEMIN LE PLUS SIMPLE écrit AVANT les gestes de secours,
+    # et les gestes portés par des CLASSES de la feuille (l'encre en ligne
+    # ne survit pas aux règles !important du thème — leçon ✈️ v7.13.4).
     st.markdown(
-        '<div style="background:#f8f6ff; border:1px solid #d1c4e9; border-radius:14px;'
-        ' padding:16px 18px; margin:12px 4px; text-align:left;">'
-        '<div style="color:#4A148C; font-weight:bold; font-size:.95rem;">Android — Chrome 🤖</div>'
-        '<ol style="color:#3E517A; line-height:1.9; font-size:.9rem; margin:6px 0 0 18px; padding:0;">'
+        '<div class="inst-pouce">👉 <b>Le plus simple :</b> touche le bouton'
+        ' or «&nbsp;Installer l\'application&nbsp;» juste au-dessus — quand le'
+        ' téléphone demande confirmation, réponds <b>«&nbsp;Installer&nbsp;»</b>,'
+        ' et l\'icône 📿 se pose toute seule. Les gestes ci-dessous ne sont'
+        ' que le chemin du secours : même résultat, même visage doré.</div>',
+        unsafe_allow_html=True)
+    st.markdown(
+        '<div class="inst-carte">'
+        '<div class="inst-titre">Android — Chrome 🤖</div>'
+        '<ol>'
         '<li>Touche le menu <b>⋮</b> en haut à droite du navigateur.</li>'
         '<li>Choisis <b>«&nbsp;Installer l\'application&nbsp;»</b> — ou'
         ' <b>«&nbsp;Ajouter à l\'écran d\'accueil&nbsp;»</b>.</li>'
         '<li>Confirme : l\'icône 📿 se pose toute seule.</li></ol>'
-        '<div style="color:#4A148C; font-weight:bold; font-size:.95rem; margin-top:14px;">iPhone — Safari 🍎</div>'
-        '<ol style="color:#3E517A; line-height:1.9; font-size:.9rem; margin:6px 0 0 18px; padding:0;">'
+        '<div class="inst-titre" style="margin-top:14px;">iPhone — Safari 🍎</div>'
+        '<ol>'
         '<li>Touche le bouton <b>Partager</b> ⬆️ (le carré avec la flèche).</li>'
         '<li>Fais défiler, choisis <b>«&nbsp;Sur l\'écran d\'accueil&nbsp;»</b>.</li>'
         '<li>Touche <b>«&nbsp;Ajouter&nbsp;»</b> : l\'icône 📿 se pose.</li></ol>'
-        '<div style="color:#6a1b9a; font-size:.84rem; margin-top:12px; line-height:1.7;">'
+        '<div class="inst-note">'
         '🕊️ Reste bien sur cette page pendant le geste : l\'icône rouvrira'
         ' exactement cette adresse — ton Espace de Prière, tout prêt.</div></div>',
         unsafe_allow_html=True)
     st.markdown(
         '<div style="text-align:center; margin:14px 4px 6px 4px;">'
-        '<a href="' + _retour + '" target="_self"'
-        ' style="display:inline-block; background:linear-gradient(135deg,#FFD700,#C9A227);'
-        ' color:#1A237E; font-weight:bold; padding:12px 26px; border-radius:999px;'
-        ' text-decoration:none; box-shadow:0 4px 16px rgba(0,0,0,.3);">'
+        '<a class="inst-retour" href="' + _retour + '" target="_self">'
         '◀️ Revenir à l\'Espace de Prière</a></div>',
         unsafe_allow_html=True)
 
