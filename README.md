@@ -1827,6 +1827,30 @@ maison.*
 - `_VERSION_APPLI = "v7.13.3"` ; schéma : table `telegram_liaisons`
   (création douce idempotente, aucune table existante modifiée).
 
+### 42. v7.13.7 — La page d'installation lisible pour de bon, et l'appel aux tests en deux visages
+
+- **🖍️ La zone des gestes Android/iPhone est redevenue lisible** : sur la
+  page d'installation intégrée (v7.13.6), la feuille de l'Espace repeignait
+  les étapes (`li`, `b`) en lavande clair sur la carte claire, et le bouton
+  « ◀️ Revenir à l'Espace de Prière » en lilas sur or — Streamlit retire
+  les `!important` des styles EN LIGNE (leçon déjà apprise avec le bouton
+  ✈️ en v7.13.4). Toute la page passe désormais par des classes de la
+  feuille (`inst-carte`, `inst-titre`, `inst-note`, `inst-pouce`,
+  `inst-retour`) : encre foncée garantie sur la carte claire, or et bleu
+  nuit garantis sur le bouton de retour ; le sélecteur des liens lilas
+  épargne le bouton (`:not(.inst-retour)`).
+- **👉 « Le plus simple » écrit en tête** : une carte jaune à liseré doré
+  annonce, AVANT les gestes de secours, le chemin court — toucher le bouton
+  or « Installer l'application », répondre « Installer » quand le
+  téléphone demande confirmation, l'icône 📿 se pose toute seule (et la
+  page confirme « ✅ Posée ! » toute seule).
+- **📨 L'appel aux tests existe en deux visages** : le texte WhatsApp de la
+  ronde (lien de l'Espace communautaire) et sa version personnelle — le
+  même message avec le lien de l'Espace de chaque équipier
+  (`?espace=1&matloc=…`). Textes livrés hors application.
+- `_VERSION_APPLI = "v7.13.7"` ; aucun changement de schéma ; aucun
+  changement de fichier statique (`_ver_pwa` reste 7136).
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
