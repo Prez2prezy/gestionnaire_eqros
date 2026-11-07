@@ -108,7 +108,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.9"
+_VERSION_APPLI = "v7.13.10"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -428,7 +428,7 @@ def _render_theme(compact=False):
        écrasé par ce sélecteur sur le bouton. */
     /* v7.13.7 — le bouton « ◀️ Revenir à l'Espace de Prière » porte SA
        classe : il n'est plus repeint lilas par le sélecteur des liens. */
-    .stApp .stMarkdown a:not(.btn-telegram-ro):not(.inst-retour) { color: #b39ddb !important; }
+    .stApp .stMarkdown a:not(.btn-telegram-ro) { color: #b39ddb !important; }
     /* v7.13.4 — LE BOUTON LISIBLE POUR DE BON (leçon de la démo réelle) :
        Streamlit retire les déclarations !important des styles EN LIGNE —
        l'encre blanche du style inline ne partait jamais au rendu, et le
@@ -782,13 +782,9 @@ def _render_theme(compact=False):
         line-height:1.65; }
     .stApp .stMarkdown .inst-deplieur .inst-deplieur-note b {
         color:#4A148C !important; }
-    .stApp a.inst-retour, .stApp a.inst-retour span {
-        display:inline-block !important;
-        background:linear-gradient(135deg,#FFD700,#C9A227) !important;
-        color:#1A237E !important; font-weight:bold !important;
-        padding:12px 26px !important; border-radius:999px !important;
-        text-decoration:none !important;
-        box-shadow:0 4px 16px rgba(0,0,0,.3) !important; }
+    /* v7.13.10 — l'ancienne ancre dorée du retour est retirée : le
+       retour se fait par un VRAI bouton de l'application (style posé par
+       la page d'installation elle-même), plus aucun voyage de page. */
     </style>""", unsafe_allow_html=True)
 
 
@@ -5430,16 +5426,11 @@ def _render_page_installateur(matloc_membre=None):
     TOUJOURS visible ; au toucher, il déclenche l'installation native si
     l'annonce est là (gardée en réserve côté page par injecter_icone_pwa),
     sinon il conduit LUI-MÊME aux gestes du menu (défilement doux + halo
-    doré sur la carte) — même résultat, même visage doré. Et le manifeste
-    injecté porte le matloc du fidèle : l'icône posée ouvre SON Espace,
-    tout prêt."""
-    _ml = ""
-    if matloc_membre:
-        try:
-            _ml = "&matloc=" + urllib.parse.quote(str(matloc_membre).upper().strip())
-        except Exception:
-            _ml = ""
-    _retour = "?espace=1" + _ml + "&nav=1"
+    doré sur la carte). v7.13.10 — le retour se fait par un VRAI bouton de
+    l'application (plus aucun rechargement de page) ; la carte d'identité
+    vérifiée de injecter_icone_pwa garantit l'icône 📿 : posée depuis
+    cette page, elle rouvre l'Espace — le téléphone y revient avec la
+    mémoire du fidèle (le Matloc est retenu par le navigateur)."""
     st.markdown(
         '<div style="background:linear-gradient(160deg,#0d1440 0%,#1A237E 60%,#283593 100%);'
         ' border:2px solid #FFD700; border-radius:18px; padding:24px 18px 20px 18px;'
@@ -5616,11 +5607,37 @@ def _render_page_installateur(matloc_membre=None):
         ' une pause — la fois suivante, elle est déjà debout.</li>'
         '</ol></div>',
         unsafe_allow_html=True)
-    st.markdown(
-        '<div style="text-align:center; margin:14px 4px 6px 4px;">'
-        '<a class="inst-retour" href="' + _retour + '" target="_self">'
-        '◀️ Revenir à l\'Espace de Prière</a></div>',
-        unsafe_allow_html=True)
+    # v7.13.10 — LE RETOUR SANS VOYAGE : l'ancienne ancre rechargeait toute
+    # la page (la même roue indéfinie que le badge). Un vrai bouton de
+    # l'application la remplace : l'onglet ne se recharge jamais, le
+    # paramètre d'installation s'efface, le Matloc reste dans l'adresse.
+    st.markdown("""
+    <style>
+    /* v7.13.10 — le retour doré, à l'image du bouton or (centré par la
+       colonne qui le porte). Portée sûre : ce style n'est rendu QUE par
+       la page d'installation, où le retour est le seul bouton primaire. */
+    .stApp button[kind="primary"],
+    .stApp [data-testid="stButton"] button[kind="primary"] {
+        display: block; margin: 6px auto;
+        background: linear-gradient(135deg,#FFD700,#C9A227) !important;
+        color: #1A237E !important; border: none !important;
+        font-weight: bold !important;
+        font-family: Georgia,'Times New Roman',serif !important;
+        border-radius: 999px !important; padding: 12px 26px !important;
+        box-shadow: 0 4px 16px rgba(0,0,0,.3) !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    _cg, _cc, _cd = st.columns([1, 1.7, 1])
+    with _cc:
+        if st.button("◀️ Revenir à l’Espace de Prière", key="retour_espace_btn",
+                     type="primary", use_container_width=True):
+            try:
+                del st.query_params["installer"]
+                st.query_params["nav"] = "1"
+            except Exception:
+                pass
+            st.rerun()
 
 
 def show_espace_membre(matloc_membre=None):
@@ -5822,9 +5839,7 @@ def _corps_espace_membre(matloc_membre=None):
             st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                         '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
                         '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · ' + _VERSION_APPLI + '</div>'
-                        '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-la sous la main : pose le raccourci depuis la '
-                        '<a href="?espace=1&installer=1&nav=1" target="_self" style="color:#4A148C; font-weight:bold;">page d\'installation</a>'
-                        ' — le bouton or «&nbsp;Installer l\'application&nbsp;» t\'y attend, et l\'icône posée ouvre directement ton Espace.'
+                        '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-la sous la main : les gestes pour poser l’icône sont <b>juste en dessous</b> — déplie-les d’un toucher, sans changer de page, sans roue qui tourne.'
                         # v7.13.9 — les gestes ICI AUSSI, sans changer de page
                         # (encres portées par les classes de la feuille).
                         '<details class="inst-deplieur"><summary>Les gestes, ici même — sans changer de page</summary>'
@@ -5834,6 +5849,18 @@ def _corps_espace_membre(matloc_membre=None):
                         '<li>Confirme : l\'icône 📿 se pose et ouvre l\'Espace communautaire.</li></ol>'
                         '<div class="inst-deplieur-note">🕊️ Une icône <i>«&nbsp;Streamlit&nbsp;»</i> (le bateau rouge) déjà posée par un essai d\'avant ? Appui long dessus → <b>Supprimer</b> (ou «&nbsp;Désinstaller&nbsp;»), puis repose la nouvelle depuis la page d\'installation : elle porte le visage 📿.</div>'
                         '</details></div></div>', unsafe_allow_html=True)
+        # v7.13.10 — LE BOUTON QUI NE FAIT PAS VOYAGER : la page d'installation
+        # s'ouvre ICI, dans l'application (un simple changement de paramètre,
+        # l'onglet ne se recharge jamais — fini la roue qui tournait
+        # indéfiniment quand la salle dormait).
+        if st.button("📲 Ouvrir la page d’installation — le bouton or t’y attend",
+                     key="badge_inst_pub", use_container_width=True):
+            try:
+                st.query_params["installer"] = "1"
+                st.query_params["nav"] = "1"
+            except Exception:
+                pass
+            st.rerun()
 
         if rub == "📿 Rosaire":
             if sub == "Le Rosaire thématique":
@@ -5951,9 +5978,7 @@ def _corps_espace_membre(matloc_membre=None):
         st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                     '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
                     '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · ' + _VERSION_APPLI + '</div>'
-                    '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-le sous la main : pose le raccourci depuis la '
-                    '<a href="?espace=1&matloc=' + urllib.parse.quote(str(matloc_membre)) + '&installer=1&nav=1" target="_self" style="color:#4A148C; font-weight:bold;">page d\'installation</a>'
-                    ' — le bouton or «&nbsp;Installer l\'application&nbsp;» t\'y attend, et l\'icône posée ouvre directement ton Espace.'
+                    '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-le sous la main : les gestes pour poser l’icône sont <b>juste en dessous</b> — déplie-les d’un toucher, sans changer de page, sans roue qui tourne.'
                     # v7.13.9 — LES GESTES VIVENT ICI : plus aucune obligation de
                     # changer de page (le voyage tournait longtemps quand la salle
                     # dormait) — le déplieur porte les gestes sous les yeux, et dit
@@ -5966,6 +5991,18 @@ def _corps_espace_membre(matloc_membre=None):
                     '<li>Confirme : l\'icône 📿 se pose et ouvre ton Espace, tout prêt.</li></ol>'
                     '<div class="inst-deplieur-note">🕊️ Une icône <i>«&nbsp;Streamlit&nbsp;»</i> (le bateau rouge) déjà posée par un essai d\'avant ? Appui long dessus → <b>Supprimer</b> (ou «&nbsp;Désinstaller&nbsp;»), puis repose la nouvelle depuis la page d\'installation : elle porte le visage 📿.</div>'
                     '</details></div></div>', unsafe_allow_html=True)
+        # v7.13.10 — LE BOUTON QUI NE FAIT PAS VOYAGER (côté membre) : la page
+        # d'installation s'ouvre dans l'application, sans rechargement — le
+        # lien-ancre qui rechargeait toute la page (la roue indéfinie du
+        # terrain) disparaît pour de bon. Le Matloc reste dans l'adresse.
+        if st.button("📲 Ouvrir la page d’installation — le bouton or t’y attend",
+                     key="badge_inst_mbr", use_container_width=True):
+            try:
+                st.query_params["installer"] = "1"
+                st.query_params["nav"] = "1"
+            except Exception:
+                pass
+            st.rerun()
 
         # v7.13.1 — « 📿 Mémoire de mes dizaines » entre la carte de
         # bienvenue et « 📿 Ta dizaine du jour ».
