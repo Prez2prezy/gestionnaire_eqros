@@ -1925,9 +1925,16 @@ def injecter_icone_pwa(espace=False, matloc=None):
     installer « Streamlit » au lieu de « Rosaire » : l'URI data: (une
     adresse SANS origine) était laissée de côté par Chrome au moment
     d'installer, et le raccourci repartait sans notre manifeste — il
-    ouvrait alors la racine, c'est-à-dire l'Administration. Le blob:
-    est reçu comme un fichier du site même ; ordre de secours conservé :
-    blob: → data: → adresse /app/static/."""
+    ouvrait alors la racine, c'est-à-dire l'Administration.
+    v7.13.10 — FINI LE CACHE-CACHE : plus aucun transport posé à
+    l'aveugle. La carte d'identité de la maison (le fichier /app/static/
+de la MÊME origine que la page — le seul transport que tous les
+téléphones acceptent sans discuter) est posée d'emblée, PUIS vérifiée
+par la page elle-même : si elle répond bien par du JSON Rosaire, elle
+reste ; si elle répond par autre chose (la coquille HTML), la page
+fabrique sa propre carte en URI data: (adresses absolues, icônes
+incorporées) et la pose à sa place. Chaque transport est contrôlé
+avant d'être gardé — la même carte du premier coup, partout."""
     # v7.9.9 — cache-busting du manifeste : le navigateur retient le
     # manifeste par URL ; une adresse qui évolue à chaque version l'invite à
     # relire les bons noms et les bonnes icônes au prochain
@@ -1944,7 +1951,7 @@ def injecter_icone_pwa(espace=False, matloc=None):
     # PREMIER OCTET — et posent désormais une VRAIE application d'un seul
     # bouton (v7.12.2), puis s'effacent devant l'Espace à la prochaine
     # ouverture.
-    _ver_pwa = "7139"
+    _ver_pwa = "71310"
 
     def _icon_data(nom_fichier):
         """v7.9.10 — l'icône lue sur le disque et INCORPORÉE en base64 :
@@ -2025,59 +2032,75 @@ def injecter_icone_pwa(espace=False, matloc=None):
       lien('apple-touch-icon', ICO180, '180x180');
       var m = d.querySelector('link[rel="manifest"]');
       if (!m) { m = d.createElement('link'); m.rel = 'manifest'; d.head.appendChild(m); }
-      /* v7.13.9 — le manifeste DE LA MÊME ORIGINE : la page fabrique son
-         propre manifeste en « blob » (pièce jointe portant l'adresse du
-         site) — reçu par le téléphone comme un fichier du site même,
-         là où l'URI data: (sans origine) était écartée au moment
-         d'installer. Adresses absolues ; ordre de secours :
-         blob: → data: → adresse /app/static/. */
+      /* v7.13.10 — FINI LE CACHE-CACHE : la page VÉRIFIE avant de garder.
+         ① d'emblée, la carte de la maison même (l'adresse /app/static/ de
+            la MÊME origine que la page) est posée — c'est le seul
+            transport que tous les téléphones acceptent sans discuter ;
+         ② en même temps, la page la relit elle-même : si elle répond bien
+            par une fiche Rosaire (JSON avec un nom et une destination),
+            elle reste — rien ne bouge, pas même un clignement ;
+         ③ si elle répond par autre chose (la coquille HTML de l'appli),
+            la page fabrique SA fiche en URI data: (adresses absolues,
+            icônes incorporées) et la pose à sa place.
+         Chaque transport est contrôlé avant d'être gardé — plus aucune
+         surprise au moment d'installer. */
+      var ORIG = '';
+      try { ORIG = d.defaultView.location.origin; } catch (eO) { }
+      if (!ORIG || ORIG === 'null') {
+        try { ORIG = new URL(d.baseURI).origin; } catch (eO2) { }
+      }
+      if (!ORIG || ORIG === 'null') {
+        try { ORIG = window.parent.location.origin; } catch (eO3) { }
+      }
+      if (!ORIG || ORIG === 'null') { ORIG = location.origin; }
+      var _man = { name: '%NOMLONG%', short_name: LIB,
+                  description: 'Gestionnaire des Equipes du Rosaire — Diocèse de Grand-Bassam',
+                  start_url: ORIG + '%START%', id: ORIG + '%START%',
+                  scope: ORIG + '/', lang: 'fr', display: 'standalone',
+                  background_color: '#0d1440', theme_color: '#1A237E',
+                  icons: %ICONS% };
+      m.href = MANIF;   /* la carte de la maison, posée d'emblée */
       try {
-        /* v7.13.9 — L'ORIGINE VRAIE : lue depuis la fenêtre de la PAGE
-           (le composant vit dans une iframe « srcdoc » où location.origin
-           vaut la chaîne « null » — le vieux manifeste data: héritait du
-           même défaut et son start_url commençait par « null/ » !).
-           d.baseURI (l'adresse de la page) sert de seconde corde. */
-        var ORIG = '';
-        try { ORIG = d.defaultView.location.origin; } catch (eO) { }
-        if (!ORIG || ORIG === 'null') {
-          try { ORIG = new URL(d.baseURI).origin; } catch (eO2) { }
-        }
-        if (!ORIG || ORIG === 'null') {
-          try { ORIG = window.parent.location.origin; } catch (eO3) { }
-        }
-        if (!ORIG || ORIG === 'null') { ORIG = location.origin; }
-        var man = { name: '%NOMLONG%', short_name: LIB,
-                    description: 'Gestionnaire des Equipes du Rosaire — Diocèse de Grand-Bassam',
-                    start_url: ORIG + '%START%', id: ORIG + '%START%',
-                    scope: ORIG + '/', lang: 'fr', display: 'standalone',
-                    background_color: '#0d1440', theme_color: '#1A237E',
-                    icons: %ICONS% };
-        var _txt = JSON.stringify(man);
-        var _w = null;
-        try { _w = d.defaultView || window.parent || window; } catch (e0) { _w = window; }
-        if (!_w) { _w = window; }
-        var _pose = false;
-        try {
-          var _B = _w.Blob || Blob;
-          var _U = _w.URL || URL;
-          var _b = new _B([_txt], { type: 'application/manifest+json' });
-          var _u = _U.createObjectURL(_b);
-          if (_u && String(_u).indexOf('blob:') === 0) { m.href = _u; _pose = true; }
-        } catch (e1) { }
-        if (!_pose) {
+        var _txt = JSON.stringify(_man);
+        var _donne_data = function () {
           try {
             m.href = 'data:application/manifest+json;charset=utf-8,'
                      + encodeURIComponent(_txt);
-          } catch (e2) { m.href = MANIF; }
-        }
-      } catch (e) { m.href = MANIF; }
+          } catch (e2) { /* la carte de la maison reste posée */ }
+        };
+        var _controle = function (t) {
+          try {
+            var j = JSON.parse(t);
+            if (j && j.name && String(j.name).indexOf('Rosaire') === 0
+                && j.start_url) { return; }   /* la carte de la maison est bonne */
+          } catch (e3) { }
+          _donne_data();   /* coquille HTML : la fiche fabriquée prend la place */
+        };
+        fetch(MANIF, { cache: 'no-store' })
+          .then(function (r) { return r.ok ? r.text() : ''; })
+          .then(_controle)
+          .catch(_donne_data);
+      } catch (e) { /* la carte de la maison reste posée */ }
       var t = d.querySelector('meta[name="theme-color"]');
       if (!t) { t = d.createElement('meta'); t.name = 'theme-color'; d.head.appendChild(t); }
       t.content = '#1A237E';
       var at = d.querySelector('meta[name="apple-mobile-web-app-title"]');
       if (!at) { at = d.createElement('meta'); at.name = 'apple-mobile-web-app-title'; d.head.appendChild(at); }
       at.content = LIB;
-      d.title = LIB;   // v7.9.8 — le raccourci hérite du titre d'onglet, distinct par côté
+      /* v7.13.10 — LE TITRE QUI RESTE : Streamlit ré-écrit le titre de
+         l'onglet après chaque run (le long titre de set_page_config)
+         écrasait le « Rosaire » posé ici — et le titre repartait dans le
+         cache-cache. Un petit guetteur le remet aussitôt : l'onglet — et
+         tout raccourci sans fiche d'identité — porte le bon nom. */
+      var _remets = function(){ try { if (d.title !== LIB) { d.title = LIB; } } catch(e) {} };
+      try {
+        /* v7.13.10 — le guetteur regarde TOUT le document : Streamlit
+           remplace parfois le nœud <title> entier (React), un guetteur
+           accroché au seul élément mourrait avec lui. */
+        new MutationObserver(_remets).observe(d.documentElement,
+          { subtree: true, childList: true, characterData: true });
+      } catch(e) { }
+      _remets();
       var mw = d.querySelector('meta[name="mobile-web-app-capable"]');
       if (!mw) { mw = d.createElement('meta'); mw.name = 'mobile-web-app-capable'; d.head.appendChild(mw); }
       mw.content = 'yes';
@@ -2145,7 +2168,24 @@ def injecter_icone_pwa(espace=False, matloc=None):
       var u = null;
       try { u = new URL(f.location.href); } catch(e) { return; }
       u.searchParams.set('matloc', memo);
-      try { f.location.replace(u.toString()); } catch(e) {}
+      /* v7.13.10 — LE BON GESTE POUR NAVIGUER : depuis que Streamlit
+         sandboixe ses iframes, un location.replace du PARENT lancé depuis
+         l'iframe lève une SecurityError EN SILENCE (catch(e) {}) — la
+         mémoire du fidèle était muette, et l'icône (start_url ?espace=1)
+         ouvrait la vue publique au lieu de SON Espace. La couture de la
+         maison (v7.8.1) : on pose une ancre DANS le document du parent et
+         on la clique — la navigation appartient alors à la page elle-même,
+         aucun bac à sable ne la bloque. */
+      try {
+        var _a = f.document.createElement('a');
+        _a.href = u.toString();
+        _a.style.display = 'none';
+        f.document.body.appendChild(_a);
+        _a.click();
+        setTimeout(function(){ try { _a.remove(); } catch(e2) {} }, 4000);
+      } catch(e1) {
+        try { f.location.replace(u.toString()); } catch(e2) {}
+      }
     })();
     </script>
     """
@@ -2163,7 +2203,7 @@ def injecter_icone_pwa(espace=False, matloc=None):
         try { f = window.parent; } catch(e) { return; }
         if (!f || !f.navigator || !('serviceWorker' in f.navigator)) { return; }
         f.navigator.serviceWorker
-          .register('/app/static/sw.js?v=7136').catch(function(){ });
+          .register('/app/static/sw.js?v=71310').catch(function(){ });
       } catch(e) { }
     })();
     </script>
