@@ -1910,52 +1910,6 @@ maison.*
   changement de données — la base vit chez l'hébergeur, on n'y touche
   jamais.
 
-### 45. v7.14.0 — Le manifeste du site lui-même : le téléphone retient enfin la vraie adresse
-
-- **⛵ Le bateau Streamlit expliqué, puis chassé** : le raccourci du
-  téléphone tire son visage du **manifeste web** de la page. Or le lien
-  `rel=manifest` posé depuis la v7.13.0 donnait à Chrome un manifeste en
-  `blob:`/`data:` — des adresses sans vraie origine, écartées au moment
-  d'installer ; Chrome reprenait alors le favicon par défaut, le bateau
-  Streamlit. Désormais le lien pointe **d'abord la vraie adresse du
-  site** — `/app/static/manifest_espace.json` (ou `_admin`), servie en
-  `application/json` par le dossier `static/` — et le manifeste fabriqué
-  à la main redevient un simple secours, posé seulement si la vraie
-  adresse ne répond pas comme un manifeste (`injecter_icone_pwa`,
-  `_ver_pwa` → 7140). Une fois la vraie adresse vérifiée, l'icône iPhone
-  (`apple-touch-icon`) passe elle aussi en vrai fichier.
-- **🩹 Le dossier statique se plante et se répare seul** : Streamlit sert
-  `static/` depuis le dossier du **fichier principal** (app.py), et
-  n'ouvre ce service que si `enableStaticServing = true` est lu dans le
-  `.streamlit/config.toml` du dossier de **LANCEMENT**. Faute de quoi les
-  adresses `/app/static/*` répondent par la coquille HTML de l'app — le
-  mal constaté en novembre 2026 et pris pour une panne de la plateforme.
-  Désormais : `config.toml` livré à la racine du dépôt, `static/` posé à
-  côté de app.py, et au démarrage la maison recopie les fichiers PWA d'un
-  dossier à l'autre dès qu'une autre version est vue (marque
-  `pwa_version.txt`, `_planter_statique` dans app.py).
-- **🔎 Prouvé en local** : avec la bonne disposition,
-  `/app/static/manifest_espace.json` répond `200 application/json` et les
-  icônes `200 image/png` ; sans le `config.toml` au bon endroit, la même
-  adresse répond `200 text/html` — la coquille, exactement ce que le
-  téléphone recevait.
-- **🔔 Bonus revenus de service** : le service worker des rappels
-  (`/app/static/sw.js`, `?v=7140`) se déclare de nouveau — les
-  notifications étaient muettes depuis que le service statique répondait
-  la coquille.
-- **📲 Après déploiement, un seul geste par téléphone** : supprimer la
-  vieille icône « Streamlit » (appui long → Supprimer), ouvrir son lien
-  d'Espace, puis menu ⋮ → « Installer l'application » (iPhone : Partager
-  → « Sur l'écran d'accueil »). Le geste final reste volontaire : aucun
-  navigateur ne laisse un site poser une icône sans le toucher de la
-  personne — c'est la seule étape qui ne peut pas être automatisée.
-- **Cohérence statique** : `manifest_*.json` et `install_rosaire*.html`
-  passent au motif `?v=7140` ; le contexte paroisse (`?p=`) voyage aussi
-  dans le start_url de secours.
-- `_VERSION_APPLI = "v7.14.0"` ; aucun changement de schéma ; aucun
-  changement de données — la base vit chez l'hébergeur, on n'y touche
-  jamais.
-
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
