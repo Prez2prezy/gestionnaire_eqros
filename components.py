@@ -1927,18 +1927,7 @@ def injecter_icone_pwa(espace=False, matloc=None):
     d'installer, et le raccourci repartait sans notre manifeste — il
     ouvrait alors la racine, c'est-à-dire l'Administration. Le blob:
     est reçu comme un fichier du site même ; ordre de secours conservé :
-    blob: → data: → adresse /app/static/.
-    v7.14.0 — LE MANIFESTE DU SITE LUI-MÊME : le lien rel=manifest pointe
-    D'ABORD la vraie adresse du site (/app/static/manifest_*.json), la
-    seule que Chrome retienne au moment d'installer — blob: et data:,
-    essayés depuis v7.13.0, étaient écartés et le raccourci reprenait le
-    favicon par défaut (le bateau Streamlit). Le dossier static/ est
-    planté/réparé au démarrage là où Streamlit le cherche (à côté de
-    app.py — cf. _planter_statique dans app.py) et la config
-    enableStaticServing est livrée à la racine du dépôt ; si la vraie
-    adresse ne répond pas comme un manifeste, le secours blob: → data:
-    reste en réserve. Le contexte paroisse (?p=) voyage aussi dans le
-    start_url de secours."""
+    blob: → data: → adresse /app/static/."""
     # v7.9.9 — cache-busting du manifeste : le navigateur retient le
     # manifeste par URL ; une adresse qui évolue à chaque version l'invite à
     # relire les bons noms et les bonnes icônes au prochain
@@ -1955,7 +1944,7 @@ def injecter_icone_pwa(espace=False, matloc=None):
     # PREMIER OCTET — et posent désormais une VRAIE application d'un seul
     # bouton (v7.12.2), puis s'effacent devant l'Espace à la prochaine
     # ouverture.
-    _ver_pwa = "7141"
+    _ver_pwa = "7139"
 
     def _icon_data(nom_fichier):
         """v7.9.10 — l'icône lue sur le disque et INCORPORÉE en base64 :
@@ -1996,10 +1985,6 @@ def injecter_icone_pwa(espace=False, matloc=None):
     _pfx = "icon_espace_" if espace else "icon_admin_"
     _ico192 = _icon_data(_pfx + "192.png") or "/app/static/" + _pfx + "192.png"
     _ico512 = _icon_data(_pfx + "512.png") or "/app/static/" + _pfx + "512.png"
-    # v7.14.0 — l'icône iPhone en VRAI fichier (mieux tenu par Safari que
-    # la donnée incorporée) une fois que la vraie adresse du manifeste a
-    # répondu correctement.
-    _ico180_url = "/app/static/" + _pfx + "180.png?v=" + _ver_pwa
     _start = "/?espace=1" if espace else "/"
     # v7.13.6 — LE MANIFESTE PERSONNALISÉ : sur les pages d'un membre
     # (?espace=1&matloc=…), le start_url du manifeste porte SON matloc —
@@ -2012,16 +1997,6 @@ def injecter_icone_pwa(espace=False, matloc=None):
                 str(matloc).upper().strip())
         except Exception:
             _start = "/?espace=1"
-        # v7.14.0 — le contexte paroisse (?p=) voyage aussi, comme dans
-        # le raccourci du bureau (Raccourci_Fidele.bat).
-        try:
-            _p_q = st.query_params.get("p")
-            if isinstance(_p_q, list):
-                _p_q = _p_q[0] if _p_q else None
-            if _p_q:
-                _start += "&p=" + urllib.parse.quote(str(_p_q))
-        except Exception:
-            pass
     _nom_long = ("Rosaire — Espaces de prière" if espace
                  else "Rosaire — Administration")
     _icons_js = _json.dumps([
@@ -2038,7 +2013,7 @@ def injecter_icone_pwa(espace=False, matloc=None):
       var d = null;
       try { d = window.parent.document; } catch(e) { d = document; }
       if (!d || !d.head) { return; }
-      var ICO32 = '%ICO32%', ICO180 = '%ICO180%', ICO180URL = '%ICO180URL%', MANIF = '%MANIF%', LIB = '%LIB%';
+      var ICO32 = '%ICO32%', ICO180 = '%ICO180%', MANIF = '%MANIF%', LIB = '%LIB%';
       function lien(rel, href, sizes){
         var l = d.querySelector('link[rel="' + rel + '"]');
         if (!l) { l = d.createElement('link'); l.rel = rel; d.head.appendChild(l); }
@@ -2050,74 +2025,52 @@ def injecter_icone_pwa(espace=False, matloc=None):
       lien('apple-touch-icon', ICO180, '180x180');
       var m = d.querySelector('link[rel="manifest"]');
       if (!m) { m = d.createElement('link'); m.rel = 'manifest'; d.head.appendChild(m); }
-      /* v7.14.0 — LE MANIFESTE DU SITE LUI-MÊME : une VRAIE adresse du
-         site (https, même origine), servie par le dossier static/ posé à
-         côté de app.py. C'est la seule forme que Chrome retienne au
-         moment d'installer : les manifestes en blob:/data: essayés depuis
-         la v7.13.0 étaient écartés (origine manquante ou rejetée), et le
-         raccourci reprenait alors le favicon par défaut — le bateau
-         Streamlit. Le manifeste fabriqué à la main (blob:/data:) redevient
-         un simple ordre de secours : il n'est posé que si la vraie adresse
-         ne répond pas comme un manifeste. */
-      m.href = MANIF;
+      /* v7.13.9 — le manifeste DE LA MÊME ORIGINE : la page fabrique son
+         propre manifeste en « blob » (pièce jointe portant l'adresse du
+         site) — reçu par le téléphone comme un fichier du site même,
+         là où l'URI data: (sans origine) était écartée au moment
+         d'installer. Adresses absolues ; ordre de secours :
+         blob: → data: → adresse /app/static/. */
       try {
-        var MANIFABS = MANIF;
-        try { MANIFABS = new URL(MANIF, d.baseURI).href; } catch (eU) { }
-        fetch(MANIFABS, { credentials: 'same-origin' })
-          .then(function(r){
-            if (!r || !r.ok) { throw 0; }
-            return r.text();
-          })
-          .then(function(t){
-            if (String(t).indexOf('"name"') === -1) { throw 0; }
-            /* la vraie adresse répond : l'icône iPhone passe en vrai
-               fichier (mieux tenu par Safari que la donnée incorporée) */
-            try { lien('apple-touch-icon', ICO180URL, '180x180'); } catch (eA) { }
-          })
-          .catch(function(){
-            /* ordre de secours : blob: (même origine) puis data:. */
-            try {
-              /* L'ORIGINE VRAIE : lue depuis la fenêtre de la PAGE (le
-                 composant vit dans une iframe « srcdoc » où location.origin
-                 vaut la chaîne « null » — le vieux manifeste data: héritait
-                 du même défaut et son start_url commençait par « null/ » !).
-                 d.baseURI (l'adresse de la page) sert de seconde corde. */
-              var ORIG = '';
-              try { ORIG = d.defaultView.location.origin; } catch (eO) { }
-              if (!ORIG || ORIG === 'null') {
-                try { ORIG = new URL(d.baseURI).origin; } catch (eO2) { }
-              }
-              if (!ORIG || ORIG === 'null') {
-                try { ORIG = window.parent.location.origin; } catch (eO3) { }
-              }
-              if (!ORIG || ORIG === 'null') { ORIG = location.origin; }
-              var man = { name: '%NOMLONG%', short_name: LIB,
-                          description: 'Gestionnaire des Equipes du Rosaire — Diocèse de Grand-Bassam',
-                          start_url: ORIG + '%START%', id: ORIG + '%START%',
-                          scope: ORIG + '/', lang: 'fr', display: 'standalone',
-                          background_color: '#0d1440', theme_color: '#1A237E',
-                          icons: %ICONS% };
-              var _txt = JSON.stringify(man);
-              var _w = null;
-              try { _w = d.defaultView || window.parent || window; } catch (e0) { _w = window; }
-              if (!_w) { _w = window; }
-              var _pose = false;
-              try {
-                var _B = _w.Blob || Blob;
-                var _U = _w.URL || URL;
-                var _b = new _B([_txt], { type: 'application/manifest+json' });
-                var _u = _U.createObjectURL(_b);
-                if (_u && String(_u).indexOf('blob:') === 0) { m.href = _u; _pose = true; }
-              } catch (e1) { }
-              if (!_pose) {
-                try {
-                  m.href = 'data:application/manifest+json;charset=utf-8,'
-                           + encodeURIComponent(_txt);
-                } catch (e2) { }
-              }
-            } catch (e) { }
-          });
-      } catch (eF) { }
+        /* v7.13.9 — L'ORIGINE VRAIE : lue depuis la fenêtre de la PAGE
+           (le composant vit dans une iframe « srcdoc » où location.origin
+           vaut la chaîne « null » — le vieux manifeste data: héritait du
+           même défaut et son start_url commençait par « null/ » !).
+           d.baseURI (l'adresse de la page) sert de seconde corde. */
+        var ORIG = '';
+        try { ORIG = d.defaultView.location.origin; } catch (eO) { }
+        if (!ORIG || ORIG === 'null') {
+          try { ORIG = new URL(d.baseURI).origin; } catch (eO2) { }
+        }
+        if (!ORIG || ORIG === 'null') {
+          try { ORIG = window.parent.location.origin; } catch (eO3) { }
+        }
+        if (!ORIG || ORIG === 'null') { ORIG = location.origin; }
+        var man = { name: '%NOMLONG%', short_name: LIB,
+                    description: 'Gestionnaire des Equipes du Rosaire — Diocèse de Grand-Bassam',
+                    start_url: ORIG + '%START%', id: ORIG + '%START%',
+                    scope: ORIG + '/', lang: 'fr', display: 'standalone',
+                    background_color: '#0d1440', theme_color: '#1A237E',
+                    icons: %ICONS% };
+        var _txt = JSON.stringify(man);
+        var _w = null;
+        try { _w = d.defaultView || window.parent || window; } catch (e0) { _w = window; }
+        if (!_w) { _w = window; }
+        var _pose = false;
+        try {
+          var _B = _w.Blob || Blob;
+          var _U = _w.URL || URL;
+          var _b = new _B([_txt], { type: 'application/manifest+json' });
+          var _u = _U.createObjectURL(_b);
+          if (_u && String(_u).indexOf('blob:') === 0) { m.href = _u; _pose = true; }
+        } catch (e1) { }
+        if (!_pose) {
+          try {
+            m.href = 'data:application/manifest+json;charset=utf-8,'
+                     + encodeURIComponent(_txt);
+          } catch (e2) { m.href = MANIF; }
+        }
+      } catch (e) { m.href = MANIF; }
       var t = d.querySelector('meta[name="theme-color"]');
       if (!t) { t = d.createElement('meta'); t.name = 'theme-color'; d.head.appendChild(t); }
       t.content = '#1A237E';
@@ -2136,7 +2089,7 @@ def injecter_icone_pwa(espace=False, matloc=None):
       sb.content = 'default';
     })();
     </script>
-    """.replace("%ICO32%", _ico32).replace("%ICO180%", _ico180).replace("%ICO180URL%", _ico180_url).replace("%MANIF%", _manif).replace("%LIB%", _lib).replace("%ICONS%", _icons_js).replace("%START%", _start).replace("%NOMLONG%", _nom_long)
+    """.replace("%ICO32%", _ico32).replace("%ICO180%", _ico180).replace("%MANIF%", _manif).replace("%LIB%", _lib).replace("%ICONS%", _icons_js).replace("%START%", _start).replace("%NOMLONG%", _nom_long)
     # v7.9.7 — MÉMOIRE DU FIDÈLE (espaces de prière SEULEMENT) : le raccourci
     # « Ajouter à l'écran d'accueil » ouvre start_url SANS matloc ; le
     # navigateur retient le dernier lien personnel ouvert (?espace=1&matloc=…)
@@ -2210,7 +2163,7 @@ def injecter_icone_pwa(espace=False, matloc=None):
         try { f = window.parent; } catch(e) { return; }
         if (!f || !f.navigator || !('serviceWorker' in f.navigator)) { return; }
         f.navigator.serviceWorker
-          .register('/app/static/sw.js?v=7141').catch(function(){ });
+          .register('/app/static/sw.js?v=7136').catch(function(){ });
       } catch(e) { }
     })();
     </script>
