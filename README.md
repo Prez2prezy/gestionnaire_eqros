@@ -1910,6 +1910,48 @@ maison.*
   changement de données — la base vit chez l'hébergeur, on n'y touche
   jamais.
 
+### 45. v7.13.10 — Fini le cache-cache : la carte d'identité vérifiée, et plus aucun lien qui fait tourner la roue
+
+- **📿 La carte d'identité est VÉRIFIÉE avant d'être gardée** : les
+  transports « exotiques » (URI `data:` en v7.13.0-8, pièce jointe
+  `blob:` en v7.13.9) dépendaient de la bonne volonté du téléphone au
+  moment d'installer — d'où l'icône « Streamlit » au bateau rouge,
+  teigneuse. Désormais la page pose D'EMBLÉE la carte de la maison même
+  — le fichier `/app/static/manifest_*.json` servi par l'application à
+  la MÊME origine que la page, le seul transport que tous les
+  téléphones acceptent — puis la relit elle-même (`fetch`, sans
+  mémoire) : si elle répond bien par une fiche Rosaire, rien ne bouge ;
+  si elle répond par autre chose, la page fabrique sa fiche en `data:`
+  (adresses absolues, icônes incorporées) et la pose à sa place
+  (`injecter_icone_pwa`, `_ver_pwa` → 71310). Plus aucune trace de
+  `blob:` ; plus aucune carte posée à l'aveugle.
+- **📲 Le lien qui faisait tourner la roue indéfiniment n'existe plus** :
+  la phrase « 📲 Garde-le sous la main… » des badges de bienvenue
+  (membre et communautaire) ne contenait plus d'ancre — mais elle
+  gardait un lien « page d'installation » qui RECHARGEAIT toute la
+  page (constat du terrain : « il tourne indéfiniment comme
+  précédemment de l'autre côté »). Les deux ancres disparaissent ;
+  un VRAI bouton de l'application « 📲 Ouvrir la page d'installation »
+  prend le relais : un simple changement de paramètre Streamlit
+  (`st.query_params`), l'onglet ne se recharge JAMAIS — donc plus
+  aucune roue, même quand la salle dort. Le Matloc reste dans
+  l'adresse.
+- **◀️ Le retour de la page d'installation ne voyage plus non plus** :
+  l'ancre « Revenir à l'Espace de Prière » (même famille de roue) est
+  remplacée par un bouton doré de l'application — le paramètre
+  `installer` s'efface, l'Espace revient, sans rechargement.
+- **🏛️ La config de la maison est lue PARTOUT** : `.streamlit/config.toml`
+  (enableStaticServing) voyage aussi à la racine du dépôt — les
+  versions de Streamlit qui ne lisent que la racine la trouvent, celles
+  qui lisent le dossier de l'application aussi. Le service statique
+  (carte d'identité, pages de secours, passeur) redevient déterministe.
+- **Cohérence statique** : `manifest_*.json` (?v=71310), pages
+  `install_rosaire*.html` (?v=71310) alignées sur la cascade vérifiée ;
+  passeur enregistré en `?v=71310` (même contenu, aucune surprise).
+- `_VERSION_APPLI = "v7.13.10"` ; aucun changement de schéma ; aucun
+  changement de données — la base vit chez l'hébergeur, on n'y touche
+  jamais.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
