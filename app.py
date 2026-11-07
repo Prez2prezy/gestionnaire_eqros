@@ -31,6 +31,58 @@ from services import (hash_password, verifier_mot_de_passe,
                       creer_token_session, verifier_token_session,
                       supprimer_token_session)
 
+# --- v7.14.0 — LE DOSSIER STATIQUE SE POSE ET SE RÉPARE TOUT SEUL ----------
+# Le manifeste et les icônes du téléphone (📿 / 🔑) voyagent par
+# /app/static/. Streamlit sert ce dossier depuis LE DOSSIER DU FICHIER
+# PRINCIPAL (app.py) — et n'ouvre ce service que si .streamlit/config.toml
+# (lu, lui, dans le dossier de LANCEMENT) porte enableStaticServing = true.
+# Faute de quoi les adresses /app/static/* répondent par la coquille HTML
+# de l'app (constaté en novembre 2026) : le téléphone ne reconnaît plus le
+# manifeste et pose le raccourci avec le favicon par défaut — le bateau
+# Streamlit. La maison se répare seule : dès qu'une autre version des
+# fichiers PWA est vue d'un côté, ils sont recopiés de l'autre (marque
+# pwa_version.txt), pour la règle de recherche actuelle (à côté de app.py)
+# comme pour l'ancienne (dossier de lancement).
+def _planter_statique():
+    _marque = "pwa_version.txt"
+    _version = "7140"
+    try:
+        _ici = os.path.dirname(os.path.abspath(__file__))
+        _candidats = (os.path.join(_ici, "static"),
+                      os.path.abspath(os.path.join(os.getcwd(), "static")))
+        _src = None
+        for _c in _candidats:
+            if os.path.isfile(os.path.join(_c, "manifest_espace.json")):
+                _src = _c
+                break
+        if _src is None:
+            return
+        import shutil as _sh
+        for _dst in _candidats:
+            if os.path.abspath(_dst) == os.path.abspath(_src):
+                continue
+            try:
+                with open(os.path.join(_dst, _marque), encoding="utf-8") as _f:
+                    if _f.read().strip() == _version:
+                        continue
+            except Exception:
+                pass
+            os.makedirs(_dst, exist_ok=True)
+            for _nom in os.listdir(_src):
+                _de = os.path.join(_src, _nom)
+                if os.path.isfile(_de):
+                    try:
+                        _sh.copy2(_de, os.path.join(_dst, _nom))
+                    except Exception:
+                        pass
+            with open(os.path.join(_dst, _marque), "w", encoding="utf-8") as _f:
+                _f.write(_version)
+    except Exception:
+        pass
+
+_planter_statique()
+# ---------------------------------------------------------------------------
+
 # --- Configuration de la page ---
 # v7.8.14 — page_icon par défaut 📿 : l'icône Streamlit (❗) disparaît de l'onglet.
 # L'injection dynamique (injecter_icone_pwa) affine ensuite : 📿 Espaces / 🔑 Admin.
