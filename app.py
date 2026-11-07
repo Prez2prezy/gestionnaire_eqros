@@ -45,7 +45,7 @@ from services import (hash_password, verifier_mot_de_passe,
 # comme pour l'ancienne (dossier de lancement).
 def _planter_statique():
     _marque = "pwa_version.txt"
-    _version = "7140"
+    _version = "7141"
     try:
         _ici = os.path.dirname(os.path.abspath(__file__))
         _candidats = (os.path.join(_ici, "static"),
