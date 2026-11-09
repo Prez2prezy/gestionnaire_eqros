@@ -534,7 +534,6 @@ def afficher_agenda_complet_universel(equipe_id=None, paroisse_id=None, diocese_
                                              f"{f' à {item[3]}' if item[3] else ''}.\n\n"
                                              f"Ta page personnelle t'attend ici (2 clics suffit pour répondre) :\n{lien_perso}\n"
                                              f"puis sur la rubrique '📅 Mes évènements'\n\n"
-                                             f"💡 Astuce : ajoute ce lien à ton écran d'accueil (menu ⋮ → « Ajouter à l'écran d'accueil ») pour y accéder directement !\n\n"
                                              f"Si le lien ne s'ouvre pas, saisis ce code sur la page de l'évènement : {matloc_propre}")
                                 wa_perso = lien_whatsapp(m[2], msg_perso)
                                 c_nom, c_btn = st.columns([3, 1])
@@ -899,7 +898,7 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
                 for m in membres:
                     matloc_propre = str(m[3]).upper().strip()
                     lien_perso = f"{base_url}/?espace=1&matloc={matloc_propre}"
-                    msg_perso = f"Bonjour {m[0]} {m[1]},\n\nVoici votre espace spirituel personnel avec les prières et le programme de votre équipe :\n{lien_perso}\n\n💡 Astuce : ouvrez ce lien, puis menu ⋮ (ou Partager sur iPhone) → « Ajouter à l'écran d'accueil » : vous créerez un raccourci direct, sans plus passer par WhatsApp !\n\nBon temps de prière ! 📿"
+                    msg_perso = f"Bonjour {m[0]} {m[1]},\n\nVoici votre espace spirituel personnel avec les prières et le programme de votre équipe :\n{lien_perso}\n\nBon temps de prière ! 📿"
                     col_nom, col_btn = st.columns([3, 1])
                     with col_nom:
                         st.write(f"**{m[0]} {m[1]}** (`{matloc_propre}`)")
@@ -1888,70 +1887,28 @@ def gerer_feuillet_mensuel():
 
 
 def injecter_icone_pwa(espace=False, matloc=None):
-    """v7.8.14 — FAVICON + PWA DYNAMIQUES : 📿 pour les Espaces de Prière
-    (?espace=… et page réponse membre ?e=…), 🔑 pour l'Administration (connexion
-    + rôles diocèse / paroisse / équipe / communication). L'icône Streamlit
-    disparaît des DEUX côtés : le favicon de l'onglet ET le manifeste
-    d'installation (icône de l'app posée sur l'écran d'accueil du téléphone)
-    sont remplacés par nos icônes servies depuis /app/static/. L'échange
-    📿 ↔ 🔑 suit automatiquement la partie ouverte, à chaque chargement.
-    v7.9.7 — le raccourci devient une vraie app : métas plein écran
-    (mobile-web-app-capable / apple-mobile-web-app-capable / status-bar)
-    et MÉMOIRE DU FIDÈLE — le raccourci ouvert sans matloc retrouve le
-    dernier lien personnel (localStorage navigateur, côté espace seul).
-    v7.9.10 — favicon + icône iPhone INCORPORÉS dans la page (data URI :
-    aucun 404, aucun cache possible) et manifeste versionné ;
-    les pages d'installation static/install_rosaire*.html offrent le bon
-    visage dès le premier octet pour le geste « Ajouter à l'écran d'accueil ».
-    v7.12.2 — LE RACCOURCI POUR DE BON : manifeste versionné et
-    passeur des rappels enregistré silencieusement dès l'arrivée (côté
-    espace) — le téléphone tient sa « vraie application » ; la page
-    d'installation pose désormais l'app d'un seul bouton (« Installer
-    l'application »), puis s'efface toute seule devant l'Espace quand on
-    ouvre le raccourci.
-    v7.13.6 — LE MANIFESTE PERSONNALISÉ ET LE GESTE EN RÉSERVE : quand un
-    membre regarde une page (?espace=1&matloc=…), le start_url du
-    manifeste porte SON matloc — l'icône posée ouvre SON Espace, même
-    sans mémoire de navigateur. Et dès que le téléphone annonce qu'il
-    sait installer (beforeinstallprompt), l'annonce est gardée en
-    réserve dans la fenêtre (window.__rosaire_install) : le bouton or
-    de la page d'installation intégrée (?espace=1&installer=1 — rendue
-    PAR l'application, sans dépendre du service statique de la
-    plateforme, en panne depuis novembre 2026) la réclame et déclenche
-    l'installation native d'un seul toucher.
-    v7.13.9 — LE MANIFESTE DE LA MÊME ORIGINE : le manifeste voyage en
-    « blob » (une pièce jointe fabriquée PAR la page, portant l'adresse
-    du site elle-même). Les captures du terrain ont montré le téléphone
-    installer « Streamlit » au lieu de « Rosaire » : l'URI data: (une
-    adresse SANS origine) était laissée de côté par Chrome au moment
-    d'installer, et le raccourci repartait sans notre manifeste — il
-    ouvrait alors la racine, c'est-à-dire l'Administration.
-    v7.13.10 — FINI LE CACHE-CACHE : plus aucun transport posé à
-    l'aveugle. La carte d'identité de la maison (le fichier /app/static/
-de la MÊME origine que la page — le seul transport que tous les
-téléphones acceptent sans discuter) est posée d'emblée, PUIS vérifiée
-par la page elle-même : si elle répond bien par du JSON Rosaire, elle
-reste ; si elle répond par autre chose (la coquille HTML), la page
-fabrique sa propre carte en URI data: (adresses absolues, icônes
-incorporées) et la pose à sa place. Chaque transport est contrôlé
-avant d'être gardé — la même carte du premier coup, partout."""
-    # v7.9.9 — cache-busting du manifeste : le navigateur retient le
-    # manifeste par URL ; une adresse qui évolue à chaque version l'invite à
-    # relire les bons noms et les bonnes icônes au prochain
-    # « Ajouter à l'écran d'accueil » (les raccourcis déjà posés gardent
-    # leur visage : on les supprime puis on les repose après déploiement).
-    # v7.9.10 — LES VISAGES DEVIENT INCASSABLES : le favicon de l'onglet et
-    # l'icône iPhone ne sont plus des adresses mais des IMAGES INCORPORÉES
-    # (données base64 dans la page elle-même) — rien ne peut les manquer,
-    # ni un dossier hors d'atteinte, ni une mémoire du navigateur. Le
-    # manifeste, lui, reste une adresse versionnée (?v=7122) : c'est lui
-    # qui habille le raccourci Android. Et si le raccourci est posé pendant
-    # l'écran de chargement (avant que la page n'ait son visage), les pages
-    # d'installation livrées dans static/ servent le bon visage DÈS LE
-    # PREMIER OCTET — et posent désormais une VRAIE application d'un seul
-    # bouton (v7.12.2), puis s'effacent devant l'Espace à la prochaine
-    # ouverture.
-    _ver_pwa = "71310"
+    """v7.8.14 — FAVICON DYNAMIQUE : 📿 pour les Espaces de Prière
+    (?espace=… et page réponse membre ?e=…), 🔑 pour l'Administration.
+    L'icône Streamlit disparaît de l'onglet, à chaque chargement.
+    v7.9.8 — le titre de l'onglet porte un nom court et distinct :
+    « Rosaire » côté Espace, « Rosaire Admin » côté Administration.
+    v7.13.11 — LE RACCOURCI PREND SA RETRAITE (demande du fidèle :
+    « retire tout ce qui est en lien avec le raccourci »). La plateforme
+    ne propose plus rien à poser : plus aucun manifeste d'installation,
+    plus aucune méta plein écran, plus aucune écoute d'annonce
+    d'installation. Reste ce qui sert TOUS LES JOURS :
+    • le visage de l'onglet (favicon 📿 / 🔑 incorporé — v7.9.10) ;
+    • le titre court remis à chaque run par le guetteur (v7.13.10) ;
+    • la couleur du bandeau du navigateur (theme-color) ;
+    • la MÉMOIRE DU FIDÈLE (v7.9.7, côté Espace seulement) : une adresse
+      d'Espace revisitée sans son Matloc retrouve le dernier lien
+      personnel retenu par le navigateur — c'est elle qui fait rouvrir
+      « ton Espace, tout prêt » à une icône déjà posée d'avant ;
+    • le PASSEUR DES RAPPELS 🔔 (v7.12.0, côté Espace seulement) : il vit
+      silencieux et porte les rondes, sans jamais rien proposer.
+    (Le paramètre matloc reste accepté pour la compatibilité des appels ;
+     il n'est plus nécessaire à rien — la mémoire vit dans le navigateur.)"""
+    _ver_pwa = "71311"
 
     def _icon_data(nom_fichier):
         """v7.9.10 — l'icône lue sur le disque et INCORPORÉE en base64 :
@@ -1966,188 +1923,58 @@ avant d'être gardé — la même carte du premier coup, partout."""
     if espace:
         _ico32 = _icon_data("icon_espace_32.png") \
             or "/app/static/icon_espace_32.png?v=" + _ver_pwa
-        _ico180 = _icon_data("icon_espace_180.png") \
-            or "/app/static/icon_espace_180.png?v=" + _ver_pwa
-        _manif = "/app/static/manifest_espace.json?v=" + _ver_pwa
-        # v7.9.8 — le raccourci porte le BON nom : le titre d'onglet était le
-        # même des DEUX côtés (« Gestionnaire des Équipes du Rosaire… »),
-        # Chrome nommant le raccourci d'après le titre → tous les liens
-        # s'appelaient pareil. Titres courts et distincts par côté.
         _lib = "Rosaire"
     else:
         _ico32 = _icon_data("icon_admin_32.png") \
             or "/app/static/icon_admin_32.png?v=" + _ver_pwa
-        _ico180 = _icon_data("icon_admin_180.png") \
-            or "/app/static/icon_admin_180.png?v=" + _ver_pwa
-        _manif = "/app/static/manifest_admin.json?v=" + _ver_pwa
         _lib = "Rosaire Admin"
-    # v7.13.0 — LE MANIFESTE INCASSABLE : le manifeste voyage DANS la page
-    # (URI data:) au lieu de dépendre du service statique de la plateforme.
-    # Quand celui-ci trébuche (régression constatée en novembre 2026 — les
-    # adresses /app/static/* répondaient par la coquille HTML), le raccourci
-    # posé garde le bon visage, le bon nom — et ouvre le BON côté : l'Espace
-    # de Prière (?espace=1) et non l'Administration. Les icônes voyagent en
-    # données incorporées ; les adresses /app/static/ restent en secours.
-    import json as _json
-    _pfx = "icon_espace_" if espace else "icon_admin_"
-    _ico192 = _icon_data(_pfx + "192.png") or "/app/static/" + _pfx + "192.png"
-    _ico512 = _icon_data(_pfx + "512.png") or "/app/static/" + _pfx + "512.png"
-    _start = "/?espace=1" if espace else "/"
-    # v7.13.6 — LE MANIFESTE PERSONNALISÉ : sur les pages d'un membre
-    # (?espace=1&matloc=…), le start_url du manifeste porte SON matloc —
-    # l'icône posée par « Installer l'application » ou par le menu ⋮
-    # rouvre SON Espace, tout prêt, sans même dépendre de la mémoire du
-    # navigateur. (Le visiteur public garde ?espace=1.)
-    if espace and matloc:
-        try:
-            _start = "/?espace=1&matloc=" + urllib.parse.quote(
-                str(matloc).upper().strip())
-        except Exception:
-            _start = "/?espace=1"
-    _nom_long = ("Rosaire — Espaces de prière" if espace
-                 else "Rosaire — Administration")
-    _icons_js = _json.dumps([
-        {"src": _ico192, "sizes": "192x192", "type": "image/png",
-         "purpose": "any"},
-        {"src": _ico512, "sizes": "512x512", "type": "image/png",
-         "purpose": "any"},
-        {"src": _ico512, "sizes": "512x512", "type": "image/png",
-         "purpose": "maskable"},
-    ])
     _js = """
     <script>
     (function(){
       var d = null;
       try { d = window.parent.document; } catch(e) { d = document; }
       if (!d || !d.head) { return; }
-      var ICO32 = '%ICO32%', ICO180 = '%ICO180%', MANIF = '%MANIF%', LIB = '%LIB%';
+      var ICO32 = '%ICO32%', LIB = '%LIB%';
       function lien(rel, href, sizes){
         var l = d.querySelector('link[rel="' + rel + '"]');
         if (!l) { l = d.createElement('link'); l.rel = rel; d.head.appendChild(l); }
         if (sizes) { l.setAttribute('sizes', sizes); } else { l.removeAttribute('sizes'); }
         l.href = href;
       }
+      /* v7.13.11 — le visage de l'onglet, rien d'autre : le favicon
+         📿/🔑 reste ; le manifeste d'installation est parti avec le
+         raccourci, et avec lui la promesse d'une app à poser. */
       lien('icon', ICO32, '32x32');
       lien('shortcut icon', ICO32, '32x32');
-      lien('apple-touch-icon', ICO180, '180x180');
-      var m = d.querySelector('link[rel="manifest"]');
-      if (!m) { m = d.createElement('link'); m.rel = 'manifest'; d.head.appendChild(m); }
-      /* v7.13.10 — FINI LE CACHE-CACHE : la page VÉRIFIE avant de garder.
-         ① d'emblée, la carte de la maison même (l'adresse /app/static/ de
-            la MÊME origine que la page) est posée — c'est le seul
-            transport que tous les téléphones acceptent sans discuter ;
-         ② en même temps, la page la relit elle-même : si elle répond bien
-            par une fiche Rosaire (JSON avec un nom et une destination),
-            elle reste — rien ne bouge, pas même un clignement ;
-         ③ si elle répond par autre chose (la coquille HTML de l'appli),
-            la page fabrique SA fiche en URI data: (adresses absolues,
-            icônes incorporées) et la pose à sa place.
-         Chaque transport est contrôlé avant d'être gardé — plus aucune
-         surprise au moment d'installer. */
-      var ORIG = '';
-      try { ORIG = d.defaultView.location.origin; } catch (eO) { }
-      if (!ORIG || ORIG === 'null') {
-        try { ORIG = new URL(d.baseURI).origin; } catch (eO2) { }
-      }
-      if (!ORIG || ORIG === 'null') {
-        try { ORIG = window.parent.location.origin; } catch (eO3) { }
-      }
-      if (!ORIG || ORIG === 'null') { ORIG = location.origin; }
-      var _man = { name: '%NOMLONG%', short_name: LIB,
-                  description: 'Gestionnaire des Equipes du Rosaire — Diocèse de Grand-Bassam',
-                  start_url: ORIG + '%START%', id: ORIG + '%START%',
-                  scope: ORIG + '/', lang: 'fr', display: 'standalone',
-                  background_color: '#0d1440', theme_color: '#1A237E',
-                  icons: %ICONS% };
-      m.href = MANIF;   /* la carte de la maison, posée d'emblée */
-      try {
-        var _txt = JSON.stringify(_man);
-        var _donne_data = function () {
-          try {
-            m.href = 'data:application/manifest+json;charset=utf-8,'
-                     + encodeURIComponent(_txt);
-          } catch (e2) { /* la carte de la maison reste posée */ }
-        };
-        var _controle = function (t) {
-          try {
-            var j = JSON.parse(t);
-            if (j && j.name && String(j.name).indexOf('Rosaire') === 0
-                && j.start_url) { return; }   /* la carte de la maison est bonne */
-          } catch (e3) { }
-          _donne_data();   /* coquille HTML : la fiche fabriquée prend la place */
-        };
-        fetch(MANIF, { cache: 'no-store' })
-          .then(function (r) { return r.ok ? r.text() : ''; })
-          .then(_controle)
-          .catch(_donne_data);
-      } catch (e) { /* la carte de la maison reste posée */ }
       var t = d.querySelector('meta[name="theme-color"]');
       if (!t) { t = d.createElement('meta'); t.name = 'theme-color'; d.head.appendChild(t); }
       t.content = '#1A237E';
-      var at = d.querySelector('meta[name="apple-mobile-web-app-title"]');
-      if (!at) { at = d.createElement('meta'); at.name = 'apple-mobile-web-app-title'; d.head.appendChild(at); }
-      at.content = LIB;
       /* v7.13.10 — LE TITRE QUI RESTE : Streamlit ré-écrit le titre de
          l'onglet après chaque run (le long titre de set_page_config)
-         écrasait le « Rosaire » posé ici — et le titre repartait dans le
-         cache-cache. Un petit guetteur le remet aussitôt : l'onglet — et
-         tout raccourci sans fiche d'identité — porte le bon nom. */
+         écrasait le « Rosaire » posé ici. Un petit guetteur le remet
+         aussitôt : l'onglet porte le bon nom, en permanence. */
       var _remets = function(){ try { if (d.title !== LIB) { d.title = LIB; } } catch(e) {} };
       try {
-        /* v7.13.10 — le guetteur regarde TOUT le document : Streamlit
-           remplace parfois le nœud <title> entier (React), un guetteur
-           accroché au seul élément mourrait avec lui. */
+        /* le guetteur regarde TOUT le document : Streamlit remplace
+           parfois le nœud <title> entier (React), un guetteur accroché
+           au seul élément mourrait avec lui. */
         new MutationObserver(_remets).observe(d.documentElement,
           { subtree: true, childList: true, characterData: true });
       } catch(e) { }
       _remets();
-      var mw = d.querySelector('meta[name="mobile-web-app-capable"]');
-      if (!mw) { mw = d.createElement('meta'); mw.name = 'mobile-web-app-capable'; d.head.appendChild(mw); }
-      mw.content = 'yes';
-      var aw = d.querySelector('meta[name="apple-mobile-web-app-capable"]');
-      if (!aw) { aw = d.createElement('meta'); aw.name = 'apple-mobile-web-app-capable'; d.head.appendChild(aw); }
-      aw.content = 'yes';
-      var sb = d.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-      if (!sb) { sb = d.createElement('meta'); sb.name = 'apple-mobile-web-app-status-bar-style'; d.head.appendChild(sb); }
-      sb.content = 'default';
     })();
     </script>
-    """.replace("%ICO32%", _ico32).replace("%ICO180%", _ico180).replace("%MANIF%", _manif).replace("%LIB%", _lib).replace("%ICONS%", _icons_js).replace("%START%", _start).replace("%NOMLONG%", _nom_long)
-    # v7.9.7 — MÉMOIRE DU FIDÈLE (espaces de prière SEULEMENT) : le raccourci
-    # « Ajouter à l'écran d'accueil » ouvre start_url SANS matloc ; le
-    # navigateur retient le dernier lien personnel ouvert (?espace=1&matloc=…)
-    # et le restitue à l'ouverture suivante — le fidèle retrouve SON espace
-    # comme une vraie app. Un lien avec matloc rafraîchit la mémoire.
-    # 100 % navigateur (localStorage local) : rien côté serveur, aucune
-    # trace, aucune migration — et l'administration n'a AUCUNE mémoire.
+    """.replace("%ICO32%", _ico32).replace("%LIB%", _lib)
+    # v7.9.7 — MÉMOIRE DU FIDÈLE (espaces de prière SEULEMENT) : une adresse
+    # d'Espace ouverte SANS matloc retrouve le dernier lien personnel
+    # (?espace=1&matloc=…) retenu par le navigateur — le fidèle retrouve
+    # SON espace. Un lien avec matloc rafraîchit la mémoire. 100 %
+    # navigateur (localStorage local) : rien côté serveur, aucune trace,
+    # aucune migration — et l'administration n'a AUCUNE mémoire.
+    # v7.13.11 — elle reste pour TOUS les retours : une icône déjà posée
+    # d'avant (raccourci d'un essai ancien) ouvre toujours « ton Espace,
+    # tout prêt », même sans plus rien proposer à poser.
     if espace:
-        # v7.13.6 — LE GESTE D'OR EN RÉSERVE : quand le téléphone annonce
-        # qu'il sait installer (beforeinstallprompt), l'annonce est gardée
-        # DANS la fenêtre (window.__rosaire_install). Le bouton or de la
-        # page d'installation intégrée (?espace=1&installer=1) la
-        # réclamera — même s'il se dessine après l'annonce. Aucun
-        # preventDefault : le téléphone garde aussi ses chemins habituels
-        # (menu ⋮, icône de la barre d'adresse).
-        _js += """
-    <script>
-    (function(){
-      var w = null;
-      try { w = window.parent; } catch(e) { w = window; }
-      if (!w) { w = window; }
-      try {
-        if (!w.__rosaire_install) {
-          w.__rosaire_install = { pose: null, suite: [] };
-          w.addEventListener('beforeinstallprompt', function(e){
-            var R = w.__rosaire_install;
-            R.pose = e;
-            var s = R.suite; R.suite = [];
-            for (var i = 0; i < s.length; i++) { try { s[i](e); } catch(_) {} }
-          });
-        }
-      } catch(e) {}
-    })();
-    </script>
-    """
         _js += """
     <script>
     (function(){
@@ -2171,10 +1998,9 @@ avant d'être gardé — la même carte du premier coup, partout."""
       /* v7.13.10 — LE BON GESTE POUR NAVIGUER : depuis que Streamlit
          sandboixe ses iframes, un location.replace du PARENT lancé depuis
          l'iframe lève une SecurityError EN SILENCE (catch(e) {}) — la
-         mémoire du fidèle était muette, et l'icône (start_url ?espace=1)
-         ouvrait la vue publique au lieu de SON Espace. La couture de la
-         maison (v7.8.1) : on pose une ancre DANS le document du parent et
-         on la clique — la navigation appartient alors à la page elle-même,
+         mémoire du fidèle était muette. La couture de la maison
+         (v7.8.1) : on pose une ancre DANS le document du parent et on la
+         clique — la navigation appartient alors à la page elle-même,
          aucun bac à sable ne la bloque. */
       try {
         var _a = f.document.createElement('a');
@@ -2189,12 +2015,11 @@ avant d'être gardé — la même carte du premier coup, partout."""
     })();
     </script>
     """
-    # v7.12.2 — LE PASSEUR S'INSTALLE DÈS L'ARRIVÉE (côté espace seul) :
-    # le téléphone qui regarde la page tient désormais une « vraie
-    # application » (installable, menu ⋮ « Installer l'application »), et
-    # les rondes 🔔 peuvent frapper même quand l'app est fermée. Silencieux
-    # : une demande de rien, jamais de permission, jamais d'erreur visible.
-    # L'administration, elle, n'a AUCUN passeur (comme aucune mémoire).
+        # v7.12.0 — LE PASSEUR DES RAPPELS s'installe dès l'arrivée (côté
+        # espace seul) : les rondes 🔔 peuvent frapper même quand l'app est
+        # fermée. Silencieux : une demande de rien, jamais de permission,
+        # jamais d'erreur visible. v7.13.11 — il ne sert plus QUE aux
+        # rappels : plus rien à installer, plus rien à proposer.
         _js += """
     <script>
     (function(){
@@ -2203,7 +2028,7 @@ avant d'être gardé — la même carte du premier coup, partout."""
         try { f = window.parent; } catch(e) { return; }
         if (!f || !f.navigator || !('serviceWorker' in f.navigator)) { return; }
         f.navigator.serviceWorker
-          .register('/app/static/sw.js?v=71310').catch(function(){ });
+          .register('/app/static/sw.js?v=71311').catch(function(){ });
       } catch(e) { }
     })();
     </script>
