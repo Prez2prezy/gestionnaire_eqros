@@ -108,7 +108,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.10"
+_VERSION_APPLI = "v7.13.11"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -741,50 +741,9 @@ def _render_theme(compact=False):
         .stApp .stMarkdown .carte-priere .fe-bande-photo { flex:0 0 34%;
             max-width:34%; }
     }
-    /* === v7.13.7 — LA PAGE D'INSTALLATION LISIBLE POUR DE BON ===
-       Même leçon que le bouton ✈️ (v7.13.4) : l'encre des styles EN LIGNE
-       ne survit pas aux règles !important de cette feuille (Streamlit
-       retire les !important des styles en ligne) — sur la carte claire,
-       les gestes Android/iPhone (li, b) étaient repeints lavande clair,
-       et le bouton ◀️ (un <a>) était repeint lilas sur or. Tout passe
-       désormais par des classes de la feuille : rien ne les retire,
-       l'encre tient clair comme sombre. */
-    .stApp .stMarkdown .inst-carte { background:#f8f6ff !important;
-        border:1px solid #d1c4e9 !important; border-radius:14px !important;
-        padding:16px 18px !important; margin:12px 4px !important;
-        text-align:left; }
-    .stApp .stMarkdown .inst-carte .inst-titre { color:#4A148C !important;
-        font-weight:bold !important; font-size:.95rem !important; }
-    .stApp .stMarkdown .inst-carte ol { margin:6px 0 0 18px; padding:0; }
-    .stApp .stMarkdown .inst-carte li { color:#3E517A !important;
-        line-height:1.9; font-size:.9rem; }
-    .stApp .stMarkdown .inst-carte li b { color:#1A237E !important; }
-    .stApp .stMarkdown .inst-carte .inst-note { color:#6a1b9a !important;
-        font-size:.84rem !important; margin-top:12px; line-height:1.7; }
-    .stApp .stMarkdown .inst-pouce { color:#8d6e08 !important;
-        background:#FFFDE7 !important; border:1.5px dashed #C9A227;
-        border-radius:12px; padding:10px 14px; margin:12px 4px;
-        font-size:.9rem; line-height:1.65; text-align:left; }
-    .stApp .stMarkdown .inst-pouce b { color:#8d6e08 !important; }
-    /* v7.13.9 — LE DÉPLIEUR DES GESTES DANS LES BADGES : encres portées
-       PAR LA FEUILLE (leçon ✈️ v7.13.4 / gestes v7.13.7 — l'encre en ligne
-       ne survit pas aux règles !important du thème). */
-    .stApp .stMarkdown .inst-deplieur { margin-top:8px; text-align:left; }
-    .stApp .stMarkdown .inst-deplieur summary {
-        color:#4A148C !important; font-weight:bold !important;
-        cursor:pointer; font-size:.85rem; }
-    .stApp .stMarkdown .inst-deplieur ol { margin:8px 0 0 18px; padding:0; }
-    .stApp .stMarkdown .inst-deplieur li { color:#3E517A !important;
-        line-height:1.65; font-size:.85rem; }
-    .stApp .stMarkdown .inst-deplieur li b { color:#1A237E !important; }
-    .stApp .stMarkdown .inst-deplieur .inst-deplieur-note {
-        color:#6a1b9a !important; margin-top:8px; font-size:.85rem;
-        line-height:1.65; }
-    .stApp .stMarkdown .inst-deplieur .inst-deplieur-note b {
-        color:#4A148C !important; }
-    /* v7.13.10 — l'ancienne ancre dorée du retour est retirée : le
-       retour se fait par un VRAI bouton de l'application (style posé par
-       la page d'installation elle-même), plus aucun voyage de page. */
+    /* v7.13.11 — LE RACCOURCI PREND SA RETRAITE : les classes de la page
+       d'installation partent avec elle — plus aucune page de la
+       maison ne les porte. */
     </style>""", unsafe_allow_html=True)
 
 
@@ -4042,7 +4001,7 @@ async function activer_push_ro(){
     var perm = await Notification.requestPermission();
     if(perm!=='granted'){ etat.textContent='Les notifications restent silencieuses — tu pourras dire oui plus tard.'; return; }
     etat.textContent='Un instant…';
-    var reg = await navigator.serviceWorker.register('/app/static/sw.js?v=7134');
+    var reg = await navigator.serviceWorker.register('/app/static/sw.js?v=71311');
     await navigator.serviceWorker.ready;
     var sub = await reg.pushManager.getSubscription();
     if(!sub){ sub = await reg.pushManager.subscribe({userVisibleOnly:true,
@@ -4066,9 +4025,10 @@ async function activer_push_ro(){
                     st.caption("Les notifications ne sont pas encore "
                                "disponibles — le rendez-vous du calendrier "
                                "reste là pour toi.")
-                st.caption("Sur iPhone : installe d'abord l'appli depuis la "
-                           "page d'installation, puis dis oui (iOS 16.4 ou "
-                           "plus).")
+                st.caption("Sur iPhone : ajoute d'abord cette page à "
+                           "l'écran d'accueil (bouton Partager ⬆️ → "
+                           "« Sur l'écran d'accueil »), puis dis oui "
+                           "(iOS 16.4 ou plus).")
         # v7.13.3 — ✈️ LA TROISIÈME VOIE : LE RAPPEL PAR TELEGRAM (membres).
         # Un lien, « Démarrer », et c'est en marche pour de bon : le rappel
         # part tout seul aux 4 rondes tant que la dizaine attend — et la
@@ -5308,8 +5268,8 @@ def _render_espace_visiteur(esv):
             '🕊️ Ton espace de 21 jours s’est achevé</div>'
             '<div style="color:#e8eaf6; font-size:0.92rem; margin-top:8px; line-height:1.7;">'
             'Merci pour ces jours de prière ! La chaîne de l’Espace de Prière reste '
-            'ouverte : confie une nouvelle intention, ou pose le raccourci de l’appli '
-            'pour revenir chaque jour — une équipe t’y accueille toujours.</div>'
+            'ouverte : confie une nouvelle intention et reviens chaque jour — '
+            'une équipe t’y accueille toujours.</div>'
             '<a href="?espace=1" target="_self" style="display:inline-block;'
             ' background:#1A237E; color:#ffffff !important; padding:10px 24px;'
             ' border-radius:30px; border:1px solid #FFD700; font-weight:bold;'
@@ -5409,237 +5369,6 @@ def _render_espace_visiteur(esv):
 # ====================================================================
 # PAGE PRINCIPALE
 # ====================================================================
-def _render_page_installateur(matloc_membre=None):
-    """v7.13.6 — LA PAGE D'INSTALLATION VIT DANS L'APPLICATION ;
-    v7.13.8 — LE BOUTON OR NE SE CACHE PLUS. La bannière d'accueil
-    promettait « le bouton or Installer l'application » sur la page
-    d'installation ; celle-ci vivait dans static/…, et le service statique
-    de la plateforme répond par la coquille HTML depuis novembre 2026
-    (constat v7.13.0 — seul le manifeste avait été rendu incassable).
-    La page est rendue PAR l'application (?espace=1&installer=1) : plus
-    aucune dépendance au service statique. En v7.13.6/7 le bouton or était
-    TIMIDE : il ne s'affichait que si le navigateur annonçait savoir
-    installer (beforeinstallprompt) — sur un navigateur silencieux
-    (ordinateur typiquement) il s'effaçait après quelques secondes, et la
-    carte jaune promettait un bouton absent (constat du fidèle : « Je ne
-    vois pas aucun bouton », capture sur PC). Désormais le bouton or reste
-    TOUJOURS visible ; au toucher, il déclenche l'installation native si
-    l'annonce est là (gardée en réserve côté page par injecter_icone_pwa),
-    sinon il conduit LUI-MÊME aux gestes du menu (défilement doux + halo
-    doré sur la carte). v7.13.10 — le retour se fait par un VRAI bouton de
-    l'application (plus aucun rechargement de page) ; la carte d'identité
-    vérifiée de injecter_icone_pwa garantit l'icône 📿 : posée depuis
-    cette page, elle rouvre l'Espace — le téléphone y revient avec la
-    mémoire du fidèle (le Matloc est retenu par le navigateur)."""
-    st.markdown(
-        '<div style="background:linear-gradient(160deg,#0d1440 0%,#1A237E 60%,#283593 100%);'
-        ' border:2px solid #FFD700; border-radius:18px; padding:24px 18px 20px 18px;'
-        ' text-align:center; margin:12px 4px; box-shadow:0 10px 34px rgba(0,0,0,.45);">'
-        '<div style="font-size:2.4rem; line-height:1;">📿</div>'
-        '<div style="color:#FFFFFF; font-family:Georgia,serif; font-weight:bold;'
-        ' font-size:1.35rem; letter-spacing:.06em; margin-top:10px;">Rosaire</div>'
-        '<div style="color:#FFD54F; font-size:.8rem; letter-spacing:.05em; margin-top:5px;">'
-        'LES ÉQUIPES DU ROSAIRE — DIOCÈSE DE GRAND-BASSAM</div>'
-        '<div style="color:#e8eaf6; font-size:.92rem; margin-top:14px; line-height:1.75;">'
-        'Pose l\'icône de l\'Espace de Prière sur ton écran d\'accueil :'
-        ' <b style="color:#FFD54F;">un geste, et tu y es</b> — plein écran,'
-        ' sans jamais retaper d\'adresse.</div></div>',
-        unsafe_allow_html=True)
-    # v7.13.8 — LE BOUTON OR NE SE CACHE PLUS : il est là dès la première
-    # seconde, sur tous les écrans (téléphones ET ordinateurs). Au toucher :
-    # installation native si le navigateur a annoncé savoir faire (annonce
-    # gardée en réserve par injecter_icone_pwa) ; sinon il conduit LUI-MÊME
-    # aux gestes du menu — même résultat, même visage doré. Fini la promesse
-    # d'un bouton absent (capture du fidèle : « Je ne vois pas aucun
-    # bouton »). S'il ne vient pas, la note honnête l'explique, sous le
-    # bouton qui reste.
-    _zone = """
-    <div id="zone_or" style="text-align:center; margin:2px 0 0 0;">
-      <button id="btn_or" type="button" style="display:inline-block; background:linear-gradient(135deg,#FFD700,#C9A227); color:#1A237E; border:none; cursor:pointer; font-weight:bold; font-size:1.05rem; padding:14px 24px; border-radius:999px; box-shadow:0 4px 16px rgba(0,0,0,.3); font-family:Georgia,'Times New Roman',serif;">📲 Installer l&#8217;application</button>
-      <div id="note_or" style="display:none; color:#c7cdf5; font-size:0.9rem; line-height:1.65; padding:8px 6px;"></div>
-    </div>
-    <script>
-    (function(){
-      var w = window.parent;
-      var btn = document.getElementById('btn_or');
-      var note = document.getElementById('note_or');
-      function posee(){
-        try {
-          btn.style.display = 'none';
-          note.style.display = 'block';
-          note.style.color = '#a5d6a7';
-          note.style.fontWeight = 'bold';
-          note.textContent = "\u2705 Pos\u00e9e ! L'ic\u00f4ne attend sur ton \u00e9cran d'accueil \u2014 elle ouvre ton Espace tout pr\u00eat.";
-        } catch(e) {}
-      }
-      function guide(){
-        try {
-          note.style.display = 'block';
-          note.style.color = '#c7cdf5';
-          note.style.fontWeight = 'normal';
-          note.textContent = "👇 Suis les gestes juste en dessous \u2014 m\u00eame r\u00e9sultat, m\u00eame visage dor\u00e9.";
-        } catch(e) {}
-        try {
-          var carte = w.document.querySelector('.inst-carte');
-          if (carte) {
-            try { carte.scrollIntoView({behavior:'smooth', block:'start'}); } catch(e2) {}
-            try {
-              carte.style.outline = '3px solid #FFD700';
-              setTimeout(function(){ try { carte.style.outline = ''; } catch(e3) {} }, 2600);
-            } catch(e4) {}
-          }
-        } catch(e) {}
-      }
-      function silencieux(){
-        try {
-          note.style.display = 'block';
-          note.style.color = '#c7cdf5';
-          note.style.fontWeight = 'normal';
-          note.textContent = "Ici, le navigateur ne propose pas la demande automatique \u2014 touche le bouton, je t'emm\u00e8ne aux gestes : m\u00eame r\u00e9sultat, m\u00eame visage dor\u00e9.";
-        } catch(e) {}
-      }
-      /* v7.13.8 — la décision se prend AU TOUCHER : si l'annonce est arrivée
-         entre-temps, l'installation native part ; sinon le bouton guide. */
-      btn.onclick = function(){
-        var P = null;
-        try { P = (w.__rosaire_install && w.__rosaire_install.pose) || null; } catch(e) {}
-        if (P && typeof P.prompt === 'function') {
-          try { P.prompt(); } catch(e) { guide(); return; }
-          try {
-            P.userChoice.then(function(r){
-              if (r && r.outcome === 'accepted') { posee(); }
-            }).catch(function(){});
-          } catch(e) {}
-        } else { guide(); }
-      };
-      try {
-        var cache_note = function(){ try { note.style.display = 'none'; } catch(e1) {} };
-        var branche = function(R2){
-          try { R2.suite.push(function(){ cache_note(); }); } catch(e1) {}
-        };
-        var _vu = false;
-        var _att = setInterval(function(){
-          var R2 = null;
-          try { R2 = w.__rosaire_install; } catch(e1) {}
-          if (R2 && !_vu) {
-            _vu = true;
-            clearInterval(_att);
-            branche(R2);
-            if (R2.pose) { cache_note(); }
-          }
-        }, 150);
-        /* après un temps de patience sans annonce : la note honnête s'affiche
-           SOUS le bouton, qui reste là, lui — plus jamais de bouton absent */
-        setTimeout(function(){
-          try { clearInterval(_att); } catch(e1) {}
-          var R3 = null;
-          try { R3 = w.__rosaire_install; } catch(e1) {}
-          if (!(R3 && R3.pose)) { silencieux(); }
-        }, 3000);
-        w.addEventListener('appinstalled', function(){ posee(); });
-      } catch(e) { silencieux(); }
-    })();
-    </script>
-    """
-    try:
-        _comp_html(_zone, height=155)
-    except Exception:
-        pass
-    # v7.13.7 — LE CHEMIN LE PLUS SIMPLE écrit AVANT les gestes de secours,
-    # et les gestes portés par des CLASSES de la feuille (l'encre en ligne
-    # ne survit pas aux règles !important du thème — leçon ✈️ v7.13.4).
-    st.markdown(
-        '<div class="inst-pouce">👉 <b>Le plus simple :</b> touche le bouton'
-        ' or «&nbsp;Installer l\'application&nbsp;» juste au-dessus — si le'
-        ' téléphone demande confirmation, réponds <b>«&nbsp;Installer&nbsp;»</b>,'
-        ' et l\'icône 📿 se pose toute seule. Si rien ne s\'ouvre, le bouton'
-        ' t\'emmène lui-même aux gestes du menu, juste en dessous : même'
-        ' résultat, même visage doré.</div>',
-        unsafe_allow_html=True)
-    st.markdown(
-        '<div class="inst-carte">'
-        '<div class="inst-titre">Android — Chrome 🤖</div>'
-        '<ol>'
-        '<li>Touche le menu <b>⋮</b> en haut à droite du navigateur.</li>'
-        '<li>Choisis <b>«&nbsp;Installer l\'application&nbsp;»</b> — ou'
-        ' <b>«&nbsp;Ajouter à l\'écran d\'accueil&nbsp;»</b>.</li>'
-        '<li>Confirme : l\'icône 📿 se pose toute seule.</li></ol>'
-        '<div class="inst-titre" style="margin-top:14px;">iPhone — Safari 🍎</div>'
-        '<ol>'
-        '<li>Touche le bouton <b>Partager</b> ⬆️ (le carré avec la flèche).</li>'
-        '<li>Fais défiler, choisis <b>«&nbsp;Sur l\'écran d\'accueil&nbsp;»</b>.</li>'
-        '<li>Touche <b>«&nbsp;Ajouter&nbsp;»</b> : l\'icône 📿 se pose.</li></ol>'
-        '<div class="inst-note">'
-        '🕊️ Reste bien sur cette page pendant le geste : l\'icône rouvrira'
-        ' exactement cette adresse — ton Espace de Prière, tout prêt.</div></div>',
-        unsafe_allow_html=True)
-    # v7.13.8 — LES GESTES DE L'ORDINATEUR : le fidèle regarde aussi la page
-    # depuis un PC (capture : « Je ne vois pas aucun bouton ») — la page lui
-    # parle désormais à lui aussi, sans promettre l'icône du téléphone.
-    st.markdown(
-        '<div class="inst-carte" style="margin-top:10px;">'
-        '<div class="inst-titre">Ordinateur — Chrome / Edge 💻</div>'
-        '<ol>'
-        '<li>Regarde la barre d\'adresse : une icône d\'installation s\'y'
-        ' montre peut-être — clique-la, puis <b>«&nbsp;Installer&nbsp;»</b>.</li>'
-        '<li>Sinon, ouvre le menu <b>⋮</b>, puis <b>«&nbsp;Enregistrer et'
-        ' partager&nbsp;»</b> → <b>«&nbsp;Installer l\'application&nbsp;»</b>'
-        ' — ou <b>«&nbsp;Créer un raccourci&nbsp;»</b>.</li></ol>'
-        '<div class="inst-note">🕊️ Sur ordinateur, l\'Espace vit très bien'
-        ' dans son onglet : garde-le en favori ⭐. L\'icône sur l\'écran'
-        ' d\'accueil, elle, attend les téléphones.</div></div>',
-        unsafe_allow_html=True)
-    # v7.13.9 — LES DEUX PETITS PIÈGES DU TERRAIN, DITS AU MOT PRÈS :
-    # l'ancienne icône « Streamlit » posée par un essai d'avant (elle garde
-    # son ancienne adresse — seule une suppression la libère), et le temps
-    # de patience quand la page revient après une pause (la salle s'éveille).
-    st.markdown(
-        '<div class="inst-carte" style="padding:14px 16px;">'
-        '<div class="inst-titre">Deux mots qui évitent les pièges 🕊️</div>'
-        '<ol style="margin:8px 0 0 18px; padding:0; text-align:left; line-height:1.7;">'
-        '<li><b>Une icône déjà posée t\'emmène ailleurs</b> — la page des'
-        ' responsables, ou le nom «&nbsp;Streamlit&nbsp;» avec le bateau'
-        ' rouge ? C\'était un essai d\'avant : appui long sur cette icône →'
-        ' <b>Supprimer</b> (ou «&nbsp;Désinstaller&nbsp;»), puis repose la'
-        ' nouvelle depuis cette page-ci : elle ouvrira ton Espace.</li>'
-        '<li><b>La page tourne un long moment avant de paraître ?</b>'
-        ' Laisse la roue finir son tour : c\'est le réveil de la salle après'
-        ' une pause — la fois suivante, elle est déjà debout.</li>'
-        '</ol></div>',
-        unsafe_allow_html=True)
-    # v7.13.10 — LE RETOUR SANS VOYAGE : l'ancienne ancre rechargeait toute
-    # la page (la même roue indéfinie que le badge). Un vrai bouton de
-    # l'application la remplace : l'onglet ne se recharge jamais, le
-    # paramètre d'installation s'efface, le Matloc reste dans l'adresse.
-    st.markdown("""
-    <style>
-    /* v7.13.10 — le retour doré, à l'image du bouton or (centré par la
-       colonne qui le porte). Portée sûre : ce style n'est rendu QUE par
-       la page d'installation, où le retour est le seul bouton primaire. */
-    .stApp button[kind="primary"],
-    .stApp [data-testid="stButton"] button[kind="primary"] {
-        display: block; margin: 6px auto;
-        background: linear-gradient(135deg,#FFD700,#C9A227) !important;
-        color: #1A237E !important; border: none !important;
-        font-weight: bold !important;
-        font-family: Georgia,'Times New Roman',serif !important;
-        border-radius: 999px !important; padding: 12px 26px !important;
-        box-shadow: 0 4px 16px rgba(0,0,0,.3) !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    _cg, _cc, _cd = st.columns([1, 1.7, 1])
-    with _cc:
-        if st.button("◀️ Revenir à l’Espace de Prière", key="retour_espace_btn",
-                     type="primary", use_container_width=True):
-            try:
-                del st.query_params["installer"]
-                st.query_params["nav"] = "1"
-            except Exception:
-                pass
-            st.rerun()
-
-
 def show_espace_membre(matloc_membre=None):
     """Point d'entrée de l'Espace de Prière (v7.9.3) : le corps de page
     (_corps_espace_membre, code d'origine inchangé), PUIS le pied de page
@@ -5657,13 +5386,9 @@ def show_espace_membre(matloc_membre=None):
     _corps_espace_membre(matloc_membre)
     # v7.10.1 — accueil SEULEMENT : ni livre ouvert (dizaine, livret), ni
     # autre rubrique (Rosaire, Thème, Galerie, Archives, évènements…).
-    # v7.13.6 — la page d'installation reste tout à l'installation : pas de
-    # carte vidéo avant le pied de page.
-    _inst_q = st.query_params.get("installer")
-    if isinstance(_inst_q, list):
-        _inst_q = _inst_q[0] if _inst_q else None
-    if not (st.session_state.get("diz_ouvert") or st.session_state.get("flt_ouvert")) \
-            and _inst_q != "1":
+    # v7.13.11 — la page d'installation a pris sa retraite avec le
+    # raccourci : plus aucune condition d'installation ici.
+    if not (st.session_state.get("diz_ouvert") or st.session_state.get("flt_ouvert")):
         # v7.13.4 — la page visiteur (21 jours) reste épurée : pas de carte vidéo.
         _vis_q = st.query_params.get("vis")
         if isinstance(_vis_q, list):
@@ -5744,28 +5469,11 @@ def _corps_espace_membre(matloc_membre=None):
     if msg_warn:
         st.warning(msg_warn)
 
-    # v7.13.6 — LA PAGE D'INSTALLATION INTÉGRÉE : (?espace=1&installer=1)
-    # la bannière d'accueil y envoie le fidèle — le bouton or et les gestes
-    # du menu y attendent, rendus PAR l'application (le service statique de
-    # la plateforme, en panne, n'est plus jamais sollicité). Un matloc
-    # présent et reconnu personnalise le manifeste ET le retour.
-    _installeur = st.query_params.get("installer")
-    if isinstance(_installeur, list):
-        _installeur = _installeur[0] if _installeur else None
-    if _installeur == "1":
-        _ml_inst = None
-        if isinstance(matloc_membre, str) and matloc_membre.strip():
-            try:
-                _ml_inst = str(matloc_membre).upper().strip()
-                _ok_ml = c.execute(
-                    "SELECT 1 FROM membres WHERE matloc=? AND statut='actif' LIMIT 1",
-                    (_ml_inst,)).fetchone()
-                if not _ok_ml:
-                    _ml_inst = None
-            except Exception:
-                _ml_inst = None
-        _render_page_installateur(_ml_inst)
-        return
+    # v7.13.11 — LE RACCOURCI PREND SA RETRAITE : la page d'installation
+    # n'existe plus (?espace=1&installer=1). Les adresses d'avant — venues
+    # d'un message ancien ou d'une icône déjà posée — atterrissent
+    # simplement dans l'Espace : le paramètre, s'il voyage encore, n'est
+    # plus lu par personne.
 
     # ====== ÉTAT 1 BIS : L'ESPACE VISITEUR TEMPORAIRE (v7.13.4) ======
     # Arrivé par le lien reçu à l'envoi de son intention (?espace=1&vis=CLÉ)
@@ -5839,28 +5547,7 @@ def _corps_espace_membre(matloc_membre=None):
             st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                         '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
                         '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · ' + _VERSION_APPLI + '</div>'
-                        '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-la sous la main : les gestes pour poser l’icône sont <b>juste en dessous</b> — déplie-les d’un toucher, sans changer de page, sans roue qui tourne.'
-                        # v7.13.9 — les gestes ICI AUSSI, sans changer de page
-                        # (encres portées par les classes de la feuille).
-                        '<details class="inst-deplieur"><summary>Les gestes, ici même — sans changer de page</summary>'
-                        '<ol>'
-                        '<li>Menu <b>⋮</b> du navigateur → <b>«&nbsp;Installer l\'application&nbsp;»</b> — ou «&nbsp;Ajouter à l\'écran d\'accueil&nbsp;».</li>'
-                        '<li>iPhone : bouton <b>Partager</b> ⬆️ → <b>«&nbsp;Sur l\'écran d\'accueil&nbsp;»</b> → «&nbsp;Ajouter&nbsp;».</li>'
-                        '<li>Confirme : l\'icône 📿 se pose et ouvre l\'Espace communautaire.</li></ol>'
-                        '<div class="inst-deplieur-note">🕊️ Une icône <i>«&nbsp;Streamlit&nbsp;»</i> (le bateau rouge) déjà posée par un essai d\'avant ? Appui long dessus → <b>Supprimer</b> (ou «&nbsp;Désinstaller&nbsp;»), puis repose la nouvelle depuis la page d\'installation : elle porte le visage 📿.</div>'
-                        '</details></div></div>', unsafe_allow_html=True)
-        # v7.13.10 — LE BOUTON QUI NE FAIT PAS VOYAGER : la page d'installation
-        # s'ouvre ICI, dans l'application (un simple changement de paramètre,
-        # l'onglet ne se recharge jamais — fini la roue qui tournait
-        # indéfiniment quand la salle dormait).
-        if st.button("📲 Ouvrir la page d’installation — le bouton or t’y attend",
-                     key="badge_inst_pub", use_container_width=True):
-            try:
-                st.query_params["installer"] = "1"
-                st.query_params["nav"] = "1"
-            except Exception:
-                pass
-            st.rerun()
+                        '</div>', unsafe_allow_html=True)
 
         if rub == "📿 Rosaire":
             if sub == "Le Rosaire thématique":
@@ -5978,31 +5665,7 @@ def _corps_espace_membre(matloc_membre=None):
         st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
                     '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
                     '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · ' + _VERSION_APPLI + '</div>'
-                    '<div style="color:#6a1b9a; font-size:0.85rem; margin-top:8px;">📲 Garde-le sous la main : les gestes pour poser l’icône sont <b>juste en dessous</b> — déplie-les d’un toucher, sans changer de page, sans roue qui tourne.'
-                    # v7.13.9 — LES GESTES VIVENT ICI : plus aucune obligation de
-                    # changer de page (le voyage tournait longtemps quand la salle
-                    # dormait) — le déplieur porte les gestes sous les yeux, et dit
-                    # aussi le ménage de l'ancienne icône « Streamlit ». Encres
-                    # portées par les classes de la feuille (.inst-deplieur).
-                    '<details class="inst-deplieur"><summary>Les gestes, ici même — sans changer de page</summary>'
-                    '<ol>'
-                    '<li>Menu <b>⋮</b> du navigateur → <b>«&nbsp;Installer l\'application&nbsp;»</b> — ou «&nbsp;Ajouter à l\'écran d\'accueil&nbsp;».</li>'
-                    '<li>iPhone : bouton <b>Partager</b> ⬆️ → <b>«&nbsp;Sur l\'écran d\'accueil&nbsp;»</b> → «&nbsp;Ajouter&nbsp;».</li>'
-                    '<li>Confirme : l\'icône 📿 se pose et ouvre ton Espace, tout prêt.</li></ol>'
-                    '<div class="inst-deplieur-note">🕊️ Une icône <i>«&nbsp;Streamlit&nbsp;»</i> (le bateau rouge) déjà posée par un essai d\'avant ? Appui long dessus → <b>Supprimer</b> (ou «&nbsp;Désinstaller&nbsp;»), puis repose la nouvelle depuis la page d\'installation : elle porte le visage 📿.</div>'
-                    '</details></div></div>', unsafe_allow_html=True)
-        # v7.13.10 — LE BOUTON QUI NE FAIT PAS VOYAGER (côté membre) : la page
-        # d'installation s'ouvre dans l'application, sans rechargement — le
-        # lien-ancre qui rechargeait toute la page (la roue indéfinie du
-        # terrain) disparaît pour de bon. Le Matloc reste dans l'adresse.
-        if st.button("📲 Ouvrir la page d’installation — le bouton or t’y attend",
-                     key="badge_inst_mbr", use_container_width=True):
-            try:
-                st.query_params["installer"] = "1"
-                st.query_params["nav"] = "1"
-            except Exception:
-                pass
-            st.rerun()
+                        '</div>', unsafe_allow_html=True)
 
         # v7.13.1 — « 📿 Mémoire de mes dizaines » entre la carte de
         # bienvenue et « 📿 Ta dizaine du jour ».
