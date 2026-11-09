@@ -129,9 +129,9 @@ if espace_val:
         except Exception:
             pass
 
-    # v7.8.14 — icône 📿 (favicon + PWA) pour les Espaces de Prière
-    # v7.13.6 — le manifeste voyage personnalisé : si un matloc est dans
-    # l'adresse, le start_url de l'icône posée ouvre SON Espace tout prêt.
+    # v7.8.14 — icône 📿 (favicon + titre d'onglet) pour les Espaces de
+    # Prière. v7.13.11 — le raccourci a pris sa retraite : il reste le
+    # visage de l'onglet, la mémoire du fidèle et le passeur des rappels.
     from components import injecter_icone_pwa
     injecter_icone_pwa(espace=True, matloc=matloc_val)
 
@@ -146,7 +146,7 @@ elif event_val:
     afficher_page_reponse_membre(event_val)
     st.stop()
 
-# v7.8.14 — Administration (connexion + rôles) : icône 🔑 (favicon + PWA)
+# v7.8.14 — Administration (connexion + rôles) : icône 🔑 (favicon + titre)
 from components import injecter_icone_pwa
 injecter_icone_pwa(espace=False)
 
@@ -411,32 +411,9 @@ if 'logged_in' not in st.session_state:
         else:
             st.sidebar.error("Identifiants incorrects.")
 
-    # v7.9.8 — le gestionnaire sous la main : la carte « raccourcis » de la
-    # page de recherche du navigateur n'écrit PAS sur l'écran d'accueil —
-    # seul le menu du navigateur pose la vraie icône.
-    # v7.13.9 — LES GESTES VIVENT ICI : plus aucun voyage vers la page
-    # statique (le service statique de la plateforme répond par la coquille
-    # de l'application — le voyage tournait longtemps, puis retenait
-    # l'Administration). Les gestes s'affichent sous les yeux, dans la
-    # barre latérale ; et le mot honnête : l'icône posée D'ICI ouvre
-    # l'Administration — celle qui ouvre l'Espace se pose depuis l'Espace.
-    st.sidebar.caption("📲 Garde-le sous la main : menu ⋮ du navigateur → « Ajouter à l'écran d'accueil ».")
-    with st.sidebar.expander("📲 Poser le raccourci — les gestes"):
-        st.markdown(
-            '<div style="font-size:0.92rem; line-height:1.6;">Dans ce navigateur :</div>'
-            '<ol style="font-size:0.92rem; line-height:1.65; margin:4px 0 10px 18px; padding:0;">'
-            '<li>Touche le menu <b>⋮</b> (en haut à droite du navigateur).</li>'
-            '<li>Choisis <b>«&nbsp;Installer l\'application&nbsp;»</b> — ou'
-            ' <b>«&nbsp;Ajouter à l\'écran d\'accueil&nbsp;»</b>.</li>'
-            '<li>Confirme : l\'icône 🔑 se pose — elle ouvre'
-            ' <b>l\'Administration</b>, ici même.</li></ol>'
-            '<div style="font-size:0.88rem; line-height:1.6; color:#4527a0;">'
-            '📿 Et pour l\'icône qui ouvre <b>l\'Espace de Prière</b> ?'
-            ' Ouvre ton lien d\'Espace (celui qui porte'
-            ' <i>?espace=1&amp;matloc=…</i>) dans le navigateur du téléphone,'
-            ' puis la page d\'installation qu\'il propose — le bouton or'
-            ' «&nbsp;Installer l\'application&nbsp;» t\'y attend.'
-            '</div>', unsafe_allow_html=True)
+    # v7.13.11 — LE RACCOURCI PREND SA RETRAITE : la carte « Poser le
+    # raccourci » de l'écran de connexion part avec tout le reste — la
+    # plateforme ne propose plus rien à poser, d'aucun côté.
 
     # 🔑 Secours « mot de passe oublié » — placé APRÈS le bouton Se connecter
     _reset_token = None
