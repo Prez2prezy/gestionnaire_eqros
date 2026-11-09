@@ -399,22 +399,23 @@ def show_validation_communication():
             # Publier maintenant OU programmer : le contenu reste invisible
             # jusqu'à la date/heure choisie, puis est publié automatiquement
             # (réveil au chargement de l'app — Abidjan = UTC, pas de décalage).
-            # v7.9.2 — aperçu LIVE de l'échéance choisie avant de cliquer :
-            # fini les programmations au mauvais jour par inadvertance.
+            # v7.13.11 — LA SAISIE QUI NE RECHARGE PLUS : date et heure
+            # vivent DANS UN FORMULAIRE. Tant que le bouton « 🗓️ Programmer
+            # la publication » n'est pas touché, RIEN ne se recharge — fini
+            # la page qui repartait au début dès la saisie de la date, puis
+            # de l'heure. On saisit, on relit, on clique.
+            # v7.13.11 — HEURE STANDARD À 00h00 (au lieu de 08h00).
             with st.expander("🗓️ Programmer la publication (au lieu de publier maintenant)"):
-                _d_prog = st.date_input("Date de publication", value=date.today(), key=f"dp_{s[0]}")
-                _h_prog = st.time_input("Heure de publication", value=time(8, 0), key=f"hp_{s[0]}")
-                _dt_aper = datetime.combine(_d_prog, _h_prog)
-                _j_aper = (_dt_aper.date() - date.today()).days
-                st.caption("→ **Résumé :** publication le "
-                           + _dt_aper.strftime("%d/%m/%Y à %H:%M") + " ("
-                           + ("aujourd'hui" if _j_aper == 0 else "dans " + str(_j_aper) + " jour(s)")
-                           + "). Le contenu rejoindra l'Espace de Prière à cette date et heure, sans nouveau "
-                           "clic (publication automatique dès qu'une page de l'application est ouverte "
-                           "après l'échéance — heure du serveur, Abidjan = UTC). « ✅ Publier » ci-dessous "
-                           "RESTE une publication immédiate : utilisez le bouton de ce cadre pour programmer.")
-                if st.button("🗓️ Programmer la publication", key=f"prog_{s[0]}", type="primary",
-                             use_container_width=True):
+                st.caption("Saisis la date et l'heure tranquille : plus rien ne se recharge pendant "
+                           "la saisie. Au clic sur « 🗓️ Programmer la publication », la programmation "
+                           "est enregistrée et le résumé exact s'affiche. « ✅ Publier » ci-dessous "
+                           "RESTE une publication immédiate.")
+                with st.form(f"form_prog_{s[0]}", clear_on_submit=False):
+                    _d_prog = st.date_input("Date de publication", value=date.today(), key=f"dp_{s[0]}")
+                    _h_prog = st.time_input("Heure de publication", value=time(0, 0), key=f"hp_{s[0]}")
+                    _prog_ok = st.form_submit_button("🗓️ Programmer la publication", type="primary",
+                                                     use_container_width=True)
+                if _prog_ok:
                     _dt = datetime.combine(_d_prog, _h_prog)
                     if _dt <= datetime.now():
                         st.error("La date/heure choisie est déjà passée : choisissez un moment futur.")
