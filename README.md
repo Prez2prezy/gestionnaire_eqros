@@ -1982,35 +1982,33 @@ maison.*
   schéma ; aucun changement de données — la base vit chez l'hébergeur,
   on n'y touche jamais.
 
-### 46. v7.13.11 — Le raccourci prend sa retraite ; la programmation se saisit sans rechargement
+### 47. v7.13.12 — La mémoire unifiée : le téléphone et l'Espace se redonnent leurs journées
 
-- **📵 Le raccourci quitte la plateforme** (demande du fidèle : « retire
-  tout ce qui est en lien avec le raccourci ») : plus aucun manifeste
-  d'installation (`manifest_*.json` quittent le paquet), plus aucune
-  page d'installation (`install_rosaire*.html` partent), plus aucun
-  bouton ni geste ni déplieur (« 📲 Ouvrir la page d'installation »,
-  « 📲 Poser le raccourci — les gestes », « 📲 Garde-le / Garde-la sous
-  la main… »), plus aucune méta plein écran ni écoute d'annonce
-  d'installation — la plateforme ne propose plus rien à poser, d'aucun
-  côté. `injecter_icone_pwa` allégée : favicon 📿/🔑 de l'onglet, titre
-  court (guetteur v7.13.10), couleur du bandeau, mémoire du fidèle (une
-  icône déjà posée d'avant ouvre toujours « ton Espace, tout prêt ») et
-  passeur des rappels 🔔 (`?v=71311`) restent, eux. Les vieilles
-  adresses `?espace=1&installer=1` atterrissent simplement dans
-  l'Espace ; la phrase « astuce raccourci » du message WhatsApp des
-  liens personnels part aussi. Les rappels 🔔 et la Ronde (06h00 ·
-  12h00 · 18h00 · 21h00) continuent exactement comme avant.
-- **🗓️ « Programmer la publication » se saisit sans rechargement** :
-  date et heure vivent DANS UN FORMULAIRE — saisir la date puis
-  l'heure ne fait plus repartir la page au début (constat du terrain :
-  « la page se recharge et revient à la page primaire »). Au clic sur
-  « 🗓️ Programmer la publication », la programmation est enregistrée et
-  le résumé exact s'affiche. **Heure standard à 00h00** (au lieu de
-  08h00).
-- `_VERSION_APPLI = "v7.13.11"` ; fichiers statiques allégés (sw.js +
-  favicons 32 + icône des notifications + logo) ; aucun changement de
-  schéma ; aucun changement de données — la base vit chez l'hébergeur,
-  on n'y touche jamais.
+- **🕊️ Le pont de la mémoire s'ouvre** (demande du fidèle : « ce qui est
+  saisi en hors-ligne se répercute dans le web et vice-versa sans
+  intervention extérieure »). À chaque ouverture de l'Espace membre, la
+  vue lit `?pont_jours=…` (les journées priées hors ligne que le
+  téléphone glisse dans l'adresse), les verse dans le journal par la
+  porte idempotente du livre (`importer_dizaines_hors_ligne` —
+  `UNIQUE(matloc, jour)`, jamais de recomptage), dit le mot doux
+  (« 🕊️ N journée(s) priée(s) hors ligne viennent de rejoindre ta chaîne »)
+  puis nettoie l'adresse. Et elle pose en retour, invisible dans la
+  page, la carte `#pont_memoire` portant `data-jours` (les 90 derniers
+  jours du membre, plus l'accusé de réception `data-recues`) : le
+  téléphone la lit dès que la page est peinte et sa « 📿 Mémoire de mes
+  dizaines » se met à jour — des deux côtés, sans intervention de
+  personne.
+- **📿 La porte de la récupération rouvre** (le mot demandé est venu) :
+  `_RECUP_HORS_LIGNE_ACTIVEE = True` et l'expander « Tu as prié hors
+  ligne ? Remets tes journées dans la chaîne » retrouve sa place en fin
+  de livre, à côté du pointage (l'appel s'était perdu depuis v7.13.1 —
+  il est reposé). Le fichier `ma_dizaine_fidelite.txt` du téléphone est
+  reçu comme prévu : chaque journée une seule fois, jamais recomptée.
+- **🧹 Le journal du README respire** : le double d'entrée v7.13.11
+  est retiré (une entrée, une fois).
+- `_VERSION_APPLI = "v7.13.12"` ; passeur des rappels en `?v=71312` ;
+  aucun changement de schéma ; aucun changement de données — la base
+  vit chez l'hébergeur, on n'y touche jamais.
 
 ## 🛠️ Maintenance
 
