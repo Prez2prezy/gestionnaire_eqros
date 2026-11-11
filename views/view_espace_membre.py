@@ -108,7 +108,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.11"
+_VERSION_APPLI = "v7.13.12"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -2997,7 +2997,7 @@ def _lire_jours_dans_fichier(brut):
     return sorted(j for j in _jours if j <= _auj)
 
 
-_RECUP_HORS_LIGNE_ACTIVEE = False  # v7.13.0 — l'expander passe en VEILLEUSE
+_RECUP_HORS_LIGNE_ACTIVEE = True   # v7.13.12 — la porte rouvre (le mot du fidèle)
 
 
 def _recuperer_dizaines_hors_ligne(est_membre=False, matloc=None,
@@ -3130,6 +3130,14 @@ def _rendre_page_pointage(est_membre=False, matloc=None, nom_membre=None,
                         st.session_state["diz_page"] = idx_merci
                     st.rerun()
                 st.warning(_msg)
+
+    # v7.13.12 — la porte de la récupération rouvre (le mot demandé) :
+    # ICI, à côté du pointage du jour, comme à la v7.13.0 — le fichier de
+    # fidélité de MA DIZAINE rejoint la chaîne, chaque journée une seule
+    # fois, jamais recomptée.
+    _recuperer_dizaines_hors_ligne(est_membre=est_membre, matloc=matloc,
+                                   nom_membre=nom_membre, equipe_id=equipe_id,
+                                   paroisse_id=paroisse_id, jrnais=jrnais)
 
 
 def _rendre_page_merci(est_membre=False, matloc=None):
@@ -4001,7 +4009,7 @@ async function activer_push_ro(){
     var perm = await Notification.requestPermission();
     if(perm!=='granted'){ etat.textContent='Les notifications restent silencieuses — tu pourras dire oui plus tard.'; return; }
     etat.textContent='Un instant…';
-    var reg = await navigator.serviceWorker.register('/app/static/sw.js?v=71311');
+    var reg = await navigator.serviceWorker.register('/app/static/sw.js?v=71312');
     await navigator.serviceWorker.ready;
     var sub = await reg.pushManager.getSubscription();
     if(!sub){ sub = await reg.pushManager.subscribe({userVisibleOnly:true,
@@ -4765,6 +4773,82 @@ def _carte_memoire_membre(matloc=None):
         + str(_total) + ' dizaine(s) sur 14 jours · ' + str(_mois) + ' ce mois'
         + (" · 🔥 " + str(_flamme) + " jour(s) de suite" if _flamme else "")
         + '</div></div>', unsafe_allow_html=True)
+
+
+def _pont_memoire_hors_ligne(membre):
+    """v7.13.12 — LE PONT DE LA MÉMOIRE (hors-ligne ↔ Espace), l'unité
+    demandée : « ce qui est saisi en hors-ligne se répercute dans le web et
+    vice-versa sans intervention extérieure ».
+    · REÇOIT — ?pont_jours=2026-11-08,2026-11-09 : les journées priées hors
+      ligne que le téléphone glisse dans l'adresse quand le réseau revient.
+      Elles sautent dans le journal par la MÊME porte que le livre
+      (importer_dizaines_hors_ligne : UNIQUE(matloc, jour) — une journée ne
+      se compte jamais deux fois), un mot doux le dit, puis l'adresse
+      s'allège (le paramètre part, comme ?push_abo avant lui).
+    · DONNE — <div id="pont_memoire" hidden data-jours="…"> : la fidélité
+      du membre (90 derniers jours), posée invisible dans la page ; le
+      téléphone la lit dès que la page est peinte et sa carte « 📿 Mémoire
+      de mes dizaines » se met à jour des deux côtés.
+    La base n'est jamais touchée directement : tout passe par la porte
+    existante, et seuls les jours véritables (ISO, jamais demain) entrent."""
+    _mat = str(membre[3] or "").strip().upper()
+    if not _mat:
+        return
+    _nom = ((membre[1] or "") + " " + (membre[2] or "")).strip()
+
+    # ---- 1) REÇOIR : les journées annoncées par le téléphone ----
+    _pj = st.query_params.get("pont_jours")
+    if isinstance(_pj, list):
+        _pj = _pj[0] if _pj else None
+    if _pj:
+        _jours = []
+        for _b in str(_pj).split(","):
+            _b = _b.strip()
+            try:
+                if date.fromisoformat(_b) <= date.today():
+                    _jours.append(_b)
+            except ValueError:
+                continue
+        if _jours:
+            try:
+                _aj, _dj, _ig = importer_dizaines_hors_ligne(
+                    matloc=_mat, nom=_nom or None, equipe_id=membre[10],
+                    paroisse_id=membre[11], est_membre=True, jours=_jours)
+                st.session_state["pont_recues"] = int(_aj) + int(_dj)
+                if _aj:
+                    st.session_state["flash_success"] = (
+                        "🕊️ " + str(_aj)
+                        + (" journée" if _aj == 1 else " journées")
+                        + " priée(s) hors ligne "
+                        + ("vient de rejoindre" if _aj == 1 else "viennent de rejoindre")
+                        + " ta chaîne de prière — Merci Sainte Mère pour ta fidélité ! 📿")
+                elif _dj:
+                    _phr = ("Ta journée priée hors ligne était déjà dans la chaîne"
+                            if _dj == 1 else
+                            "Tes " + str(_dj) + " journées priées hors ligne étaient "
+                            "déjà dans la chaîne")
+                    st.session_state["flash_warning"] = _phr + " — rien n'a été recompté. 🕊️"
+            except Exception:
+                logger.warning("_pont_memoire_hors_ligne : réception manquée")
+        # l'adresse s'allège — le paramètre a vécu
+        try:
+            del st.query_params["pont_jours"]
+        except Exception:
+            pass
+
+    # ---- 2) DONNER : la fidélité du web, lisible par le téléphone ----
+    try:
+        _serie = serie_dizaines_membre(_mat, 90)
+        _mes_jours = ",".join(str(_j) for (_j, _f) in _serie if _f)
+    except Exception:
+        _mes_jours = ""
+    _recues = st.session_state.pop("pont_recues", None)
+    _html = ('<div id="pont_memoire" hidden data-jours="'
+             + html.escape(_mes_jours) + '"')
+    if _recues is not None:
+        _html += ' data-recues="' + str(_recues) + '"'
+    _html += '></div>'
+    st.markdown(_html, unsafe_allow_html=True)
 
 
 def _render_fil_actualites(pid=None, lien_theme=None, equipe_membre_id=None,
@@ -5616,6 +5700,11 @@ def _corps_espace_membre(matloc_membre=None):
         _render_fil_actualites(pid=st.session_state.get("paroisse_origine"),
                                lien_theme="?espace=1&nav=1&r=2")
         return
+
+    # v7.13.12 — LE PONT DE LA MÉMOIRE (hors-ligne ↔ Espace) : le téléphone
+    # annonce ses journées priées (?pont_jours=…) et reçoit la fidélité du
+    # web (#pont_memoire) — la base ne passe que par la porte du livre.
+    _pont_memoire_hors_ligne(membre)
 
     # v7.6 : compteur membre — 1 visite = 1 ARRIVÉE (même sémantique)
     if "nav" not in st.query_params and "visite_membre" not in st.session_state:
