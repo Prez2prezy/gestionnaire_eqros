@@ -2061,6 +2061,24 @@ maison.*
 - `_VERSION_APPLI = "v7.13.14"` ; aucun changement de schéma ; aucun
   changement de données.
 
+### 50. v7.13.15 — Le livret se feuillette, de la droite vers la gauche
+
+- **La demande** — « Transposer le modèle du livret — dans lequel les pages
+  se feuillettent de la droite vers la gauche — dans le web en lieu et
+  place de celui où l'on clique pour avoir une nouvelle page. »
+- **Le geste posé** — dans le livret du feuillet mensuel, chaque page entre
+  maintenant par la DROITE et se pose vers la GAUCHE (perspective douce,
+  le même mouvement que le livret de l'application « MA DIZAINE AU
+  QUOTIDIEN ») ; en revenant (« ◀ Précédent », « 📑 Sommaire »), la page
+  revient par la gauche. Le sommaire suit la même règle.
+- **La mécanique** — `_feuillement_livret` réutilise la mécanique « nonce »
+  de `_scroll_top` : le couple (page, sens) est injecté dans le style, donc
+  l'animation rejoue à chaque tour de page, et SEULEMENT à chaque tour (le
+  zoom A−/A+ et les interactions dans la page ne feuillettent pas).
+- **🔒 La confiance, inchangée** : lecture seule, la base n'est jamais
+  touchée ; aucun changement de schéma ; aucun changement de données.
+- `_VERSION_APPLI = "v7.13.15"`.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
