@@ -1,5 +1,14 @@
 # ====================================================================
 # view_espace_membre.py — VERSION 7.8.11 (mise en page du feuillet)
+# v7.13.15 : LE LIVRET SE FEUILLETTE (le modèle du téléphone, transposé au
+#   web, demande n°6) — dans le livret du feuillet mensuel, les pages ne se
+#   « cliquent » plus sèchement : chaque page entre par la DROITE et se pose
+#   vers la GAUCHE (perspective douce, le même geste que le livret de
+#   l'application « MA DIZAINE AU QUOTIDIEN ») ; en revenant (« ◀ Précédent »,
+#   « 📑 Sommaire »), elle revient par la gauche. Même mécanique « nonce »
+#   que _scroll_top (_feuillement_livret) : l'animation rejoue à chaque tour
+#   de page, et SEULEMENT à chaque tour (le zoom A−/A+ et les interactions
+#   dans la page ne feuillettent pas). La base n'est jamais touchée.
 # v7.8.11 : ① MISE EN PAGE TYPOGRAPHIQUE des pages du livret (demande n°4) :
 #   marqueurs R./T./1./2./3+T. en gras, réponses « T. »/« 3+T. » en gras,
 #   section « À l'écoute de la Parole de Dieu » en gras (sauf le titre du
@@ -108,7 +117,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.14"
+_VERSION_APPLI = "v7.13.15"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -249,6 +258,40 @@ def _scroll_top(cle):
                    "</script>", height=0)
     except Exception:
         pass
+
+
+def _feuillement_livret(cle, sens="avant"):
+    """v7.13.15 — LE FEUILLETAGE DU LIVRET (le modèle du téléphone, transposé).
+    Les pages se tournent de la DROITE vers la GAUCHE : la nouvelle page
+    entre par le bord droit, comme un feuillet qu'on soulève ; en revenant
+    en arrière (« ◀ Précédent », « 📑 Sommaire »), elle revient par la gauche.
+    Même mécanique « nonce » que _scroll_top : le couple (page, sens) est
+    injecté dans le style → chaque tour produit un style DIFFÉRENT →
+    Streamlit recharge le bloc → l'animation rejoue à chaque tour, et
+    SEULEMENT à chaque tour (le zoom A−/A+ et les interactions dans la page
+    ne feuillettent pas — le contenu identique réutilise l'élément).
+    Retourne (style_html, classe) : la classe enveloppe la carte de la page."""
+    nonce = re.sub(r"[^0-9A-Za-z_-]", "", str(cle) or "x")
+    _a_gauche = (str(sens or "avant") != "arriere")
+    _nom = "flt_feuill_" + nonce
+    _keyframes = (
+        "@keyframes feuillette_dg{from{transform:perspective(1400px) "
+        "rotateY(-9deg) translateX(46%);opacity:.15;}"
+        "to{transform:perspective(1400px) rotateY(0deg) translateX(0);opacity:1;}}"
+        "@keyframes feuillette_gd{from{transform:perspective(1400px) "
+        "rotateY(9deg) translateX(-46%);opacity:.15;}"
+        "to{transform:perspective(1400px) rotateY(0deg) translateX(0);opacity:1;}}"
+    )
+    _anim = "feuillette_dg" if _a_gauche else "feuillette_gd"
+    _origine = "left" if _a_gauche else "right"
+    _style = (
+        "<style>" + _keyframes
+        + ".stApp{overflow-x:hidden;}"
+        + "." + _nom + "{animation:" + _anim + " .55s cubic-bezier(.22,.61,.36,1) both;"
+        + "transform-origin:" + _origine + " center;will-change:transform,opacity;}"
+        + "</style>"
+    )
+    return _style, _nom
 
 
 def _scroll_top_si_nouvelle_page(cle, rub, sub):
@@ -1316,6 +1359,8 @@ def _render_feuillet_vitrine(annee_debut, mois_pastoral):
         # v7.8.10 — ouverture À LA COUVERTURE (couverture → sommaire → pages),
         # parcours naturel d'un livret papier.
         st.session_state["flt_page"] = -1
+        # v7.13.15 — l'ouverture tourne la page en avant (droite → gauche).
+        st.session_state["flt_sens"] = "avant"
         st.session_state["flt_ouvert"] = True
         st.session_state.pop("diz_ouvert", None)
         st.rerun()
@@ -1479,6 +1524,12 @@ def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"
         idx = -1
         st.session_state[_k_page] = -1
 
+    # v7.13.15 — le SENS du feuilletage : « avant » (la page entre par la
+    # droite, comme le livret du téléphone) ou « arriere » (elle revient par
+    # la gauche). Chaque geste de tourne-page le pose avant le rerun.
+    _k_sens = pfx + "_sens"
+    sens = st.session_state.get(_k_sens, "avant")
+
     _entete_livret = ("📖 Feuillet mensuel de prière N° " + str(mois_pastoral)
                       + " · Mois de " + MOIS_PASTORAL_NOMS[mois_pastoral - 1] + " "
                       + str(_annee_civile_feuillet(annee_debut, mois_pastoral)))
@@ -1519,14 +1570,19 @@ def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"
         # v7.8.5-② — présentation UNIQUE : la liste statique doublonnée dans
         # la carte est retirée ; chaque entrée cliquable « 📖 N — Titre »
         # (sans « ▶ », confondu avec un expander) tient lieu de sommaire.
-        st.markdown(_carte_priere(
+        # v7.13.15 — le sommaire aussi se feuillette : il arrive par la
+        # gauche quand on revient à lui, par la droite à l'ouverture.
+        _style_feuil, _classe_feuil = _feuillement_livret(f"{pfx}som{idx}{sens}", sens)
+        st.markdown(_style_feuil, unsafe_allow_html=True)
+        st.markdown('<div class="' + _classe_feuil + '">' + _carte_priere(
             _trait_debut_page()
             + '<div class="cp-titre fe-titre-rubrique" style="text-align:center;">' + _entete_livret + "</div>"
-            + '<div class="cp-accent" style="--c:#1A237E;">Sommaire du feuillet</div>'),
+            + '<div class="cp-accent" style="--c:#1A237E;">Sommaire du feuillet</div>') + "</div>",
             unsafe_allow_html=True)
         for _i, _s in enumerate(sections):
             if st.button("📖 " + str(_s[0]) + " — " + (_s[1] or "Section " + str(_s[0])),
                          key=f"{pfx}_som_{_i}", width="stretch"):
+                st.session_state[_k_sens] = "avant"   # v7.13.15 — ouvrir une page tourne en avant
                 st.session_state[_k_page] = _i
                 st.rerun()
         if autonome:
@@ -1601,7 +1657,16 @@ def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"
                        + '<div style="clear:both;"></div></div>')
     else:
         _page_html += _corps_fe
-    st.markdown(_carte_priere(_trait_debut_page() + _page_html), unsafe_allow_html=True)
+    # v7.13.15 — LE FEUILLETAGE : la page entre par la DROITE et se pose
+    # vers la GAUCHE (le même geste que le livret du téléphone) ; en revenant
+    # en arrière, elle revient par la gauche. Le couple (page, sens) est
+    # injecté dans le style (même mécanique « nonce » que _scroll_top) :
+    # l'animation rejoue à chaque tour, et seulement à chaque tour.
+    _style_feuil, _classe_feuil = _feuillement_livret(f"{pfx}{idx}{sens}", sens)
+    st.markdown(_style_feuil, unsafe_allow_html=True)
+    st.markdown('<div class="' + _classe_feuil + '">'
+                + _carte_priere(_trait_debut_page() + _page_html) + "</div>",
+                unsafe_allow_html=True)
     _scroll_top(f"{pfx}{idx}")
 
     # ---------- NAVIGATION (comme le livre de la dizaine) ----------
@@ -1609,15 +1674,18 @@ def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"
     with c_prev:
         if idx > 0:
             if st.button("◀ Précédent", key=f"{pfx}_prev_{idx}", width="stretch"):
+                st.session_state[_k_sens] = "arriere"   # v7.13.15 — revenir : la page revient par la gauche
                 st.session_state[_k_page] = idx - 1
                 st.rerun()
         else:
             if st.button("📑 Sommaire", key=f"{pfx}_home_{idx}", width="stretch"):
+                st.session_state[_k_sens] = "arriere"   # v7.13.15 — revenir au sommaire
                 st.session_state[_k_page] = -1
                 st.rerun()
     with c_next:
         if idx < len(sections) - 1:
             if st.button("Suivant ▶", key=f"{pfx}_next_{idx}", width="stretch", type="primary"):
+                st.session_state[_k_sens] = "avant"   # v7.13.15 — avancer : la page entre par la droite
                 st.session_state[_k_page] = idx + 1
                 st.rerun()
         else:
