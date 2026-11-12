@@ -2038,6 +2038,29 @@ maison.*
   changement de données — la base vit chez l'hébergeur, on n'y touche
   jamais.
 
+### 49. v7.13.14 — Les boutons du pont à la maison, et la route qui sonne vraiment
+
+- **NOTE du pasteur** — plus de bouton doré improvisé sur l'Espace : les
+  deux boutons du pont (« ✋ Reprendre dans l'application » et
+  « 📱 N journée(s) de fidélité — reprendre dans l'application ») sont des
+  boutons de la maison — `st.link_button`, `type="primary"`,
+  `width="stretch"`, le même style que « 📿 Égrener la dizaine ». La carte
+  « 🕊 Le pont vers l'application » reste l'enseigne dorée du moment.
+- **La route qui sonne vraiment** — le lien nu `madizaine://…` laissait
+  certains Navigateurs sur une page muette (une nouvelle page s'ouvrait,
+  plus rien ne se passait, et au retour sur l'application rien n'était
+  rendu). Les routes partent maintenant emballées en
+  `intent://…#Intent;scheme=madizaine;package=com.example.madizaineapp;S.browser_fallback_url=…;end` :
+  le Navigateur sait QUI sonner, et s'il ne trouve pas l'application il
+  REVIENT à la page Espace du membre — jamais une page d'erreur. Chrome
+  reconstruit exactement `madizaine://pont?…` : le téléphone reçoit la
+  même route qu'avant, `recevoirPont` est intact.
+- **🔒 La confiance, inchangée** : lecture seule, la base n'est jamais
+  touchée ; l'UNION des journées, jamais d'effacement ; l'encodage `%XX`
+  reste celui que le téléphone décode.
+- `_VERSION_APPLI = "v7.13.14"` ; aucun changement de schéma ; aucun
+  changement de données.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
