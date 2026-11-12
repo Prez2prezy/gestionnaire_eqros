@@ -2010,6 +2010,34 @@ maison.*
   aucun changement de schéma ; aucun changement de données — la base
   vit chez l'hébergeur, on n'y touche jamais.
 
+### 48. v7.13.13 — La porte du profil et la seconde berge : l'Espace rend sa fidélité au téléphone
+
+- **🕊️ La porte du profil (l'incursion demandée)** — quand l'adresse de
+  l'Espace membre porte `?pont=profil` (la toute première fois et chaque
+  changement de lien du Kit Union v7 se font « toujours sur le net »),
+  la vue pose une carte dorée « 🕊 Le pont vers l'application » avec un
+  bouton **« ✋ Reprendre dans l'application »** : la route
+  `madizaine://pont?…` porte en un seul voyage le profil complet (nom &
+  prénoms, Matloc, équipe, paroisse, WhatsApp, N° méd.), l'intention
+  portée (`intention_du_prochain_detail(matloc=…)` — lecture seule) et
+  la fidélité déjà cochée ici (90 derniers jours). Encodage
+  `%XX` (`quote_via=quote`) pour que le décodage du téléphone soit juste
+  (`Uri.getQueryParameter`), puis l'adresse s'allège (le paramètre part).
+- **📱 La seconde berge** — sous la carte « 📿 Mémoire de mes dizaines »,
+  un bouton HTML pur « 📱 N journée(s) de fidélité — reprendre dans
+  l'application » rend au téléphone la fidélité cochée sur le web ; le
+  téléphone la fond dans sa mémoire **en union** (`fusionnerJoursDuWeb`
+  du Kit v1.2 — ce qui y était reste, rien ne s'efface jamais, jamais
+  demain). La carte invisible `#pont_memoire` reste posée pour les
+  berges qui savent la lire.
+- **🔒 La confiance, inchangée** : la base n'est jamais touchée — la
+  réception des journées passe toujours par la porte du livre
+  (`importer_dizaines_hors_ligne`), le profil est lu, jamais écrit, et
+  seuls les jours véritables (ISO, jamais demain) voyagent.
+- `_VERSION_APPLI = "v7.13.13"` ; aucun changement de schéma ; aucun
+  changement de données — la base vit chez l'hébergeur, on n'y touche
+  jamais.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
