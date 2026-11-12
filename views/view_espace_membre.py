@@ -108,7 +108,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.12"
+_VERSION_APPLI = "v7.13.13"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -4776,7 +4776,7 @@ def _carte_memoire_membre(matloc=None):
 
 
 def _pont_memoire_hors_ligne(membre):
-    """v7.13.12 — LE PONT DE LA MÉMOIRE (hors-ligne ↔ Espace), l'unité
+    """v7.13.13 — LE PONT DE LA MÉMOIRE ET DU PROFIL (hors-ligne ↔ Espace), l'unité
     demandée : « ce qui est saisi en hors-ligne se répercute dans le web et
     vice-versa sans intervention extérieure ».
     · REÇOIT — ?pont_jours=2026-11-08,2026-11-09 : les journées priées hors
@@ -4785,6 +4785,12 @@ def _pont_memoire_hors_ligne(membre):
       (importer_dizaines_hors_ligne : UNIQUE(matloc, jour) — une journée ne
       se compte jamais deux fois), un mot doux le dit, puis l'adresse
       s'allège (le paramètre part, comme ?push_abo avant lui).
+    · LA PORTE DU PROFIL (v7.13.13) — ?pont=profil : l'incursion demandée —
+      la toute première fois et chaque changement de lien se font sur le
+      net. L'Espace pose une carte dorée avec un bouton « ✋ Reprendre dans
+      l'application » : la route madizaine:// porte le profil complet (nom,
+      équipe, paroisse, WhatsApp, N° méd.), l'intention portée et la
+      fidélité du web. Lecture seule — la base ne se touche jamais.
     · DONNE — <div id="pont_memoire" hidden data-jours="…"> : la fidélité
       du membre (90 derniers jours), posée invisible dans la page ; le
       téléphone la lit dès que la page est peinte et sa carte « 📿 Mémoire
@@ -4836,12 +4842,84 @@ def _pont_memoire_hors_ligne(membre):
         except Exception:
             pass
 
-    # ---- 2) DONNER : la fidélité du web, lisible par le téléphone ----
+    # ---- 2) DONNER : la fidélité du web, lisible par les deux berges ----
     try:
         _serie = serie_dizaines_membre(_mat, 90)
         _mes_jours = ",".join(str(_j) for (_j, _f) in _serie if _f)
     except Exception:
         _mes_jours = ""
+
+    # ---- 3) LA PORTE DU PROFIL (v7.13.13) — l'incursion du téléphone :
+    # ?pont=profil arrive de la première page (« Ton lien personnel ») ou
+    # de « 🔄 Actualiser depuis l'Espace ». La carte ci-dessous porte TOUT
+    # ce que le téléphone vient chercher, en UN bouton : le profil complet,
+    # l'intention portée, et la fidélité déjà cochée ici (la seconde berge
+    # fait le reste en continu, sous la carte mémoire).
+    _pp = st.query_params.get("pont")
+    if isinstance(_pp, list):
+        _pp = _pp[0] if _pp else None
+    if _pp and str(_pp).strip().lower() == "profil":
+        _params = {"p": "1", "matloc": _mat}
+        if str(membre[2] or "").strip():
+            _params["prenom"] = str(membre[2]).strip()
+        if str(membre[1] or "").strip():
+            _params["nom"] = str(membre[1]).strip()
+        if _nom:
+            _params["ncomplet"] = _nom
+        if str(membre[8] or "").strip():
+            _params["equipe"] = str(membre[8]).strip()
+        if str(membre[9] or "").strip():
+            _params["paroisse"] = str(membre[9]).strip()
+        if str(membre[4] or "").strip():
+            _params["whatsapp"] = str(membre[4]).strip()
+        if str(membre[7] or "").strip():
+            _params["med"] = str(membre[7]).strip()
+        try:
+            _itx, _iqui = intention_du_prochain_detail(matloc=_mat)
+            if _itx and str(_itx).strip():
+                _params["intention"] = str(_itx).strip()
+                if _iqui and str(_iqui).strip():
+                    _params["qui"] = str(_iqui).strip()
+        except Exception:
+            logger.warning("pont profil : intention indisponible")
+        if _mes_jours:
+            _params["jours"] = _mes_jours
+        _qs = urllib.parse.urlencode(_params, quote_via=urllib.parse.quote)
+        _lien_app = "madizaine://pont?" + _qs
+        _lien_espace = "?espace=1&matloc=" + urllib.parse.quote(_mat)
+        _nb_jours = _mes_jours.count(",") + 1 if _mes_jours else 0
+        _nb_infos = len(_params) - 2 - (1 if _nb_jours else 0)
+        _resum = (str(_nb_infos) + " informations de ton profil"
+                  if _nb_infos > 0 else "ton profil")
+        if _nb_jours:
+            _resum += (" · " + str(_nb_jours)
+                       + (" journée" if _nb_jours == 1 else " journées")
+                       + " de fidélité")
+        st.markdown(
+            '<div style="background:#121a45; border:2px solid #FFD700; '
+            'border-radius:15px; padding:16px 18px; margin:10px; text-align:center;">'
+            '<div style="color:#FFD000; font-weight:bold; font-size:1.1rem;">'
+            '🕊 Le pont vers l\'application</div>'
+            '<div style="color:#e8eaf6; font-size:0.92rem; margin:8px 0 4px 0;">'
+            'Ton téléphone vient chercher ' + _resum + '.</div>'
+            '<div style="color:#8a93c9; font-size:0.82rem; margin-bottom:10px;">'
+            'Touche le bouton : tout voyage en une seule fois, sans rien retaper.</div>'
+            '<a href="' + html.escape(_lien_app, quote=True) + '" style="display:inline-block; '
+            'background:linear-gradient(135deg,#FFD700,#FFC107); color:#121a45; '
+            'font-weight:bold; font-size:1.05rem; padding:12px 24px; border-radius:30px; '
+            'text-decoration:none; box-shadow:0 2px 10px rgba(0,0,0,0.4);">'
+            '✋ Reprendre dans l\'application</a><br>'
+            '<a href="' + html.escape(_lien_espace, quote=True) + '" style="display:inline-block; '
+            'color:#9fa6d8; font-size:0.82rem; margin-top:10px; text-decoration:underline;">'
+            'Continuer vers l\'Espace →</a></div>',
+            unsafe_allow_html=True)
+        # la porte s'est ouverte : l'adresse s'allège (le paramètre a vécu)
+        try:
+            del st.query_params["pont"]
+        except Exception:
+            pass
+
+    # ---- 4) LA FIDÉLITÉ INVISIBLE (les berges qui savent la lisent) ----
     _recues = st.session_state.pop("pont_recues", None)
     _html = ('<div id="pont_memoire" hidden data-jours="'
              + html.escape(_mes_jours) + '"')
@@ -4849,6 +4927,34 @@ def _pont_memoire_hors_ligne(membre):
         _html += ' data-recues="' + str(_recues) + '"'
     _html += '></div>'
     st.markdown(_html, unsafe_allow_html=True)
+
+
+def _bouton_retour_application(matloc=None):
+    """v7.13.13 — LA SECONDE BERGE, le « retour dans l'application » posé par
+    l'Espace : un bouton doré sous la carte mémoire. La route madizaine://
+    porte les journées cochées ici (90 derniers jours) ; l'application les
+    fond dans sa propre mémoire en UNION (ce qui y était reste, rien ne
+    s'efface jamais). Un bouton HTML pur — aucun pont JS fragile."""
+    if not matloc:
+        return
+    try:
+        _serie = serie_dizaines_membre(str(matloc).strip().upper(), 90)
+        _jours = ",".join(str(_j) for (_j, _f) in _serie if _f)
+    except Exception:
+        return
+    if not _jours:
+        return
+    _n = _jours.count(",") + 1
+    _url = "madizaine://pont?jours=" + urllib.parse.quote(_jours)
+    st.markdown(
+        '<div style="text-align:center; margin:0 10px 12px 10px;">'
+        '<a href="' + html.escape(_url, quote=True) + '" style="display:inline-block; '
+        'background:linear-gradient(135deg,#FFD700,#FFC107); color:#121a45; '
+        'font-weight:bold; font-size:0.95rem; padding:10px 22px; border-radius:30px; '
+        'text-decoration:none; box-shadow:0 2px 8px rgba(0,0,0,0.35);">📱 '
+        + str(_n) + (" journée" if _n == 1 else " journées")
+        + " de fidélité — reprendre dans l\'application</a></div>",
+        unsafe_allow_html=True)
 
 
 def _render_fil_actualites(pid=None, lien_theme=None, equipe_membre_id=None,
@@ -5759,6 +5865,8 @@ def _corps_espace_membre(matloc_membre=None):
         # v7.13.1 — « 📿 Mémoire de mes dizaines » entre la carte de
         # bienvenue et « 📿 Ta dizaine du jour ».
         _carte_memoire_membre(matloc_membre)
+        # v7.13.13 — LA SECONDE BERGE : le web rend sa fidélité au téléphone.
+        _bouton_retour_application(matloc_membre)
 
     if rub == "📅 Mes évènements":
         if membre[10] is None:
