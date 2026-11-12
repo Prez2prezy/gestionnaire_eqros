@@ -108,7 +108,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.13"
+_VERSION_APPLI = "v7.13.14"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -4775,6 +4775,27 @@ def _carte_memoire_membre(matloc=None):
         + '</div></div>', unsafe_allow_html=True)
 
 
+def _route_vers_application(route, matloc=None):
+    """v7.13.14 — la route du téléphone, emballée pour les Navigateurs.
+
+    Le lien nu « madizaine://… » laissait le Navigateur sur une page
+    muette quand la porte du manifeste n'était pas trouvée : une nouvelle
+    page s'ouvrait, plus rien ne se passait. L'emballage
+    intent://…#Intent;scheme=…;package=…;S.browser_fallback_url=…;end dit
+    AUSSI qui sonner (le paquet de MA DIZAINE), et s'il ne trouve
+    l'application il REVIENT à la page Espace du membre — jamais une page
+    d'erreur. Chrome reconstruit exactement « madizaine://pont?… » : le
+    téléphone reçoit la même route qu'avant, recevoirPont est intact."""
+    _secours = URL_ESPACE_SPIRITUEL + "/?espace=1"
+    if matloc:
+        _secours += "&matloc=" + urllib.parse.quote(str(matloc).strip().upper())
+    return ("intent://" + route
+            + "#Intent;scheme=madizaine"
+            + ";package=com.example.madizaineapp"
+            + ";S.browser_fallback_url=" + urllib.parse.quote(_secours, safe="")
+            + ";end")
+
+
 def _pont_memoire_hors_ligne(membre):
     """v7.13.13 — LE PONT DE LA MÉMOIRE ET DU PROFIL (hors-ligne ↔ Espace), l'unité
     demandée : « ce qui est saisi en hors-ligne se répercute dans le web et
@@ -4787,10 +4808,12 @@ def _pont_memoire_hors_ligne(membre):
       s'allège (le paramètre part, comme ?push_abo avant lui).
     · LA PORTE DU PROFIL (v7.13.13) — ?pont=profil : l'incursion demandée —
       la toute première fois et chaque changement de lien se font sur le
-      net. L'Espace pose une carte dorée avec un bouton « ✋ Reprendre dans
-      l'application » : la route madizaine:// porte le profil complet (nom,
-      équipe, paroisse, WhatsApp, N° méd.), l'intention portée et la
-      fidélité du web. Lecture seule — la base ne se touche jamais.
+      net. L'Espace pose une carte dorée et UN bouton de la maison
+      (« ✋ Reprendre dans l'application » — v7.13.14 : plus de bouton
+      doré improvisé, la NOTE du pasteur) : la route madizaine://
+      emballée en intent:// porte le profil complet (nom, équipe,
+      paroisse, WhatsApp, N° méd.), l'intention portée et la fidélité du
+      web. Lecture seule — la base ne se touche jamais.
     · DONNE — <div id="pont_memoire" hidden data-jours="…"> : la fidélité
       du membre (90 derniers jours), posée invisible dans la page ; le
       téléphone la lit dès que la page est peinte et sa carte « 📿 Mémoire
@@ -4885,7 +4908,6 @@ def _pont_memoire_hors_ligne(membre):
         if _mes_jours:
             _params["jours"] = _mes_jours
         _qs = urllib.parse.urlencode(_params, quote_via=urllib.parse.quote)
-        _lien_app = "madizaine://pont?" + _qs
         _lien_espace = "?espace=1&matloc=" + urllib.parse.quote(_mat)
         _nb_jours = _mes_jours.count(",") + 1 if _mes_jours else 0
         _nb_infos = len(_params) - 2 - (1 if _nb_jours else 0)
@@ -4895,22 +4917,27 @@ def _pont_memoire_hors_ligne(membre):
             _resum += (" · " + str(_nb_jours)
                        + (" journée" if _nb_jours == 1 else " journées")
                        + " de fidélité")
+        _lien_app = _route_vers_application("pont?" + _qs, _mat)
         st.markdown(
             '<div style="background:#121a45; border:2px solid #FFD700; '
-            'border-radius:15px; padding:16px 18px; margin:10px; text-align:center;">'
+            'border-radius:15px; padding:16px 18px; margin:10px 10px 6px 10px; '
+            'text-align:center;">'
             '<div style="color:#FFD000; font-weight:bold; font-size:1.1rem;">'
             '🕊 Le pont vers l\'application</div>'
             '<div style="color:#e8eaf6; font-size:0.92rem; margin:8px 0 4px 0;">'
             'Ton téléphone vient chercher ' + _resum + '.</div>'
-            '<div style="color:#8a93c9; font-size:0.82rem; margin-bottom:10px;">'
+            '<div style="color:#8a93c9; font-size:0.82rem;">'
             'Touche le bouton : tout voyage en une seule fois, sans rien retaper.</div>'
-            '<a href="' + html.escape(_lien_app, quote=True) + '" style="display:inline-block; '
-            'background:linear-gradient(135deg,#FFD700,#FFC107); color:#121a45; '
-            'font-weight:bold; font-size:1.05rem; padding:12px 24px; border-radius:30px; '
-            'text-decoration:none; box-shadow:0 2px 10px rgba(0,0,0,0.4);">'
-            '✋ Reprendre dans l\'application</a><br>'
-            '<a href="' + html.escape(_lien_espace, quote=True) + '" style="display:inline-block; '
-            'color:#9fa6d8; font-size:0.82rem; margin-top:10px; text-decoration:underline;">'
+            '</div>',
+            unsafe_allow_html=True)
+        # v7.13.14 — le bouton de la maison (NOTE : pas de bouton doré
+        # improvisé ; le même style que « 📿 Égrener la dizaine »).
+        st.link_button("✋ Reprendre dans l'application", _lien_app,
+                       type="primary", width="stretch")
+        st.markdown(
+            '<div style="text-align:center; margin:0 10px 10px 10px;">'
+            '<a href="' + html.escape(_lien_espace, quote=True) + '" '
+            'style="color:#9fa6d8; font-size:0.82rem; text-decoration:underline;">'
             'Continuer vers l\'Espace →</a></div>',
             unsafe_allow_html=True)
         # la porte s'est ouverte : l'adresse s'allège (le paramètre a vécu)
@@ -4931,10 +4958,12 @@ def _pont_memoire_hors_ligne(membre):
 
 def _bouton_retour_application(matloc=None):
     """v7.13.13 — LA SECONDE BERGE, le « retour dans l'application » posé par
-    l'Espace : un bouton doré sous la carte mémoire. La route madizaine://
-    porte les journées cochées ici (90 derniers jours) ; l'application les
-    fond dans sa propre mémoire en UNION (ce qui y était reste, rien ne
-    s'efface jamais). Un bouton HTML pur — aucun pont JS fragile."""
+    l'Espace : un bouton sous la carte mémoire. La route madizaine:// porte
+    les journées cochées ici (90 derniers jours) ; l'application les fond
+    dans sa propre mémoire en UNION (ce qui y était reste, rien ne s'efface
+    jamais). v7.13.14 : bouton de la maison (NOTE : pas de bouton doré
+    improvisé) et route emballée en intent:// — le Navigateur sait qui
+    sonner, et revient à l'Espace au lieu d'une page morte."""
     if not matloc:
         return
     try:
@@ -4945,16 +4974,12 @@ def _bouton_retour_application(matloc=None):
     if not _jours:
         return
     _n = _jours.count(",") + 1
-    _url = "madizaine://pont?jours=" + urllib.parse.quote(_jours)
-    st.markdown(
-        '<div style="text-align:center; margin:0 10px 12px 10px;">'
-        '<a href="' + html.escape(_url, quote=True) + '" style="display:inline-block; '
-        'background:linear-gradient(135deg,#FFD700,#FFC107); color:#121a45; '
-        'font-weight:bold; font-size:0.95rem; padding:10px 22px; border-radius:30px; '
-        'text-decoration:none; box-shadow:0 2px 8px rgba(0,0,0,0.35);">📱 '
-        + str(_n) + (" journée" if _n == 1 else " journées")
-        + " de fidélité — reprendre dans l\'application</a></div>",
-        unsafe_allow_html=True)
+    _lien_app = _route_vers_application(
+        "pont?jours=" + urllib.parse.quote(_jours), str(matloc).strip().upper())
+    st.link_button(
+        "📱 " + str(_n) + (" journée" if _n == 1 else " journées")
+        + " de fidélité — reprendre dans l'application",
+        _lien_app, type="primary", width="stretch")
 
 
 def _render_fil_actualites(pid=None, lien_theme=None, equipe_membre_id=None,
