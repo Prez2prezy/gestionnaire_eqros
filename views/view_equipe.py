@@ -15,7 +15,10 @@ from database import (c, commit_and_sync, verifier_reparer_intentions, jours_dep
                       OBJECTIF_RESERVE,
                       mission_creer, missions_equipe,
                       mission_rapport_enregistrer, mission_supprimer,
-                      mission_prochaine_seance, derniere_chaine_seance)
+                      mission_prochaine_seance, derniere_chaine_seance,
+                      # v7.14.0 — la caisse de la cotisation
+                      cotis_parametres_lire, cotis_categorie_membre,
+                      cotis_montant_suggere, cotis_enregistrer_paiement)
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
@@ -24,7 +27,9 @@ from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, 
                         afficher_historique_suivi, afficher_whatsapp_tabs, widget_type_abonnement, 
                         enregistrer_presence_equipe, afficher_etat_presences_globales,
-                        bloc_chaine_seance)
+                        bloc_chaine_seance,
+                        # v7.14.0 — la caisse de la cotisation (reçus numérotés)
+                        recu_pdf_de_numero)
 from stcompat import comp_html
 
 
@@ -1423,26 +1428,109 @@ def show_equipe():
             except Exception as e: st.error(f"Erreur export: {e}")
 
     elif menu == "📅 Abonnements":
-        st.markdown(f'<h2 style="color:#1A237E;">💰 Gestion des abonnements - {nom_equipe}</h2>', unsafe_allow_html=True)
-        
+        st.markdown(f'<h2 style="color:#1A237E;">💼 Caisse de mon équipe — {nom_equipe}</h2>', unsafe_allow_html=True)
+
+        # v7.14.0 — LA CAISSE DE LA COTISATION (Phase 1 du paiement) : le
+        # responsable note les paiements reçus en main propre — espèces ou
+        # mobile money (Wave, Orange Money, MTN MoMo) — et chaque paiement
+        # confirmé reçoit immédiatement son reçu numéroté
+        # (COT-<année>-NNNNN) porteur d'un QR de vérification publique.
+
         # CORRECTION LOGIQUE : Année pastorale par défaut
         annee_pastorale_en_cours = get_periode_pastorale()[0]
         annee = st.number_input("Année de début", 2020, annee_pastorale_en_cours, annee_pastorale_en_cours)
         st.write(f"**Période :** {periode_affichage(annee)}")
-        
-        for m in c.execute("SELECT id, nom, prenom, matricule FROM membres WHERE equipe_id=? AND statut='actif'", (eid,)).fetchall():
+
+        # v7.14.0 — les réglages posés par le diocèse (montants, échéance,
+        # porteur des reçus)
+        _reglages = cotis_parametres_lire()
+
+        def _fr(_n):
+            return f"{int(_n):,}".replace(",", " ")
+
+        _ech_aff = str(_reglages.get("cotis_echeance"))
+        try:
+            _ech_aff = date.fromisoformat(str(_reglages.get("cotis_echeance"))).strftime("%d/%m/%Y")
+        except Exception:
+            pass
+        st.markdown('<div class="custom-info-box"><b>💼 Montants posés par le diocèse</b> — '
+                    f'Adulte : abonnement {_fr(_reglages.get("cotis_montant_adulte_abo"))} FCFA · réabonnement {_fr(_reglages.get("cotis_montant_adulte_reab"))} FCFA ; '
+                    f'Jeune : abonnement {_fr(_reglages.get("cotis_montant_jeune_abo"))} FCFA · réabonnement {_fr(_reglages.get("cotis_montant_jeune_reab"))} FCFA<br>'
+                    f'🗓️ <b>Échéance de l\'année pastorale :</b> {_ech_aff} · 🏛️ <b>En-tête des reçus :</b> {_reglages.get("cotis_porteur")}</div>', unsafe_allow_html=True)
+
+        _membres_eq = c.execute("SELECT id, nom, prenom, matricule FROM membres WHERE equipe_id=? AND statut='actif' ORDER BY nom", (eid,)).fetchall()
+        _nb_membres = len(_membres_eq)
+        _totaux = c.execute("""SELECT COUNT(m.id), COALESCE(SUM(a.montant), 0)
+                               FROM membres m
+                               LEFT JOIN abonnements a ON a.membre_id=m.id
+                                    AND a.annee_debut=? AND a.statut='paye'
+                               WHERE m.equipe_id=? AND m.statut='actif'""", (annee, eid)).fetchone()
+        _cotisants = _totaux[0] or 0
+        _total_fcfa = int(_totaux[1] or 0)
+        _mc1, _mc2, _mc3 = st.columns(3)
+        _mc1.metric("✅ Cotisants", f"{_cotisants}/{_nb_membres}")
+        _mc2.metric("💰 Total collecté", f"{_fr(_total_fcfa)} FCFA")
+        _mc3.metric("⏳ Reste à régler", f"{max(_nb_membres - _cotisants, 0)}")
+
+        # v7.14.0 — LE PANNEAU DU REÇU (posé à l'enregistrement d'un
+        # paiement, ou ouvert par le bouton 🧾 d'une ligne) : le reçu se
+        # télécharge autant de fois que besoin, jusqu'à fermeture.
+        if st.session_state.get('cotis_recu_panel'):
+            _pnl = st.session_state['cotis_recu_panel']
+            _num_pnl = _pnl.get("numero", "")
+            _pdf_pnl = recu_pdf_de_numero(_num_pnl, porteur=_reglages.get("cotis_porteur"),
+                                          echeance=str(_reglages.get("cotis_echeance")))
+            st.success(f"🧾 Reçu {_num_pnl} — {_pnl.get('titre', 'paiement noté')}. "
+                       "Son QR mène à l'écran public de vérification ; le reçu reste téléchargeable ici.")
+            if _pdf_pnl:
+                st.download_button("📥 Télécharger le reçu numéroté (PDF)", data=_pdf_pnl,
+                                   file_name=f"recu_{_num_pnl}.pdf", mime="application/pdf",
+                                   key=f"cotis_dl_pnl_{_num_pnl}")
+            if st.button("✖ Fermer le reçu", key=f"cotis_fermer_pnl_{_num_pnl}"):
+                del st.session_state['cotis_recu_panel']; st.rerun()
+            st.markdown("---")
+
+        for m in _membres_eq:
             deja = verifier_abonnement(m[0], annee)
             if deja:
-                abo_info = c.execute("SELECT type_abonnement, montant FROM abonnements WHERE membre_id=? AND annee_debut=?", (m[0], annee)).fetchone()
+                abo_info = c.execute("SELECT type_abonnement, montant, numero_recu, mode_paiement FROM abonnements WHERE membre_id=? AND annee_debut=?", (m[0], annee)).fetchone()
                 type_affiche = "Abonnement" if abo_info[0] == "abonnement" else "Réabonnement"
                 col_info, col_btn = st.columns([4, 1])
-                with col_info: st.info(f"{m[1]} {m[2]} ({m[3]}) – ✅ {type_affiche} ({abo_info[1]} FCFA)")
+                with col_info:
+                    _l_mode = {"especes": "Espèces", "wave": "Wave",
+                               "orange_money": "Orange Money",
+                               "mtn_momo": "MTN MoMo"}.get(abo_info[3] or "", "—")
+                    _l_num = f" · 🧾 {abo_info[2]}" if abo_info[2] else ""
+                    st.info(f"{m[1]} {m[2]} ({m[3] or '—'}) – ✅ {type_affiche} ({abo_info[1]} FCFA · {_l_mode}){_l_num}")
                 with col_btn:
+                    if abo_info[2] and st.button("🧾", key=f"recu_voir_{m[0]}_{annee}", help="Revoir / retélécharger le reçu"):
+                        st.session_state['cotis_recu_panel'] = {
+                            "numero": abo_info[2], "titre": f"{m[1]} {m[2]}"}
+                        st.rerun()
                     if st.button("✏️", key=f"mod_abo_{m[0]}_{annee}"): st.session_state['modif_abo_id'] = m[0]; st.rerun()
             else:
-                with st.expander(f"{m[1]} {m[2]} ({m[3]}) – ❌ Non enregistré"):
-                    type_abo, montant = widget_type_abonnement("eq", m[0], annee)
-                    if st.button("Enregistrer", key=f"btn_eq_{m[0]}_{annee}"): enregistrer_abonnement(m[0], annee, montant, type_abo); st.success("Enregistré !"); st.rerun()
+                _sug_abo, _ = cotis_montant_suggere(m[0], "abonnement")
+                _sug_reab, _ = cotis_montant_suggere(m[0], "reabonnement")
+                _badge_cat = ("🧒 tarif jeune" if cotis_categorie_membre(m[0]) == "jeune"
+                              else "🧑 tarif adulte")
+                with st.expander(f"{m[1]} {m[2]} ({m[3] or '—'}) – ❌ Non enregistré · {_badge_cat}"):
+                    _choix_type = st.radio("Type", ["📝 Abonnement", "🔄 Réabonnement"], key=f"cotis_type_{m[0]}_{annee}", horizontal=True)
+                    _nature = "abonnement" if "Abonnement" in _choix_type else "reabonnement"
+                    _sug = _sug_abo if _nature == "abonnement" else _sug_reab
+                    _montant = st.number_input("Montant (FCFA)", min_value=0, value=int(_sug), step=500, key=f"cotis_mont_{m[0]}_{annee}")
+                    _mode_lbl = st.selectbox("Mode de paiement", ["💵 Espèces", "🌊 Wave", "📱 Orange Money", "🟡 MTN MoMo", "💳 Autre"], key=f"cotis_mode_{m[0]}_{annee}")
+                    _note = st.text_input("Note (facultative)", key=f"cotis_note_{m[0]}_{annee}")
+                    if st.button("✅ Enregistrer le paiement + éditer le reçu", key=f"cotis_go_{m[0]}_{annee}"):
+                        _mode_code = {"💵 Espèces": "especes", "🌊 Wave": "wave",
+                                      "📱 Orange Money": "orange_money",
+                                      "🟡 MTN MoMo": "mtn_momo", "💳 Autre": "autre"}[_mode_lbl]
+                        _id_abo, _num = cotis_enregistrer_paiement(
+                            m[0], annee, int(_montant), _nature, _mode_code,
+                            enregistre_par=st.session_state.get('username'),
+                            note=_note or None)
+                        st.session_state['cotis_recu_panel'] = {
+                            "numero": _num, "titre": f"{m[1]} {m[2]} — paiement noté"}
+                        st.rerun()
 
         if 'modif_abo_id' in st.session_state:
             mod_id = st.session_state['modif_abo_id']
@@ -1469,17 +1557,17 @@ def show_equipe():
         st.markdown("---")
         tab_liste = st.tabs(["📝 Abonnés", "🔄 Réabonnés", "❌ Non enregistrés"])
         with tab_liste[0]:
-            abonnes = c.execute('''SELECT m.matricule, m.nom, m.prenom, a.date_paiement, a.montant FROM membres m JOIN abonnements a ON m.id=a.membre_id WHERE m.equipe_id=? AND a.annee_debut=? AND a.type_abonnement='abonnement' AND a.statut='paye' ORDER BY m.nom''', (eid, annee)).fetchall()
+            abonnes = c.execute('''SELECT m.matricule, m.nom, m.prenom, a.date_paiement, a.montant, a.numero_recu FROM membres m JOIN abonnements a ON m.id=a.membre_id WHERE m.equipe_id=? AND a.annee_debut=? AND a.type_abonnement='abonnement' AND a.statut='paye' ORDER BY m.nom''', (eid, annee)).fetchall()
             if abonnes:
-                # CORRECTION AFFICHAGE : Suppression du champ "N°" en double dans le dictionnaire
-                data = [{"Matricule": a[0], "Nom": a[1], "Prénom": a[2], "Date paiement": a[3], "Montant": f"{a[4]} FCFA"} for a in abonnes]
+                # v7.14.0 — le numéro du reçu voyage avec la ligne
+                data = [{"Matricule": a[0], "Nom": a[1], "Prénom": a[2], "Date paiement": a[3], "Montant": f"{a[4]} FCFA", "N° reçu": a[5] or "—"} for a in abonnes]
                 df = pd.DataFrame(data); df.index = df.index + 1; st.dataframe(df, width="stretch")
             else: st.info("Aucun abonné.")
         with tab_liste[1]:
-            reabonnes = c.execute('''SELECT m.matricule, m.nom, m.prenom, a.date_paiement, a.montant FROM membres m JOIN abonnements a ON m.id=a.membre_id WHERE m.equipe_id=? AND a.annee_debut=? AND a.type_abonnement='reabonnement' AND a.statut='paye' ORDER BY m.nom''', (eid, annee)).fetchall()
+            reabonnes = c.execute('''SELECT m.matricule, m.nom, m.prenom, a.date_paiement, a.montant, a.numero_recu FROM membres m JOIN abonnements a ON m.id=a.membre_id WHERE m.equipe_id=? AND a.annee_debut=? AND a.type_abonnement='reabonnement' AND a.statut='paye' ORDER BY m.nom''', (eid, annee)).fetchall()
             if reabonnes:
-                # CORRECTION AFFICHAGE : Suppression du champ "N°" en double
-                data = [{"Matricule": r[0], "Nom": r[1], "Prénom": r[2], "Date paiement": r[3], "Montant": f"{r[4]} FCFA"} for r in reabonnes]
+                # v7.14.0 — le numéro du reçu voyage avec la ligne
+                data = [{"Matricule": r[0], "Nom": r[1], "Prénom": r[2], "Date paiement": r[3], "Montant": f"{r[4]} FCFA", "N° reçu": r[5] or "—"} for r in reabonnes]
                 df = pd.DataFrame(data); df.index = df.index + 1; st.dataframe(df, width="stretch")
             else: st.info("Aucun réabonné.")
         with tab_liste[2]:
