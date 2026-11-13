@@ -2079,6 +2079,70 @@ maison.*
   touchée ; aucun changement de schéma ; aucun changement de données.
 - `_VERSION_APPLI = "v7.13.15"`.
 
+### 51. v7.13.16 — Le livre de la dizaine se feuillette
+
+- **La demande** — « Côté web : je faisais allusion au livret de la dizaine
+  quand on clique sur “📿 Égrener la dizaine” du Fil de l'actualité. »
+- **Le geste posé** — le livre ouvert par « 📿 Égrener la dizaine » se
+  feuillette maintenant comme le livret du feuillet (v7.13.15) et comme le
+  téléphone : chaque page entre par la DROITE et se pose vers la GAUCHE —
+  à l'ouverture du livre, à chaque « Suivant ▶ », sur les pages
+  INTENTIONS, les dix « Je vous salue Marie », GLORIA PATRI et le
+  parchemin du pointage. Ici on ne recule jamais : chaque tour est un tour
+  en avant. La page du remerciement (interactive) garde son écran paisible.
+- **La mécanique** — la même aide `_feuillement_livret` (v7.13.15), la clé
+  portant la page du livre : l'animation rejoue à chaque tour, et
+  seulement à chaque tour.
+- **🔒 La confiance, inchangée** : lecture seule, la base n'est jamais
+  touchée ; aucun changement de schéma ; aucun changement de données.
+- `_VERSION_APPLI = "v7.13.16"`.
+
+### 52. v7.14.0 — La caisse de la cotisation et ses reçus numérotés (Phase 1 du paiement)
+
+- **La demande** — démarrage de la **Phase 1** du chantier « paiement des
+  abonnements / réabonnements / cotisations » : la caisse et les reçus,
+  **sans passerelle** — les montants et l'échéance étant posés par le
+  diocèse (adulte : abonnement 5 000 / réabonnement 5 000 FCFA ; jeune :
+  abonnement 3 500 / réabonnement 2 000 FCFA ; échéance de l'année
+  pastorale : **15 janvier 2027** ; en-tête des reçus : **Diocèse de
+  Grand-Bassam**).
+- **La migration douce** — la table `abonnements` (déjà chez elle) gagne
+  six colonnes de caisse posées idempotemment par `safe_migrate` :
+  `mode_paiement`, `numero_recu`, `origine`, `enregistre_par`,
+  `reference_ext`, `note`. Ni les membres, ni les intentions, ni aucun
+  écran existant ne bougent ; aucune valeur n'est écrite dans la base tant
+  que le diocèse n'a pas posé ses réglages.
+- **💼 Caisse de mon équipe** (rubrique « 📅 Abonnements » du responsable) —
+  les montants du diocèse affichés en tête, trois compteurs (cotisants,
+  total collecté, reste à régler), et pour chaque membre non à jour un
+  formulaire complet : nature (abonnement/réabonnement), montant
+  **pré-rempli selon le tarif de son équipe** (jeune/adulte), mode de
+  paiement (espèces, Wave, Orange Money, MTN MoMo, autre), note. Le clic
+  « Enregistrer le paiement + éditer le reçu » pose le paiement et ouvre
+  le **reçu numéroté** (COT-2026-00001, séquentiel par année pastorale) ;
+  le bouton 🧾 d'une ligne rouvre n'importe quel reçu.
+- **🧾 Le reçu PDF + QR** — une page A4 sobre : en-tête du porteur, numéro
+  en encadré, **QR de vérification publique**, fidèle, équipe, paroisse,
+  nature et année pastorale, montant, mode et date, situation à l'échéance,
+  signature du responsable. Le QR mène à l'écran public `?recu=N°` qui
+  confirme l'authenticité sans données sensibles — un reçu inventé ne
+  vérifie rien.
+- **🏛️ Caisse du diocèse** (rubrique « 📅 Abonnements » du diocèse) — les
+  réglages de la cotisation (montants, échéance, porteur), le total
+  collecté, l'**historique complet des reçus** (numéro, date, fidèle,
+  équipe, paroisse, nature, mode, signature), l'**export du trésorier
+  (Excel)** et le retéléchargement du PDF d'un reçu par son numéro.
+- **💳 Ma cotisation** (carte de l'accueil membre) — carte verte « à jour »
+  avec numéro de reçu et **reçu PDF téléchargeable**, ou carte ambrée « à
+  renouveler » avec les montants du diocèse (selon le tarif de l'équipe),
+  l'échéance et le chemin de la main propre ; l'écran annonce le Wave à
+  venir sans l'ouvrir encore (Phase 2).
+- **🔒 La confiance, inchangée** : une table existante augmentée par
+  migration douce ré-exécutable ; aucun écran existant ne change de sens ;
+  aucune donnée sensible dans l'écran public ; les montants, l'échéance et
+  le porteur ne s'écrivent en base QUE par le geste du diocèse.
+- `_VERSION_APPLI = "v7.14.0"`.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
