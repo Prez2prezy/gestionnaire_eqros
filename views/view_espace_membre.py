@@ -1,5 +1,15 @@
 # ====================================================================
 # view_espace_membre.py — VERSION 7.8.11 (mise en page du feuillet)
+# v7.13.16 : LE LIVRE DE LA DIZAINE SE FEUILLETTE (demande n°7) — « 📿 Égrener
+#   la dizaine » du Fil de l'actualité ouvre un livre dont les pages tournent
+#   comme celles du livret du feuillet (v7.13.15) et comme le téléphone :
+#   chaque page entre par la DROITE et se pose vers la GAUCHE, à chaque
+#   « Suivant ▶ », à l'ouverture du livre comme aux pages INTENTIONS, grains,
+#   GLORIA et au parchemin du pointage. Ici on ne recule jamais — chaque tour
+#   est un tour en avant. Même mécanique « nonce » (_feuillement_livret,
+#   même aide) : l'animation rejoue à chaque tour, et seulement à chaque
+#   tour. La page du remerciement (interactive) garde son écran paisible.
+#   La base n'est jamais touchée.
 # v7.13.15 : LE LIVRET SE FEUILLETTE (le modèle du téléphone, transposé au
 #   web, demande n°6) — dans le livret du feuillet mensuel, les pages ne se
 #   « cliquent » plus sèchement : chaque page entre par la DROITE et se pose
@@ -117,7 +127,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.15"
+_VERSION_APPLI = "v7.13.16"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -3516,10 +3526,19 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
         html_page = tete + corps + '</div>'
 
     if page["t"] == "merci":
-        # v7.13.1 — la page du remerciement.
+        # v7.13.1 — la page du remerciement (interactive — pas de feuilletage).
         _rendre_page_merci(est_membre=est_membre, matloc=matloc)
     else:
-        st.markdown(html_page, unsafe_allow_html=True)
+        # v7.13.16 — LE LIVRE DE LA DIZAINE SE FEUILLETTE : chaque page entre
+        # par la DROITE et se pose vers la GAUCHE, exactement le geste du
+        # téléphone et celui du livret du feuillet (v7.13.15). Ici on ne
+        # recule jamais — chaque tour est un tour en avant ; la clé porte la
+        # page (mécanique « nonce ») : l'animation rejoue à chaque tour, et
+        # seulement à chaque tour.
+        _style_feuil, _classe_feuil = _feuillement_livret("diz" + str(idx), "avant")
+        st.markdown(_style_feuil, unsafe_allow_html=True)
+        st.markdown('<div class="' + _classe_feuil + '">' + html_page + '</div>',
+                    unsafe_allow_html=True)
     _scroll_top(f"p{idx}")
 
     # v7.13.1 — LE POINTAGE SUR LE PARCHEMIN JAUNE : la DERNIÈRE page de
