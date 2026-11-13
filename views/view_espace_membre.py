@@ -129,7 +129,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.14.0"
+_VERSION_APPLI = "v7.14.1"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -4820,13 +4820,16 @@ def _carte_vidéo_a_la_demande():
 
 
 def _carte_cotisation_membre(membre):
-    """v7.14.0 — « 💳 Ma cotisation » : la carte posée sur l'accueil du
-    membre, entre la mémoire des dizaines et la dizaine du jour. Elle
-    montre l'état de la cotisation de l'année pastorale — à jour (carte
-    verte, numéro de reçu, reçu PDF téléchargeable) ou à renouveler
-    (carte ambrée, montants posés par le diocèse, échéance de l'année
-    pastorale) — et rien d'autre : ici, on ne PAIE pas encore, on SAIT
-    où on en est. Le membre tuple porte :
+    """v7.14.1 — « 💳 Abonnement - Réabonnement » : la carte posée sur
+    l'accueil du membre, entre la mémoire des dizaines et la dizaine du
+    jour. Elle montre l'état de l'abonnement de l'année pastorale — à jour
+    (carte verte, numéro de reçu, reçu PDF téléchargeable) ou à renouveler
+    (carte ambrée, montants posés par le diocèse selon SON équipe — adulte
+    hors équipe Jeune, jeune dans l'équipe Jeune —, échéance de l'année
+    pastorale) — et rien d'autre : ici, on ne PAIE pas encore, on SAIT où
+    on en est. Règle de la maison (v7.14.1) : tout équipier déjà dans la
+    base SE RÉABONNE ; la mention « NOUVEAU » seule ouvre l'ABONNEMENT.
+    Le membre tuple porte :
     id, nom, prenom, matloc, whatsapp, adhesion, photo, n° méditation,
     équipe, paroisse, equipe_id, paroisse_id."""
     from components import recu_cotisation_pdf, COTIS_MODES
@@ -4844,7 +4847,7 @@ def _carte_cotisation_membre(membre):
     except Exception:
         _recu = None
 
-    _echeance_aff = _reglages.get("cotis_echeance", "2027-01-15")
+    _echeance_aff = _reglages.get("cotis_echeance", "2026-12-15")
     try:
         _d_ech = date.fromisoformat(str(_echeance_aff))
         _echeance_aff = _d_ech.strftime("%d/%m/%Y")
@@ -4872,7 +4875,7 @@ def _carte_cotisation_membre(membre):
             ' border:1.5px solid #66bb6a; border-radius:15px; padding:16px;'
             ' margin:10px;">'
             '<div style="color:#1b5e20; font-size:1.08rem; font-weight:bold;">'
-            '✅ Ma cotisation — à jour</div>'
+            '✅ Abonnement - Réabonnement — à jour</div>'
             '<div style="color:#2e7d32; font-size:0.9rem; margin-top:6px; line-height:1.65;">'
             f'{_nature} · année pastorale {get_periode_pastorale()[0]}/{get_periode_pastorale()[0] + 1}'
             f' · {_mont_txt} FCFA · payée le {_d_aff} ({_mode})<br>'
@@ -4892,8 +4895,8 @@ def _carte_cotisation_membre(membre):
         _m_reab = _reglages.get("cotis_montant_" + _cat + "_reab", 5000)
         _m_abo_txt = f"{int(_m_abo):,}".replace(",", " ")
         _m_reab_txt = f"{int(_m_reab):,}".replace(",", " ")
-        _l_motif = ("Tarif jeune — montants posés par le diocèse" if _cat == "jeune"
-                    else "Tarif adulte — montants posés par le diocèse")
+        _l_motif = ("Tarif jeune (équipe Jeune) — montants posés par le diocèse" if _cat == "jeune"
+                    else "Tarif adulte (hors équipe Jeune) — montants posés par le diocèse")
         if _ech_passee:
             _l_ech = f"⏰ Échéance dépassée : le {_echeance_aff} est passé — rattrape ton échéance auprès de ton responsable."
         else:
@@ -4903,10 +4906,11 @@ def _carte_cotisation_membre(membre):
             ' border:1.5px solid #ffb300; border-radius:15px; padding:16px;'
             ' margin:10px;">'
             '<div style="color:#7a5a00; font-size:1.08rem; font-weight:bold;">'
-            '⏳ Ma cotisation — à renouveler</div>'
+            '⏳ Abonnement - Réabonnement — à renouveler</div>'
             '<div style="color:#7a5a00; font-size:0.9rem; margin-top:6px; line-height:1.7;">'
             f'Année pastorale {_annee}/{_annee + 1} · {_l_motif} :<br>'
-            f'📝 Abonnement <b>{_m_abo_txt}</b> FCFA &nbsp;·&nbsp; 🔄 Réabonnement <b>{_m_reab_txt}</b> FCFA<br>'
+            f'🔄 Réabonnement <b>{_m_reab_txt}</b> FCFA — déjà dans la base<br>'
+            f'📝 Abonnement <b>{_m_abo_txt}</b> FCFA — avec la mention « NOUVEAU »<br>'
             + _l_ech + '<br>'
             '💼 Paie auprès de ton responsable d&#39;équipe — en espèces ou en mobile '
             'money (Wave, Orange Money) : il note ton paiement et t&#39;édite ton '
@@ -6078,9 +6082,9 @@ def _corps_espace_membre(matloc_membre=None):
         _carte_memoire_membre(matloc_membre)
         # v7.13.13 — LA SECONDE BERGE : le web rend sa fidélité au téléphone.
         _bouton_retour_application(matloc_membre)
-        # v7.14.0 — « 💳 Ma cotisation » : l'état de l'année pastorale
-        # (reçu numéroté téléchargeable, ou montants et échéance du
-        # diocèse), posé sur l'accueil comme la mémoire et la berge.
+        # v7.14.1 — « 💳 Abonnement - Réabonnement » : l'état de l'année
+        # pastorale (reçu numéroté téléchargeable, ou montants et échéance
+        # du diocèse), posé sur l'accueil comme la mémoire et la berge.
         _carte_cotisation_membre(membre)
 
     if rub == "📅 Mes évènements":
