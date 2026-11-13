@@ -625,6 +625,20 @@ def init_tables_and_migrations():
     except Exception:
         pass
 
+    # v7.14.0 — LA CAISSE DE LA COTISATION (Phase 1 du paiement en ligne) :
+    # la table `abonnements`, chez elle depuis longtemps, gagne ses colonnes
+    # de caisse. Migration DOUCE et ré-exécutable : six colonnes posées à
+    # NULL, ni les membres, ni les intentions, ni aucun écran existant ne
+    # bougent. Aucune valeur par défaut n'est écrite dans la base : les
+    # montants, l'échéance et le porteur vivent dans le code tant que le
+    # diocèse n'a pas posé les siens (écran « 💼 Caisse du diocèse »).
+    safe_migrate("ALTER TABLE abonnements ADD COLUMN mode_paiement TEXT")
+    safe_migrate("ALTER TABLE abonnements ADD COLUMN numero_recu TEXT")
+    safe_migrate("ALTER TABLE abonnements ADD COLUMN origine TEXT")
+    safe_migrate("ALTER TABLE abonnements ADD COLUMN enregistre_par TEXT")
+    safe_migrate("ALTER TABLE abonnements ADD COLUMN reference_ext TEXT")
+    safe_migrate("ALTER TABLE abonnements ADD COLUMN note TEXT")
+
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
     try:
         anciens_evts = c.execute("SELECT id, equipe_id FROM evenements WHERE equipe_id IS NOT NULL AND paroisse_id IS NULL AND diocese_id IS NULL").fetchall()
@@ -4040,3 +4054,192 @@ def compteur_dizaines_mois_visiteur(jrnais):
     except Exception as e:
         logger.warning(f"compteur_dizaines_mois_visiteur : {e!r}")
         return (0, 0)
+
+
+# ────────────────────────────────────────────────────────────────────────
+# v7.14.0 — LA CAISSE DE LA COTISATION (Phase 1 du paiement en ligne)
+# Les montants, l'échéance et le porteur des reçus sont les RÉGLAGES du
+# diocèse (posés sur l'écran « 💼 Caisse du diocèse », stockés dans
+# parametres_app). Tant que rien n'y a été posé, les valeurs ci-dessous —
+# celles communiquées par le diocèse le 14 novembre 2026 — répondent à sa
+# place : la base n'est jamais écrite sans un geste du diocèse.
+# ────────────────────────────────────────────────────────────────────────
+
+COTIS_DEFAUTS = {
+    "cotis_montant_adulte_abo": 5000,     # Abonnement adulte (FCFA)
+    "cotis_montant_adulte_reab": 5000,    # Réabonnement adulte (FCFA)
+    "cotis_montant_jeune_abo": 3500,      # Abonnement jeune (FCFA)
+    "cotis_montant_jeune_reab": 2000,     # Réabonnement jeune (FCFA)
+    "cotis_echeance": "2027-01-15",       # Échéance de l'année pastorale
+    "cotis_porteur": "Diocèse de Grand-Bassam",   # En-tête des reçus
+}
+
+_COTIS_MONTANT_CLES = ("cotis_montant_adulte_abo", "cotis_montant_adulte_reab",
+                       "cotis_montant_jeune_abo", "cotis_montant_jeune_reab")
+
+
+def cotis_parametres_lire():
+    """Les réglages de la cotisation : montants (adulte/jeune ×
+    abonnement/réabonnement), échéance de l'année pastorale, porteur des
+    reçus. Les valeurs posées par le diocèse répondent d'abord ; le code
+    tient le reste."""
+    params = dict(COTIS_DEFAUTS)
+    try:
+        _assurer_parametres()
+        for _cle in COTIS_DEFAUTS:
+            _r = c.execute("SELECT valeur FROM parametres_app WHERE cle=?",
+                           (_cle,)).fetchone()
+            if _r and _r[0] is not None and str(_r[0]).strip() != "":
+                params[_cle] = _r[0]
+    except Exception as e:
+        logger.warning(f"cotis_parametres_lire : {e!r}")
+    for _cle in _COTIS_MONTANT_CLES:
+        try:
+            params[_cle] = int(float(params[_cle]))
+        except Exception:
+            params[_cle] = int(COTIS_DEFAUTS[_cle])
+    return params
+
+
+def cotis_parametres_ecrire(montants=None, echeance=None, porteur=None):
+    """Le diocèse pose (ou repositionne) ses réglages de caisse.
+    `montants` : dict partiel {clé: valeur} sur _COTIS_MONTANT_CLES ;
+    `echeance` : date ISO ; `porteur` : en-tête des reçus."""
+    _assurer_parametres()
+    try:
+        for _cle, _val in (montants or {}).items():
+            if _cle in _COTIS_MONTANT_CLES and _val is not None:
+                c.execute("""INSERT INTO parametres_app (cle, valeur) VALUES (?, ?)
+                             ON CONFLICT(cle) DO UPDATE SET valeur=excluded.valeur""",
+                          (_cle, str(int(_val))))
+        if echeance:
+            c.execute("""INSERT INTO parametres_app (cle, valeur) VALUES (?, ?)
+                         ON CONFLICT(cle) DO UPDATE SET valeur=excluded.valeur""",
+                      ("cotis_echeance", str(echeance)))
+        if porteur is not None and str(porteur).strip() != "":
+            c.execute("""INSERT INTO parametres_app (cle, valeur) VALUES (?, ?)
+                         ON CONFLICT(cle) DO UPDATE SET valeur=excluded.valeur""",
+                      ("cotis_porteur", str(porteur).strip()))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"cotis_parametres_ecrire : {e!r}")
+        return False
+
+
+def cotis_categorie_membre(membre_id):
+    """« jeune » si l'équipe du membre porte « jeune » dans son nom — la
+    convention déjà en place dans la maison (vues paroisse) — sinon
+    « adulte ». Équipe inconnue : adulte."""
+    try:
+        _r = c.execute("""SELECT e.nom_equipe FROM membres m
+                          LEFT JOIN equipes e ON m.equipe_id=e.id
+                          WHERE m.id=?""", (membre_id,)).fetchone()
+        if _r and _r[0] and "jeune" in str(_r[0]).lower():
+            return "jeune"
+    except Exception:
+        pass
+    return "adulte"
+
+
+def cotis_montant_suggere(membre_id, type_abonnement="reabonnement"):
+    """Le montant que le diocèse a posé pour CE membre (selon sa catégorie
+    et la nature de son abonnement). Retourne (montant, catégorie)."""
+    params = cotis_parametres_lire()
+    _cat = cotis_categorie_membre(membre_id)
+    _sfx = "abo" if type_abonnement == "abonnement" else "reab"
+    _cle = f"cotis_montant_{_cat}_{_sfx}"
+    return int(params.get(_cle, 5000)), _cat
+
+
+def cotis_numero_recu_suivant(annee_debut):
+    """Le prochain numéro de reçu de l'année pastorale — COT-2026-00001
+    pour la première. Le plus grand numéro DÉJÀ posé pour cette année
+    détermine le suivant : numérotation séquentielle, posée au moment où
+    le paiement est confirmé, jamais avant."""
+    _prefixe = f"COT-{int(annee_debut)}-"
+    _max = 0
+    try:
+        for _r in c.execute("SELECT numero_recu FROM abonnements WHERE numero_recu LIKE ?",
+                            (_prefixe + "%",)).fetchall():
+            try:
+                _max = max(_max, int(str(_r[0]).rsplit("-", 1)[1]))
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return f"{_prefixe}{_max + 1:05d}"
+
+
+def cotis_enregistrer_paiement(membre_id, annee_debut, montant,
+                               type_abonnement="reabonnement",
+                               mode_paiement="especes",
+                               enregistre_par=None, origine="caisse",
+                               reference_ext=None, note=None):
+    """LE GESTE DE LA CAISSE (Phase 1) : un paiement confirmé en main
+    propre — le reçu reçoit son numéro À CE MOMENT-LÀ. La convention
+    historique est respectée : UN abonnement par membre et par année
+    (mise à jour s'il existe déjà, sans renuméroter un reçu qui a déjà
+    son numéro). Retourne (id, numero_recu)."""
+    with _verrou_db:
+        _ex = c.execute("""SELECT id, numero_recu FROM abonnements
+                           WHERE membre_id=? AND annee_debut=?""",
+                        (membre_id, annee_debut)).fetchone()
+        _numero = (_ex[1] if _ex and _ex[1] else cotis_numero_recu_suivant(annee_debut))
+        if _ex:
+            c.execute("""UPDATE abonnements
+                         SET date_paiement=?, montant=?, type_abonnement=?, statut='paye',
+                             mode_paiement=?, numero_recu=?, origine=?,
+                             enregistre_par=?, reference_ext=?, note=?
+                         WHERE id=?""",
+                      (date.today().isoformat(), montant, type_abonnement,
+                       mode_paiement, _numero, origine, enregistre_par,
+                       reference_ext, note, _ex[0]))
+            _id = _ex[0]
+        else:
+            c.execute("""INSERT INTO abonnements
+                         (membre_id, annee_debut, date_paiement, montant,
+                          type_abonnement, statut, mode_paiement, numero_recu,
+                          origine, enregistre_par, reference_ext, note)
+                         VALUES (?,?,?,?,?,'paye',?,?,?,?,?,?)""",
+                      (membre_id, annee_debut, date.today().isoformat(),
+                       montant, type_abonnement, mode_paiement, _numero,
+                       origine, enregistre_par, reference_ext, note))
+            _id = c.lastrowid
+        commit_and_sync()
+    return _id, _numero
+
+
+def cotis_recus_membre(membre_id, annee_debut=None):
+    """Les reçus d'un membre (toutes années, ou une seule)."""
+    if annee_debut is None:
+        return c.execute("""SELECT annee_debut, numero_recu, montant, type_abonnement,
+                                   date_paiement, mode_paiement, origine, enregistre_par
+                            FROM abonnements WHERE membre_id=? AND statut='paye'
+                            ORDER BY annee_debut DESC""", (membre_id,)).fetchall()
+    return c.execute("""SELECT annee_debut, numero_recu, montant, type_abonnement,
+                               date_paiement, mode_paiement, origine, enregistre_par
+                        FROM abonnements WHERE membre_id=? AND annee_debut=? AND statut='paye'""",
+                      (membre_id, annee_debut)).fetchall()
+
+
+def cotis_recu_info(numero_recu):
+    """CE QUE LA VÉRIFICATION PUBLIQUE MONTRE d'un reçu (écran ouvert par le
+    QR) : l'authenticité, le fidèle, son équipe, la nature, le montant, la
+    date. AUCUNE donnée sensible ne sort ici : ni WhatsApp, ni naissance,
+    ni lien matloc."""
+    try:
+        return c.execute("""SELECT a.numero_recu, a.montant, a.type_abonnement,
+                                   a.date_paiement, a.annee_debut, a.mode_paiement,
+                                   m.nom, m.prenom, m.matricule,
+                                   e.nom_equipe, p.nom,
+                                   a.enregistre_par, a.origine
+                            FROM abonnements a
+                            JOIN membres m ON a.membre_id=m.id
+                            LEFT JOIN equipes e ON m.equipe_id=e.id
+                            LEFT JOIN paroisses p ON m.paroisse_id=p.id
+                            WHERE a.numero_recu=? AND a.statut='paye'""",
+                          (numero_recu,)).fetchone()
+    except Exception as e:
+        logger.warning(f"cotis_recu_info : {e!r}")
+        return None
