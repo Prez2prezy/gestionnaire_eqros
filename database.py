@@ -639,6 +639,19 @@ def init_tables_and_migrations():
     safe_migrate("ALTER TABLE abonnements ADD COLUMN reference_ext TEXT")
     safe_migrate("ALTER TABLE abonnements ADD COLUMN note TEXT")
 
+    # v7.14.1 — LE GESTE DU DIOCÈSE (« Remettre l'échéance au 15 décembre
+    # 2026 ») : si la base ne porte que l'ANCIENNE valeur par défaut
+    # (2027-01-15 — celle qui s'y posait d'un clic sur « Poser les
+    # réglages » sans la changer), elle suit la nouvelle décision. Toute
+    # autre valeur posée volontairement reste chez elle. Migration douce,
+    # ré-exécutable, sans surprise.
+    try:
+        c.execute("""UPDATE parametres_app SET valeur='2026-12-15'
+                     WHERE cle='cotis_echeance' AND valeur='2027-01-15'""")
+        commit_and_sync()
+    except Exception:
+        pass
+
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
     try:
         anciens_evts = c.execute("SELECT id, equipe_id FROM evenements WHERE equipe_id IS NOT NULL AND paroisse_id IS NULL AND diocese_id IS NULL").fetchall()
@@ -4066,11 +4079,11 @@ def compteur_dizaines_mois_visiteur(jrnais):
 # ────────────────────────────────────────────────────────────────────────
 
 COTIS_DEFAUTS = {
-    "cotis_montant_adulte_abo": 5000,     # Abonnement adulte (FCFA)
-    "cotis_montant_adulte_reab": 5000,    # Réabonnement adulte (FCFA)
-    "cotis_montant_jeune_abo": 3500,      # Abonnement jeune (FCFA)
-    "cotis_montant_jeune_reab": 2000,     # Réabonnement jeune (FCFA)
-    "cotis_echeance": "2027-01-15",       # Échéance de l'année pastorale
+    "cotis_montant_adulte_abo": 5000,     # Abonnement adulte — mention NOUVEAU (FCFA)
+    "cotis_montant_adulte_reab": 5000,    # Réabonnement adulte — le cas courant (FCFA)
+    "cotis_montant_jeune_abo": 3500,      # Abonnement jeune — nouveau Jeune (FCFA)
+    "cotis_montant_jeune_reab": 2000,     # Réabonnement jeune — le cas courant (FCFA)
+    "cotis_echeance": "2026-12-15",       # Échéance de l'année pastorale (v7.14.1)
     "cotis_porteur": "Diocèse de Grand-Bassam",   # En-tête des reçus
 }
 
