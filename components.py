@@ -2847,7 +2847,7 @@ def _cotis_cp1252(t):
 
 
 def recu_cotisation_pdf(recu, porteur="Diocèse de Grand-Bassam",
-                        echeance_iso="2027-01-15"):
+                        echeance_iso="2026-12-15"):
     """LE REÇU PDF (v7.14.0) : une page A4 autonome — en-tête du porteur,
     numéro du reçu, QR de vérification, identité du fidèle, nature et
     montant, date et mode de paiement, situation à l'échéance, signature
@@ -2929,7 +2929,7 @@ def recu_cotisation_pdf(recu, porteur="Diocèse de Grand-Bassam",
     _titre_nature = ("ABONNEMENT" if recu.get("type_abonnement") == "abonnement"
                      else "RÉABONNEMENT")
 
-    _histoire.append(Paragraph(_cotis_cp1252("REÇU DE COTISATION"), _s_titre))
+    _histoire.append(Paragraph(_cotis_cp1252("REÇU D'ABONNEMENT"), _s_titre))
     _histoire.append(Paragraph(_cotis_cp1252(
         f"{_titre_nature} — Année pastorale {periode_affichage(_annee)}"),
         _s_soustitre))
@@ -3011,11 +3011,11 @@ def recu_cotisation_pdf(recu, porteur="Diocèse de Grand-Bassam",
     _bloc("Fidèle", f"{_fid}   ·   Matricule : {_matricule}")
     _bloc("Équipe", recu.get("equipe") or "—")
     _bloc("Paroisse", recu.get("paroisse") or "—")
-    _bloc("Nature de la cotisation",
+    _bloc("Nature de l'abonnement",
           f"{_titre_nature.capitalize()} — couvre l'année pastorale {periode_affichage(_annee)}")
     _bloc("Montant reçu", f"{_montant:,}".replace(",", " ") + " FCFA")
     _bloc("Mode de paiement", f"{_mode}  —  payé le {_d_paiement}")
-    _bloc("Situation de cotisation",
+    _bloc("Situation d'abonnement",
           f"À jour jusqu'au {_echeance_aff} (échéance de l'année pastorale — montants posés par le diocèse)")
     _bloc("Reçu noté par", f"{_enregistré_par}"
           + ("  —  paiement en main propre noté par le responsable"
@@ -3029,7 +3029,7 @@ def recu_cotisation_pdf(recu, porteur="Diocèse de Grand-Bassam",
 
     _histoire.append(Paragraph(_cotis_cp1252(
         "Merci de soutenir la mission des Équipes du Rosaire — que chaque "
-        "cotisation trouve sa route paisible."), _s_priere))
+        "abonnement trouve sa route paisible."), _s_priere))
     _histoire.append(Paragraph(_cotis_cp1252(
         f"Reçu authentifiable en ligne : {cotis_lien_verification(recu.get('numero_recu', ''))}"
         " — un reçu inventé ne vérifie rien."), _s_pied))
