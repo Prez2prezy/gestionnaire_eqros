@@ -2808,3 +2808,258 @@ def gerer_questionnaire_feuillet():
     # zone « 1 Bis. » et l'onglet « 🕯️ Thème » (Contenu existant) servent
     # la même lecture, question par question, avec le carnet du mois.
     afficher_reponses_questionnaire_feuillet(_an_q, _mois_q, prefixe_cle="qf")
+
+
+# ────────────────────────────────────────────────────────────────────────
+# v7.14.0 — LE REÇU NUMÉROTÉ DE COTISATION (Phase 1 du paiement)
+# Un reçu = une page PDF sobre, imprimable, numérotée (COT-<année>-NNNNN),
+# porteuse d'un QR de vérification PUBLIC (?recu=NUMÉRO). Le QR est
+# fabriqué ici (image locale, aucun service tiers) ; le PDF est rendu
+# avec reportlab, comme la fiche de mission (v7.12.0).
+# ────────────────────────────────────────────────────────────────────────
+
+COTIS_MODES = {
+    "especes": "Espèces",
+    "wave": "Wave",
+    "orange_money": "Orange Money",
+    "mtn_momo": "MTN MoMo",
+    "autre": "Autre",
+}
+
+
+def cotis_lien_verification(numero_recu):
+    """Le lien public de vérification (celui que porte le QR)."""
+    return f"{URL_ESPACE_SPIRITUEL}/?recu={urllib.parse.quote(str(numero_recu))}"
+
+
+def _cotis_cp1252(t):
+    """Le texte prêt pour les polices de base du PDF : les caractères que
+    Helvetica ne connaît pas (emoji…) sont retirés — le papier garde le
+    français entier (accents, œ, guillemets, tirets)."""
+    _out = []
+    for _ch in str(t or ""):
+        try:
+            _ch.encode("cp1252")
+            _out.append(_ch)
+        except Exception:
+            pass
+    return "".join(_out)
+
+
+def recu_cotisation_pdf(recu, porteur="Diocèse de Grand-Bassam",
+                        echeance_iso="2027-01-15"):
+    """LE REÇU PDF (v7.14.0) : une page A4 autonome — en-tête du porteur,
+    numéro du reçu, QR de vérification, identité du fidèle, nature et
+    montant, date et mode de paiement, situation à l'échéance, signature
+    du responsable. `recu` porte les champs du reçu (dict) :
+    numero, montant, type_abonnement, date_paiement, annee_debut,
+    mode_paiement, nom, prenom, matricule, equipe, paroisse,
+    enregistre_par, origine. Retourne les octets du PDF, ou None si
+    reportlab manque."""
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import mm
+        from reportlab.lib import colors
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER
+        from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
+                                        Table, TableStyle, HRFlowable,
+                                        Image as RLImage)
+    except Exception:
+        return None
+
+    _bleu = colors.HexColor("#1A237E")
+    _liseret = colors.HexColor("#C5CAE9")
+    _or = colors.HexColor("#C9A227")
+
+    def _sty(nom, taille=9.5, gras=False, ital=False, coul="#1a1a2e",
+             centre=False, dessus=0, dessous=3):
+        return ParagraphStyle(
+            nom, fontName="Helvetica-Bold" if gras else
+            ("Helvetica-Oblique" if ital else "Helvetica"), fontSize=taille,
+            leading=taille * 1.45, textColor=colors.HexColor(coul),
+            alignment=TA_CENTER if centre else 0, spaceBefore=dessus,
+            spaceAfter=dessous)
+
+    _s_mvt = _sty("mvt", 11, gras=True, coul="#1A237E", centre=True, dessous=1)
+    _s_port = _sty("port", 9.2, ital=True, coul="#4527a0", centre=True, dessous=2)
+    _s_titre = _sty("titre", 14.5, gras=True, coul="#1A237E", centre=True,
+                    dessus=6, dessous=1)
+    _s_soustitre = _sty("soustitre", 9, ital=True, coul="#555555", centre=True,
+                        dessous=8)
+    _s_num = _sty("num", 12.5, gras=True, coul="#1A237E", centre=True, dessous=0)
+    _s_etiq = _sty("etiq", 7.8, gras=True, coul="#1A237E", dessous=2)
+    _s_txt = _sty("txt", 9.5, dessous=6)
+    _s_pied = _sty("pied", 7.6, coul="#888888", centre=True, dessus=10, dessous=0)
+    _s_priere = _sty("priere", 8.6, ital=True, coul="#4527a0", centre=True,
+                     dessus=8, dessous=4)
+    _s_role = _sty("role", 8.6, gras=True, coul="#1A237E", centre=True, dessous=0)
+    _s_nom_sig = _sty("nomsig", 8.2, coul="#444444", centre=True, dessous=0)
+
+    _histoire = []
+    _logo = None
+    for _chemin in (os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "..", "images", "logo.png"),
+                    os.path.join("images", "logo.png"),
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "..", "static", "logo_equipes_rosaire.png")):
+        if os.path.exists(_chemin):
+            _logo = _chemin
+            break
+
+    # ── l'en-tête du porteur ─────────────────────────────────────────
+    if _logo:
+        try:
+            from PIL import Image as PILImage
+            _l, _h = PILImage.open(_logo).size
+            _img = RLImage(_logo, width=17 * mm, height=17 * mm * _h / max(_l, 1))
+            _img.hAlign = "CENTER"
+            _histoire.append(_img)
+            _histoire.append(Spacer(1, 2 * mm))
+        except Exception:
+            pass
+    _histoire.append(Paragraph(_cotis_cp1252("LES ÉQUIPES DU ROSAIRE"), _s_mvt))
+    _histoire.append(Paragraph(_cotis_cp1252(str(porteur)), _s_port))
+    _histoire.append(HRFlowable(width="100%", thickness=1.1, color=_or,
+                                spaceBefore=2, spaceAfter=1.5))
+    _histoire.append(HRFlowable(width="100%", thickness=1.1, color=_or,
+                                spaceBefore=0, spaceAfter=4))
+
+    _annee = int(recu.get("annee_debut") or get_periode_pastorale()[0])
+    _titre_nature = ("ABONNEMENT" if recu.get("type_abonnement") == "abonnement"
+                     else "RÉABONNEMENT")
+
+    _histoire.append(Paragraph(_cotis_cp1252("REÇU DE COTISATION"), _s_titre))
+    _histoire.append(Paragraph(_cotis_cp1252(
+        f"{_titre_nature} — Année pastorale {periode_affichage(_annee)}"),
+        _s_soustitre))
+
+    # ── le numéro du reçu, en tête de page ───────────────────────────
+    _numbox = Table([[Paragraph(_cotis_cp1252(
+        f"N° {recu.get('numero_recu', '')}"), _s_num)]], colWidths=[80 * mm])
+    _numbox.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 1.1, _bleu),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#E8EAF6")),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))
+    _numbox.hAlign = "CENTER"
+
+    # ── le QR de vérification ────────────────────────────────────────
+    _qr_png = None
+    try:
+        _qr = qrcode.QRCode(box_size=6, border=2)
+        _qr.add_data(cotis_lien_verification(recu.get("numero_recu", "")))
+        _qr.make(fit=True)
+        _buf = BytesIO()
+        _qr.make_image(fill_color="black", back_color="white").save(_buf, format="PNG")
+        _qr_png = _buf.getvalue()
+    except Exception:
+        _qr_png = None
+
+    _s_legende_qr = _sty("legqr", 7.4, coul="#666666", centre=True, dessous=0)
+    _ligne_top = []
+    if _qr_png:
+        try:
+            _img_qr = RLImage(BytesIO(_qr_png), width=26 * mm, height=26 * mm)
+            _ligne_top = [_numbox, _img_qr]
+        except Exception:
+            _ligne_top = [_numbox, Paragraph("", _s_num)]
+    else:
+        _ligne_top = [_numbox, Paragraph("", _s_num)]
+    _rang = Table([_ligne_top], colWidths=[95 * mm, 85 * mm])
+    _rang.setStyle(TableStyle([
+        ("ALIGN", (0, 0), (0, 0), "CENTER"), ("ALIGN", (1, 0), (1, 0), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+    _histoire.append(_rang)
+    if _qr_png:
+        _histoire.append(Paragraph(_cotis_cp1252(
+            "Scannez ce QR pour vérifier l'authenticité du reçu (écran public)."),
+            _s_legende_qr))
+    _histoire.append(Spacer(1, 6 * mm))
+
+    def _bloc(etiquette, texte):
+        _histoire.append(Paragraph(_cotis_cp1252(etiquette), _s_etiq))
+        _cellule = Table([[Paragraph(_cotis_cp1252(texte or "—"), _s_txt)]],
+                         colWidths=[176 * mm])
+        _cellule.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.7, _liseret),
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FAFAFF")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+        _histoire.append(_cellule)
+        _histoire.append(Spacer(1, 4.5 * mm))
+
+    def _date_fr(_d):
+        """La date au papier français (14/11/2026) quand elle se lit, l'ISO sinon."""
+        try:
+            from datetime import date as _dd
+            return _dd.fromisoformat(str(_d)[:10]).strftime("%d/%m/%Y")
+        except Exception:
+            return _d or "—"
+
+    _fid = ((str(recu.get("prenom") or "") + " " + str(recu.get("nom") or "")).strip()
+            or (recu.get("nom") or "—"))
+    _montant = int(recu.get("montant") or 0)
+    _mode = COTIS_MODES.get(recu.get("mode_paiement") or "", "Espèces")
+    _d_paiement = _date_fr(recu.get("date_paiement"))
+    _matricule = recu.get("matricule") or "—"
+    _enregistré_par = recu.get("enregistre_par") or "Le responsable d'équipe"
+    _echeance_aff = _date_fr(echeance_iso)
+
+    _bloc("Fidèle", f"{_fid}   ·   Matricule : {_matricule}")
+    _bloc("Équipe", recu.get("equipe") or "—")
+    _bloc("Paroisse", recu.get("paroisse") or "—")
+    _bloc("Nature de la cotisation",
+          f"{_titre_nature.capitalize()} — couvre l'année pastorale {periode_affichage(_annee)}")
+    _bloc("Montant reçu", f"{_montant:,}".replace(",", " ") + " FCFA")
+    _bloc("Mode de paiement", f"{_mode}  —  payé le {_d_paiement}")
+    _bloc("Situation de cotisation",
+          f"À jour jusqu'au {_echeance_aff} (échéance de l'année pastorale — montants posés par le diocèse)")
+    _bloc("Reçu noté par", f"{_enregistré_par}"
+          + ("  —  paiement en main propre noté par le responsable"
+             if (recu.get("origine") or "caisse") == "caisse" else ""))
+
+    _histoire.append(Spacer(1, 7 * mm))
+    _histoire.append(HRFlowable(width="40%", thickness=0.8, color=_liseret,
+                                spaceBefore=6, spaceAfter=2))
+    _histoire.append(Paragraph(_cotis_cp1252("Signature / cachet"), _s_role))
+    _histoire.append(Paragraph(_cotis_cp1252(str(_enregistré_par)), _s_nom_sig))
+
+    _histoire.append(Paragraph(_cotis_cp1252(
+        "Merci de soutenir la mission des Équipes du Rosaire — que chaque "
+        "cotisation trouve sa route paisible."), _s_priere))
+    _histoire.append(Paragraph(_cotis_cp1252(
+        f"Reçu authentifiable en ligne : {cotis_lien_verification(recu.get('numero_recu', ''))}"
+        " — un reçu inventé ne vérifie rien."), _s_pied))
+
+    try:
+        _buf_pdf = BytesIO()
+        _doc = SimpleDocTemplate(_buf_pdf, pagesize=A4,
+                                 topMargin=14 * mm, bottomMargin=14 * mm,
+                                 leftMargin=17 * mm, rightMargin=17 * mm)
+        _doc.build(_histoire)
+        return _buf_pdf.getvalue()
+    except Exception:
+        return None
+
+
+def recu_pdf_de_numero(numero_recu, porteur=None, echeance=None):
+    """Le PDF du reçu retrouvé par son numéro (bouton 🧾 des caisses et
+    carte du membre) : les données du reçu relues en base, le PDF rendu
+    comme à l'édition. None si le numéro ne renvoie à rien."""
+    from database import cotis_recu_info, cotis_parametres_lire
+    _info = cotis_recu_info(str(numero_recu))
+    if not _info:
+        return None
+    _reglages = cotis_parametres_lire()
+    return recu_cotisation_pdf(
+        {"numero_recu": _info[0], "montant": _info[1],
+         "type_abonnement": _info[2], "date_paiement": _info[3],
+         "annee_debut": _info[4], "mode_paiement": _info[5],
+         "nom": _info[6], "prenom": _info[7], "matricule": _info[8],
+         "equipe": _info[9], "paroisse": _info[10],
+         "enregistre_par": _info[11], "origine": _info[12]},
+        porteur=porteur or _reglages.get("cotis_porteur"),
+        echeance_iso=echeance or str(_reglages.get("cotis_echeance")))
