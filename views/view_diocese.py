@@ -28,7 +28,9 @@ from datetime import date
 from database import (c, commit_and_sync, safe_migrate,
                       feuillet_questionnaire_soumission,
                       feuillet_questionnaire_existe,
-                      feuillet_questions_lister)
+                      feuillet_questions_lister,
+                      # v7.14.0 — la caisse de la cotisation
+                      cotis_parametres_lire, cotis_parametres_ecrire)
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation,
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale,
                       supprimer_photo, afficher_messages_flash, lien_whatsapp, URL_ESPACE_SPIRITUEL,
@@ -38,7 +40,8 @@ from services import (hash_password, generer_mot_de_passe, safe_date, afficher_s
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel,
                         afficher_whatsapp_tabs, afficher_historique_paroisse,
                         afficher_etat_presences_paroisse, _qrcode_png_bytes,
-                        afficher_reponses_questionnaire_feuillet)
+                        afficher_reponses_questionnaire_feuillet,
+                        recu_pdf_de_numero)  # v7.14.0 — reçus numérotés
 
 
 def _gestionnaire_archives_espace(texte_intro, types_contenus, prefixe):
@@ -702,15 +705,103 @@ def show_diocese():
         annee_debut = st.number_input("Année de début de la période", min_value=2020, max_value=annee_pastorale_en_cours, value=annee_pastorale_en_cours, step=1)
         st.write(f"**Période :** {periode_affichage(annee_debut)}")
 
+        # v7.14.0 — LES RÉGLAGES DE LA COTISATION (posés par le diocèse) :
+        # montants adulte/jeune × abonnement/réabonnement, échéance de
+        # l'année pastorale, porteur des reçus. Ils règlent les cartes
+        # « Ma cotisation », les suggestions des caisses d'équipe et
+        # l'en-tête de chaque reçu numéroté.
+        _reglages_dio = cotis_parametres_lire()
+        with st.expander("⚙️ Réglages de la cotisation (posés par le diocèse)"):
+            st.caption("Ces valeurs règlent les cartes « Ma cotisation », les suggestions "
+                       "de montant des caisses d'équipe et l'en-tête de chaque reçu numéroté.")
+            with st.form("cotis_reglages_dio"):
+                _rc1, _rc2 = st.columns(2)
+                with _rc1:
+                    _m_ad_abo = st.number_input("Adulte — Abonnement (FCFA)", min_value=0,
+                                                value=int(_reglages_dio.get("cotis_montant_adulte_abo", 5000)), step=500)
+                    _m_ad_reab = st.number_input("Adulte — Réabonnement (FCFA)", min_value=0,
+                                                 value=int(_reglages_dio.get("cotis_montant_adulte_reab", 5000)), step=500)
+                with _rc2:
+                    _m_jn_abo = st.number_input("Jeune — Abonnement (FCFA)", min_value=0,
+                                                value=int(_reglages_dio.get("cotis_montant_jeune_abo", 3500)), step=500)
+                    _m_jn_reab = st.number_input("Jeune — Réabonnement (FCFA)", min_value=0,
+                                                 value=int(_reglages_dio.get("cotis_montant_jeune_reab", 2000)), step=500)
+                try:
+                    _d_ech_ini = date.fromisoformat(str(_reglages_dio.get("cotis_echeance")))
+                except Exception:
+                    _d_ech_ini = date(2027, 1, 15)
+                _d_ech = st.date_input("Échéance de l'année pastorale", value=_d_ech_ini)
+                _porteur = st.text_input("Nom du porteur (en-tête des reçus)",
+                                         value=str(_reglages_dio.get("cotis_porteur")))
+                if st.form_submit_button("💾 Poser les réglages"):
+                    if cotis_parametres_ecrire(
+                            montants={"cotis_montant_adulte_abo": _m_ad_abo,
+                                      "cotis_montant_adulte_reab": _m_ad_reab,
+                                      "cotis_montant_jeune_abo": _m_jn_abo,
+                                      "cotis_montant_jeune_reab": _m_jn_reab},
+                            echeance=_d_ech.isoformat() if hasattr(_d_ech, "isoformat") else str(_d_ech),
+                            porteur=_porteur):
+                        st.success("Réglages posés — cartes, caisses et reçus suivent désormais ces valeurs.")
+                        st.rerun()
+                    else:
+                        st.error("Les réglages n'ont pas pu être posés — réessaie.")
+
         total_membres = c.execute("SELECT COUNT(*) FROM membres WHERE statut='actif'").fetchone()[0]
         payes = c.execute("SELECT COUNT(*) FROM abonnements WHERE annee_debut=? AND statut='paye'", (annee_debut,)).fetchone()[0]
+        total_collecte = c.execute("SELECT COALESCE(SUM(montant), 0) FROM abonnements WHERE annee_debut=? AND statut='paye'", (annee_debut,)).fetchone()[0]
 
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         c1.metric("📊 Total membres actifs", total_membres)
-        c2.metric("✅ Abonnements enregistrés", payes)
+        c2.metric("✅ Cotisants", payes)
+        c3.metric("💰 Total collecté", f"{int(total_collecte or 0):,} FCFA".replace(",", " "))
 
         taux = f"{payes/total_membres*100:.0f}%" if total_membres else "0%"
         st.caption(f"📊 **Taux de recouvrement global :** {taux}")
+
+        # v7.14.0 — L'HISTORIQUE COMPLET DES REÇUS + L'EXPORT DU TRÉSORIER :
+        # chaque reçu numéroté (COT-AAAA-NNNNN) avec sa nature, son mode,
+        # sa signature ; l'Excel prêt à porter au trésorier ; le PDF d'un
+        # reçu retéléchargeable d'un clic.
+        _mode_lbls_dio = {"especes": "Espèces", "wave": "Wave", "orange_money": "Orange Money",
+                          "mtn_momo": "MTN MoMo", "autre": "Autre"}
+        _histo = c.execute("""SELECT a.numero_recu, a.date_paiement, m.nom, m.prenom,
+                                     e.nom_equipe, p.nom, a.type_abonnement, a.montant,
+                                     a.mode_paiement, a.enregistre_par
+                              FROM abonnements a
+                              JOIN membres m ON a.membre_id=m.id
+                              LEFT JOIN equipes e ON m.equipe_id=e.id
+                              LEFT JOIN paroisses p ON m.paroisse_id=p.id
+                              WHERE a.annee_debut=? AND a.statut='paye'
+                              ORDER BY a.date_paiement DESC, a.id DESC""", (annee_debut,)).fetchall()
+        with st.expander("🧾 Historique complet des reçus (toute l'année)"):
+            if _histo:
+                _data_h = [{"N° reçu": h[0], "Date": h[1], "Fidèle": f"{h[2] or ''} {h[3] or ''}".strip(),
+                            "Équipe": h[4] or "—", "Paroisse": h[5] or "—",
+                            "Nature": "Abonnement" if h[6] == 'abonnement' else "Réabonnement",
+                            "Montant": h[7], "Mode": _mode_lbls_dio.get(h[8] or "", h[8] or "—"),
+                            "Noté par": h[9] or "—"} for h in _histo]
+                _df_h = pd.DataFrame(_data_h)
+                _df_h.index = _df_h.index + 1
+                st.dataframe(_df_h, width="stretch")
+                _out_h = io.BytesIO()
+                with pd.ExcelWriter(_out_h, engine='openpyxl') as _w: _df_h.to_excel(_w, index=False, sheet_name=f"Caisse_{annee_debut}")
+                _out_h.seek(0)
+                st.download_button("📥 Export du trésorier (Excel)", data=_out_h,
+                                   file_name=f"caisse_diocese_{annee_debut}_{date.today()}.xlsx",
+                                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                   key=f"cotis_export_dio_{annee_debut}")
+                _nums_dio = [h[0] for h in _histo if h[0]]
+                if _nums_dio:
+                    _sel_dio = st.selectbox("🧾 Retélécharger un reçu (PDF)", _nums_dio,
+                                            key=f"cotis_retele_{annee_debut}")
+                    _pdf_dio = recu_pdf_de_numero(_sel_dio)
+                    if _pdf_dio:
+                        st.download_button(f"📥 Reçu {_sel_dio} (PDF)", data=_pdf_dio,
+                                           file_name=f"recu_{_sel_dio}.pdf",
+                                           mime="application/pdf",
+                                           key=f"cotis_dl_dio_{_sel_dio}")
+            else:
+                st.info("Aucun paiement noté pour cette année — les caisses d'équipe sont encore silencieuses.")
         st.markdown("---")
 
         for p in c.execute("SELECT id, nom FROM paroisses ORDER BY nom").fetchall():
