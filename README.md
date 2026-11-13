@@ -2143,6 +2143,40 @@ maison.*
   le porteur ne s'écrivent en base QUE par le geste du diocèse.
 - `_VERSION_APPLI = "v7.14.0"`.
 
+### 53. v7.14.1 — « Abonnement - Réabonnement » : le titre rendu au module, l'échéance au 15 décembre 2026, la règle de la mention « NOUVEAU »
+
+- **Les observations du diocèse** — trois retouches demandées dès la mise
+  en service de la caisse : (1) le module porte son vrai titre
+  **« Abonnement - Réabonnement »** ; (2) l'échéance de l'année pastorale
+  est remise au **15 décembre 2026** ; (3) la règle des tarifs est
+  précisée sans ambiguïté.
+- **La règle de la maison (mention « NOUVEAU »)** — tout équipier déjà
+  dans la base se **RÉABONNE** : adulte (tout membre hors équipe Jeune)
+  à 5 000 FCFA, jeune (équipe Jeune) à 2 000 FCFA ; la mention
+  « NOUVEAU » seule ouvre l'**ABONNEMENT** : adulte à 5 000 FCFA,
+  nouveau Jeune à 3 500 FCFA.
+- **Les écrans qui suivent le titre** — la rubrique des deux caisses
+  s'appelle « 📅 Abonnement - Réabonnement », la carte de l'accueil
+  membre titre « 💳 Abonnement - Réabonnement — à jour / à renouveler »,
+  le reçu PDF s'intitule « REÇU D'ABONNEMENT » et l'écran public
+  « Vérification d'un reçu — Abonnement · Réabonnement » (avec l'échéance
+  au format français).
+- **Le formulaire de la caisse d'équipe** — la nature s'ouvre sur
+  **🔄 Réabonnement** (le cas courant, conformément à la règle) ; choisir
+  « 📝 Abonnement (mention NOUVEAU) » re-pré-remplit le montant selon le
+  tarif de l'équipe du membre, d'un clic. Le cadre de modification suit
+  les mêmes libellés.
+- **L'échéance repositionnée** — les défauts du code portent
+  **2026-12-15** (carte membre, réglages diocèse, reçu PDF) ; une
+  migration douce ne déplace en base QUE la valeur ANCIENNE
+  (2027-01-15) si elle s'y était posée d'un clic sur « Poser les
+  réglages » sans la changer — toute valeur posée volontairement reste
+  chez elle, et le diocèse peut reposer ses réglages à tout moment.
+- **🔒 La confiance, inchangée** : même table, mêmes six colonnes de
+  caisse ; la migration de l'échéance ne touche qu'une clé de réglage, et
+  seulement si elle porte exactement l'ancienne valeur par défaut.
+- `_VERSION_APPLI = "v7.14.1"`.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
