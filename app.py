@@ -147,7 +147,7 @@ elif event_val:
     afficher_page_reponse_membre(event_val)
     st.stop()
 
-# v7.14.0 — L'ÉCRAN PUBLIC DE VÉRIFICATION D'UN REÇU (?recu=COT-2026-00001)
+# v7.14.1 — L'ÉCRAN PUBLIC DE VÉRIFICATION D'UN REÇU (?recu=COT-2026-00001)
 # C'est l'écran que le QR de chaque reçu ouvre : n'importe qui (le fidèle,
 # le responsable, la comptabilité) peut scanner et voir l'authenticité du
 # reçu, sa nature et son montant — sans données sensibles, sans connexion.
@@ -172,7 +172,7 @@ elif params.get("recu"):
                 margin:1.5rem auto;">
       <div style="font-size:2.6rem; line-height:1;">🧾</div>
       <div style="color:#ffffff; font-size:1.15rem; font-weight:600; margin-top:0.6rem;">
-        Vérification d'un reçu de cotisation</div>
+        Vérification d'un reçu — Abonnement · Réabonnement</div>
       <div style="color:#eadcff; font-size:0.9rem; margin-top:0.3rem;">
         LES ÉQUIPES DU ROSAIRE — """ + str(_reglages.get("cotis_porteur")) + "</div>\n    </div>", unsafe_allow_html=True)
 
@@ -183,6 +183,12 @@ elif params.get("recu"):
         _mode = COTIS_MODES.get(_info[5] or "", _info[5] or "—")
         _mont = int(_info[1] or 0)
         _mont_txt = f"{_mont:,}".replace(",", " ")
+        # v7.14.1 — l'échéance se montre au format français sur l'écran public
+        try:
+            _ech_pub = safe_date(_reglages.get("cotis_echeance"))
+            _ech_pub = _ech_pub.strftime("%d/%m/%Y") if _ech_pub else str(_reglages.get("cotis_echeance"))
+        except Exception:
+            _ech_pub = str(_reglages.get("cotis_echeance"))
         st.success("✅ Reçu authentique — il est bien posé dans la caisse du Mouvement.")
         st.markdown(f"""
         <div style="background:#F5F6FF; border:1px solid #C5CAE9; border-radius:14px;
@@ -192,7 +198,7 @@ elif params.get("recu"):
           <p style="color:#1A237E; margin:0.25rem 0; font-size:0.95rem;">👤 <b>{_info[6] or ""} {_info[7] or ""}</b> — équipe <b>{_info[9] or "—"}</b> · paroisse <b>{_info[10] or "—"}</b></p>
           <p style="color:#1A237E; margin:0.25rem 0; font-size:0.95rem;">📿 {_nature} — année pastorale {periode_affichage(_info[4])}</p>
           <p style="color:#1A237E; margin:0.25rem 0; font-size:0.95rem;">💰 Montant : <b>{_mont_txt} FCFA</b> · 💳 {_mode}</p>
-          <p style="color:#1A237E; margin:0.25rem 0; font-size:0.95rem;">📅 Payé le {_d_aff} — à jour jusqu'au {_reglages.get("cotis_echeance")}</p>
+          <p style="color:#1A237E; margin:0.25rem 0; font-size:0.95rem;">📅 Payé le {_d_aff} — à jour jusqu'au {_ech_pub}</p>
           <p style="color:#4527a0; margin:0.5rem 0 0; font-size:0.85rem; font-style:italic;">Reçu noté par {_info[11] or "le responsable d\u2019équipe"} — cet écran ne montre que ce qui figure sur le reçu.</p>
         </div>""", unsafe_allow_html=True)
         st.caption("🕊️ Merci de soutenir la mission des Équipes du Rosaire.")
