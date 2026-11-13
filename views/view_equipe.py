@@ -1219,7 +1219,7 @@ def show_equipe():
     pid = pid_result[0]
     max_membres = get_max_membres(eid)
 
-    _rubriques_eq = ["👥 Mon équipe", "👤 Mes membres", "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "📦 Archives"]
+    _rubriques_eq = ["👥 Mon équipe", "👤 Mes membres", "📅 Abonnement - Réabonnement", "📌 Suivi", "💬 WhatsApp", "📦 Archives"]
     if "nav_eq" in st.session_state and st.session_state["nav_eq"] not in _rubriques_eq:
         del st.session_state["nav_eq"]
     if "nav_eq" not in st.session_state:
@@ -1427,8 +1427,10 @@ def show_equipe():
                 st.download_button("📥 Exporter les membres (Excel)", data=output, file_name=f"membres_{nom_equipe}_{paroisse_nom}_{date.today()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"export_membres_eq_{eid}_{date.today()}")
             except Exception as e: st.error(f"Erreur export: {e}")
 
-    elif menu == "📅 Abonnements":
-        st.markdown(f'<h2 style="color:#1A237E;">💼 Caisse de mon équipe — {nom_equipe}</h2>', unsafe_allow_html=True)
+    elif menu == "📅 Abonnement - Réabonnement":
+        st.markdown(f'<h2 style="color:#1A237E;">💼 Abonnement - Réabonnement — {nom_equipe}</h2>', unsafe_allow_html=True)
+        st.caption("💼 Caisse de l\u2019équipe — note les paiements reçus en main propre "
+                   "et édite les reçus numérotés.")
 
         # v7.14.0 — LA CAISSE DE LA COTISATION (Phase 1 du paiement) : le
         # responsable note les paiements reçus en main propre — espèces ou
@@ -1454,9 +1456,10 @@ def show_equipe():
         except Exception:
             pass
         st.markdown('<div class="custom-info-box"><b>💼 Montants posés par le diocèse</b> — '
-                    f'Adulte : abonnement {_fr(_reglages.get("cotis_montant_adulte_abo"))} FCFA · réabonnement {_fr(_reglages.get("cotis_montant_adulte_reab"))} FCFA ; '
-                    f'Jeune : abonnement {_fr(_reglages.get("cotis_montant_jeune_abo"))} FCFA · réabonnement {_fr(_reglages.get("cotis_montant_jeune_reab"))} FCFA<br>'
-                    f'🗓️ <b>Échéance de l\'année pastorale :</b> {_ech_aff} · 🏛️ <b>En-tête des reçus :</b> {_reglages.get("cotis_porteur")}</div>', unsafe_allow_html=True)
+                    f'Adulte (hors équipe Jeune) : abonnement {_fr(_reglages.get("cotis_montant_adulte_abo"))} FCFA (mention « NOUVEAU ») · réabonnement {_fr(_reglages.get("cotis_montant_adulte_reab"))} FCFA ; '
+                    f'Jeune (équipe Jeune) : abonnement {_fr(_reglages.get("cotis_montant_jeune_abo"))} FCFA (nouveau Jeune) · réabonnement {_fr(_reglages.get("cotis_montant_jeune_reab"))} FCFA<br>'
+                    f'📌 <b>Règle de la maison :</b> tout équipier déjà dans la base se RÉABONNE — la mention « NOUVEAU » seule ouvre l\u2019ABONNEMENT.<br>'
+                    f'🗓️ <b>Échéance de l\u2019année pastorale :</b> {_ech_aff} · 🏛️ <b>En-tête des reçus :</b> {_reglages.get("cotis_porteur")}</div>', unsafe_allow_html=True)
 
         _membres_eq = c.execute("SELECT id, nom, prenom, matricule FROM membres WHERE equipe_id=? AND statut='actif' ORDER BY nom", (eid,)).fetchall()
         _nb_membres = len(_membres_eq)
@@ -1514,10 +1517,18 @@ def show_equipe():
                 _badge_cat = ("🧒 tarif jeune" if cotis_categorie_membre(m[0]) == "jeune"
                               else "🧑 tarif adulte")
                 with st.expander(f"{m[1]} {m[2]} ({m[3] or '—'}) – ❌ Non enregistré · {_badge_cat}"):
-                    _choix_type = st.radio("Type", ["📝 Abonnement", "🔄 Réabonnement"], key=f"cotis_type_{m[0]}_{annee}", horizontal=True)
-                    _nature = "abonnement" if "Abonnement" in _choix_type else "reabonnement"
-                    _sug = _sug_abo if _nature == "abonnement" else _sug_reab
-                    _montant = st.number_input("Montant (FCFA)", min_value=0, value=int(_sug), step=500, key=f"cotis_mont_{m[0]}_{annee}")
+                    # v7.14.1 — LA RÈGLE DU DIOCÈSE : tout équipier déjà dans
+                    # la base se RÉABONNE (choix par défaut) ; la mention
+                    # « NOUVEAU » seule ouvre l'ABONNEMENT. Le montant suit
+                    # la nature choisie (clé distincte par nature : le champ
+                    # se re-pré-remplit d'un clic).
+                    _choix_type = st.radio(
+                        "Nature (la mention « NOUVEAU » ouvre l'abonnement)",
+                        ["🔄 Réabonnement", "📝 Abonnement (mention NOUVEAU)"],
+                        key=f"cotis_type_{m[0]}_{annee}", horizontal=True)
+                    _nature = "reabonnement" if "Réabonnement" in _choix_type else "abonnement"
+                    _sug = _sug_reab if _nature == "reabonnement" else _sug_abo
+                    _montant = st.number_input("Montant (FCFA)", min_value=0, value=int(_sug), step=500, key=f"cotis_mont_{m[0]}_{annee}_{_nature}")
                     _mode_lbl = st.selectbox("Mode de paiement", ["💵 Espèces", "🌊 Wave", "📱 Orange Money", "🟡 MTN MoMo", "💳 Autre"], key=f"cotis_mode_{m[0]}_{annee}")
                     _note = st.text_input("Note (facultative)", key=f"cotis_note_{m[0]}_{annee}")
                     if st.button("✅ Enregistrer le paiement + éditer le reçu", key=f"cotis_go_{m[0]}_{annee}"):
@@ -1540,7 +1551,7 @@ def show_equipe():
                 st.markdown(f"### ✏️ Modifier l'abonnement de {m_info[1]} {m_info[0]}")
                 with st.form(f"modif_abo_form_{mod_id}"):
                     index_type = 0 if abo_info[0] == "abonnement" else 1
-                    new_type = st.radio("Type", ["📝 Abonnement", "🔄 Réabonnement"], index=index_type, horizontal=True, key=f"mod_type_{mod_id}")
+                    new_type = st.radio("Nature", ["📝 Abonnement (mention NOUVEAU)", "🔄 Réabonnement"], index=index_type, horizontal=True, key=f"mod_type_{mod_id}")
                     montant_actuel = int(abo_info[1]) if abo_info[1] is not None else 0
                     new_montant = st.number_input("Montant (FCFA)", min_value=0, value=montant_actuel, step=500, key=f"mod_mont_{mod_id}")
                     col1, col2, col3 = st.columns(3)
