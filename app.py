@@ -18,6 +18,7 @@ _paquet_complet = all(hasattr(_coeur_paquet, _nom) for _nom in (
     "feuillet_reponses_enregistrer",          # v7.10.0 — le questionnaire du feuillet
     "mission_creer",                          # v7.10.0 — l'envoi en mission
     "importer_dizaines_hors_ligne",           # v7.10.0 — les dizaines hors ligne
+    "cotis_enregistrer_paiement",             # v7.14.0 — la caisse de la cotisation
 ))
 # ---------------------------------------------------------------------------
 
@@ -144,6 +145,63 @@ elif event_val:
     from components import afficher_page_reponse_membre, injecter_icone_pwa
     injecter_icone_pwa(espace=True)   # page publique : icône 📿
     afficher_page_reponse_membre(event_val)
+    st.stop()
+
+# v7.14.0 — L'ÉCRAN PUBLIC DE VÉRIFICATION D'UN REÇU (?recu=COT-2026-00001)
+# C'est l'écran que le QR de chaque reçu ouvre : n'importe qui (le fidèle,
+# le responsable, la comptabilité) peut scanner et voir l'authenticité du
+# reçu, sa nature et son montant — sans données sensibles, sans connexion.
+# UN QR INVENTÉ NE VÉRIFIE RIEN.
+elif params.get("recu"):
+    _recu_val = params.get("recu")
+    if isinstance(_recu_val, list):
+        _recu_val = _recu_val[0] if _recu_val else ""
+    from components import injecter_icone_pwa, COTIS_MODES
+    injecter_icone_pwa(espace=True)   # page publique : icône 📿
+    from database import cotis_recu_info, cotis_parametres_lire
+    from services import periode_affichage, safe_date
+
+    _num = str(_recu_val or "").strip().upper()
+    _reglages = cotis_parametres_lire()
+    _info = cotis_recu_info(_num)
+
+    st.markdown("""
+    <div style="background:linear-gradient(135deg,#241042 0%,#4A148C 100%);
+                border-radius:18px; padding:1.6rem 1.4rem; text-align:center;
+                border:1px solid rgba(255,255,255,0.14); max-width:560px;
+                margin:1.5rem auto;">
+      <div style="font-size:2.6rem; line-height:1;">🧾</div>
+      <div style="color:#ffffff; font-size:1.15rem; font-weight:600; margin-top:0.6rem;">
+        Vérification d'un reçu de cotisation</div>
+      <div style="color:#eadcff; font-size:0.9rem; margin-top:0.3rem;">
+        LES ÉQUIPES DU ROSAIRE — """ + str(_reglages.get("cotis_porteur")) + "</div>\n    </div>", unsafe_allow_html=True)
+
+    if _info:
+        _d_p = safe_date(_info[3])
+        _d_aff = _d_p.strftime("%d/%m/%Y") if _d_p else (_info[3] or "—")
+        _nature = "Abonnement" if _info[2] == "abonnement" else "Réabonnement"
+        _mode = COTIS_MODES.get(_info[5] or "", _info[5] or "—")
+        _mont = int(_info[1] or 0)
+        _mont_txt = f"{_mont:,}".replace(",", " ")
+        st.success("✅ Reçu authentique — il est bien posé dans la caisse du Mouvement.")
+        st.markdown(f"""
+        <div style="background:#F5F6FF; border:1px solid #C5CAE9; border-radius:14px;
+                    padding:1.1rem 1.3rem; max-width:560px; margin:0.8rem auto;">
+          <p style="color:#1A237E; font-size:1.05rem; font-weight:700; margin:0 0 0.5rem;">
+             N° {_info[0]}</p>
+          <p style="color:#1A237E; margin:0.25rem 0; font-size:0.95rem;">👤 <b>{_info[6] or ""} {_info[7] or ""}</b> — équipe <b>{_info[9] or "—"}</b> · paroisse <b>{_info[10] or "—"}</b></p>
+          <p style="color:#1A237E; margin:0.25rem 0; font-size:0.95rem;">📿 {_nature} — année pastorale {periode_affichage(_info[4])}</p>
+          <p style="color:#1A237E; margin:0.25rem 0; font-size:0.95rem;">💰 Montant : <b>{_mont_txt} FCFA</b> · 💳 {_mode}</p>
+          <p style="color:#1A237E; margin:0.25rem 0; font-size:0.95rem;">📅 Payé le {_d_aff} — à jour jusqu'au {_reglages.get("cotis_echeance")}</p>
+          <p style="color:#4527a0; margin:0.5rem 0 0; font-size:0.85rem; font-style:italic;">Reçu noté par {_info[11] or "le responsable d\u2019équipe"} — cet écran ne montre que ce qui figure sur le reçu.</p>
+        </div>""", unsafe_allow_html=True)
+        st.caption("🕊️ Merci de soutenir la mission des Équipes du Rosaire.")
+    else:
+        st.error("❌ Ce numéro de reçu n'est pas reconnu dans la caisse — un reçu "
+                 "inventé ne vérifie rien. Vérifiez le numéro imprimé sur le "
+                 "papier (format COT-2026-00001) et réessayez.")
+        st.caption("Si votre reçu vient d'être édité, patientez un instant puis "
+                   "rescannez : le numéro apparaît dès que le paiement est posé.")
     st.stop()
 
 # v7.8.14 — Administration (connexion + rôles) : icône 🔑 (favicon + titre)
