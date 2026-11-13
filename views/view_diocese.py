@@ -504,7 +504,7 @@ def show_diocese():
 
     _rubriques_dio = [
         "🏛️ Voir diocèse", "🏘️ Créer paroisses", "📋 Gérer paroisses",
-        "📅 Abonnements", "📌 Suivi", "🕊️ Espace spirituel", "💬 WhatsApp",
+        "📅 Abonnement - Réabonnement", "📌 Suivi", "🕊️ Espace spirituel", "💬 WhatsApp",
         "🔍 Rechercher matricule", "🔐 Gérer les accès", "📊 Statistiques", "📥 Export Excel",
         "📦 Archives", "🗑️ Réinitialiser"
     ]
@@ -695,8 +695,8 @@ def show_diocese():
                         out.seek(0)
                         st.download_button(f"📥 Exporter les équipiers de {nom}", data=out, file_name=f"equipiers_{nom}_{date.today()}.xlsx", key=f"export_par_{pid}")
 
-    elif menu == "📅 Abonnements":
-        st.markdown('<h2 style="color:#1A237E;">📅 Suivi des abonnements (Diocèse)</h2>', unsafe_allow_html=True)
+    elif menu == "📅 Abonnement - Réabonnement":
+        st.markdown('<h2 style="color:#1A237E;">📅 Abonnement - Réabonnement (Diocèse)</h2>', unsafe_allow_html=True)
 
         for state in ['show_paroisse_abos', 'show_equipe_abos', 'abos_view_type']:
             if state not in st.session_state: st.session_state[state] = None
@@ -705,32 +705,34 @@ def show_diocese():
         annee_debut = st.number_input("Année de début de la période", min_value=2020, max_value=annee_pastorale_en_cours, value=annee_pastorale_en_cours, step=1)
         st.write(f"**Période :** {periode_affichage(annee_debut)}")
 
-        # v7.14.0 — LES RÉGLAGES DE LA COTISATION (posés par le diocèse) :
-        # montants adulte/jeune × abonnement/réabonnement, échéance de
-        # l'année pastorale, porteur des reçus. Ils règlent les cartes
-        # « Ma cotisation », les suggestions des caisses d'équipe et
-        # l'en-tête de chaque reçu numéroté.
+        # v7.14.1 — LES RÉGLAGES (posés par le diocèse) : montants
+        # adulte/jeune × abonnement/réabonnement, échéance de l'année
+        # pastorale (15 décembre 2026), porteur des reçus. Ils règlent les
+        # cartes « Abonnement - Réabonnement » de l'Espace, les suggestions
+        # des caisses d'équipe et l'en-tête de chaque reçu numéroté.
         _reglages_dio = cotis_parametres_lire()
-        with st.expander("⚙️ Réglages de la cotisation (posés par le diocèse)"):
-            st.caption("Ces valeurs règlent les cartes « Ma cotisation », les suggestions "
+        with st.expander("⚙️ Réglages Abonnement - Réabonnement (posés par le diocèse)"):
+            st.caption("Ces valeurs règlent les cartes « Abonnement - Réabonnement » de l'Espace, "
+                       "les suggestions "
                        "de montant des caisses d'équipe et l'en-tête de chaque reçu numéroté.")
             with st.form("cotis_reglages_dio"):
                 _rc1, _rc2 = st.columns(2)
                 with _rc1:
-                    _m_ad_abo = st.number_input("Adulte — Abonnement (FCFA)", min_value=0,
+                    _m_ad_abo = st.number_input("Adulte — Abonnement, mention NOUVEAU (FCFA)", min_value=0,
                                                 value=int(_reglages_dio.get("cotis_montant_adulte_abo", 5000)), step=500)
-                    _m_ad_reab = st.number_input("Adulte — Réabonnement (FCFA)", min_value=0,
+                    _m_ad_reab = st.number_input("Adulte — Réabonnement, le cas courant (FCFA)", min_value=0,
                                                  value=int(_reglages_dio.get("cotis_montant_adulte_reab", 5000)), step=500)
                 with _rc2:
-                    _m_jn_abo = st.number_input("Jeune — Abonnement (FCFA)", min_value=0,
+                    _m_jn_abo = st.number_input("Jeune — Abonnement, nouveau Jeune (FCFA)", min_value=0,
                                                 value=int(_reglages_dio.get("cotis_montant_jeune_abo", 3500)), step=500)
-                    _m_jn_reab = st.number_input("Jeune — Réabonnement (FCFA)", min_value=0,
+                    _m_jn_reab = st.number_input("Jeune — Réabonnement, le cas courant (FCFA)", min_value=0,
                                                  value=int(_reglages_dio.get("cotis_montant_jeune_reab", 2000)), step=500)
                 try:
                     _d_ech_ini = date.fromisoformat(str(_reglages_dio.get("cotis_echeance")))
                 except Exception:
-                    _d_ech_ini = date(2027, 1, 15)
-                _d_ech = st.date_input("Échéance de l'année pastorale", value=_d_ech_ini)
+                    _d_ech_ini = date(2026, 12, 15)
+                _d_ech = st.date_input("Échéance de l'année pastorale", value=_d_ech_ini,
+                                       help="v7.14.1 — l'échéance demandée par le diocèse : 15 décembre 2026")
                 _porteur = st.text_input("Nom du porteur (en-tête des reçus)",
                                          value=str(_reglages_dio.get("cotis_porteur")))
                 if st.form_submit_button("💾 Poser les réglages"):
