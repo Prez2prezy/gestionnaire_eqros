@@ -116,9 +116,11 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       push_abonnement_enregistrer, push_abonnement_de_cle,
                       push_abonnement_note_jrnais,
                       # v7.10.2 — le questionnaire SOUMIS au diocèse
-                      feuillet_questionnaire_publie)
+                      feuillet_questionnaire_publie,
+                      # v7.14.0 — la caisse de la cotisation
+                      cotis_parametres_lire, cotis_categorie_membre)
 from services import (safe_date, compter_visite, lien_whatsapp, urls_galerie,
-                      URL_ESPACE_SPIRITUEL)
+                      URL_ESPACE_SPIRITUEL, get_periode_pastorale)
 
 import logging
 logger = logging.getLogger(__name__)
@@ -127,7 +129,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.13.16"
+_VERSION_APPLI = "v7.14.0"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -4817,6 +4819,103 @@ def _carte_vidéo_a_la_demande():
         unsafe_allow_html=True)
 
 
+def _carte_cotisation_membre(membre):
+    """v7.14.0 — « 💳 Ma cotisation » : la carte posée sur l'accueil du
+    membre, entre la mémoire des dizaines et la dizaine du jour. Elle
+    montre l'état de la cotisation de l'année pastorale — à jour (carte
+    verte, numéro de reçu, reçu PDF téléchargeable) ou à renouveler
+    (carte ambrée, montants posés par le diocèse, échéance de l'année
+    pastorale) — et rien d'autre : ici, on ne PAIE pas encore, on SAIT
+    où on en est. Le membre tuple porte :
+    id, nom, prenom, matloc, whatsapp, adhesion, photo, n° méditation,
+    équipe, paroisse, equipe_id, paroisse_id."""
+    from components import recu_cotisation_pdf, COTIS_MODES
+    if not membre:
+        return
+    _mid = membre[0]
+    _annee = get_periode_pastorale()[0]
+    _reglages = cotis_parametres_lire()
+    try:
+        _recu = c.execute("""SELECT numero_recu, montant, type_abonnement,
+                                    date_paiement, mode_paiement, origine, enregistre_par
+                             FROM abonnements
+                             WHERE membre_id=? AND annee_debut=? AND statut='paye'""",
+                          (_mid, _annee)).fetchone()
+    except Exception:
+        _recu = None
+
+    _echeance_aff = _reglages.get("cotis_echeance", "2027-01-15")
+    try:
+        _d_ech = date.fromisoformat(str(_echeance_aff))
+        _echeance_aff = _d_ech.strftime("%d/%m/%Y")
+        _ech_passee = date.today() > _d_ech
+    except Exception:
+        _ech_passee = False
+
+    if _recu:
+        _nature = "Abonnement" if _recu[2] == "abonnement" else "Réabonnement"
+        _mode = COTIS_MODES.get(_recu[4] or "", (_recu[4] or "").capitalize() or "—")
+        _mont_txt = f"{int(_recu[1] or 0):,}".replace(",", " ")
+        _d_p = safe_date(_recu[3])
+        _d_aff = _d_p.strftime("%d/%m/%Y") if _d_p else (_recu[3] or "")
+        _recu_pdf = recu_cotisation_pdf(
+            {"numero_recu": _recu[0], "montant": _recu[1],
+             "type_abonnement": _recu[2], "date_paiement": _recu[3],
+             "annee_debut": _annee, "mode_paiement": _recu[4],
+             "nom": membre[1], "prenom": membre[2], "matricule": None,
+             "equipe": membre[8], "paroisse": membre[9],
+             "enregistre_par": _recu[6], "origine": _recu[5]},
+            porteur=_reglages.get("cotis_porteur"),
+            echeance_iso=str(_reglages.get("cotis_echeance")))
+        st.markdown(
+            '<div style="background:linear-gradient(135deg,#e8f5e9 0%,#c8e6c9 100%);'
+            ' border:1.5px solid #66bb6a; border-radius:15px; padding:16px;'
+            ' margin:10px;">'
+            '<div style="color:#1b5e20; font-size:1.08rem; font-weight:bold;">'
+            '✅ Ma cotisation — à jour</div>'
+            '<div style="color:#2e7d32; font-size:0.9rem; margin-top:6px; line-height:1.65;">'
+            f'{_nature} · année pastorale {get_periode_pastorale()[0]}/{get_periode_pastorale()[0] + 1}'
+            f' · {_mont_txt} FCFA · payée le {_d_aff} ({_mode})<br>'
+            f'🧾 Reçu n° <b>{_recu[0]}</b> — à jour jusqu&#39;au {_echeance_aff}</div>'
+            '</div>', unsafe_allow_html=True)
+        if _recu_pdf:
+            st.download_button("🧾 Mon reçu numéroté (PDF)",
+                               data=_recu_pdf,
+                               file_name=f"recu_{_recu[0]}.pdf",
+                               mime="application/pdf",
+                               key=f"cotis_recu_pdf_{_annee}")
+        st.caption("🧾 Scanne le QR du reçu (ou ouvre son lien) : l'écran public "
+                   "confirme son authenticité — un reçu inventé ne vérifie rien.")
+    else:
+        _cat = cotis_categorie_membre(_mid)
+        _m_abo = _reglages.get("cotis_montant_" + _cat + "_abo", 5000)
+        _m_reab = _reglages.get("cotis_montant_" + _cat + "_reab", 5000)
+        _m_abo_txt = f"{int(_m_abo):,}".replace(",", " ")
+        _m_reab_txt = f"{int(_m_reab):,}".replace(",", " ")
+        _l_motif = ("Tarif jeune — montants posés par le diocèse" if _cat == "jeune"
+                    else "Tarif adulte — montants posés par le diocèse")
+        if _ech_passee:
+            _l_ech = f"⏰ Échéance dépassée : le {_echeance_aff} est passé — rattrape ton échéance auprès de ton responsable."
+        else:
+            _l_ech = f"🗓️ À régler avant le <b>{_echeance_aff}</b> (échéance de l'année pastorale)."
+        st.markdown(
+            '<div style="background:linear-gradient(135deg,#fff8e1 0%,#ffecb3 100%);'
+            ' border:1.5px solid #ffb300; border-radius:15px; padding:16px;'
+            ' margin:10px;">'
+            '<div style="color:#7a5a00; font-size:1.08rem; font-weight:bold;">'
+            '⏳ Ma cotisation — à renouveler</div>'
+            '<div style="color:#7a5a00; font-size:0.9rem; margin-top:6px; line-height:1.7;">'
+            f'Année pastorale {_annee}/{_annee + 1} · {_l_motif} :<br>'
+            f'📝 Abonnement <b>{_m_abo_txt}</b> FCFA &nbsp;·&nbsp; 🔄 Réabonnement <b>{_m_reab_txt}</b> FCFA<br>'
+            + _l_ech + '<br>'
+            '💼 Paie auprès de ton responsable d&#39;équipe — en espèces ou en mobile '
+            'money (Wave, Orange Money) : il note ton paiement et t&#39;édite ton '
+            'reçu numéroté immédiatement.</div></div>',
+            unsafe_allow_html=True)
+        st.caption("💳 Le paiement direct par Wave s'ouvrira bientôt ici — "
+                   "en attendant, la caisse de ton équipe te reçoit.")
+
+
 def _carte_memoire_membre(matloc=None):
     """v7.13.1 — « 📿 Mémoire de mes dizaines », cadre bien doré posé entre
     la carte de bienvenue et « 📿 Ta dizaine du jour » : les 14 derniers
@@ -5979,6 +6078,10 @@ def _corps_espace_membre(matloc_membre=None):
         _carte_memoire_membre(matloc_membre)
         # v7.13.13 — LA SECONDE BERGE : le web rend sa fidélité au téléphone.
         _bouton_retour_application(matloc_membre)
+        # v7.14.0 — « 💳 Ma cotisation » : l'état de l'année pastorale
+        # (reçu numéroté téléchargeable, ou montants et échéance du
+        # diocèse), posé sur l'accueil comme la mémoire et la berge.
+        _carte_cotisation_membre(membre)
 
     if rub == "📅 Mes évènements":
         if membre[10] is None:
