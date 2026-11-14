@@ -4304,6 +4304,32 @@ def cotis_enregistrer_paiement(membre_id, annee_debut, montant,
     return _id, _numero
 
 
+def cotis_recu_numero_attribuer(membre_id, annee_debut):
+    """v7.14.3 — LE NUMÉRO MANQUANT SE REMPLIT TOUT SEUL : un paiement posé
+    « payé » sans numéro de reçu (lignes d'avant la caisse, chemin
+    « ✏️ Modifier ») reçoit son numéro séquentiel la première fois où la
+    caisse d'équipe ou la carte du membre le relit — une seule fois, en
+    douceur, sans jamais renuméroter un reçu qui en porte déjà un. Rien
+    n'est écrit si le numéro existe : le geste est sans bruit."""
+    with _verrou_db:
+        try:
+            _r = c.execute("""SELECT id, numero_recu FROM abonnements
+                              WHERE membre_id=? AND annee_debut=? AND statut='paye'""",
+                           (membre_id, annee_debut)).fetchone()
+            if not _r:
+                return None
+            if _r[1] and str(_r[1]).strip():
+                return _r[1]
+            _num = cotis_numero_recu_suivant(annee_debut)
+            c.execute("UPDATE abonnements SET numero_recu=? WHERE id=?",
+                      (_num, _r[0]))
+            commit_and_sync()
+            return _num
+        except Exception as e:
+            logger.warning(f"cotis_recu_numero_attribuer : {e!r}")
+            return None
+
+
 def cotis_recus_membre(membre_id, annee_debut=None):
     """Les reçus d'un membre (toutes années, ou une seule)."""
     if annee_debut is None:
@@ -4325,7 +4351,7 @@ def cotis_recu_info(numero_recu):
     try:
         return c.execute("""SELECT a.numero_recu, a.montant, a.type_abonnement,
                                    a.date_paiement, a.annee_debut, a.mode_paiement,
-                                   m.nom, m.prenom, m.matricule,
+                                   m.nom, m.prenom, COALESCE(m.matloc, m.matricule),
                                    e.nom_equipe, p.nom,
                                    a.enregistre_par, a.origine
                             FROM abonnements a
