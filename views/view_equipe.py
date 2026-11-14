@@ -18,7 +18,9 @@ from database import (c, commit_and_sync, verifier_reparer_intentions, jours_dep
                       mission_prochaine_seance, derniere_chaine_seance,
                       # v7.14.0 — la caisse de la cotisation
                       cotis_parametres_lire, cotis_categorie_membre,
-                      cotis_montant_suggere, cotis_enregistrer_paiement)
+                      cotis_montant_suggere, cotis_enregistrer_paiement,
+                      # v7.14.2 — la mention « NOUVEAU » (champ « Statut »)
+                      cotis_membre_nouveau, cotis_nature_membre)
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
@@ -1278,6 +1280,18 @@ def show_equipe():
                         col_date, col_mle = st.columns(2)
                         with col_date: date_adhesion = st.date_input("Date d'adhésion", min_value=date(1950,1,1), max_value=date.today(), value=date.today())
                         with col_mle: matricule_nat = st.text_input("Matricule")
+                        # v7.14.2 — LE CHAMP « STATUT » demandé par le diocèse :
+                        # la mention « Nouveau » (première année pastorale dans
+                        # la base) ouvre l'ABONNEMENT (adulte 5 000 / nouveau
+                        # Jeune 3 500) ; tout autre membre se RÉABONNE (5 000 /
+                        # 2 000). La mention porte une année, puis retombe
+                        # d'elle-même — comme sur les listes d'antan.
+                        statut_mention = st.selectbox(
+                            "Statut",
+                            ["Ancien", "Nouveau"],
+                            help="« Nouveau » : première année pastorale dans la base — "
+                                 "il s'abonne (abonnement). La mention porte une année "
+                                 "pastorale, puis retombe d'elle-même.")
                         col1, col2 = st.columns(2)
                         with col1:
                             if st.form_submit_button("❌ Annuler"): st.session_state['open_form_eq'] = None; st.rerun()
@@ -1291,7 +1305,7 @@ def show_equipe():
                                     st.error("Le lien de photo doit commencer par https://")
                                 else:
                                     matloc = generer_matricule_unique()
-                                    c.execute("""INSERT INTO membres (matloc, nom, prenom, date_naissance, whatsapp, date_adhesion, paroisse_id, equipe_id, statut, numero_meditation, matricule) VALUES (?,?,?,?,?,?,?,?,?,?,?)""", (matloc, nom, prenom, naissance.isoformat(), whatsapp, date_adhesion.isoformat(), pid, eid, 'actif', numero_meditation, matricule_nat))
+                                    c.execute("""INSERT INTO membres (matloc, nom, prenom, date_naissance, whatsapp, date_adhesion, paroisse_id, equipe_id, statut, numero_meditation, matricule, mention_nouveau, mention_annee) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""", (matloc, nom, prenom, naissance.isoformat(), whatsapp, date_adhesion.isoformat(), pid, eid, 'actif', numero_meditation, matricule_nat, ('Nouveau' if statut_mention == "Nouveau" else None), (get_periode_pastorale()[0] if statut_mention == "Nouveau" else None)))
                                     mid = c.lastrowid
                                     # COHABITATION : lien imgbb prioritaire, sinon upload Cloudinary/local
                                     photo_finale = photo_lien.strip() if photo_lien.strip() else (sauvegarder_photo(photo, matloc) if photo else None)
@@ -1300,11 +1314,17 @@ def show_equipe():
                                     commit_and_sync(); st.session_state['open_form_eq'] = None; st.success(f"Ajouté ! MatLoc: {matloc}"); st.rerun()
         
         st.markdown("---")
-        membres = c.execute("""SELECT id, matloc, nom, prenom, whatsapp, photo_path, date_adhesion, numero_meditation, matricule FROM membres WHERE equipe_id=? AND statut=? ORDER BY nom""", (eid, 'actif')).fetchall()
+        membres = c.execute("""SELECT id, matloc, nom, prenom, whatsapp, photo_path, date_adhesion, numero_meditation, matricule, mention_nouveau, mention_annee FROM membres WHERE equipe_id=? AND statut=? ORDER BY nom""", (eid, 'actif')).fetchall()
         
         for m in membres:
-            id_m, matloc, nom, prenom, whatsapp, photo_path, date_adhesion, num_med, matricule_nat = m
-            with st.expander(f"{nom} {prenom} - {matloc}" + (f" - N° {num_med}" if num_med else "") + (f" - Mat: {matricule_nat}" if matricule_nat else "")):
+            # v7.14.2 — la mention « Nouveau » se voit d'un coup d'œil sur la
+            # liste, tant qu'elle porte (une année pastorale, pas plus).
+            id_m, matloc, nom, prenom, whatsapp, photo_path, date_adhesion, num_med, matricule_nat, _mnt, _mnt_an = m
+            _badge_mnt = (f" - 🌱 Nouveau {get_periode_pastorale()[0]}-{get_periode_pastorale()[0] + 1}"
+                          if (str(_mnt or "").strip().lower() == "nouveau"
+                              and _mnt_an is not None
+                              and int(_mnt_an) == get_periode_pastorale()[0]) else "")
+            with st.expander(f"{nom} {prenom} - {matloc}" + (f" - N° {num_med}" if num_med else "") + (f" - Mat: {matricule_nat}" if matricule_nat else "") + _badge_mnt):
                 col1, col2 = st.columns([3,1])
                 col1.write(f"🏘️ **Paroisse :** {paroisse_nom}\n💬 WhatsApp: {whatsapp}\n📅 Adhésion: {date_adhesion}")
                 if photo_path: col1.image(photo_path, width=80)
@@ -1316,7 +1336,8 @@ def show_equipe():
                 if st.session_state.get('open_form_eq') == f"mod_{id_m}":
                     st.markdown("---\n#### ✏️ Modification")
                     # 1. ON AJOUTE date_naissance ET date_adhesion DANS LA REQUÊTE
-                    m_data = c.execute("SELECT nom, prenom, date_naissance, whatsapp, photo_path, numero_meditation, date_adhesion, matricule FROM membres WHERE id=?", (id_m,)).fetchone()
+                    # v7.14.2 — et la mention « Nouveau » avec elle.
+                    m_data = c.execute("SELECT nom, prenom, date_naissance, whatsapp, photo_path, numero_meditation, date_adhesion, matricule, mention_nouveau, mention_annee FROM membres WHERE id=?", (id_m,)).fetchone()
                     if m_data:
                         with st.form(f"form_mod_eq_{id_m}"):
                             st.text_input("MatLoc", value=matloc, disabled=True)
@@ -1335,6 +1356,23 @@ def show_equipe():
                                 new_date_adhesion = st.date_input("Date d'adhésion", value=da_initiale)
                             with col_mle: 
                                 new_matricule = st.text_input("Matricule", value=m_data[7] or "")
+                            # v7.14.2 — LE CHAMP « STATUT » dans « 👤 Mes membres » :
+                            # la mention s'affiche à son état réel — posée cette
+                            # année, ou retombée avec son année d'origine.
+                            _annee_mnt = get_periode_pastorale()[0]
+                            _mnt_encours = (str(m_data[8] or "").strip().lower() == "nouveau"
+                                            and m_data[9] is not None
+                                            and int(m_data[9]) == _annee_mnt)
+                            statut_mention = st.selectbox(
+                                "Statut", ["Ancien", "Nouveau"],
+                                index=(1 if _mnt_encours else 0),
+                                help="« Nouveau » : première année pastorale dans la base — "
+                                     "il s'abonne (abonnement). La mention porte une année, "
+                                     "puis retombe d'elle-même.")
+                            if m_data[8] and not _mnt_encours:
+                                st.caption(f"🌱 La mention « Nouveau » de l'année pastorale "
+                                           f"{m_data[9]} - {(m_data[9] or 0) + 1} est retombée : "
+                                           f"{m_data[0]} {m_data[1]} se réabonne désormais.")
                             
                             new_photo = st.file_uploader("Nouvelle photo", type=['jpg','png','jpeg','webp'])
                             # COHABITATION : lien imgbb prioritaire, sinon fichier
@@ -1350,8 +1388,9 @@ def show_equipe():
                                         st.error("Le lien de photo doit commencer par https:// — la photo n'a pas été modifiée.")
                                         _lien_ok = False
                                     # 4. ON MET À JOUR LA BASE DE DONNÉES AVEC LES DATES
-                                    c.execute("UPDATE membres SET nom=?, prenom=?, date_naissance=?, whatsapp=?, numero_meditation=?, date_adhesion=?, matricule=? WHERE id=?", 
-                                              (new_nom, new_prenom, new_date_naissance.isoformat(), new_whatsapp, new_num_med, new_date_adhesion.isoformat(), new_matricule, id_m))
+                                    # v7.14.2 — et la mention « Nouveau » (une année).
+                                    c.execute("UPDATE membres SET nom=?, prenom=?, date_naissance=?, whatsapp=?, numero_meditation=?, date_adhesion=?, matricule=?, mention_nouveau=?, mention_annee=? WHERE id=?", 
+                                              (new_nom, new_prenom, new_date_naissance.isoformat(), new_whatsapp, new_num_med, new_date_adhesion.isoformat(), new_matricule, ('Nouveau' if statut_mention == "Nouveau" else None), (_annee_mnt if statut_mention == "Nouveau" else None), id_m))
                                     # COHABITATION : lien imgbb prioritaire, sinon fichier
                                     photo_finale = None
                                     if new_photo_lien.strip() and _lien_ok:
@@ -1455,11 +1494,19 @@ def show_equipe():
             _ech_aff = date.fromisoformat(str(_reglages.get("cotis_echeance"))).strftime("%d/%m/%Y")
         except Exception:
             pass
+        # v7.14.2 — DEUX échéances, la différence est normale : les anciens
+        # (réabonnement) au délai de rigueur du 15/12/2026, les nouveaux
+        # (abonnement) jusqu'au 31/12/2026.
+        _ech_abo_aff = str(_reglages.get("cotis_echeance_abo"))
+        try:
+            _ech_abo_aff = date.fromisoformat(str(_reglages.get("cotis_echeance_abo"))).strftime("%d/%m/%Y")
+        except Exception:
+            pass
         st.markdown('<div class="custom-info-box"><b>💼 Montants posés par le diocèse</b> — '
                     f'Adulte (hors équipe Jeune) : abonnement {_fr(_reglages.get("cotis_montant_adulte_abo"))} FCFA (mention « NOUVEAU ») · réabonnement {_fr(_reglages.get("cotis_montant_adulte_reab"))} FCFA ; '
                     f'Jeune (équipe Jeune) : abonnement {_fr(_reglages.get("cotis_montant_jeune_abo"))} FCFA (nouveau Jeune) · réabonnement {_fr(_reglages.get("cotis_montant_jeune_reab"))} FCFA<br>'
                     f'📌 <b>Règle de la maison :</b> tout équipier déjà dans la base se RÉABONNE — la mention « NOUVEAU » seule ouvre l\u2019ABONNEMENT.<br>'
-                    f'🗓️ <b>Échéance de l\u2019année pastorale :</b> {_ech_aff} · 🏛️ <b>En-tête des reçus :</b> {_reglages.get("cotis_porteur")}</div>', unsafe_allow_html=True)
+                    f'🗓️ <b>Échéances de l\u2019année pastorale :</b> réabonnement — {_ech_aff} (délai de rigueur) · abonnement (nouveaux) — {_ech_abo_aff} · 🏛️ <b>En-tête des reçus :</b> {_reglages.get("cotis_porteur")}</div>', unsafe_allow_html=True)
 
         _membres_eq = c.execute("SELECT id, nom, prenom, matricule FROM membres WHERE equipe_id=? AND statut='actif' ORDER BY nom", (eid,)).fetchall()
         _nb_membres = len(_membres_eq)
@@ -1481,8 +1528,8 @@ def show_equipe():
         if st.session_state.get('cotis_recu_panel'):
             _pnl = st.session_state['cotis_recu_panel']
             _num_pnl = _pnl.get("numero", "")
-            _pdf_pnl = recu_pdf_de_numero(_num_pnl, porteur=_reglages.get("cotis_porteur"),
-                                          echeance=str(_reglages.get("cotis_echeance")))
+            _pdf_pnl = recu_pdf_de_numero(_num_pnl,
+                                          porteur=_reglages.get("cotis_porteur"))
             st.success(f"🧾 Reçu {_num_pnl} — {_pnl.get('titre', 'paiement noté')}. "
                        "Son QR mène à l'écran public de vérification ; le reçu reste téléchargeable ici.")
             if _pdf_pnl:
@@ -1504,7 +1551,8 @@ def show_equipe():
                                "orange_money": "Orange Money",
                                "mtn_momo": "MTN MoMo"}.get(abo_info[3] or "", "—")
                     _l_num = f" · 🧾 {abo_info[2]}" if abo_info[2] else ""
-                    st.info(f"{m[1]} {m[2]} ({m[3] or '—'}) – ✅ {type_affiche} ({abo_info[1]} FCFA · {_l_mode}){_l_num}")
+                    # v7.14.2 — le montant se montre en entier (5000, pas 5000.0)
+                    st.info(f"{m[1]} {m[2]} ({m[3] or '—'}) – ✅ {type_affiche} ({int(abo_info[1] or 0)} FCFA · {_l_mode}){_l_num}")
                 with col_btn:
                     if abo_info[2] and st.button("🧾", key=f"recu_voir_{m[0]}_{annee}", help="Revoir / retélécharger le reçu"):
                         st.session_state['cotis_recu_panel'] = {
@@ -1514,8 +1562,13 @@ def show_equipe():
             else:
                 _sug_abo, _ = cotis_montant_suggere(m[0], "abonnement")
                 _sug_reab, _ = cotis_montant_suggere(m[0], "reabonnement")
-                _badge_cat = ("🧒 tarif jeune" if cotis_categorie_membre(m[0]) == "jeune"
-                              else "🧑 tarif adulte")
+                # v7.14.2 — la mention « NOUVEAU » portée par le champ
+                # « Statut » ouvre la caisse SUR LA BONNE LIGNE : un membre
+                # nouveau arrive sur Abonnement, les autres sur Réabonnement.
+                _nature_defaut = cotis_nature_membre(m[0], annee)
+                _badge_cat = (("🧒 tarif jeune" if cotis_categorie_membre(m[0]) == "jeune"
+                               else "🧑 tarif adulte")
+                              + (" · 🌱 Nouveau" if _nature_defaut == "abonnement" else ""))
                 with st.expander(f"{m[1]} {m[2]} ({m[3] or '—'}) – ❌ Non enregistré · {_badge_cat}"):
                     # v7.14.1 — LA RÈGLE DU DIOCÈSE : tout équipier déjà dans
                     # la base se RÉABONNE (choix par défaut) ; la mention
@@ -1525,6 +1578,7 @@ def show_equipe():
                     _choix_type = st.radio(
                         "Nature (la mention « NOUVEAU » ouvre l'abonnement)",
                         ["🔄 Réabonnement", "📝 Abonnement (mention NOUVEAU)"],
+                        index=(1 if _nature_defaut == "abonnement" else 0),
                         key=f"cotis_type_{m[0]}_{annee}", horizontal=True)
                     _nature = "reabonnement" if "Réabonnement" in _choix_type else "abonnement"
                     _sug = _sug_reab if _nature == "reabonnement" else _sug_abo
