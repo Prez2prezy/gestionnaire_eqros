@@ -183,12 +183,17 @@ elif params.get("recu"):
         _mode = COTIS_MODES.get(_info[5] or "", _info[5] or "—")
         _mont = int(_info[1] or 0)
         _mont_txt = f"{_mont:,}".replace(",", " ")
-        # v7.14.1 — l'échéance se montre au format français sur l'écran public
+        # v7.14.2 — l'échéance se montre au format français sur l'écran
+        # public et SUIT LA NATURE du reçu : les nouveaux (abonnement)
+        # jusqu'au 31 décembre, les anciens (réabonnement) au délai de
+        # rigueur du 15 décembre.
+        _ech_cle = ("cotis_echeance_abo" if (_info[2] or "") == "abonnement"
+                    else "cotis_echeance")
         try:
-            _ech_pub = safe_date(_reglages.get("cotis_echeance"))
-            _ech_pub = _ech_pub.strftime("%d/%m/%Y") if _ech_pub else str(_reglages.get("cotis_echeance"))
+            _ech_pub = safe_date(_reglages.get(_ech_cle))
+            _ech_pub = _ech_pub.strftime("%d/%m/%Y") if _ech_pub else str(_reglages.get(_ech_cle))
         except Exception:
-            _ech_pub = str(_reglages.get("cotis_echeance"))
+            _ech_pub = str(_reglages.get(_ech_cle))
         st.success("✅ Reçu authentique — il est bien posé dans la caisse du Mouvement.")
         st.markdown(f"""
         <div style="background:#F5F6FF; border:1px solid #C5CAE9; border-radius:14px;
