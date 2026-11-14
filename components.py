@@ -2891,8 +2891,6 @@ def recu_cotisation_pdf(recu, porteur="Diocèse de Grand-Bassam",
     _s_etiq = _sty("etiq", 7.8, gras=True, coul="#1A237E", dessous=2)
     _s_txt = _sty("txt", 9.5, dessous=6)
     _s_pied = _sty("pied", 7.6, coul="#888888", centre=True, dessus=10, dessous=0)
-    _s_priere = _sty("priere", 8.6, ital=True, coul="#4527a0", centre=True,
-                     dessus=8, dessous=4)
     _s_role = _sty("role", 8.6, gras=True, coul="#1A237E", centre=True, dessous=0)
     _s_nom_sig = _sty("nomsig", 8.2, coul="#444444", centre=True, dessous=0)
 
@@ -3004,23 +3002,22 @@ def recu_cotisation_pdf(recu, porteur="Diocèse de Grand-Bassam",
     _montant = int(recu.get("montant") or 0)
     _mode = COTIS_MODES.get(recu.get("mode_paiement") or "", "Espèces")
     _d_paiement = _date_fr(recu.get("date_paiement"))
-    _matricule = recu.get("matricule") or "—"
+    # v7.14.3 — l'identifiant de la maison sur le papier : le MatLoc
+    # (l'ancien champ « matricule » reste la roue de secours).
+    _matloc = recu.get("matloc") or recu.get("matricule") or "—"
     _enregistré_par = recu.get("enregistre_par") or "Le responsable d'équipe"
-    _echeance_aff = _date_fr(echeance_iso)
 
-    _bloc("Fidèle", f"{_fid}   ·   Matricule : {_matricule}")
+    _bloc("Membre", f"{_fid}   ·   MatLoc : {_matloc}")
     _bloc("Équipe", recu.get("equipe") or "—")
     _bloc("Paroisse", recu.get("paroisse") or "—")
-    _bloc("Nature de l'abonnement",
-          f"{_titre_nature.capitalize()} — couvre l'année pastorale {periode_affichage(_annee)}")
+    # v7.14.3 — la nature se dit seule : « Réabonnement » / « Abonnement »
+    # (la période est déjà portée par le titre du reçu).
+    _bloc("Nature de l'abonnement", _titre_nature.capitalize())
     _bloc("Montant reçu", f"{_montant:,}".replace(",", " ") + " FCFA")
     _bloc("Mode de paiement", f"{_mode}  —  payé le {_d_paiement}")
-    _bloc("Situation d'abonnement",
-          f"À jour jusqu'au {_echeance_aff}"
-          + (" — échéance de l'abonnement des nouveaux"
-             if (recu.get("type_abonnement") or "reabonnement") == "abonnement"
-             else " — délai de rigueur de l'année pastorale")
-          + " (montants posés par le diocèse)")
+    # v7.14.3 — la situation se dit sobrement : « À jour » (l'échéance et
+    # la règle des montants ne voyagent plus sur le papier).
+    _bloc("Situation d'abonnement", "À jour")
     _bloc("Reçu noté par", f"{_enregistré_par}"
           + ("  —  paiement en main propre noté par le responsable"
              if (recu.get("origine") or "caisse") == "caisse" else ""))
@@ -3031,9 +3028,6 @@ def recu_cotisation_pdf(recu, porteur="Diocèse de Grand-Bassam",
     _histoire.append(Paragraph(_cotis_cp1252("Signature / cachet"), _s_role))
     _histoire.append(Paragraph(_cotis_cp1252(str(_enregistré_par)), _s_nom_sig))
 
-    _histoire.append(Paragraph(_cotis_cp1252(
-        "Merci de soutenir la mission des Équipes du Rosaire — que chaque "
-        "abonnement trouve sa route paisible."), _s_priere))
     _histoire.append(Paragraph(_cotis_cp1252(
         f"Reçu authentifiable en ligne : {cotis_lien_verification(recu.get('numero_recu', ''))}"
         " — un reçu inventé ne vérifie rien."), _s_pied))
@@ -3069,7 +3063,7 @@ def recu_pdf_de_numero(numero_recu, porteur=None, echeance=None):
         {"numero_recu": _info[0], "montant": _info[1],
          "type_abonnement": _info[2], "date_paiement": _info[3],
          "annee_debut": _info[4], "mode_paiement": _info[5],
-         "nom": _info[6], "prenom": _info[7], "matricule": _info[8],
+         "nom": _info[6], "prenom": _info[7], "matloc": _info[8],
          "equipe": _info[9], "paroisse": _info[10],
          "enregistre_par": _info[11], "origine": _info[12]},
         porteur=porteur or _reglages.get("cotis_porteur"),
