@@ -705,11 +705,13 @@ def show_diocese():
         annee_debut = st.number_input("Année de début de la période", min_value=2020, max_value=annee_pastorale_en_cours, value=annee_pastorale_en_cours, step=1)
         st.write(f"**Période :** {periode_affichage(annee_debut)}")
 
-        # v7.14.1 — LES RÉGLAGES (posés par le diocèse) : montants
-        # adulte/jeune × abonnement/réabonnement, échéance de l'année
-        # pastorale (15 décembre 2026), porteur des reçus. Ils règlent les
-        # cartes « Abonnement - Réabonnement » de l'Espace, les suggestions
-        # des caisses d'équipe et l'en-tête de chaque reçu numéroté.
+        # v7.14.2 — LES RÉGLAGES (posés par le diocèse) : montants
+        # adulte/jeune × abonnement/réabonnement, les DEUX échéances de
+        # l'année pastorale (réabonnement 15 décembre 2026 — délai de
+        # rigueur ; abonnement des nouveaux 31 décembre 2026), porteur des
+        # reçus. Ils règlent les cartes « Abonnement - Réabonnement » de
+        # l'Espace, les suggestions des caisses d'équipe et l'en-tête de
+        # chaque reçu numéroté.
         _reglages_dio = cotis_parametres_lire()
         with st.expander("⚙️ Réglages Abonnement - Réabonnement (posés par le diocèse)"):
             st.caption("Ces valeurs règlent les cartes « Abonnement - Réabonnement » de l'Espace, "
@@ -731,8 +733,17 @@ def show_diocese():
                     _d_ech_ini = date.fromisoformat(str(_reglages_dio.get("cotis_echeance")))
                 except Exception:
                     _d_ech_ini = date(2026, 12, 15)
-                _d_ech = st.date_input("Échéance de l'année pastorale", value=_d_ech_ini,
-                                       help="v7.14.1 — l'échéance demandée par le diocèse : 15 décembre 2026")
+                try:
+                    _d_ech_abo_ini = date.fromisoformat(str(_reglages_dio.get("cotis_echeance_abo")))
+                except Exception:
+                    _d_ech_abo_ini = date(2026, 12, 31)
+                # v7.14.2 — DEUX échéances, la différence est normale : les
+                # anciens (réabonnement) au délai de rigueur, les nouveaux
+                # (abonnement) à la fin de décembre.
+                _d_ech = st.date_input("Échéance du RÉABONNEMENT — délai de rigueur", value=_d_ech_ini,
+                                       help="v7.14.2 — le 15 décembre 2026 pour les réabonnements")
+                _d_ech_abo = st.date_input("Échéance de l'ABONNEMENT — nouveaux", value=_d_ech_abo_ini,
+                                           help="v7.14.2 — le 31 décembre 2026 pour les nouveaux (mention « NOUVEAU »)")
                 _porteur = st.text_input("Nom du porteur (en-tête des reçus)",
                                          value=str(_reglages_dio.get("cotis_porteur")))
                 if st.form_submit_button("💾 Poser les réglages"):
@@ -742,6 +753,7 @@ def show_diocese():
                                       "cotis_montant_jeune_abo": _m_jn_abo,
                                       "cotis_montant_jeune_reab": _m_jn_reab},
                             echeance=_d_ech.isoformat() if hasattr(_d_ech, "isoformat") else str(_d_ech),
+                            echeance_abo=_d_ech_abo.isoformat() if hasattr(_d_ech_abo, "isoformat") else str(_d_ech_abo),
                             porteur=_porteur):
                         st.success("Réglages posés — cartes, caisses et reçus suivent désormais ces valeurs.")
                         st.rerun()
