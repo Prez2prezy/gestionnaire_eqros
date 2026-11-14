@@ -495,13 +495,19 @@ def archiver_membre(membre_id, situation, annee_debut, annee_fin, commentaire, a
     commit_and_sync()
 
 def enregistrer_abonnement(membre_id, annee_debut, montant=0, type_abonnement='abonnement'):
-    existant = c.execute("SELECT id FROM abonnements WHERE membre_id=? AND annee_debut=?", (membre_id, annee_debut)).fetchone()
+    # v7.14.3 — le reçu reçoit son numéro SUR TOUTES LES ROUTES : si la
+    # ligne n'en porte pas encore (première notation, correction « ✏️ »),
+    # le prochain numéro séquentiel de l'année est posé au même geste —
+    # et un reçu qui a déjà son numéro n'est jamais renuméroté.
+    existant = c.execute("SELECT id, numero_recu FROM abonnements WHERE membre_id=? AND annee_debut=?", (membre_id, annee_debut)).fetchone()
+    _numero = (existant[1] if existant and existant[1]
+               else database.cotis_numero_recu_suivant(annee_debut))
     if existant:
-        c.execute("UPDATE abonnements SET date_paiement=?, montant=?, type_abonnement=?, statut='paye' WHERE id=?",
-                  (date.today().isoformat(), montant, type_abonnement, existant[0]))
+        c.execute("UPDATE abonnements SET date_paiement=?, montant=?, type_abonnement=?, statut='paye', numero_recu=? WHERE id=?",
+                  (date.today().isoformat(), montant, type_abonnement, _numero, existant[0]))
     else:
-        c.execute('''INSERT INTO abonnements (membre_id, annee_debut, date_paiement, montant, type_abonnement, statut) VALUES (?, ?, ?, ?, ?, ?)''',
-                  (membre_id, annee_debut, date.today().isoformat(), montant, type_abonnement, 'paye'))
+        c.execute('''INSERT INTO abonnements (membre_id, annee_debut, date_paiement, montant, type_abonnement, statut, numero_recu) VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                  (membre_id, annee_debut, date.today().isoformat(), montant, type_abonnement, 'paye', _numero))
     commit_and_sync()
 
 def verifier_abonnement(m, a):
