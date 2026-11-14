@@ -3016,7 +3016,11 @@ def recu_cotisation_pdf(recu, porteur="Diocèse de Grand-Bassam",
     _bloc("Montant reçu", f"{_montant:,}".replace(",", " ") + " FCFA")
     _bloc("Mode de paiement", f"{_mode}  —  payé le {_d_paiement}")
     _bloc("Situation d'abonnement",
-          f"À jour jusqu'au {_echeance_aff} (échéance de l'année pastorale — montants posés par le diocèse)")
+          f"À jour jusqu'au {_echeance_aff}"
+          + (" — échéance de l'abonnement des nouveaux"
+             if (recu.get("type_abonnement") or "reabonnement") == "abonnement"
+             else " — délai de rigueur de l'année pastorale")
+          + " (montants posés par le diocèse)")
     _bloc("Reçu noté par", f"{_enregistré_par}"
           + ("  —  paiement en main propre noté par le responsable"
              if (recu.get("origine") or "caisse") == "caisse" else ""))
@@ -3048,12 +3052,19 @@ def recu_cotisation_pdf(recu, porteur="Diocèse de Grand-Bassam",
 def recu_pdf_de_numero(numero_recu, porteur=None, echeance=None):
     """Le PDF du reçu retrouvé par son numéro (bouton 🧾 des caisses et
     carte du membre) : les données du reçu relues en base, le PDF rendu
-    comme à l'édition. None si le numéro ne renvoie à rien."""
+    comme à l'édition. None si le numéro ne renvoie à rien.
+    v7.14.2 — l'échéance suit la NATURE du reçu quand on ne l'impose pas :
+    les nouveaux (abonnement) jusqu'au 31 décembre, les anciens
+    (réabonnement) au délai de rigueur du 15 décembre."""
     from database import cotis_recu_info, cotis_parametres_lire
     _info = cotis_recu_info(str(numero_recu))
     if not _info:
         return None
     _reglages = cotis_parametres_lire()
+    if not echeance:
+        echeance = str(_reglages.get(
+            "cotis_echeance_abo" if (_info[2] or "") == "abonnement"
+            else "cotis_echeance"))
     return recu_cotisation_pdf(
         {"numero_recu": _info[0], "montant": _info[1],
          "type_abonnement": _info[2], "date_paiement": _info[3],
@@ -3062,4 +3073,4 @@ def recu_pdf_de_numero(numero_recu, porteur=None, echeance=None):
          "equipe": _info[9], "paroisse": _info[10],
          "enregistre_par": _info[11], "origine": _info[12]},
         porteur=porteur or _reglages.get("cotis_porteur"),
-        echeance_iso=echeance or str(_reglages.get("cotis_echeance")))
+        echeance_iso=echeance)
