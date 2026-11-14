@@ -2177,6 +2177,53 @@ maison.*
   seulement si elle porte exactement l'ancienne valeur par défaut.
 - `_VERSION_APPLI = "v7.14.1"`.
 
+### 54. v7.14.2 — La carte qui connaît son membre : « Rappel » / « Information », champ « Statut », deux échéances, la nuit violette
+
+- **La personnalisation demandée par le diocèse** — la carte d'accueil du
+  membre n'affiche plus les deux tarifs côte à côte : elle lit « 👤 Mon
+  profil » et dit SA situation, une seule ligne de tarif, avec les
+  libellés exacts :
+  - le membre hors équipe Jeune sans mention se lit adulte →
+    **« ⏳ Rappel - Réabonnement »** · Année pastorale 2026 - 2027 ·
+    🔄 Réabonnement 5 000 FCFA · 🗓️ À régler au plus tard le 15/12/2026
+    délai de rigueur · 💼 Paie auprès de ton responsable d'équipe — en
+    espèces ou en mobile money (Wave, Orange Money) : il note ton
+    paiement et t'édite ton reçu numéroté immédiatement ;
+  - l'équipe Jeune suit le même modèle à 2 000 FCFA (réabonnement) et
+    3 500 FCFA (nouveau Jeune) ;
+  - le membre portant la mention « Nouveau » reçoit
+    **« ⏳ Information - Abonnement »** · 📝 Abonnement (5 000 adulte /
+    3 500 Jeune) · 🗓️ À régler au plus tard le 31/12/2026 — la différence
+    entre les dates d'échéance est normale.
+- **Le champ « Statut »** — posé dans « ➕ Nouveau membre » (espace équipe),
+  « ✏️ Modification » de « 👤 Mes membres » et le formulaire d'ajout de
+  l'espace paroisse : options **Ancien / Nouveau**. Le membre porte la
+  mention « Nouveau » pour **une année pastorale** : deux colonnes posées
+  par migration douce (`mention_nouveau`, `mention_annee`), la mention
+  retombe d'elle-même quand l'année passe — aucun travail de nuit. La
+  liste des membres affiche « 🌱 Nouveau 2026-2027 » tant qu'elle porte ;
+  une mention retombée se rappelle au responsable dans le formulaire.
+- **Les deux échéances partout** — réabonnement : 15/12/2026 (délai de
+  rigueur) · abonnement des nouveaux : 31/12/2026. Carte du membre,
+  encadré de la caisse d'équipe, réglages du diocèse (deux cases de date),
+  reçu PDF (« Situation d'abonnement » suit la nature du reçu) et écran
+  public de vérification : chacun montre la date de SA nature.
+- **La caisse s'ouvre sur la bonne ligne** — le formulaire de paiement
+  d'un membre ouvre la nature que porte sa mention (Nouveau →
+  Abonnement, sinon Réabonnement) et son badge « 🌱 Nouveau » se voit
+  dans la liste des non enregistrés ; le reçu rouvert par 🧾 choisit son
+  échéance tout seul.
+- **La carte quitte le jaune** — fond **violet foncé du pied de page**
+  (dégradé #241042 → #3B1177 → #4A148C), liseré et titres dorés comme
+  « 📿 Mémoire de mes dizaines » : les boutons et textes dorés du web
+  gardent leur éclat sur cette nuit-là ; la carte verte « à jour » reste
+  verte — la réussite se voit d'un regard.
+- **🔒 La confiance, inchangée** : deux colonnes NULL sur `membres`, une
+  clé de réglage de plus ; AUCUNE ligne de membre modifiée par la
+  migration, tout le monde commence Ancien et le responsable pose ses
+  mentions en connaissance de cause.
+- `_VERSION_APPLI = "v7.14.2"`.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
