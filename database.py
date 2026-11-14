@@ -652,6 +652,17 @@ def init_tables_and_migrations():
     except Exception:
         pass
 
+    # v7.14.2 — LA MENTION « NOUVEAU » (champ « Statut » des formulaires
+    # de membres) : deux colonnes posées à NULL sur `membres` — migration
+    # douce et ré-exécutable, comme les six colonnes de caisse ci-dessus.
+    # mention_nouveau porte « Nouveau » quand le responsable déclare un
+    # membre de première année ; mention_annee note l'année pastorale du
+    # porte — la mention retombe d'elle-même quand l'année passe. AUCUNE
+    # ligne de membre existante n'est modifiée : tout le monde commence
+    # Ancien, et le responsable pose ses mentions en connaissance de cause.
+    safe_migrate("ALTER TABLE membres ADD COLUMN mention_nouveau TEXT")
+    safe_migrate("ALTER TABLE membres ADD COLUMN mention_annee INTEGER")
+
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
     try:
         anciens_evts = c.execute("SELECT id, equipe_id FROM evenements WHERE equipe_id IS NOT NULL AND paroisse_id IS NULL AND diocese_id IS NULL").fetchall()
@@ -4083,7 +4094,8 @@ COTIS_DEFAUTS = {
     "cotis_montant_adulte_reab": 5000,    # Réabonnement adulte — le cas courant (FCFA)
     "cotis_montant_jeune_abo": 3500,      # Abonnement jeune — nouveau Jeune (FCFA)
     "cotis_montant_jeune_reab": 2000,     # Réabonnement jeune — le cas courant (FCFA)
-    "cotis_echeance": "2026-12-15",       # Échéance de l'année pastorale (v7.14.1)
+    "cotis_echeance": "2026-12-15",       # Échéance du RÉABONNEMENT — délai de rigueur (v7.14.1)
+    "cotis_echeance_abo": "2026-12-31",   # Échéance de l'ABONNEMENT des nouveaux (v7.14.2)
     "cotis_porteur": "Diocèse de Grand-Bassam",   # En-tête des reçus
 }
 
@@ -4114,10 +4126,13 @@ def cotis_parametres_lire():
     return params
 
 
-def cotis_parametres_ecrire(montants=None, echeance=None, porteur=None):
+def cotis_parametres_ecrire(montants=None, echeance=None, echeance_abo=None,
+                            porteur=None):
     """Le diocèse pose (ou repositionne) ses réglages de caisse.
     `montants` : dict partiel {clé: valeur} sur _COTIS_MONTANT_CLES ;
-    `echeance` : date ISO ; `porteur` : en-tête des reçus."""
+    `echeance` : échéance du RÉABONNEMENT (délai de rigueur) ;
+    `echeance_abo` : échéance de l'ABONNEMENT des nouveaux (v7.14.2) ;
+    `porteur` : en-tête des reçus."""
     _assurer_parametres()
     try:
         for _cle, _val in (montants or {}).items():
@@ -4129,6 +4144,10 @@ def cotis_parametres_ecrire(montants=None, echeance=None, porteur=None):
             c.execute("""INSERT INTO parametres_app (cle, valeur) VALUES (?, ?)
                          ON CONFLICT(cle) DO UPDATE SET valeur=excluded.valeur""",
                       ("cotis_echeance", str(echeance)))
+        if echeance_abo:
+            c.execute("""INSERT INTO parametres_app (cle, valeur) VALUES (?, ?)
+                         ON CONFLICT(cle) DO UPDATE SET valeur=excluded.valeur""",
+                      ("cotis_echeance_abo", str(echeance_abo)))
         if porteur is not None and str(porteur).strip() != "":
             c.execute("""INSERT INTO parametres_app (cle, valeur) VALUES (?, ?)
                          ON CONFLICT(cle) DO UPDATE SET valeur=excluded.valeur""",
@@ -4163,6 +4182,68 @@ def cotis_montant_suggere(membre_id, type_abonnement="reabonnement"):
     _sfx = "abo" if type_abonnement == "abonnement" else "reab"
     _cle = f"cotis_montant_{_cat}_{_sfx}"
     return int(params.get(_cle, 5000)), _cat
+
+
+def cotis_membre_nouveau(membre_id, annee_debut=None):
+    """Le membre porte-t-il ENCORE la mention « NOUVEAU » pour l'année
+    pastorale en cours (v7.14.2) ? La mention vit une seule année : le
+    responsable la pose dans le champ « Statut » des formulaires de
+    membres (« ➕ Nouveau membre » / « 👤 Mes membres ») et elle retombe
+    d'elle-même quand l'année pastorale change — aucun travail de nuit,
+    aucune écriture cachée. Ancienne base sans colonnes : Ancien."""
+    if annee_debut is None:
+        _t = date.today()
+        annee_debut = _t.year if _t.month >= 9 else _t.year - 1
+    try:
+        _r = c.execute("SELECT mention_nouveau, mention_annee FROM membres WHERE id=?",
+                       (membre_id,)).fetchone()
+        return bool(_r and str(_r[0] or "").strip().lower() == "nouveau"
+                    and _r[1] is not None and int(_r[1]) == int(annee_debut))
+    except Exception:
+        return False
+
+
+def cotis_nature_membre(membre_id, annee_debut=None):
+    """La NATURE de l'abonnement de CE membre pour l'année en cours :
+    « abonnement » s'il porte encore la mention « NOUVEAU »,
+    « reabonnement » sinon — la règle du diocèse (tout équipier déjà dans
+    la base se réabonne ; la mention « NOUVEAU » seule ouvre
+    l'abonnement). Sert à ouvrir la carte du membre et la caisse d'équipe
+    sur la bonne ligne."""
+    return ("abonnement" if cotis_membre_nouveau(membre_id, annee_debut)
+            else "reabonnement")
+
+
+def cotis_mettre_mention(membre_id, nouveau, annee_debut=None):
+    """Le champ « Statut » posé au geste : pose ou retire la mention
+    « NOUVEAU » (première année pastorale dans la base). `nouveau` vrai →
+    mention « Nouveau » + année pastorale courante ; faux → les colonnes
+    retournent à NULL (le membre redevient Ancien, il se réabonne)."""
+    if annee_debut is None:
+        _t = date.today()
+        annee_debut = _t.year if _t.month >= 9 else _t.year - 1
+    try:
+        if nouveau:
+            c.execute("UPDATE membres SET mention_nouveau='Nouveau', mention_annee=? WHERE id=?",
+                      (int(annee_debut), membre_id))
+        else:
+            c.execute("UPDATE membres SET mention_nouveau=NULL, mention_annee=NULL WHERE id=?",
+                      (membre_id,))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"cotis_mettre_mention : {e!r}")
+        return False
+
+
+def cotis_echeance_nature(nature=None):
+    """L'échéance qui correspond à la NATURE de l'abonnement (v7.14.2) :
+    les nouveaux (abonnement) ont jusqu'à la fin de décembre — 31/12/2026 ;
+    les anciens (réabonnement) au délai de rigueur du 15/12/2026. Les deux
+    dates sont les réglages du diocèse ; le code tient les défauts."""
+    params = cotis_parametres_lire()
+    return str(params.get("cotis_echeance_abo" if nature == "abonnement"
+                          else "cotis_echeance"))
 
 
 def cotis_numero_recu_suivant(annee_debut):
