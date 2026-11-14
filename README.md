@@ -2273,6 +2273,52 @@ maison.*
   idempotent.
 - `_VERSION_APPLI = "v7.14.3"`.
 
+### 56. v7.14.4 — La relance (lecture seule) : qui n'est pas à jour, SON échéance, le message prêt à copier pour WhatsApp, l'export du suivi
+
+- **« 📣 Relances » dans la caisse d'équipe** — sous les trois métriques,
+  l'expander liste les membres non à jour avec, pour chacun, la nature
+  posée par « 👤 Mon profil » (« 🔄 Réabonnement » / « 📝 Abonnement
+  (mention NOUVEAU) »), le montant attendu (réglages du diocèse selon la
+  catégorie adulte/jeune), SON échéance (réabonnement au délai de
+  rigueur du 15/12/2026, abonnement des nouveaux au 31/12/2026) et le
+  drapeau d'urgence (« dans 31 jour(s) », « aujourd'hui même », « ⚠️
+  dépassée depuis N jour(s) »). Aucune écriture : la relance RELIT la
+  base — elle n'est pas une caisse.
+- **Le message collectif prêt à copier** — le cadre noir porte le texte
+  WhatsApp entier : les deux échéances au mot du diocèse, les montants
+  par profil, le chemin du paiement (les mots de la carte : « Paie
+  auprès de ton responsable d'équipe — en espèces ou en mobile money
+  (Wave, Orange Money) : il note ton paiement et t'édite ton reçu
+  numéroté immédiatement »), la signature « Le responsable d'équipe ».
+  Le bouton de copie de `st.code` fait le geste.
+- **Le message pour UN membre** — un sélecteur parmi les en attente
+  produit son message individuel : sa nature, son montant, SON échéance
+  (réabonnement au délai de rigueur ; abonnement mention « Nouveau »
+  sans lui), l'appel au réveil si l'échéance est passée (« ⏰ … va voir
+  ton responsable dès aujourd'hui »).
+- **La paroisse relaie** — dans « 📅 Abonnements », chaque équipe en
+  attente ouvre « 📣 Message de relance (WhatsApp) » : le même message
+  collectif, prêt à porter au responsable d'équipe.
+- **Le diocèse tient le livre** — dans « 📅 Abonnement - Réabonnement »,
+  l'expander « 📣 Relances — N membre(s) en attente » dresse le tableau
+  de tous les en attente (Paroisse, Équipe, Nom, MatLoc, Nature, Montant
+  attendu, Échéance, Urgence) et pose « 📥 Export du suivi (Excel) » :
+  feuille « Suivi_AAAA » (tous les équipiers actifs avec leur situation
+  — à jour : nature, montant payé, date, N° reçu ; en attente : nature
+  attendue, montant attendu, échéance) + feuille « Relances » (les en
+  attente seuls). Le carnet du trésorier, prêt pour la fin de saison.
+- **Le moteur** — `database.cotis_relances_lignes(equipe_id=None,
+  paroisse_id=None, annee_debut=None)` : la lecture en bloc (une seule
+  requête, la nature lue sur les colonnes « mention » comme
+  `cotis_nature_membre`, la catégorie au nom de l'équipe) qui alimente
+  les trois écrans ; `components.cotis_reglages_aff` (échéances
+  formatées), `cotis_relance_ligne_urgence`, `cotis_relance_message_collectif`
+  et `cotis_relance_message_membre` (les textes).
+- **🔒 La confiance, inchangée** : aucune migration, aucune colonne
+  nouvelle, AUCUNE écriture — le geste entier est un SELECT ; les
+  réglages du diocèse restent où ils sont.
+- `_VERSION_APPLI = "v7.14.4"`.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
