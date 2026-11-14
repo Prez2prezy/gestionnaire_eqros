@@ -2224,6 +2224,55 @@ maison.*
   mentions en connaissance de cause.
 - `_VERSION_APPLI = "v7.14.2"`.
 
+### 55. v7.14.3 — La caisse lit le profil : nature plus jamais un choix, montant non modifiable, fini le « Reçu n° None », reçu PDF sobre
+
+- **La nature n'est plus un choix** — dans « 💼 Abonnement - Réabonnement
+  — Équipe », la radio « Nature (la mention « NOUVEAU » ouvre
+  l'abonnement) » a quitté la caisse : le champ « Statut » de « 👤 Mon
+  profil » décide seul (mention « Nouveau » → Abonnement, sinon
+  Réabonnement) et la ligne du membre porte sa nature d'un coup d'œil —
+  « – ❌ Non enregistré · 🔄 Réabonnement » ou « · 📝 Abonnement (mention
+  NOUVEAU) ». Les badges « 🧒 tarif jeune » / « 🧑 tarif adulte » ont
+  quitté la liste avec elle.
+- **Le montant se montre, ne se discute plus** — le champ « Montant
+  (FCFA) » est automatique et non modifiable : posé par le diocèse selon
+  le profil du membre (5 000 adulte · 3 500 nouveau Jeune · 2 000 Jeune).
+  La ligne garde « Mode de paiement » et « Note (facultative) ».
+- **L'encadré de la caisse épuré** — « 💼 Montants posés par le diocèse »
+  et « 📌 Règle de la maison » ont quitté l'écran ; il reste « 🗓️
+  Échéances : • Abonnement (nouveaux) — 31/12/2026 · • Réabonnement —
+  15/12/2026 (délai de rigueur) », sous « Période : Sept 2026 – Août
+  2027 ».
+- **« Membres 09/09 »** — remplace « ✅ Cotisants 9/9 » (zéros devant).
+  Au passage le compteur compte enfin les payés : l'ancienne jointure
+  comptait tout le monde, payé ou non — d'où un « 9/9 » immuable.
+- **Fini le « Reçu n° None »** — le numéro de reçu est posé sur TOUTES
+  les routes de notation (caisse ET correction « ✏️ »), et une ligne
+  déjà « paye » sans numéro (nées avant la caisse) reçoit son numéro
+  séquentiel en douceur, la première fois que la caisse ou la carte du
+  membre la relit — une seule fois, jamais renumérotée. La carte verte
+  dit « 🧾 Reçu n° COT-2026-00001 » ; si un numéro se fait attendre,
+  elle dit « Reçu n° en cours d'attribution » au lieu de « None ».
+- **La carte verte au titre de la nature** — « ✅ Abonnement — à jour »
+  ou « ✅ Réabonnement — à jour » selon l'opération, la ligne se réduit à
+  « Abonnement · année pastorale 2026/2027 · 5 000 FCFA · payée le
+  07/11/2026 » (le mode de paiement reste sur le reçu), suivie du
+  « 🧾 Reçu n° … ».
+- **Le reçu PDF sobre** — « Nature de l'abonnement : Réabonnement » (la
+  phrase « — couvre l'année pastorale… » a quitté le bloc), « Situation
+  d'abonnement : À jour » (l'échéance et la règle des montants ne
+  voyagent plus sur le papier), la ligne de prière retirée, et
+  l'identifiant de la maison sur le papier : le bloc « Membre » porte
+  « MatLoc : GBA-OISOJ » (l'ancien champ « matricule » reste la roue de
+  secours). Le titre du
+  papier (« RÉABONNEMENT — Année pastorale Sept 2026 – Août 2027 ») et
+  le QR de vérification restent en place.
+- **🔒 La confiance, inchangée** : aucune migration, aucune colonne
+  nouvelle ; la seule écriture nouvelle est le numéro de reçu posé sur
+  des lignes DÉJÀ payées qui n'en portaient pas — séquentiel, unique,
+  idempotent.
+- `_VERSION_APPLI = "v7.14.3"`.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
