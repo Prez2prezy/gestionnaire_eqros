@@ -709,6 +709,13 @@ def show_paroisse():
                     # COHABITATION : lien imgbb prioritaire, sinon fichier
                     ph_lien = st.text_input("…ou lien de photo (https://... — ex. imgbb : i.ibb.co/…)")
                     da = st.date_input("Date d'adhésion", min_value=date(1950, 1, 1), max_value=date.today(), value=date.today())
+                    # v7.14.2 — le champ « Statut » aussi ici : la paroisse
+                    # enregistre des nouveaux à part, puis les intègre — la
+                    # mention « Nouveau » porte une année pastorale.
+                    st_m = st.selectbox("Statut", ["Ancien", "Nouveau"],
+                                        help="« Nouveau » : première année pastorale dans la base — "
+                                             "il s'abonne (abonnement). La mention porte une année, "
+                                             "puis retombe d'elle-même.")
 
                     if st.form_submit_button("✅ Ajouter"):
                         if not (n and p):
@@ -717,7 +724,7 @@ def show_paroisse():
                             st.error("Le lien de photo doit commencer par https://")
                         else:
                             mat = generer_matricule_unique()
-                            c.execute("""INSERT INTO membres (matloc, nom, prenom, date_naissance, whatsapp, date_adhesion, paroisse_id, equipe_id, statut, numero_meditation, matricule) VALUES (?,?,?,?,?,?,?,?,?,?,?)""", (mat, n, p, dn.isoformat(), w, da.isoformat(), pid, eid, 'actif', nm, mat))
+                            c.execute("""INSERT INTO membres (matloc, nom, prenom, date_naissance, whatsapp, date_adhesion, paroisse_id, equipe_id, statut, numero_meditation, matricule, mention_nouveau, mention_annee) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""", (mat, n, p, dn.isoformat(), w, da.isoformat(), pid, eid, 'actif', nm, mat, ('Nouveau' if st_m == "Nouveau" else None), (get_periode_pastorale()[0] if st_m == "Nouveau" else None)))
                             mid = c.lastrowid
                             # COHABITATION : lien imgbb prioritaire, sinon upload Cloudinary/local
                             photo_finale = ph_lien.strip() if ph_lien.strip() else (sauvegarder_photo(ph, mat) if ph else None)
