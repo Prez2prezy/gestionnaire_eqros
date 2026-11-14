@@ -30,7 +30,9 @@ from database import (c, commit_and_sync, safe_migrate,
                       feuillet_questionnaire_existe,
                       feuillet_questions_lister,
                       # v7.14.0 — la caisse de la cotisation
-                      cotis_parametres_lire, cotis_parametres_ecrire)
+                      cotis_parametres_lire, cotis_parametres_ecrire,
+                      # v7.14.4 — le livre des relances (lecture seule)
+                      cotis_relances_lignes)
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation,
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale,
                       supprimer_photo, afficher_messages_flash, lien_whatsapp, URL_ESPACE_SPIRITUEL,
@@ -41,7 +43,8 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
                         afficher_whatsapp_tabs, afficher_historique_paroisse,
                         afficher_etat_presences_paroisse, _qrcode_png_bytes,
                         afficher_reponses_questionnaire_feuillet,
-                        recu_pdf_de_numero)  # v7.14.0 — reçus numérotés
+                        recu_pdf_de_numero,  # v7.14.0 — reçus numérotés
+                        cotis_relance_ligne_urgence)  # v7.14.4 — relance
 
 
 def _gestionnaire_archives_espace(texte_intro, types_contenus, prefixe):
@@ -816,6 +819,78 @@ def show_diocese():
                                            key=f"cotis_dl_dio_{_sel_dio}")
             else:
                 st.info("Aucun paiement noté pour cette année — les caisses d'équipe sont encore silencieuses.")
+
+        # v7.14.4 — LE LIVRE DES RELANCES (lecture seule) : tous les
+        # équipiers en attente, avec leur équipe, leur paroisse, la nature
+        # posée par « 👤 Mon profil », le montant attendu et SON échéance —
+        # plus l'export Excel du suivi (feuille « Suivi » : tout le monde
+        # avec sa situation ; feuille « Relances » : les en attente seuls).
+        # On ne fait que RELIRE la base : la relance n'écrit rien.
+        _rel_dio = cotis_relances_lignes(annee_debut=annee_debut)
+        with st.expander(f"📣 Relances — {len(_rel_dio)} membre(s) en attente"):
+            st.caption("Lecture seule — la relance dit la même chose que la carte du membre ; "
+                       "le suivi se lit, il ne s'écrit pas.")
+            if not _rel_dio:
+                st.success("✅ Tous les équipiers sont à jour — aucune relance à porter.")
+            else:
+                _df_rel = pd.DataFrame([{
+                    "Paroisse": _l["paroisse"], "Équipe": _l["equipe"],
+                    "Nom": _l["nom"], "Prénom": _l["prenom"],
+                    "MatLoc": _l["matloc"] or "—",
+                    "Nature": ("Abonnement (mention NOUVEAU)"
+                               if _l["nature"] == "abonnement" else "Réabonnement"),
+                    "Montant attendu": _l["montant"],
+                    "Échéance": _l["echeance_aff"],
+                    "Urgence": cotis_relance_ligne_urgence(_l["jours"]).strip() or "—",
+                } for _l in _rel_dio])
+                _df_rel.index = _df_rel.index + 1
+                st.dataframe(_df_rel, width="stretch")
+
+            # l'EXPORT DU SUIVI : tout le monde avec sa situation, les
+            # relances en deuxième feuille — le carnet du trésorier.
+            _suivi = c.execute("""SELECT m.id, p.nom, e.nom_equipe, m.nom, m.prenom,
+                                         m.matloc, a.type_abonnement, a.montant,
+                                         a.date_paiement, a.numero_recu
+                                  FROM membres m
+                                  LEFT JOIN equipes e ON m.equipe_id=e.id
+                                  LEFT JOIN paroisses p ON m.paroisse_id=p.id
+                                  LEFT JOIN abonnements a ON m.id=a.membre_id
+                                       AND a.annee_debut=? AND a.statut='paye'
+                                  WHERE m.statut='actif'
+                                  ORDER BY p.nom, e.nom_equipe, m.nom""",
+                               (annee_debut,)).fetchall()
+            _rel_par_id = {_l["membre_id"]: _l for _l in _rel_dio}
+            _rows_suivi = []
+            for _s in _suivi:
+                (_mid, _par, _eq, _nom, _pre, _mat, _type, _mont, _dpay, _nrec) = _s
+                if _type:
+                    _rows_suivi.append({"Paroisse": _par or "—", "Équipe": _eq or "—",
+                                        "Nom": _nom or "", "Prénom": _pre or "",
+                                        "MatLoc": _mat or "—", "Situation": "✅ À jour",
+                                        "Nature": "Abonnement" if _type == "abonnement" else "Réabonnement",
+                                        "Montant": int(_mont or 0), "Échéance": "—",
+                                        "Date paiement": _dpay or "—", "N° reçu": _nrec or "—"})
+                else:
+                    _l_att = _rel_par_id.get(_mid) or {}
+                    _rows_suivi.append({"Paroisse": _par or "—", "Équipe": _eq or "—",
+                                        "Nom": _nom or "", "Prénom": _pre or "",
+                                        "MatLoc": _mat or "—", "Situation": "❌ En attente",
+                                        "Nature": ("Abonnement (mention NOUVEAU)"
+                                                   if _l_att.get("nature") == "abonnement"
+                                                   else "Réabonnement"),
+                                        "Montant": int(_l_att.get("montant", 0)),
+                                        "Échéance": _l_att.get("echeance_aff", "—"),
+                                        "Date paiement": "—", "N° reçu": "—"})
+            _out_s = io.BytesIO()
+            with pd.ExcelWriter(_out_s, engine='openpyxl') as _w:
+                pd.DataFrame(_rows_suivi).to_excel(_w, index=False, sheet_name=f"Suivi_{annee_debut}")
+                if _rel_dio:
+                    _df_rel.to_excel(_w, index=False, sheet_name="Relances")
+            _out_s.seek(0)
+            st.download_button("📥 Export du suivi (Excel)", data=_out_s,
+                               file_name=f"suivi_abonnements_{annee_debut}_{date.today()}.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                               key=f"cotis_export_suivi_{annee_debut}")
         st.markdown("---")
 
         for p in c.execute("SELECT id, nom FROM paroisses ORDER BY nom").fetchall():
