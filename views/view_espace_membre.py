@@ -119,7 +119,9 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       feuillet_questionnaire_publie,
                       # v7.14.0 — la caisse de la cotisation
                       cotis_parametres_lire, cotis_categorie_membre,
-                      cotis_membre_nouveau)
+                      cotis_membre_nouveau,
+                      # v7.14.3 — le numéro manquant se remplit tout seul
+                      cotis_recu_numero_attribuer)
 from services import (safe_date, compter_visite, lien_whatsapp, urls_galerie,
                       URL_ESPACE_SPIRITUEL, get_periode_pastorale)
 
@@ -130,7 +132,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.14.2"
+_VERSION_APPLI = "v7.14.3"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -4864,30 +4866,45 @@ def _carte_cotisation_membre(membre):
         _ech_passee = False
 
     if _recu:
+        # v7.14.3 — le numéro manquant se remplit tout seul : un paiement
+        # posé « payé » sans reçu numéroté (lignes d'avant la caisse,
+        # chemin « ✏️ ») reçoit son numéro la première fois où la carte le
+        # relit — une seule fois, jamais renuméroté après.
+        if not _recu[0]:
+            cotis_recu_numero_attribuer(_mid, _annee)
+            _recu = c.execute("""SELECT numero_recu, montant, type_abonnement,
+                                        date_paiement, mode_paiement, origine, enregistre_par
+                                 FROM abonnements
+                                 WHERE membre_id=? AND annee_debut=? AND statut='paye'""",
+                              (_mid, _annee)).fetchone() or _recu
+        # v7.14.3 — la carte dit LA NATURE DE L'OPÉRATION (« ✅ Abonnement —
+        # à jour » / « ✅ Réabonnement — à jour »), la ligne ne montre que
+        # ce que le diocèse a demandé : nature · année · montant · date.
         _nature = "Abonnement" if _recu[2] == "abonnement" else "Réabonnement"
-        _mode = COTIS_MODES.get(_recu[4] or "", (_recu[4] or "").capitalize() or "—")
         _mont_txt = f"{int(_recu[1] or 0):,}".replace(",", " ")
         _d_p = safe_date(_recu[3])
         _d_aff = _d_p.strftime("%d/%m/%Y") if _d_p else (_recu[3] or "")
-        _recu_pdf = recu_cotisation_pdf(
+        _ligne_recu = (f'🧾 Reçu n° <b>{_recu[0]}</b>' if _recu[0]
+                       else '🧾 Reçu n° en cours d\'attribution — repasse dans un instant')
+        _recu_pdf = (recu_cotisation_pdf(
             {"numero_recu": _recu[0], "montant": _recu[1],
              "type_abonnement": _recu[2], "date_paiement": _recu[3],
              "annee_debut": _annee, "mode_paiement": _recu[4],
-             "nom": membre[1], "prenom": membre[2], "matricule": None,
+             "nom": membre[1], "prenom": membre[2], "matloc": membre[3],
              "equipe": membre[8], "paroisse": membre[9],
              "enregistre_par": _recu[6], "origine": _recu[5]},
             porteur=_reglages.get("cotis_porteur"),
             echeance_iso=str(_reglages.get(_ech_cle)))
+            if _recu[0] else None)
         st.markdown(
             '<div style="background:linear-gradient(135deg,#e8f5e9 0%,#c8e6c9 100%);'
             ' border:1.5px solid #66bb6a; border-radius:15px; padding:16px;'
             ' margin:10px;">'
-            '<div style="color:#1b5e20; font-size:1.08rem; font-weight:bold;">'
-            '✅ Abonnement - Réabonnement — à jour</div>'
+            f'<div style="color:#1b5e20; font-size:1.08rem; font-weight:bold;">✅ {_nature} — à jour</div>'
             '<div style="color:#2e7d32; font-size:0.9rem; margin-top:6px; line-height:1.65;">'
             f'{_nature} · année pastorale {get_periode_pastorale()[0]}/{get_periode_pastorale()[0] + 1}'
-            f' · {_mont_txt} FCFA · payée le {_d_aff} ({_mode})<br>'
-            f'🧾 Reçu n° <b>{_recu[0]}</b> — à jour jusqu&#39;au {_echeance_aff}</div>'
+            f' · {_mont_txt} FCFA · payée le {_d_aff}<br>'
+            f'{_ligne_recu}</div>'
             '</div>', unsafe_allow_html=True)
         if _recu_pdf:
             st.download_button("🧾 Mon reçu numéroté (PDF)",
