@@ -22,7 +22,9 @@ from database import (c, commit_and_sync, verifier_reparer_intentions, jours_dep
                       # v7.14.2 — la mention « NOUVEAU » (champ « Statut »)
                       cotis_membre_nouveau, cotis_nature_membre,
                       # v7.14.3 — le numéro manquant se remplit tout seul
-                      cotis_recu_numero_attribuer)
+                      cotis_recu_numero_attribuer,
+                      # v7.14.4 — la relance (lecture seule, rien n'écrit)
+                      cotis_relances_lignes)
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
@@ -33,7 +35,11 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
                         enregistrer_presence_equipe, afficher_etat_presences_globales,
                         bloc_chaine_seance,
                         # v7.14.0 — la caisse de la cotisation (reçus numérotés)
-                        recu_pdf_de_numero)
+                        recu_pdf_de_numero,
+                        # v7.14.4 — les messages de relance prêts à copier
+                        cotis_reglages_aff, cotis_relance_ligne_urgence,
+                        cotis_relance_fcfa,
+                        cotis_relance_message_collectif, cotis_relance_message_membre)
 from stcompat import comp_html
 
 
@@ -1531,6 +1537,43 @@ def show_equipe():
         _mc1.metric("Membres", f"{_cotisants:02d}/{_nb_membres:02d}")
         _mc2.metric("💰 Total collecté", f"{_fr(_total_fcfa)} FCFA")
         _mc3.metric("⏳ Reste à régler", f"{max(_nb_membres - _cotisants, 0)}")
+
+        # v7.14.4 — LA RELANCE (lecture seule) : qui n'est pas à jour, avec
+        # la nature posée par « 👤 Mon profil », le montant attendu et
+        # SON échéance (réabonnement au délai de rigueur, abonnement des
+        # nouveaux au 31/12) — plus le message prêt à copier pour
+        # WhatsApp. On ne fait que RELIRE la base : la relance n'écrit
+        # rien, elle dit la même chose que la carte du membre.
+        _rel = cotis_relances_lignes(equipe_id=eid, annee_debut=annee)
+        _reglages_rel = cotis_reglages_aff(_reglages)
+        with st.expander(f"📣 Relances — {len(_rel):02d} en attente"):
+            st.caption("On ne fait que relire la base — rien n'est écrit ici : "
+                       "la relance dit la même chose que la carte du membre.")
+            if not _rel:
+                st.success("✅ Tous à jour ! Aucune relance à porter.")
+            else:
+                for _l in _rel:
+                    _lbl_rel = ("📝 Abonnement (mention NOUVEAU)"
+                                if _l["nature"] == "abonnement"
+                                else "🔄 Réabonnement")
+                    _suffixe = (" délai de rigueur"
+                                if _l["nature"] == "reabonnement" else "")
+                    st.write(f"- **{_l['nom']} {_l['prenom']}** "
+                             f"({_l['matloc'] or '—'}) — {_lbl_rel} · "
+                             f"{cotis_relance_fcfa(_l['montant'])} FCFA · "
+                             f"au plus tard le {_l['echeance_aff']}{_suffixe}"
+                             + cotis_relance_ligne_urgence(_l["jours"]))
+                st.markdown("##### 📋 Message collectif prêt à copier (WhatsApp)")
+                st.caption("Le bouton de copie est en haut à droite du cadre.")
+                st.code(cotis_relance_message_collectif(
+                    nom_equipe, annee, _rel, _reglages_rel), language=None)
+                _noms_rel = [f"{_l['nom']} {_l['prenom']}" for _l in _rel]
+                _choix_rel = st.selectbox("Message pour un membre en particulier",
+                                          _noms_rel,
+                                          key=f"relance_choix_{eid}_{annee}")
+                st.code(cotis_relance_message_membre(
+                    _rel[_noms_rel.index(_choix_rel)], annee, _reglages_rel),
+                    language=None)
 
         # v7.14.0 — LE PANNEAU DU REÇU (posé à l'enregistrement d'un
         # paiement, ou ouvert par le bouton 🧾 d'une ligne) : le reçu se
