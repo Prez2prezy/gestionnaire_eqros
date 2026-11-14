@@ -15,7 +15,9 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       # v7.9.10 — LE SAS DES INTENTIONS (la zone du jour
                       # déménage du diocèse vers la paroisse)
                       intentions_du_jour_attente, intentions_du_jour_compte,
-                      envoyer_intention_du_jour_en_reserve, ecarter_intention_du_jour)
+                      envoyer_intention_du_jour_en_reserve, ecarter_intention_du_jour,
+                      # v7.14.4 — la relance (lecture seule, rien n'écrit)
+                      cotis_parametres_lire, cotis_relances_lignes)
 from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, supprimer_photo,
                       archiver_membre, safe_date, afficher_situation, sans_accents, 
                       enregistrer_abonnement, verifier_abonnement, periode_affichage, 
@@ -24,7 +26,9 @@ from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, su
 # v7.13.0 — lignes d'intercession sans redondance
 from components import ligne_intercession
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, afficher_historique_suivi, 
-                        afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales)
+                        afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales,
+                        # v7.14.4 — le message de relance prêt à copier
+                        cotis_reglages_aff, cotis_relance_message_collectif)
 
 def _zone_du_jour_paroisse(pid, equipes):
     """🕯️ ZONE DU JOUR — LE SAS DES INTENTIONS (v7.9.10, déménagée du
@@ -835,9 +839,24 @@ def show_paroisse():
                     if non_payes:
                         st.write("❌ **En attente :**")
                         for np in non_payes:
-                            st.write("- " + np[0] + " " + np[1] + " (`" + np[2] + "`)")
+                            # v7.14.4 — un matricule qui dort ne fait plus
+                            # tomber la ligne (None concaténé — attrapé au banc)
+                            st.write("- " + (np[0] or "") + " " + (np[1] or "") + " (`" + (np[2] or "—") + "`)")
                     else: 
                         st.success("✅ Tous à jour !")
+                    # v7.14.4 — LA RELANCE DE L'ÉQUIPE (lecture seule) : le
+                    # message prêt à copier pour WhatsApp — la paroisse le
+                    # porte au responsable d'équipe, qui le transmet à ses
+                    # équipiers. On ne fait que relire la base.
+                    _rel_eq = cotis_relances_lignes(equipe_id=eq[0], annee_debut=annee)
+                    if _rel_eq:
+                        with st.expander("📣 Message de relance (WhatsApp)"):
+                            st.caption("Prêt à copier (bouton en haut à droite) — "
+                                       "à porter au responsable de l'équipe.")
+                            st.code(cotis_relance_message_collectif(
+                                eq[1], annee,
+                                _rel_eq, cotis_reglages_aff(cotis_parametres_lire())),
+                                language=None)
 
     elif menu == "📌 Suivi":
         st.markdown(f'<h2 style="color:#1A237E;">📌 Suivi et Agenda - {nom_p}</h2>', unsafe_allow_html=True)
