@@ -2832,6 +2832,121 @@ def cotis_lien_verification(numero_recu):
     return f"{URL_ESPACE_SPIRITUEL}/?recu={urllib.parse.quote(str(numero_recu))}"
 
 
+# v7.14.4 — LES MESSAGES DE RELANCE (textes prêts à copier pour WhatsApp).
+# Ils reprennent au mot près le vocabulaire de la carte du membre
+# (« À régler au plus tard le … délai de rigueur », « Paie auprès de ton
+# responsable d'équipe », « reçu numéroté immédiatement ») — la relance
+# dit la même chose que l'Espace. Lecture seule : aucun écrit en base.
+
+
+def cotis_reglages_aff(reglages=None):
+    """Les réglages du diocèse enrichis des échéances déjà formatées en
+    jour/mois/année (15/12/2026, 31/12/2026) — prêtes pour les messages
+    de relance qui parlent comme la carte du membre."""
+    _r = dict(reglages or {})
+    for _cle, _defaut in (("cotis_echeance", "15/12/2026"),
+                          ("cotis_echeance_abo", "31/12/2026")):
+        try:
+            _r[_cle + "_aff"] = date.fromisoformat(str(_r.get(_cle))).strftime("%d/%m/%Y")
+        except Exception:
+            _r[_cle + "_aff"] = str(_r.get(_cle) or _defaut)
+    return _r
+
+
+def cotis_relance_fcfa(n):
+    """Le montant à la française : 5000 → « 5 000 » — le séparateur de
+    la maison dans les montants affichés."""
+    try:
+        return f"{int(n):,}".replace(",", " ")
+    except Exception:
+        return str(n)
+
+
+def cotis_relance_ligne_urgence(jours):
+    """Le petit drapeau d'urgence d'une ligne de relance : « dans N jours »,
+    « aujourd'hui même », ou « dépassée depuis N jours »."""
+    if jours is None:
+        return ""
+    if jours < 0:
+        return f" ⚠️ dépassée depuis {-jours} jour(s)"
+    if jours == 0:
+        return " ⚠️ aujourd'hui même"
+    return f" (dans {jours} jour(s))"
+
+
+def cotis_relance_message_collectif(equipe_nom, annee_debut, lignes,
+                                    reglages=None):
+    """Le message WhatsApp prêt à copier pour relancer TOUTE l'équipe :
+    les deux échéances au mot du diocèse, les montants par profil, le
+    chemin du paiement (les mots de la carte du membre). `lignes` est la
+    liste renvoyée par database.cotis_relances_lignes — elle sert
+    seulement à savoir s'il reste des réabonnements et des abonnements à
+    relancer."""
+    _r = reglages or {}
+    _ma_r = cotis_relance_fcfa(_r.get("cotis_montant_adulte_reab", 5000))
+    _ma_a = cotis_relance_fcfa(_r.get("cotis_montant_adulte_abo", 5000))
+    _mj_r = cotis_relance_fcfa(_r.get("cotis_montant_jeune_reab", 2000))
+    _mj_a = cotis_relance_fcfa(_r.get("cotis_montant_jeune_abo", 3500))
+    _ech_r = _r.get("cotis_echeance_aff", "15/12/2026")
+    _ech_a = _r.get("cotis_echeance_abo_aff", "31/12/2026")
+    _a, _b = int(annee_debut), int(annee_debut) + 1
+    _reste = {"reab": any(l["nature"] == "reabonnement" for l in lignes),
+              "abo": any(l["nature"] == "abonnement" for l in lignes)}
+    _lignes_ech = []
+    if _reste["reab"]:
+        _lignes_ech.append(f"• Réabonnement — au plus tard le {_ech_r} (délai de rigueur)")
+    if _reste["abo"]:
+        _lignes_ech.append(f"• Abonnement (nouveaux) — au plus tard le {_ech_a}")
+    _txt = (
+        f"🙏 Chers équipiers de l'équipe {equipe_nom},\n\n"
+        f"L'année pastorale {_a} - {_b} avance : merci de régler ton "
+        "abonnement si ce n'est pas encore fait.\n\n"
+        "🗓️ Échéances :\n" + "\n".join(_lignes_ech) + "\n\n"
+        "💼 Montants (posés par le diocèse) :\n"
+        f"• Adulte — {_ma_r} FCFA (réabonnement) · {_ma_a} FCFA (nouveau)\n"
+        f"• Jeune — {_mj_r} FCFA (réabonnement) · {_mj_a} FCFA (nouveau Jeune)\n\n"
+        "💵 Paie auprès de ton responsable d'équipe — en espèces ou en "
+        "mobile money (Wave, Orange Money) : il note ton paiement et "
+        "t'édite ton reçu numéroté immédiatement.\n\n"
+        "Ta carte « 👤 Mon profil » dans l'Espace te dit ta situation exacte.\n\n"
+        "Que le Seigneur te garde, sous le regard de Marie 🙏\n"
+        f"Le responsable d'équipe — {equipe_nom}")
+    return _txt
+
+
+def cotis_relance_message_membre(ligne, annee_debut, reglages=None):
+    """Le message WhatsApp prêt à copier pour relancer UN membre :
+    sa nature (posée par « 👤 Mon profil »), son montant, SON échéance —
+    et les mots du chemin de paiement de la carte."""
+    _r = reglages or {}
+    _a, _b = int(annee_debut), int(annee_debut) + 1
+    _qui = f"{ligne.get('prenom', '')} {ligne.get('nom', '')}".strip() or "Cher équipier"
+    _montant = cotis_relance_fcfa(ligne.get("montant", 0))
+    _ech = ligne.get("echeance_aff", "")
+    _jours = ligne.get("jours")
+    if ligne.get("nature") == "abonnement":
+        _l_nature = f"📝 Abonnement (mention « Nouveau ») — {_montant} FCFA"
+        _l_ech = (f"⏰ Le {_ech} est passé — va voir ton responsable dès "
+                  "aujourd'hui." if (_jours is not None and _jours < 0) else
+                  f"🗓️ À régler au plus tard le {_ech}")
+    else:
+        _l_nature = f"🔄 Réabonnement — {_montant} FCFA"
+        _l_ech = (f"⏰ Le délai de rigueur du {_ech} est passé — va voir ton "
+                  "responsable dès aujourd'hui."
+                  if (_jours is not None and _jours < 0) else
+                  f"🗓️ À régler au plus tard le {_ech} délai de rigueur")
+    _txt = (
+        f"🙏 Bonjour {_qui},\n\n"
+        f"Ta situation d'abonnement, année pastorale {_a} - {_b} :\n"
+        f"{_l_nature}\n{_l_ech}\n\n"
+        "💼 Paie auprès de ton responsable d'équipe — en espèces ou en "
+        "mobile money (Wave, Orange Money) : il note ton paiement et "
+        "t'édite ton reçu numéroté immédiatement.\n\n"
+        "Merci de ne pas laisser passer le délai. Que Marie t'accompagne 🙏\n"
+        f"Le responsable d'équipe — {ligne.get('equipe', '')}")
+    return _txt
+
+
 def _cotis_cp1252(t):
     """Le texte prêt pour les polices de base du PDF : les caractères que
     Helvetica ne connaît pas (emoji…) sont retirés — le papier garde le
