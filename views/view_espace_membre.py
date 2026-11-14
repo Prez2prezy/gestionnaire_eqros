@@ -118,7 +118,8 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       # v7.10.2 — le questionnaire SOUMIS au diocèse
                       feuillet_questionnaire_publie,
                       # v7.14.0 — la caisse de la cotisation
-                      cotis_parametres_lire, cotis_categorie_membre)
+                      cotis_parametres_lire, cotis_categorie_membre,
+                      cotis_membre_nouveau)
 from services import (safe_date, compter_visite, lien_whatsapp, urls_galerie,
                       URL_ESPACE_SPIRITUEL, get_periode_pastorale)
 
@@ -129,7 +130,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.14.1"
+_VERSION_APPLI = "v7.14.2"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -4820,16 +4821,18 @@ def _carte_vidéo_a_la_demande():
 
 
 def _carte_cotisation_membre(membre):
-    """v7.14.1 — « 💳 Abonnement - Réabonnement » : la carte posée sur
-    l'accueil du membre, entre la mémoire des dizaines et la dizaine du
-    jour. Elle montre l'état de l'abonnement de l'année pastorale — à jour
-    (carte verte, numéro de reçu, reçu PDF téléchargeable) ou à renouveler
-    (carte ambrée, montants posés par le diocèse selon SON équipe — adulte
-    hors équipe Jeune, jeune dans l'équipe Jeune —, échéance de l'année
-    pastorale) — et rien d'autre : ici, on ne PAIE pas encore, on SAIT où
-    on en est. Règle de la maison (v7.14.1) : tout équipier déjà dans la
-    base SE RÉABONNE ; la mention « NOUVEAU » seule ouvre l'ABONNEMENT.
-    Le membre tuple porte :
+    """v7.14.2 — « Abonnement - Réabonnement » : LA CARTE QUI CONNAÎT SON
+    MEMBRE, posée sur l'accueil entre la mémoire des dizaines et la berge.
+    La personnalisation demandée par le diocèse : l'équipe dit adulte/jeune
+    (hors équipe Jeune / équipe Jeune), la mention « NOUVEAU » du champ
+    « Statut » dit abonnement/réabonnement — et chaque situation a SON
+    titre (« ⏳ Rappel - Réabonnement » pour celui qui se réabonne,
+    « ⏳ Information - Abonnement » pour le nouveau), SON montant, SON
+    échéance (délai de rigueur du 15/12/2026 pour les réabonnements,
+    31/12/2026 pour les nouveaux) et le même chemin de paiement chez le
+    responsable d'équipe. À jour : carte verte, numéro de reçu, reçu PDF
+    téléchargeable — l'échéance suit alors la nature du reçu posé. Ici, on
+    ne PAIE pas, on SAIT où on en est. Le membre tuple porte :
     id, nom, prenom, matloc, whatsapp, adhesion, photo, n° méditation,
     équipe, paroisse, equipe_id, paroisse_id."""
     from components import recu_cotisation_pdf, COTIS_MODES
@@ -4847,9 +4850,14 @@ def _carte_cotisation_membre(membre):
     except Exception:
         _recu = None
 
-    _echeance_aff = _reglages.get("cotis_echeance", "2026-12-15")
+    # v7.14.2 — l'échéance qui S'AFFICHE suit la nature de l'abonnement :
+    # réabonnement (délai de rigueur) ou abonnement des nouveaux.
+    _ech_cle = ("cotis_echeance_abo"
+                if (_recu and (_recu[2] or "") == "abonnement")
+                else "cotis_echeance")
+    _echeance_aff = str(_reglages.get(_ech_cle, "2026-12-15"))
     try:
-        _d_ech = date.fromisoformat(str(_echeance_aff))
+        _d_ech = date.fromisoformat(_echeance_aff)
         _echeance_aff = _d_ech.strftime("%d/%m/%Y")
         _ech_passee = date.today() > _d_ech
     except Exception:
@@ -4869,7 +4877,7 @@ def _carte_cotisation_membre(membre):
              "equipe": membre[8], "paroisse": membre[9],
              "enregistre_par": _recu[6], "origine": _recu[5]},
             porteur=_reglages.get("cotis_porteur"),
-            echeance_iso=str(_reglages.get("cotis_echeance")))
+            echeance_iso=str(_reglages.get(_ech_cle)))
         st.markdown(
             '<div style="background:linear-gradient(135deg,#e8f5e9 0%,#c8e6c9 100%);'
             ' border:1.5px solid #66bb6a; border-radius:15px; padding:16px;'
@@ -4890,31 +4898,57 @@ def _carte_cotisation_membre(membre):
         st.caption("🧾 Scanne le QR du reçu (ou ouvre son lien) : l'écran public "
                    "confirme son authenticité — un reçu inventé ne vérifie rien.")
     else:
+        # v7.14.2 — LA PERSONNALISATION : une seule ligne de tarif par
+        # carte, celle du membre qui la lit ; les deux échéances de
+        # l'année pastorale (la différence est normale — le diocèse le dit
+        # lui-même) ; le fond quitte le jaune pour le violet foncé du pied
+        # de page, liseré et titres dorés — les boutons dorés du web
+        # gardent leur éclat sur cette nuit-là.
         _cat = cotis_categorie_membre(_mid)
-        _m_abo = _reglages.get("cotis_montant_" + _cat + "_abo", 5000)
-        _m_reab = _reglages.get("cotis_montant_" + _cat + "_reab", 5000)
-        _m_abo_txt = f"{int(_m_abo):,}".replace(",", " ")
-        _m_reab_txt = f"{int(_m_reab):,}".replace(",", " ")
-        _l_motif = ("Tarif jeune (équipe Jeune) — montants posés par le diocèse" if _cat == "jeune"
-                    else "Tarif adulte (hors équipe Jeune) — montants posés par le diocèse")
-        if _ech_passee:
-            _l_ech = f"⏰ Échéance dépassée : le {_echeance_aff} est passé — rattrape ton échéance auprès de ton responsable."
+        _nouveau = cotis_membre_nouveau(_mid)
+        _m_nat = int(_reglages.get("cotis_montant_" + _cat
+                                   + ("_abo" if _nouveau else "_reab"), 5000))
+        _m_txt = f"{_m_nat:,}".replace(",", " ")
+        # v7.14.2 — l'échéance se recalcule pour LA NATURE DU MEMBRE (sans
+        # reçu posé, la clé globale ci-dessus sert au seul reçu) : les
+        # nouveaux regardent le 31/12, les anciens le délai de rigueur.
+        _echeance_aff = str(_reglages.get(
+            "cotis_echeance_abo" if _nouveau else "cotis_echeance", "2026-12-15"))
+        try:
+            _d_ech = date.fromisoformat(_echeance_aff)
+            _echeance_aff = _d_ech.strftime("%d/%m/%Y")
+            _ech_passee = date.today() > _d_ech
+        except Exception:
+            _ech_passee = False
+        if _nouveau:
+            _titre = "⏳ Information - Abonnement"
+            _ligne_mont = f'📝 Abonnement <b>{_m_txt}</b> FCFA'
+            _ligne_ech = ('⏰ Le ' + _echeance_aff + ' est passé — va voir ton responsable dès aujourd&#39;hui.'
+                          if _ech_passee else
+                          '🗓️ À régler au plus tard le <b>' + _echeance_aff + '</b>')
+            _badge_mention = ('<div style="display:inline-block; background:rgba(255,215,0,0.14);'
+                              ' border:1px solid #FFD700; border-radius:9px; padding:3px 10px;'
+                              ' margin-top:9px; color:#FFD000; font-size:0.8rem;">'
+                              '🌱 Mention « Nouveau » — première année dans la base</div>')
         else:
-            _l_ech = f"🗓️ À régler avant le <b>{_echeance_aff}</b> (échéance de l'année pastorale)."
+            _titre = "⏳ Rappel - Réabonnement"
+            _ligne_mont = f'🔄 Réabonnement <b>{_m_txt}</b> FCFA'
+            _ligne_ech = ('⏰ Le délai de rigueur du ' + _echeance_aff + ' est passé — va voir ton responsable dès aujourd&#39;hui.'
+                          if _ech_passee else
+                          '🗓️ À régler au plus tard le <b>' + _echeance_aff + '</b> délai de rigueur')
+            _badge_mention = ""
         st.markdown(
-            '<div style="background:linear-gradient(135deg,#fff8e1 0%,#ffecb3 100%);'
-            ' border:1.5px solid #ffb300; border-radius:15px; padding:16px;'
-            ' margin:10px;">'
-            '<div style="color:#7a5a00; font-size:1.08rem; font-weight:bold;">'
-            '⏳ Abonnement - Réabonnement — à renouveler</div>'
-            '<div style="color:#7a5a00; font-size:0.9rem; margin-top:6px; line-height:1.7;">'
-            f'Année pastorale {_annee}/{_annee + 1} · {_l_motif} :<br>'
-            f'🔄 Réabonnement <b>{_m_reab_txt}</b> FCFA — déjà dans la base<br>'
-            f'📝 Abonnement <b>{_m_abo_txt}</b> FCFA — avec la mention « NOUVEAU »<br>'
-            + _l_ech + '<br>'
+            '<div style="background:linear-gradient(165deg,#241042 0%,#3B1177 55%,#4A148C 100%);'
+            ' border:2px solid #FFD700; border-radius:15px; padding:16px; margin:10px;">'
+            '<div style="color:#FFD000; font-size:1.08rem; font-weight:bold;">' + _titre + '</div>'
+            '<div style="color:#e6dcf7; font-size:0.92rem; margin-top:6px; line-height:1.75;">'
+            f'Année pastorale {_annee} - {_annee + 1}<br>'
+            + _ligne_mont + '<br>'
+            + _ligne_ech + '<br>'
             '💼 Paie auprès de ton responsable d&#39;équipe — en espèces ou en mobile '
             'money (Wave, Orange Money) : il note ton paiement et t&#39;édite ton '
-            'reçu numéroté immédiatement.</div></div>',
+            'reçu numéroté immédiatement.<br>'
+            + _badge_mention + '</div></div>',
             unsafe_allow_html=True)
         st.caption("💳 Le paiement direct par Wave s'ouvrira bientôt ici — "
                    "en attendant, la caisse de ton équipe te reçoit.")
