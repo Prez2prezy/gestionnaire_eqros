@@ -20,7 +20,9 @@ from database import (c, commit_and_sync, verifier_reparer_intentions, jours_dep
                       cotis_parametres_lire, cotis_categorie_membre,
                       cotis_montant_suggere, cotis_enregistrer_paiement,
                       # v7.14.2 — la mention « NOUVEAU » (champ « Statut »)
-                      cotis_membre_nouveau, cotis_nature_membre)
+                      cotis_membre_nouveau, cotis_nature_membre,
+                      # v7.14.3 — le numéro manquant se remplit tout seul
+                      cotis_recu_numero_attribuer)
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
@@ -1502,23 +1504,31 @@ def show_equipe():
             _ech_abo_aff = date.fromisoformat(str(_reglages.get("cotis_echeance_abo"))).strftime("%d/%m/%Y")
         except Exception:
             pass
-        st.markdown('<div class="custom-info-box"><b>💼 Montants posés par le diocèse</b> — '
-                    f'Adulte (hors équipe Jeune) : abonnement {_fr(_reglages.get("cotis_montant_adulte_abo"))} FCFA (mention « NOUVEAU ») · réabonnement {_fr(_reglages.get("cotis_montant_adulte_reab"))} FCFA ; '
-                    f'Jeune (équipe Jeune) : abonnement {_fr(_reglages.get("cotis_montant_jeune_abo"))} FCFA (nouveau Jeune) · réabonnement {_fr(_reglages.get("cotis_montant_jeune_reab"))} FCFA<br>'
-                    f'📌 <b>Règle de la maison :</b> tout équipier déjà dans la base se RÉABONNE — la mention « NOUVEAU » seule ouvre l\u2019ABONNEMENT.<br>'
-                    f'🗓️ <b>Échéances de l\u2019année pastorale :</b> réabonnement — {_ech_aff} (délai de rigueur) · abonnement (nouveaux) — {_ech_abo_aff} · 🏛️ <b>En-tête des reçus :</b> {_reglages.get("cotis_porteur")}</div>', unsafe_allow_html=True)
+        # v7.14.3 — LE BLOC SE RÉDUIT À CE QUE LE RESPONSABLE DOIT VOIR :
+        # les DEUX échéances de l'année pastorale — la différence entre
+        # elles est normale et voulue (le diocèse le rappelle lui-même) —
+        # les montants, eux, voyagent tout seuls avec le profil de chaque
+        # membre ; les longues règles de la maison ne s'impriment plus ici.
+        st.markdown('<div class="custom-info-box"><b>🗓️ Échéances :</b><br>'
+                    f'&nbsp;&nbsp;• Abonnement (nouveaux) — {_ech_abo_aff}<br>'
+                    f'&nbsp;&nbsp;• Réabonnement — {_ech_aff} (délai de rigueur)</div>', unsafe_allow_html=True)
 
-        _membres_eq = c.execute("SELECT id, nom, prenom, matricule FROM membres WHERE equipe_id=? AND statut='actif' ORDER BY nom", (eid,)).fetchall()
+        _membres_eq = c.execute("SELECT id, nom, prenom, matloc FROM membres WHERE equipe_id=? AND statut='actif' ORDER BY nom", (eid,)).fetchall()
         _nb_membres = len(_membres_eq)
-        _totaux = c.execute("""SELECT COUNT(m.id), COALESCE(SUM(a.montant), 0)
-                               FROM membres m
-                               LEFT JOIN abonnements a ON a.membre_id=m.id
-                                    AND a.annee_debut=? AND a.statut='paye'
-                               WHERE m.equipe_id=? AND m.statut='actif'""", (annee, eid)).fetchone()
+        # v7.14.3 — LE COMPTEUR COMPTE CE QU'IL DIT : les membres dont le
+        # paiement est posé (l'ancienne jointure comptait tout le monde,
+        # payé ou non — d'où un « 9/9 » immuable).
+        _totaux = c.execute("""SELECT COUNT(DISTINCT a.membre_id), COALESCE(SUM(a.montant), 0)
+                               FROM abonnements a
+                               JOIN membres m ON a.membre_id=m.id
+                               WHERE m.equipe_id=? AND m.statut='actif'
+                                    AND a.annee_debut=? AND a.statut='paye'""", (eid, annee)).fetchone()
         _cotisants = _totaux[0] or 0
         _total_fcfa = int(_totaux[1] or 0)
         _mc1, _mc2, _mc3 = st.columns(3)
-        _mc1.metric("✅ Cotisants", f"{_cotisants}/{_nb_membres}")
+        # v7.14.3 — « Membres 09/09 » remplace « ✅ Cotisants 9/9 » (zéros
+        # devant, demande du diocèse)
+        _mc1.metric("Membres", f"{_cotisants:02d}/{_nb_membres:02d}")
         _mc2.metric("💰 Total collecté", f"{_fr(_total_fcfa)} FCFA")
         _mc3.metric("⏳ Reste à régler", f"{max(_nb_membres - _cotisants, 0)}")
 
@@ -1543,6 +1553,10 @@ def show_equipe():
         for m in _membres_eq:
             deja = verifier_abonnement(m[0], annee)
             if deja:
+                # v7.14.3 — un paiement posé sans numéro de reçu (lignes
+                # d'avant la caisse, chemin « ✏️ ») reçoit son numéro en
+                # douceur dès que la caisse le relit — une seule fois.
+                cotis_recu_numero_attribuer(m[0], annee)
                 abo_info = c.execute("SELECT type_abonnement, montant, numero_recu, mode_paiement FROM abonnements WHERE membre_id=? AND annee_debut=?", (m[0], annee)).fetchone()
                 type_affiche = "Abonnement" if abo_info[0] == "abonnement" else "Réabonnement"
                 col_info, col_btn = st.columns([4, 1])
@@ -1560,29 +1574,20 @@ def show_equipe():
                         st.rerun()
                     if st.button("✏️", key=f"mod_abo_{m[0]}_{annee}"): st.session_state['modif_abo_id'] = m[0]; st.rerun()
             else:
-                _sug_abo, _ = cotis_montant_suggere(m[0], "abonnement")
-                _sug_reab, _ = cotis_montant_suggere(m[0], "reabonnement")
-                # v7.14.2 — la mention « NOUVEAU » portée par le champ
-                # « Statut » ouvre la caisse SUR LA BONNE LIGNE : un membre
-                # nouveau arrive sur Abonnement, les autres sur Réabonnement.
-                _nature_defaut = cotis_nature_membre(m[0], annee)
-                _badge_cat = (("🧒 tarif jeune" if cotis_categorie_membre(m[0]) == "jeune"
-                               else "🧑 tarif adulte")
-                              + (" · 🌱 Nouveau" if _nature_defaut == "abonnement" else ""))
-                with st.expander(f"{m[1]} {m[2]} ({m[3] or '—'}) – ❌ Non enregistré · {_badge_cat}"):
-                    # v7.14.1 — LA RÈGLE DU DIOCÈSE : tout équipier déjà dans
-                    # la base se RÉABONNE (choix par défaut) ; la mention
-                    # « NOUVEAU » seule ouvre l'ABONNEMENT. Le montant suit
-                    # la nature choisie (clé distincte par nature : le champ
-                    # se re-pré-remplit d'un clic).
-                    _choix_type = st.radio(
-                        "Nature (la mention « NOUVEAU » ouvre l'abonnement)",
-                        ["🔄 Réabonnement", "📝 Abonnement (mention NOUVEAU)"],
-                        index=(1 if _nature_defaut == "abonnement" else 0),
-                        key=f"cotis_type_{m[0]}_{annee}", horizontal=True)
-                    _nature = "reabonnement" if "Réabonnement" in _choix_type else "abonnement"
-                    _sug = _sug_reab if _nature == "reabonnement" else _sug_abo
-                    _montant = st.number_input("Montant (FCFA)", min_value=0, value=int(_sug), step=500, key=f"cotis_mont_{m[0]}_{annee}_{_nature}")
+                # v7.14.3 — LA NATURE N'EST PLUS UN CHOIX : le champ
+                # « Statut » de « 👤 Mon profil » la pose (mention
+                # « Nouveau » → Abonnement, sinon Réabonnement) et le
+                # montant suit tout seul — connu d'avance selon le profil,
+                # non modifiable. La ligne garde le mode et la note.
+                _nature = cotis_nature_membre(m[0], annee)
+                _sug, _ = cotis_montant_suggere(m[0], _nature)
+                _lbl_nature = ("📝 Abonnement (mention NOUVEAU)" if _nature == "abonnement"
+                               else "🔄 Réabonnement")
+                with st.expander(f"{m[1]} {m[2]} ({m[3] or '—'}) – ❌ Non enregistré · {_lbl_nature}"):
+                    # v7.14.3 — le montant se montre, ne se discute plus :
+                    # il est posé par le diocèse selon « 👤 Mon profil ».
+                    _montant = st.number_input("Montant (FCFA)", value=int(_sug), disabled=True,
+                                               key=f"cotis_mont_{m[0]}_{annee}_{_nature}")
                     _mode_lbl = st.selectbox("Mode de paiement", ["💵 Espèces", "🌊 Wave", "📱 Orange Money", "🟡 MTN MoMo", "💳 Autre"], key=f"cotis_mode_{m[0]}_{annee}")
                     _note = st.text_input("Note (facultative)", key=f"cotis_note_{m[0]}_{annee}")
                     if st.button("✅ Enregistrer le paiement + éditer le reçu", key=f"cotis_go_{m[0]}_{annee}"):
@@ -1622,24 +1627,27 @@ def show_equipe():
         st.markdown("---")
         tab_liste = st.tabs(["📝 Abonnés", "🔄 Réabonnés", "❌ Non enregistrés"])
         with tab_liste[0]:
-            abonnes = c.execute('''SELECT m.matricule, m.nom, m.prenom, a.date_paiement, a.montant, a.numero_recu FROM membres m JOIN abonnements a ON m.id=a.membre_id WHERE m.equipe_id=? AND a.annee_debut=? AND a.type_abonnement='abonnement' AND a.statut='paye' ORDER BY m.nom''', (eid, annee)).fetchall()
+            abonnes = c.execute('''SELECT m.matloc, m.nom, m.prenom, a.date_paiement, a.montant, a.numero_recu FROM membres m JOIN abonnements a ON m.id=a.membre_id WHERE m.equipe_id=? AND a.annee_debut=? AND a.type_abonnement='abonnement' AND a.statut='paye' ORDER BY m.nom''', (eid, annee)).fetchall()
             if abonnes:
                 # v7.14.0 — le numéro du reçu voyage avec la ligne
-                data = [{"Matricule": a[0], "Nom": a[1], "Prénom": a[2], "Date paiement": a[3], "Montant": f"{a[4]} FCFA", "N° reçu": a[5] or "—"} for a in abonnes]
+                # v7.14.3 — l'identifiant de la maison : le MatLoc
+                data = [{"MatLoc": a[0], "Nom": a[1], "Prénom": a[2], "Date paiement": a[3], "Montant": f"{a[4]} FCFA", "N° reçu": a[5] or "—"} for a in abonnes]
                 df = pd.DataFrame(data); df.index = df.index + 1; st.dataframe(df, width="stretch")
             else: st.info("Aucun abonné.")
         with tab_liste[1]:
-            reabonnes = c.execute('''SELECT m.matricule, m.nom, m.prenom, a.date_paiement, a.montant, a.numero_recu FROM membres m JOIN abonnements a ON m.id=a.membre_id WHERE m.equipe_id=? AND a.annee_debut=? AND a.type_abonnement='reabonnement' AND a.statut='paye' ORDER BY m.nom''', (eid, annee)).fetchall()
+            reabonnes = c.execute('''SELECT m.matloc, m.nom, m.prenom, a.date_paiement, a.montant, a.numero_recu FROM membres m JOIN abonnements a ON m.id=a.membre_id WHERE m.equipe_id=? AND a.annee_debut=? AND a.type_abonnement='reabonnement' AND a.statut='paye' ORDER BY m.nom''', (eid, annee)).fetchall()
             if reabonnes:
                 # v7.14.0 — le numéro du reçu voyage avec la ligne
-                data = [{"Matricule": r[0], "Nom": r[1], "Prénom": r[2], "Date paiement": r[3], "Montant": f"{r[4]} FCFA", "N° reçu": r[5] or "—"} for r in reabonnes]
+                # v7.14.3 — l'identifiant de la maison : le MatLoc
+                data = [{"MatLoc": r[0], "Nom": r[1], "Prénom": r[2], "Date paiement": r[3], "Montant": f"{r[4]} FCFA", "N° reçu": r[5] or "—"} for r in reabonnes]
                 df = pd.DataFrame(data); df.index = df.index + 1; st.dataframe(df, width="stretch")
             else: st.info("Aucun réabonné.")
         with tab_liste[2]:
-            non_inscrits = c.execute('''SELECT m.matricule, m.nom, m.prenom FROM membres m WHERE m.equipe_id=? AND m.statut='actif' AND m.id NOT IN (SELECT a.membre_id FROM abonnements a WHERE a.annee_debut=? AND a.statut='paye') ORDER BY m.nom''', (eid, annee)).fetchall()
+            non_inscrits = c.execute('''SELECT m.matloc, m.nom, m.prenom FROM membres m WHERE m.equipe_id=? AND m.statut='actif' AND m.id NOT IN (SELECT a.membre_id FROM abonnements a WHERE a.annee_debut=? AND a.statut='paye') ORDER BY m.nom''', (eid, annee)).fetchall()
             if non_inscrits:
                 # CORRECTION AFFICHAGE : Suppression du champ "N°" en double
-                data = [{"Matricule": n[0], "Nom": n[1], "Prénom": n[2]} for n in non_inscrits]
+                # v7.14.3 — l'identifiant de la maison : le MatLoc
+                data = [{"MatLoc": n[0], "Nom": n[1], "Prénom": n[2]} for n in non_inscrits]
                 df = pd.DataFrame(data); df.index = df.index + 1; st.dataframe(df, width="stretch")
             else: st.success("🎉 Tous les membres sont à jour !")
 
