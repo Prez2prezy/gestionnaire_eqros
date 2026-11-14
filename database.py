@@ -4246,6 +4246,96 @@ def cotis_echeance_nature(nature=None):
                           else "cotis_echeance"))
 
 
+def cotis_relances_lignes(equipe_id=None, paroisse_id=None, annee_debut=None):
+    """v7.14.4 — LE LIVRE DES RELANCES (lecture seule) : les membres actifs
+    dont le paiement de l'année pastorale n'est pas posé, chacun avec la
+    nature que « 👤 Mon profil » porte pour lui (mention « Nouveau » →
+    abonnement, sinon réabonnement — la même règle que cotis_nature_membre,
+    lue ici en bloc pour ne pas questionner la base membre par membre), le
+    montant attendu (réglages du diocèse, catégorie adulte/jeune selon le
+    nom de l'équipe) et l'échéance qui le concerne (réabonnement au délai
+    de rigueur, abonnement des nouveaux au 31/12). AUCUNE écriture : on ne
+    fait que relire ce que la base sait déjà — la relance n'est pas une
+    caisse.
+    Retourne une liste de dicts :
+    {membre_id, nom, prenom, matloc, whatsapp, equipe_id, equipe, paroisse,
+     nature, categorie, montant, echeance, echeance_aff, jours}
+    — jours : nombre de jours avant l'échéance (négatif = dépassée)."""
+    if annee_debut is None:
+        _t = date.today()
+        annee_debut = _t.year if _t.month >= 9 else _t.year - 1
+    params = cotis_parametres_lire()
+    _sql = """SELECT m.id, m.nom, m.prenom, m.matloc, m.whatsapp,
+                     e.id, e.nom_equipe, p.nom,
+                     m.mention_nouveau, m.mention_annee
+              FROM membres m
+              LEFT JOIN equipes e ON m.equipe_id=e.id
+              LEFT JOIN paroisses p ON m.paroisse_id=p.id
+              WHERE m.statut='actif'
+                   AND m.id NOT IN (SELECT membre_id FROM abonnements
+                                        WHERE annee_debut=? AND statut='paye')"""
+    _args = [int(annee_debut)]
+    if equipe_id is not None:
+        _sql += " AND m.equipe_id=?"
+        _args.append(int(equipe_id))
+    if paroisse_id is not None:
+        _sql += " AND m.paroisse_id=?"
+        _args.append(int(paroisse_id))
+    _sql += " ORDER BY e.nom_equipe, m.nom, m.prenom"
+    _ech_reab = str(params.get("cotis_echeance"))
+    _ech_abo = str(params.get("cotis_echeance_abo"))
+    _auj = date.today()
+    try:
+        _d_reab = date.fromisoformat(_ech_reab)
+    except Exception:
+        _d_reab = None
+    try:
+        _d_abo = date.fromisoformat(_ech_abo)
+    except Exception:
+        _d_abo = None
+    _lignes = []
+    try:
+        for r in c.execute(_sql, _args).fetchall():
+            (_mid, _nom, _prenom, _matloc, _wa, _eid, _eq, _par,
+             _mention, _m_annee) = r
+            _nouveau = (str(_mention or "").strip().lower() == "nouveau"
+                        and _m_annee is not None
+                        and int(_m_annee) == int(annee_debut))
+            _nature = "abonnement" if _nouveau else "reabonnement"
+            _cat = "jeune" if (_eq and "jeune" in str(_eq).lower()) else "adulte"
+            _cle_m = f"cotis_montant_{_cat}_{'abo' if _nouveau else 'reab'}"
+            _montant = int(params.get(_cle_m, 5000))
+            _ech_iso = _ech_abo if _nouveau else _ech_reab
+            _d_ech = _d_abo if _nouveau else _d_reab
+            _jours = (_d_ech - _auj).days if _d_ech else None
+            try:
+                _ech_aff = date.fromisoformat(_ech_iso).strftime("%d/%m/%Y")
+            except Exception:
+                _ech_aff = _ech_iso
+            _lignes.append({"membre_id": _mid, "nom": _nom or "",
+                            "prenom": _prenom or "",
+                            "matloc": _matloc or _matloc_matricule(_mid),
+                            "whatsapp": _wa or "", "equipe_id": _eid,
+                            "equipe": _eq or "—", "paroisse": _par or "—",
+                            "nature": _nature, "categorie": _cat,
+                            "montant": _montant, "echeance": _ech_iso,
+                            "echeance_aff": _ech_aff, "jours": _jours})
+    except Exception as e:
+        logger.warning(f"cotis_relances_lignes : {e!r}")
+    return _lignes
+
+
+def _matloc_matricule(membre_id):
+    """Le MatLoc de secours : si la colonne matloc dort, le matricule
+    historique répond (l'identifiant de la maison reste porté)."""
+    try:
+        _r = c.execute("SELECT matricule FROM membres WHERE id=?",
+                       (membre_id,)).fetchone()
+        return _r[0] or ""
+    except Exception:
+        return ""
+
+
 def cotis_numero_recu_suivant(annee_debut):
     """Le prochain numéro de reçu de l'année pastorale — COT-2026-00001
     pour la première. Le plus grand numéro DÉJÀ posé pour cette année
