@@ -545,7 +545,7 @@ def show_paroisse():
     nom_p = p_info[0]
     
     _rubriques_par = ["🏘️ Ma paroisse", "👥 Mes équipes", "👤 Membres", "📊 Statistiques",
-                      "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "📥 Export Excel", "📦 Archives"]
+                      "📅 Abonnements", "📌 Suivi", "📣 Relances", "📥 Export Excel", "📦 Archives"]
     if "nav_par" in st.session_state and st.session_state["nav_par"] not in _rubriques_par:
         del st.session_state["nav_par"]
     if "nav_par" not in st.session_state:
@@ -902,12 +902,16 @@ def show_paroisse():
                 choix_eq2 = st.selectbox("Sélectionnez l'équipe pour voir le bilan", list(eq_dict2.keys()), key="etat_paroisse_eq")
                 eid2 = eq_dict2[choix_eq2]
                 afficher_etat_presences_globales(equipe_id=eid2)
-    elif menu == "💬 WhatsApp":
-        st.markdown(f'<h2 style="color:#1A237E;">💬 Messages WhatsApp - {nom_p}</h2>', unsafe_allow_html=True)
+    elif menu == "📣 Relances":
+        # v7.15.0 — « 📣 Relances - {paroisse} » remplace « 💬 Messages
+        # WhatsApp - {paroisse} » : l'onglet « 📣 Relances » (déplacé de la
+        # caisse, préconisation du diocèse) porte la page, groupé par
+        # équipe ; les autres sections gardent leur place.
+        st.markdown(f'<h2 style="color:#1A237E;">📣 Relances - {nom_p}</h2>', unsafe_allow_html=True)
         # v7.13.1 — LA SECTION RESPIRE SA PAROISSE : la paroisse courante
-        # est passée aux quatre onglets (Anniversaires, Rappels
-        # réabonnement, Dizaines du jour, Espace de prière) — les membres
-        # d'une autre paroisse n'y apparaissent plus jamais.
+        # est passée aux quatre onglets (Anniversaires, Relances, Dizaines
+        # du jour, Espace de prière) — les membres d'une autre paroisse
+        # n'y apparaissent plus jamais.
         afficher_whatsapp_tabs(equipe_id=None, paroisse_id=pid)
 
     elif menu == "📥 Export Excel":
