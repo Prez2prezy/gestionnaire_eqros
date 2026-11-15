@@ -2379,6 +2379,93 @@ def contexte_chaine_membre(matloc):
     return (_eq, _num, _slot, _pnom)
 
 
+def aubergiste_du_membre(matloc):
+    """L'AUBERGISTE D'UN MEMBRE (v7.15.1, lecture seule) — celui / celle qui
+    LE PORTE dans la ⛓️ chaîne de prière : le maillon « X prie pour Y » dont
+    Y est LUI. Au mot près de la définition du diocèse : la carte « 🛖
+    Mémoire de l'aubergiste » est la « 📿 Mémoire de mes dizaines » de CETTE
+    personne. Deux voies, la première d'abord :
+      1. LA SÉANCE EN VIGUEUR — dans l'ordre des N° méd. enregistrés à la
+         dernière séance, mon aubergiste est le maillon QUI PRÉCÈDE le mien
+         (la chaîne se referme toute seule : le dernier maillon porte le
+         premier) ;
+      2. SINON LES N° MÉD. ENTRENT EN ACTION (aucune séance enregistrée, ou
+         membre hors de la chaîne du jour) — l'ordre CROISSANT des N° méd.
+         des membres actifs de son équipe : le N° méd. juste sous le mien me
+         porte, et le plus petit N° est porté par le plus grand (la chaîne
+         se referme pareillement).
+    Retourne un dict (toujours, même hors chaîne — jamais d'exception) :
+      {equipe_id, mon_num, aub_matloc, aub_nom, aub_num, via, seance_date}
+    via : 'seance' (chaîne de la séance en vigueur), 'med' (ordre croissant
+    des N° méd.), ou None (personne identifiable — l'aubergiste attend).
+    Aucun geste n'écrit ici."""
+    _vide = {"equipe_id": None, "mon_num": None, "aub_matloc": None,
+             "aub_nom": None, "aub_num": None, "via": None,
+             "seance_date": None}
+    _k = str(matloc or "").upper().strip()
+    if not _k:
+        return _vide
+    try:
+        _eq, _num, _jour, _nom = fiche_membre_chaine(_k)
+    except Exception as e:
+        logger.warning(f"aubergiste_du_membre (fiche) : {e!r}")
+        return _vide
+    _res = dict(_vide)
+    _res["equipe_id"] = _eq
+    _res["mon_num"] = _num
+    if not _eq or _num is None:
+        return _res
+    # Les N° méd. des membres ACTIFS de l'équipe — {N° : (matloc, nom prénom)}
+    _tous = {}
+    try:
+        for (_ml, _nu, _nm, _pr) in c.execute(
+                """SELECT matloc, numero_meditation, nom, prenom FROM membres
+                   WHERE equipe_id=? AND statut='actif'""",
+                (int(_eq),)).fetchall():
+            try:
+                _n2 = int(str(_nu).strip())
+            except (TypeError, ValueError):
+                continue
+            if not (1 <= _n2 <= 20) or _n2 in _tous:
+                continue
+            _tous[_n2] = (str(_ml or "").upper().strip(),
+                          (str(_nm or "") + " " + str(_pr or "")).strip())
+    except Exception as e:
+        logger.warning(f"aubergiste_du_membre (membres) : {e!r}")
+    if _num not in _tous:
+        return _res
+    # Voie 1 : la séance en vigueur (le maillon qui me précède)
+    _aub_num, _via, _date_seq = None, None, None
+    try:
+        _ch = derniere_chaine_seance(int(_eq))
+        if _ch:
+            _date_seq = str(_ch[1])[:10]
+            _ordre = [int(x) for x in str(_ch[2] or "").split(",")
+                      if str(x).strip()]
+            if _ordre and _num in _ordre:
+                _aub_num = _ordre[(_ordre.index(_num) - 1) % len(_ordre)]
+                if _aub_num == _num:
+                    _aub_num = None  # chaîne d'un seul : personne ne me porte
+                else:
+                    _via = "seance"
+    except Exception as e:
+        logger.warning(f"aubergiste_du_membre (séance) : {e!r}")
+    # Voie 2 : les N° méd. entrent en action (ordre croissant, refermée)
+    if _aub_num is None:
+        _nums_trie = sorted(_tous.keys())
+        if len(_nums_trie) < 2:
+            return _res  # seul de son équipe : personne ne le porte (encore)
+        _aub_num = _nums_trie[(_nums_trie.index(_num) - 1) % len(_nums_trie)]
+        _via = "med"
+    _mat, _nomc = _tous.get(_aub_num, (None, None))
+    if not _mat:
+        return _res
+    _res.update(aub_matloc=_mat, aub_nom=_nomc, aub_num=_aub_num, via=_via)
+    if _via == "seance":
+        _res["seance_date"] = _date_seq
+    return _res
+
+
 def _pose_heritages_equipe(eid, ancienne, nouvelle):
     """v7.13.0 — L'HÉRITAGE DES ABSENTS, posé à l'enregistrement d'une
     séance (AVANT la libération des intentions de la chaîne précédente) :
