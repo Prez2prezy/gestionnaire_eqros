@@ -2399,6 +2399,69 @@ l'aubergiste ». »
   que la dizaine traverse déjà à chaque ouverture.
 - `_VERSION_APPLI = "v7.15.0"`.
 
+### 59. v7.15.1 — Le WhatsApp rétabli, l'aubergiste au mot près, et l'entête qui ne laisse plus de vide
+
+MOT DU USER : « 1 - La rubrique « 💬 WhatsApp » à rétablir. 2. 🛖 Mémoire
+de l'aubergiste — Luc 10,35 — la sœur de « 📿 Mémoire de mes dizaines »,
+de façon simplifiée, est la « 📿 Mémoire de mes dizaines » de celui qui me
+porte dans la chaîne de prière. […] La "🛖 Mémoire de l'aubergiste"
+présentera en réalité la « 📿 Mémoire de mes dizaines » de "N° 14 — AKESSÉ
+Bomo Bernadette". Tout simplement. Au cas où il n'a pas de séance alors
+les N° méd. entrent en action. La "🛖 Mémoire de l'aubergiste" doit être
+visible aussi dans l'application. 3. Il y'a toujours un vide dès que
+j'atterris sur la page web. Vois comment régler ce problème. »
+
+- **La rubrique « 💬 WhatsApp » rétablie (les trois espaces)** — le menu
+  reprend son nom d'origine et la page son titre « 💬 Messages WhatsApp -
+  {équipe / paroisse / diocèse} ». L'onglet « 📣 Relances » (déplacé de la
+  caisse, v7.15.0) reste à sa place dans la page, avec 🎂 Anniversaires,
+  📿 Dizaines du jour et 📿 Espace de prière : le meilleur des deux mondes.
+- **🛖 La carte de l'aubergiste redéfinie au mot près** — elle n'est plus
+  « mon portage » (v7.15.0) : elle est la « 📿 Mémoire de mes dizaines » de
+  CELUI / CELLE QUI ME PORTE dans la ⛓️ chaîne. La carte dit : SON maillon
+  au format de la séance (« ⛓️ Séance du 01/11/2026 — N° 14 — AKESSÉ Bomo
+  Bernadette prie pour MOTIAN TOFFÉ Ahua Innocent — N° méd. 10. »),
+  « 🕯️ Son intention (N° méd. 10) » — l'intention posée à MON N° méd.,
+  celle qu'il / elle veille pour moi (la règle d'or n'est PAS appliquée
+  ici, à dessein : c'est ma propre intention portée par mon aubergiste) —
+  puis SA fidélité des 14 derniers jours (« 📿 Sa mémoire de dizaines »),
+  simplifiée, avec le garde-fou de la maison (« Aucune dizaine notée
+  n'est une prière absente ») et le sceau de Luc 10,35. Les blocs surplus,
+  portages refermés et héritage de la v7.15.0 cèdent la place : la carte
+  est devenue « tout simplement » la mémoire de qui me porte.
+- **Les deux voies de l'aubergiste** — ① la séance en vigueur : dans
+  l'ordre des N° méd. enregistrés, mon aubergiste est le maillon QUI
+  PRÉCÈDE le mien (la chaîne se referme toute seule) ; ② sinon (aucune
+  séance enregistrée, ou hors de la chaîne du jour) LES N° MÉD. ENTRENT EN
+  ACTION : ordre croissant des N° méd. des membres actifs de l'équipe — le
+  N° méd. juste sous le mien me porte, et le plus petit N° est porté par
+  le plus grand. Sans intention posée à mon N° méd. : règle de la maison,
+  « La Paix dans le monde » veille jusqu'à la prochaine séance. La carte
+  se montre à coup sûr (elle ne se dérobe jamais — quand l'aubergiste
+  n'est pas encore identifiable, elle le dit). Moteur :
+  `database.aubergiste_du_membre(matloc)` — lecture seule, AUCUNE
+  migration, AUCUNE écriture ; la grille est partagée par
+  `_cases_memoire()` avec « 📿 Mémoire de mes dizaines ».
+- **LE VIDE D'ATERRISSAGE RÉGLÉ À LA RACINE** — le téléphone voyait un
+  grand vide sombre sous l'entête à chaque arrivée. La cause : l'entête
+  était « position: fixed » (hors flux) et le contenu poussé par un
+  padding-top de secours (330 à 380 px) que corrigeait un script qui
+  mesurait l'entête toutes les 400 ms — dès que ce script ne pouvait plus
+  joindre la page (montée de version Streamlit, iframe, navigateur), le
+  secours restait seul et le vide s'installait. Désormais : l'entête vit
+  DANS le flux (`.sticky-header` static), le contenu commence juste
+  dessous (padding-top: 0), et la colle au sommet est portée par SON
+  CONTENEUR Streamlit (« [data-testid="stElementContainer"]:has(
+  .sticky-header) { position: sticky; top: 0; } » — le parent
+  stVerticalBlock couvre toute la page, donc la colle tient de bout en
+  bout ; vérifié au navigateur, Streamlit 1.67, mobile 430 px). Plus
+  aucun script de mesure (`_mesure_entete` retiré), plus aucun padding de
+  secours, plus aucun vide possible — et si un vieux navigateur dort sur
+  :has(), l'entête reste simplement dans le flux, sans jamais laisser de
+  vide. En lecture (livre ouvert), l'entête s'efface en scrollant et la
+  barre du feuillet (.flt-barre) prend le relais, collée en haut.
+- `_VERSION_APPLI = "v7.15.1"`.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
