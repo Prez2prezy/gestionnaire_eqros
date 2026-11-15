@@ -123,7 +123,10 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       # v7.14.3 — le numéro manquant se remplit tout seul
                       cotis_recu_numero_attribuer,
                       # v7.15.0 — le mémoire de l'aubergiste (Luc 10,35)
-                      memoire_aubergiste)
+                      memoire_aubergiste,
+                      # v7.15.1 — l'aubergiste qui me porte (Luc 10,35)
+                      aubergiste_du_membre,
+                      intention_reserve_pour_numero)
 from services import (safe_date, compter_visite, lien_whatsapp, urls_galerie,
                       URL_ESPACE_SPIRITUEL, get_periode_pastorale)
 
@@ -134,7 +137,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.15.0"
+_VERSION_APPLI = "v7.15.1"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -441,42 +444,43 @@ def _compter_bandes(membre=False, pid=None):
     return n
 
 
-def _mesure_entete(cle):
-    """Mesure AUTOCORRIGÉE : revérifie toutes les 400 ms, n'écrit que si la
-    hauteur a changé (l'entête se dessine en plusieurs fois).
-    v7.8-e : compte aussi la barre de titre du livret (.flt-barre) — posée
-    sous l'entête fixe, contenu poussé de la hauteur totale."""
-    script = (
-        "<script>(function(){var d0=-1;var a=function(){try{"
-        "var d=window.parent.document;var h=d.querySelector('.sticky-header');"
-        "var b=d.querySelector('.block-container');"
-        "var bar=d.querySelector('.flt-barre');"
-        "if(h&&b){var t=h.offsetHeight;"
-        "if(bar){bar.style.top=t+'px';t+=bar.offsetHeight;}"
-        "if(t!==d0){d0=t;"
-        "b.style.setProperty('padding-top',t+'px','important');}}}catch(e){}};"
-        "a();setInterval(a,400);window.parent.addEventListener('resize',a);})();</script>")
-    try:
-        _comp_html(script, height=0)
-    except Exception:
-        pass
-
 def _render_theme(compact=False):
-    """CSS de l'espace. CONCATÉNATION (jamais de f-string avec du CSS)."""
-    if compact:
-        secours_1, secours_2, secours_3 = 260, 240, 230
-    else:
-        secours_1, secours_2, secours_3 = 380, 330, 310
+    """CSS de l'espace. CONCATÉNATION (jamais de f-string avec du CSS).
+    v7.15.1 — LE VIDE D'ATERRISSAGE RÉGLÉ À LA RACINE : l'entête quitte
+    « position: fixed » (hors flux) pour « position: sticky » (dans le
+    flux). Avant, le contenu était poussé par un padding-top de secours
+    (330 à 380 px) corrigé par un script qui mesurait l'entête toutes les
+    400 ms — dès que ce script ne pouvait plus joindre la page (montée de
+    version Streamlit, iframe, navigateur), le secours restait tout seul :
+    un grand vide sombre sous l'entête, à chaque atterrissage. Désormais
+    l'entête OCCUPE sa vraie place dans le document et le contenu commence
+    juste dessous : plus aucun padding de secours, plus aucune mesure, plus
+    aucun vide possible — sur aucun téléphone, aucune version de Streamlit.
+    Lecture (livre ouvert, compact=True) : l'entête redevient statique et
+    s'efface en scrollant ; la barre du feuillet (.flt-barre) prend le
+    relais, collée en haut — le même réglage à la racine.
+    LA COLLE AU SOMMET : chaque st.markdown est emballé dans un
+    stElementContainer dont le PARENT (stVerticalBlock) couvre toute la
+    page — c'est donc LUI (et non .sticky-header, dont le parent n'a que
+    la hauteur de l'entête) qui porte « position: sticky ». Vérifié au
+    navigateur (Streamlit 1.67, mobile 430px) : l'entête colle au sommet
+    pendant que le contenu passe dessous. Si un vieux navigateur dort sur
+    :has(), l'entête reste simplement dans le flux — sans jamais laisser
+    de vide."""
+    # v7.15.1 — la règle de colle (normal) ; compact : rien, l'entête défile.
+    regle_sticky = ("" if compact else
+        '[data-testid="stElementContainer"]:has(.sticky-header) '
+        '{ position: sticky; top: 0; z-index: 9999; }\n')
     regle_contenu = (
-        ".block-container { padding-top: " + str(secours_1)
-        + "px !important; padding-bottom: 4rem !important; max-width: 1050px !important; }"
+        ".block-container { padding-top: 0px !important;"
+        " padding-bottom: 4rem !important; max-width: 1050px !important; }"
     )
     st.markdown(
         '<style>'
         # v7.8.11 — police manuscrite des titres de section du livret
         # (@import DOIT précéder toute règle CSS) ; repli local si hors-ligne.
         + "@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&display=swap');\n"
-        + regle_contenu +
+        + regle_contenu + "\n" + regle_sticky +
         """
     [data-testid="stHeader"] { display: none !important; }
     .stApp, [data-testid="stAppViewContainer"] { background-color: #0a0f2c !important; }
@@ -550,12 +554,13 @@ def _render_theme(compact=False):
         .mob-sous { display:block; color:#c7cdf5; padding:4px 10px 4px 22px; font-size:0.85rem; text-decoration:none; }
         .mob-sous.actif { color:#ffd000; font-weight:700; }
     }
-    .sticky-header { position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+    .sticky-header { position: static; top: 0; left: 0; right: 0; z-index: 9999;
         background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px 0 16px; }
     .header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; }
     /* v7.9.3 — entête un PEU plus compacte (pages remontées à l'affichage,
-    comme les feuillets) : logo réduit de 190 à 170 px — la hauteur de
-    l'entête mesurée par _mesure_entete suit automatiquement. */
+    comme les feuillets) : logo réduit de 190 à 170 px. v7.15.1 — la
+    hauteur n'est plus mesurée : l'entête est dans le flux, le contenu
+    commence juste dessous, quelle que soit sa hauteur réelle. */
     .logo-bloc { width: 170px; text-align: center; }
     .logo-bloc img { width: 100%; height: auto; border-radius: 10px; display: block; margin: 0 auto; }
     .logo-titre-svg { display: block; width: 100%; margin-top: 6px; }
@@ -572,13 +577,11 @@ def _render_theme(compact=False):
     }
     @media (max-width: 640px) {
         .logo-bloc { width: 136px; }
-        .block-container { padding-top: """ + str(secours_2) + """px !important; }
         [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
         [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { min-width: 0 !important; }
     }
     @media (max-width: 360px) {
         .logo-bloc { width: 126px; }
-        .block-container { padding-top: """ + str(secours_3) + """px !important; }
     }
     /* === TITRES DORÉS/BLEUS GEORGIA — classes haute spécificité (battent le thème) === */
     .stApp .stMarkdown .dpl-titre-g,
@@ -699,7 +702,10 @@ def _render_theme(compact=False):
     .stApp .stTextArea textarea::placeholder { color:#5a6398 !important;
         opacity:1 !important; }
     /* === LIVRET MENSUEL EN AUTONOMIE v7.8 === */
-    .flt-barre { position: fixed; top: 230px; left: 0; right: 0; z-index: 600;
+    /* v7.15.1 — la barre du feuillet collée EN HAUT (position: sticky) :
+    avec l'entête statique du livre ouvert, elle prend le relais au
+    scroll — plus de top calculé par script, plus de repli faux. */
+    .flt-barre { position: sticky; top: 0; left: 0; right: 0; z-index: 600;
         background: #0a0f2c; border-bottom: 1px solid #27306b; padding: 8px 16px; }
     .flt-barre-titre { color: #FFD000; font-weight: bold; text-align: center;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -2756,7 +2762,7 @@ def _render_mini_lecteur(pid=None):
     « 📿 Rosaire chez les Équipiers », le livret ou les archives pendant que
     le chapelet musical continue. Mémoire : sessionStorage (un onglet).
     ⚠️ L'iframe se repositionne LUI-MÊME en position fixe dans la page
-    parente via window.frameElement (même origine — motif _mesure_entete).
+    parente via window.frameElement (même origine).
     Ne rend RIEN (iframe escamotée) sans lecture récente."""
     # v7.8.16 — barre décorative : une micro-coupure vers la base (Turso,
     # « connection closed », http error…) escamote simplement la barre au lieu
@@ -4973,21 +4979,20 @@ def _carte_cotisation_membre(membre):
                    "en attendant, la caisse de ton équipe te reçoit.")
 
 
-def _carte_memoire_membre(matloc=None):
-    """v7.13.1 — « 📿 Mémoire de mes dizaines », cadre bien doré posé entre
-    la carte de bienvenue et « 📿 Ta dizaine du jour » : les 14 derniers
-    jours (le plus récent d'abord, ✨03/11 → 02/11 → …), le compteur du
-    mois et la flamme des jours de suite. La fidélité se voit — sans jamais
-    surveiller."""
+def _cases_memoire(matloc, nb=14):
+    """v7.15.1 — LA GRILLE DES DERNIERS JOURS, posée hors carte pour servir
+    deux fois : « 📿 Mémoire de mes dizaines » (la mienne) et « 🛖 Mémoire
+    de l'aubergiste » (celle de qui me porte). Retourne le HTML des cases
+    (le jour récent d'abord, ✨ pour aujourd'hui) ou None si la lecture
+    dort — jamais d'exception."""
     if not matloc:
-        return
+        return None
     try:
-        _serie = serie_dizaines_membre(matloc, 14)
-        _mois, _flamme = compteur_dizaines_mois(matloc)
+        _serie = serie_dizaines_membre(matloc, nb)
     except Exception:
-        return
+        return None
     _cases = ""
-    for (_j, _fait) in reversed(_serie):  # v7.13.1 — le jour récent d'abord
+    for (_j, _fait) in reversed(_serie):  # le jour récent d'abord
         try:
             _lib = date.fromisoformat(_j).strftime("%d/%m")
         except Exception:
@@ -5002,6 +5007,26 @@ def _carte_memoire_membre(matloc=None):
                    + ("✅" if _fait else "·") + '</div>'
                      '<div style="color:#8a93c9; font-size:0.62rem;">' + _auj
                    + _lib + '</div></div>')
+    return _cases
+
+
+def _carte_memoire_membre(matloc=None):
+    """v7.13.1 — « 📿 Mémoire de mes dizaines », cadre bien doré posé entre
+    la carte de bienvenue et « 📿 Ta dizaine du jour » : les 14 derniers
+    jours (le plus récent d'abord, ✨03/11 → 02/11 → …), le compteur du
+    mois et la flamme des jours de suite. La fidélité se voit — sans jamais
+    surveiller. v7.15.1 — la grille vient de _cases_memoire, la même qui
+    nourrit la carte de l'aubergiste."""
+    if not matloc:
+        return
+    _cases = _cases_memoire(matloc, 14)
+    if _cases is None:
+        return
+    try:
+        _mois, _flamme = compteur_dizaines_mois(matloc)
+        _serie = serie_dizaines_membre(matloc, 14)
+    except Exception:
+        return
     _total = sum(1 for (_j, _f) in _serie if _f)
     st.markdown(
         '<div style="background:#121a45; border:2px solid #FFD700; border-radius:15px;'
@@ -5019,37 +5044,31 @@ def _carte_memoire_membre(matloc=None):
 
 
 def _carte_aubergiste(matloc=None):
-    """v7.15.0 — « 🛖 Mémoire de l'aubergiste : Luc 10,35 », la sœur de
-    « 📿 Mémoire de mes dizaines » (même nuit, même liseré d'or), posée
-    sous elle sur l'accueil. Le Samaritain laissa à l'aubergiste deux
-    deniers : « Prends soin de cet homme. Et ce que tu dépenseras en plus,
-    je te le rendrai quand je reviendrai. » Dans la ⛓️ chaîne, chaque
-    équipier est cet aubergiste : il porte l'intention posée au N° méd. de
-    son prochain jusqu'à la prochaine séance, et le surplus des visiteurs
-    s'ajoute (« ce que tu dépenseras en plus »). La carte relit le mémoire
-    du portage — lecture seule, elle ne note jamais une prière absente :
-    le cahier ne retient que ce qui se pointe ; le ton est celui de la
-    promesse du Samaritain, jamais de la vérification. Garde-fou de la
-    maison : le membre ne voit que les intentions QUI LUI ONT ÉTÉ
-    CONFIÉES — jamais le tableau des autres (règle d'or v7.10.1 incluse :
-    sa propre intention ne lui revient pas)."""
+    """v7.15.1 — « 🛖 Mémoire de l'aubergiste : Luc 10,35 », au mot près de
+    la définition du diocèse : la « 📿 Mémoire de mes dizaines » de celui /
+    celle qui ME porte dans la ⛓️ chaîne de prière — « Tout simplement ».
+    La carte montre : SON maillon (« N° 14 — X prie pour Y — N° méd. 10. »,
+    la voix même de la séance), « 🕯️ Son intention (N° méd. 10) » —
+    l'intention posée à MON N° méd., celle qu'il/elle veille pour moi —,
+    puis SA fidélité des 14 derniers jours, simplifiée. Sans séance
+    enregistrée (ou hors de la chaîne du jour), les N° méd. entrent en
+    action : ordre croissant, le N° méd. juste sous le mien me porte, la
+    chaîne se referme toute seule. Sans intention posée à mon N° méd. :
+    règle de la maison — « La Paix dans le monde » veille jusqu'à la
+    prochaine séance. Lecture seule ; le ton reste celui de la promesse du
+    Samaritain, jamais de la vérification : aucune dizaine notée n'est une
+    prière absente — le cahier ne retient que ce qui se pointe. La carte se
+    montre à coup sûr (elle ne se dérobe jamais : quand l'aubergiste n'est
+    pas encore identifiable, elle le dit)."""
     if not matloc:
         return
-    try:
-        _mem = memoire_aubergiste(matloc, limite=5)
-    except Exception:
-        return
+
+    def _esc(_t):
+        return html.escape(str(_t or ""))
 
     def _d_fr(_iso):
         _d = safe_date(_iso)
         return _d.strftime("%d/%m/%Y") if _d else str(_iso or "")
-
-    def _courte(_t, n=64):
-        _t = str(_t or "").strip()
-        return (_t if len(_t) <= n else _t[:n].rstrip() + "…")
-
-    def _esc(_t):
-        return html.escape(str(_t or ""))
 
     _or, _nuit, _doux = "#FFD700", "#121a45", "#8a93c9"
     _titres, _corps = "#FFD000", "#e8eaf6"
@@ -5057,85 +5076,110 @@ def _carte_aubergiste(matloc=None):
 
     # ---- l'en-tête ----
     _blocs.append('<div style="color:' + _titres + '; font-weight:bold; font-size:1rem;">'
-                  '🛖 Mémoire de l\u2019aubergiste — Luc 10,35</div>'
+                  '🛖 Mémoire de l’aubergiste — Luc 10,35</div>'
                   '<div style="color:' + _doux + '; font-size:0.78rem; margin-top:2px;">'
-                  'Les deux deniers confiés — le dépôt veille ici, séance après séance</div>')
+                  'La 📿 mémoire de celui / celle qui me porte dans la ⛓️ chaîne</div>')
 
-    # ---- le portage d'aujourd'hui ----
-    if _mem["equipe_id"] is None:
-        _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:8px;">'
-                      '🛖 L\u2019aubergiste attend : dès que ton équipe enregistrera sa prière '
-                      'mensuelle (⛓️ la chaîne des présents), ton dépôt viendra veiller ici.</div>')
-    elif not _mem["seance_date"]:
-        _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:8px;">'
-                      '⛓️ Pas encore de séance enregistrée pour <b>' + _esc(_mem["equipe_nom"])
-                      + '</b> : la prière mensuelle n\u2019a pas encore ouvert la chaîne. '
-                      'Jusque-là — règle de la maison — ton portage veille sur '
-                      '<b>« La Paix dans le monde »</b>.</div>')
-    elif _mem["slot"] is not None:
-        _qui_prochain = (f" — {_esc(_mem['prochain_nom'])}"
-                         if _mem.get("prochain_nom") else "")
-        _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:8px;">'
-                      '⛓️ Séance du <b>' + _d_fr(_mem["seance_date"]) + '</b> — tu portes l\u2019intention '
-                      'posée au N° méd. <b>' + f"{int(_mem['slot']):02d}" + '</b>' + _qui_prochain + '.</div>')
-        if _mem["depot"]:
-            _pour = (f" <span style=\"color:{_doux}; font-size:0.78rem;\">(pour "
-                     + _esc(_mem["depot_qui"]) + ")</span>"
-                     if _mem.get("depot_qui") and _mem["depot_qui"] != "notre prochain" else "")
-            _blocs.append('<div style="background:#1b2a5e; border:1px solid ' + _or
-                          + '; border-radius:10px; padding:8px 10px; margin:8px 0 4px 0;">'
-                          '<div style="color:' + _titres + '; font-size:0.8rem;">🕯️ Les deux deniers confiés</div>'
-                          '<div style="color:' + _corps + '; font-size:0.86rem; font-style:italic; margin-top:3px;">« '
-                          + _esc(_courte(_mem["depot"], 140)) + ' »' + _pour + '</div></div>')
+    # ---- qui me porte ? (la séance d'abord, les N° méd. ensuite) ----
+    try:
+        _aub = aubergiste_du_membre(matloc)
+    except Exception as e:
+        logger.warning(f"_carte_aubergiste (aubergiste) : {e!r}")
+        _aub = None
+    _mon_nom = None
+    try:
+        _r_moi = c.execute("SELECT nom, prenom FROM membres WHERE matloc=? LIMIT 1",
+                           (str(matloc or "").upper().strip(),)).fetchone()
+        if _r_moi:
+            _mon_nom = (str(_r_moi[0] or "") + " " + str(_r_moi[1] or "")).strip() or None
+    except Exception as e:
+        logger.warning(f"_carte_aubergiste (mon nom) : {e!r}")
+
+    if not _aub or not _aub.get("aub_matloc"):
+        # L'aubergiste attend — la carte reste visible, elle explique.
+        if not (_aub and _aub.get("equipe_id")):
+            _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:8px;">'
+                          '🛖 L’aubergiste attend : dès que ton équipe sera reliée à la '
+                          '⛓️ chaîne (prière mensuelle enregistrée), celui / celle qui te '
+                          'porte montrera sa fidélité ici.</div>')
         else:
-            _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:6px;">'
-                          '🕊️ Aucune intention posée à cet emplacement : jusqu\u2019à la prochaine '
-                          'séance, tu veilles sur <b>« La Paix dans le monde »</b>.</div>')
-        if _mem["surplus"]:
-            _s_txt = ""
-            for (_s_t, _s_q) in _mem["surplus"][:3]:
-                _s_txt += ('<div style="color:' + _corps + '; font-size:0.8rem; margin-top:3px;">· « '
-                           + _esc(_courte(_s_t, 80)) + ' »</div>')
-            _plus = (f'<div style="color:{_doux}; font-size:0.72rem;">… et encore '
-                     f'{len(_mem["surplus"]) - 3} intention(s) à ta dizaine.</div>'
-                     if len(_mem["surplus"]) > 3 else "")
-            _blocs.append('<div style="margin-top:6px;">'
-                          '<div style="color:' + _titres + '; font-size:0.8rem;">✨ « Ce que tu dépenseras en plus » — '
-                          f'{len(_mem["surplus"])} intention(s) confiée(s) par nos visiteurs</div>'
-                          + _s_txt + _plus + '</div>')
-    elif _mem.get("heritage"):
-        _h_t, _h_q = _mem["heritage"]
-        _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:8px;">'
-                      '🪶 Hors de la dernière chaîne, tu gardes en héritage l\u2019intention portée '
-                      'à ta dernière présence — elle t\u2019attend jusqu\u2019à ton retour : '
-                      '<b>« ' + _esc(_courte(_h_t, 120)) + ' »</b>.</div>')
+            _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:8px;">'
+                          '🛖 L’aubergiste attend : dès que les N° méd. de ton équipe '
+                          'seront posés (1 à 20, dans « 👤 Mes membres »), la chaîne se '
+                          'refermera toute seule et sa fidélité viendra ici.</div>')
+        _blocs.append('<div style="border-top:1px solid ' + _or + '; margin-top:10px; padding-top:7px; '
+                      'color:' + _doux + '; font-size:0.75rem; font-style:italic;">'
+                      '« Prends soin de cet homme. Et ce que tu dépenseras en plus, je te le rendrai '
+                      'quand je reviendrai. » — Luc 10,35</div>')
+        st.markdown('<div style="background:' + _nuit + '; border:2px solid ' + _or
+                    + '; border-radius:15px; padding:14px 16px; margin:10px;">'
+                    + "".join(_blocs) + '</div>', unsafe_allow_html=True)
+        return
 
-    # ---- la fidélité du portage (le ton : promesse, jamais la vérification) ----
-    if _mem["slot"] is not None and _mem.get("dizaines") is not None:
-        _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:8px;">'
-                      '📿 ' + str(int(_mem["dizaines"] or 0)) + ' dizaine(s) notée(s) depuis la séance.</div>'
-                      '<div style="color:' + _doux + '; font-size:0.72rem; margin-top:2px;">'
-                      'Aucune dizaine notée n\u2019est une prière absente : le cahier ne retient que '
-                      'ce qui se pointe — le Seigneur, lui, voit le cœur.</div>')
+    # ---- SON maillon (la voix même de la séance) ----
+    _ml_moi = (f"{_esc(_mon_nom) if _mon_nom else 'moi'}"
+               f" — N° méd. {int(_aub['mon_num']):02d}"
+               if _aub.get("mon_num") is not None else "moi")
+    if _aub.get("via") == "seance":
+        _blocs.append('<div style="color:' + _corps + '; font-size:0.88rem; margin-top:8px;">'
+                      '⛓️ Séance du <b>' + _d_fr(_aub.get("seance_date")) + '</b> — '
+                      'N° ' + str(int(_aub["aub_num"])).zfill(2) + ' — <b>'
+                      + _esc(_aub["aub_nom"]) + '</b> prie pour <b>' + _ml_moi + '</b>.</div>')
+    else:
+        _blocs.append('<div style="color:' + _corps + '; font-size:0.88rem; margin-top:8px;">'
+                      '⛓️ Pas de séance enregistrée — les N° méd. entrent en action '
+                      '(ordre croissant, la chaîne se referme toute seule) : '
+                      'N° ' + str(int(_aub["aub_num"])).zfill(2) + ' — <b>'
+                      + _esc(_aub["aub_nom"]) + '</b> prie pour <b>' + _ml_moi + '</b>.</div>')
 
-    # ---- les portages refermés (le mémoire) ----
-    if _mem["portages"]:
-        _lignes = ""
-        for _p in reversed(_mem["portages"]):  # le plus ancien en bas
-            _depots = _p.get("depots") or []
-            _premier = ("« " + _esc(_courte(_depots[0][0], 70)) + " »" if _depots else "aucun dépôt retenu")
-            _periode = _d_fr(_p["date"]) + ' → ' + (_d_fr(_p["date_fin"]) if _p.get("date_fin") else "en cours")
-            _lignes += ('<div style="background:' + ("#1b2a5e" if _depots else "#121a45")
-                        + '; border:1px solid ' + (_or if _depots else "#27306b")
-                        + '; border-radius:8px; padding:5px 8px; margin-top:4px;">'
-                        '<div style="color:' + _corps + '; font-size:0.78rem;">⛓️ ' + _periode
-                        + ' · N° méd. ' + f"{int(_p['slot']):02d}"
-                        + ' · ' + str(len(_depots)) + ' dépôt(s) · '
-                        + str(int(_p.get("dizaines") or 0)) + ' dizaine(s) notée(s)</div>'
-                        '<div style="color:' + _doux + '; font-size:0.72rem; font-style:italic;">'
-                        + _premier + '</div></div>')
+    # ---- SON intention — l'intention posée à MON N° méd. ----
+    # (pas de règle d'or ici, à dessein : c'est MA propre intention qu'il /
+    # elle porte pour moi — la demande du diocèse, « Son intention (N° 10) ».)
+    _depot = None
+    if _aub.get("mon_num") is not None:
+        try:
+            _depot = intention_reserve_pour_numero(
+                int(_aub["mon_num"]), equipe_id=int(_aub["equipe_id"]),
+                en_place=True)
+        except Exception as e:
+            logger.warning(f"_carte_aubergiste (dépôt) : {e!r}")
+            _depot = None
+    if _depot and str(_depot[0] or "").strip():
+        _blocs.append('<div style="background:#1b2a5e; border:1px solid ' + _or
+                      + '; border-radius:10px; padding:8px 10px; margin:8px 0 4px 0;">'
+                      '<div style="color:' + _titres + '; font-size:0.8rem;">🕯️ Son intention '
+                      '(N° méd. ' + str(int(_aub["mon_num"])).zfill(2) + ')</div>'
+                      '<div style="color:' + _corps + '; font-size:0.86rem; font-style:italic; margin-top:3px;">« '
+                      + _esc(str(_depot[0]).strip()) + ' »</div></div>')
+    else:
+        _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:6px;">'
+                      '🕊️ Aucune intention posée à ton N° méd. '
+                      + (str(int(_aub["mon_num"])).zfill(2) if _aub.get("mon_num") is not None else "—")
+                      + ' : règle de la maison — ensemble, elle veille avec moi sur '
+                      '<b>« La Paix dans le monde »</b> jusqu’à la prochaine séance.</div>')
+
+    # ---- SA mémoire — la « 📿 Mémoire de mes dizaines » de qui me porte ----
+    _cases = _cases_memoire(_aub["aub_matloc"], 14)
+    if _cases is not None:
+        _tot_a = 0
+        _mois_a, _fl_a = 0, 0
+        try:
+            _serie_a = serie_dizaines_membre(_aub["aub_matloc"], 14)
+            _tot_a = sum(1 for (_j, _f) in _serie_a if _f)
+            _mois_a, _fl_a = compteur_dizaines_mois(_aub["aub_matloc"])
+        except Exception as e:
+            logger.warning(f"_carte_aubergiste (sa mémoire) : {e!r}")
         _blocs.append('<div style="color:' + _titres + '; font-size:0.85rem; font-weight:bold; margin-top:10px;">'
-                      '🗄️ Les portages refermés</div>' + _lignes)
+                      '📿 Sa mémoire de dizaines — les 14 derniers jours</div>'
+                      '<div style="display:flex; flex-wrap:wrap; gap:5px; margin:8px 0 4px 0;">'
+                      + _cases + '</div>'
+                      '<div style="color:' + _corps + '; font-size:0.85rem;">📿 '
+                      + str(_tot_a) + ' dizaine(s) sur 14 jours · ' + str(_mois_a) + ' ce mois'
+                      + (" · 🔥 " + str(_fl_a) + " jour(s) de suite" if _fl_a else "")
+                      + '</div>'
+                      '<div style="color:' + _doux + '; font-size:0.72rem; margin-top:4px;">'
+                      'Aucune dizaine notée n’est une prière absente : le cahier ne retient que '
+                      'ce qui se pointe — le Seigneur, lui, voit le cœur.</div>')
 
     # ---- le sceau de l'Écriture ----
     _blocs.append('<div style="border-top:1px solid ' + _or + '; margin-top:10px; padding-top:7px; '
@@ -6017,13 +6061,13 @@ def _corps_espace_membre(matloc_membre=None):
             except (ValueError, TypeError):
                 pass
 
-    # v7.6.1 — le dimensionnement est assuré par _mesure_entete (mesure
-    # autocorrigée). L'ancien comptage n'est conservé QUE pour le
-    # diagnostic (&debug=1), désormais avec le BON contexte paroissial.
+    # v7.15.1 — le dimensionnement VIT DANS LE CSS : l'entête est dans le
+    # flux (sticky), le contenu commence juste dessous — plus aucun script
+    # de mesure. L'ancien comptage est conservé QUE pour le diagnostic
+    # (&debug=1), avec le BON contexte paroissial.
     if st.query_params.get("debug") == "1":
         _compter_bandes(membre=bool(matloc_membre),
                         pid=st.session_state.get("paroisse_origine"))
-    _mesure_entete("entete")
 
     # v7.6 : les liens du menu naviguent dans l'onglet courant
     _liens_meme_onglet("nav")
