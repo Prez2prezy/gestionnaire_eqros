@@ -708,7 +708,7 @@ def show_diocese():
         annee_debut = st.number_input("Année de début de la période", min_value=2020, max_value=annee_pastorale_en_cours, value=annee_pastorale_en_cours, step=1)
         st.write(f"**Période :** {periode_affichage(annee_debut)}")
 
-        # v7.14.2 — LES RÉGLAGES (posés par le diocèse) : montants
+        # v7.14.2 — LES RÉGLAGES de la caisse : montants
         # adulte/jeune × abonnement/réabonnement, les DEUX échéances de
         # l'année pastorale (réabonnement 15 décembre 2026 — délai de
         # rigueur ; abonnement des nouveaux 31 décembre 2026), porteur des
@@ -716,7 +716,7 @@ def show_diocese():
         # l'Espace, les suggestions des caisses d'équipe et l'en-tête de
         # chaque reçu numéroté.
         _reglages_dio = cotis_parametres_lire()
-        with st.expander("⚙️ Réglages Abonnement - Réabonnement (posés par le diocèse)"):
+        with st.expander("⚙️ Réglages Abonnement - Réabonnement"):
             st.caption("Ces valeurs règlent les cartes « Abonnement - Réabonnement » de l'Espace, "
                        "les suggestions "
                        "de montant des caisses d'équipe et l'en-tête de chaque reçu numéroté.")
