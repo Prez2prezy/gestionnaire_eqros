@@ -2875,13 +2875,15 @@ def cotis_relance_ligne_urgence(jours):
 
 
 def cotis_relance_message_collectif(equipe_nom, annee_debut, lignes,
-                                    reglages=None):
+                                    reglages=None, responsable_nom=None):
     """Le message WhatsApp prêt à copier pour relancer TOUTE l'équipe :
-    les deux échéances au mot du diocèse, les montants par profil, le
-    chemin du paiement (les mots de la carte du membre). `lignes` est la
-    liste renvoyée par database.cotis_relances_lignes — elle sert
-    seulement à savoir s'il reste des réabonnements et des abonnements à
-    relancer."""
+    les échéances au mot, les montants par profil, le chemin du paiement
+    (les mots de la carte du membre) — signé du responsable : son NOM,
+    puis « Votre responsable — {équipe} ». L'équipe n'est dite qu'UNE
+    fois, dans la signature (v7.14.5, plus de redondance dans la
+    salutation). `lignes` est la liste renvoyée par
+    database.cotis_relances_lignes — elle sert seulement à savoir s'il
+    reste des réabonnements et des abonnements à relancer."""
     _r = reglages or {}
     _ma_r = cotis_relance_fcfa(_r.get("cotis_montant_adulte_reab", 5000))
     _ma_a = cotis_relance_fcfa(_r.get("cotis_montant_adulte_abo", 5000))
@@ -2890,6 +2892,11 @@ def cotis_relance_message_collectif(equipe_nom, annee_debut, lignes,
     _ech_r = _r.get("cotis_echeance_aff", "15/12/2026")
     _ech_a = _r.get("cotis_echeance_abo_aff", "31/12/2026")
     _a, _b = int(annee_debut), int(annee_debut) + 1
+    # v7.14.5 — LA SIGNATURE DU RESPONSABLE : son nom (s'il est connu de
+    # l'équipe), puis le rôle. L'équipe est déjà dite dans le rôle —
+    # la salutation, elle, ne la répète plus.
+    _resp = str(responsable_nom or "").strip()
+    _sig = (f"{_resp}\n" if _resp else "") + f"Votre responsable — {equipe_nom}"
     _reste = {"reab": any(l["nature"] == "reabonnement" for l in lignes),
               "abo": any(l["nature"] == "abonnement" for l in lignes)}
     _lignes_ech = []
@@ -2898,26 +2905,30 @@ def cotis_relance_message_collectif(equipe_nom, annee_debut, lignes,
     if _reste["abo"]:
         _lignes_ech.append(f"• Abonnement (nouveaux) — au plus tard le {_ech_a}")
     _txt = (
-        f"🙏 Chers équipiers de l'{equipe_nom},\n\n"
+        "🙏 Chers équipiers,\n\n"
         f"L'année pastorale {_a} - {_b} avance : merci de régler ton "
         "abonnement si ce n'est pas encore fait.\n\n"
         "🗓️ Échéances :\n" + "\n".join(_lignes_ech) + "\n\n"
-        "💼 Montants (posés par le diocèse) :\n"
+        "💼 Montants :\n"
         f"• Adulte — {_ma_r} FCFA (réabonnement) · {_ma_a} FCFA (nouveau)\n"
         f"• Jeune — {_mj_r} FCFA (réabonnement) · {_mj_a} FCFA (nouveau Jeune)\n\n"
         "💵 Paie auprès de ton responsable d'équipe — en espèces ou en "
         "mobile money (Wave, Orange Money) : il note ton paiement et "
         "t'édite ton reçu numéroté immédiatement.\n\n"
-        "Ta carte « 👤 Mon profil » dans l'Espace te dit ta situation exacte.\n\n"
-        "Que le Seigneur te garde, sous le regard de Marie 🙏\n"
-        f"Le responsable d'équipe — {equipe_nom}")
+        "Ta carte « 👤 Mon profil » dans ton Espace personnel te dit ta "
+        "situation exacte.\n\n"
+        "Que le Seigneur te garde, sous le regard de Marie 🙏\n\n"
+        + _sig)
     return _txt
 
 
-def cotis_relance_message_membre(ligne, annee_debut, reglages=None):
+def cotis_relance_message_membre(ligne, annee_debut, reglages=None,
+                                 responsable_nom=None):
     """Le message WhatsApp prêt à copier pour relancer UN membre :
     sa nature (posée par « 👤 Mon profil »), son montant, SON échéance —
-    et les mots du chemin de paiement de la carte."""
+    et les mots du chemin de paiement de la carte, signés comme le
+    message collectif (le nom du responsable, puis « Votre responsable
+    — {équipe} », v7.14.5)."""
     _r = reglages or {}
     _a, _b = int(annee_debut), int(annee_debut) + 1
     _qui = f"{ligne.get('prenom', '')} {ligne.get('nom', '')}".strip() or "Cher équipier"
@@ -2935,6 +2946,9 @@ def cotis_relance_message_membre(ligne, annee_debut, reglages=None):
                   "responsable dès aujourd'hui."
                   if (_jours is not None and _jours < 0) else
                   f"🗓️ À régler au plus tard le {_ech} délai de rigueur")
+    _resp = str(responsable_nom or "").strip()
+    _sig = ((f"{_resp}\n" if _resp else "")
+            + f"Votre responsable — {ligne.get('equipe', '')}")
     _txt = (
         f"🙏 Bonjour {_qui},\n\n"
         f"Ta situation d'abonnement, année pastorale {_a} - {_b} :\n"
@@ -2942,8 +2956,8 @@ def cotis_relance_message_membre(ligne, annee_debut, reglages=None):
         "💼 Paie auprès de ton responsable d'équipe — en espèces ou en "
         "mobile money (Wave, Orange Money) : il note ton paiement et "
         "t'édite ton reçu numéroté immédiatement.\n\n"
-        "Merci de ne pas laisser passer le délai. Que Marie t'accompagne 🙏\n"
-        f"Le responsable d'équipe — {ligne.get('equipe', '')}")
+        "Merci de ne pas laisser passer le délai. Que Marie t'accompagne 🙏\n\n"
+        + _sig)
     return _txt
 
 
