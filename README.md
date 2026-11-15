@@ -2342,6 +2342,63 @@ responsable complète la signature ; la carte « 👤 Mon profil » est dite
   relire la colonne « responsable » qui existe déjà.
 - `_VERSION_APPLI = "v7.14.5"`.
 
+### 58. v7.15.0 — La relance mue en onglet, et le Samaritain reçoit sa carte : « 🛖 Mémoire de l'aubergiste : Luc 10,35 »
+
+MOT DU USER : « Je préconise que la section "📣 Relances — 09 en attente"
+soit déplacée et muée en onglet en remplacement de "💬 Messages WhatsApp -
+Équipe x / 📢 Rappels réabonnement". Penchons-nous sur « Mémoire de
+l'aubergiste ». »
+
+- **La relance déménage au menu (les trois espaces)** — la rubrique
+  « 💬 WhatsApp » devient « 📣 Relances », la page « 📣 Relances -
+  {équipe / paroisse / diocèse} » ; dans `afficher_whatsapp_tabs`, la
+  section « 📢 Rappels réabonnement » (l'ancêtre grossier : une liste et
+  un lien) cède sa place à l'onglet « 📣 Relances » qui porte le contenu
+  né en v7.14.4, déplacé de la caisse d'équipe (l'expander y est retiré —
+  déplacé, pas copié). Le libellé du radio reste STABLE (« 📣 Relances ») :
+  le compte changeant se dit dans la section (« 📣 Relances — NN en
+  attente »), jamais dans le libellé — un radio persistant ne survivrait
+  pas à un libellé vivant.
+- **Le meilleur des deux sections accueilli** — dans l'onglet, chaque en
+  attente reprend la ligne complète de la caisse (nature posée par
+  « 👤 Mon profil », montant, SON échéance, drapeau d'urgence) ET gagne le
+  lien « 📱 Rappeler {prénom} » de l'ancienne section quand le numéro
+  WhatsApp est connu (le message individuel signé voyage dans le lien).
+  Côté responsable d'équipe : une seule équipe, affichée à plat avec le
+  message collectif prêt à copier, signé du responsable (v7.14.5). Côté
+  paroisse et diocèse : les équipes en attente s'ouvrent en expanders
+  (« 📌 {équipe} — N en attente »), chacune avec son message collectif
+  signé de SON responsable. Lecture seule, comme toujours.
+- **Les quatre onglets respirent** — 🎂 Anniversaires, 📣 Relances,
+  📿 Dizaines du jour, 📿 Espace de prière : les trois autres gardent leur
+  place, ils n'ont pas déménagé.
+- **🛖 La carte de l'aubergiste** — dans l'Espace personnel, sous
+  « 📿 Mémoire de mes dizaines », sa sœur : « 🛖 Mémoire de l'aubergiste —
+  Luc 10,35 » (même nuit #121a45, même liseré d'or). Le Samaritain laissa
+  deux deniers à l'hôte : « Prends soin de cet homme. Et ce que tu
+  dépenseras en plus, je te le rendrai quand je reviendrai. » Dans la ⛓️
+  chaîne, chaque équipier est cet hôte : la carte dit le portage
+  d'aujourd'hui (la séance en vigueur, le N° méd. porté et SON
+  prochain), le dépôt posé à cet emplacement — la même voix que la ligne
+  de sa dizaine — ou la règle de la maison quand l'emplacement dort :
+  « La Paix dans le monde » veille jusqu'à la prochaine séance ; le
+  surplus des visiteurs (« ce que tu dépenseras en plus », v7.9.19) ;
+  l'héritage de l'absent (l'intention gardée jusqu'au retour, v7.13.0) ;
+  la fidélité du cahier (« Aucune dizaine notée n'est une prière absente »
+  — le ton est la promesse du Samaritain, jamais la vérification) ; et les
+  portages refermés, séance après séance (les dépôts tels que la base les
+  retient encore, les dizaines notées de chaque période), sous le sceau de
+  l'Écriture.
+- **Le moteur (lecture seule)** — `database.memoire_aubergiste(matloc,
+  limite=5)` relit le contexte ⛓️ (`contexte_chaine_membre`,
+  `historique_chaines_seance`), le dépôt en place
+  (`intention_reserve_pour_numero`, règle d'or v7.10.1 incluse), le
+  surplus (`intentions_reserve_surplus`), l'héritage (`prochain_attache`)
+  et le cahier (`dizaines_journal`) ; AUCUNE migration, AUCUNE écriture
+  nouvelle — les seuls réveils traversés (publication, purge) sont ceux
+  que la dizaine traverse déjà à chaque ouverture.
+- `_VERSION_APPLI = "v7.15.0"`.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
