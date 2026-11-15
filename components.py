@@ -2898,7 +2898,7 @@ def cotis_relance_message_collectif(equipe_nom, annee_debut, lignes,
     if _reste["abo"]:
         _lignes_ech.append(f"• Abonnement (nouveaux) — au plus tard le {_ech_a}")
     _txt = (
-        f"🙏 Chers équipiers de l'équipe {equipe_nom},\n\n"
+        f"🙏 Chers équipiers de l'{equipe_nom},\n\n"
         f"L'année pastorale {_a} - {_b} avance : merci de régler ton "
         "abonnement si ce n'est pas encore fait.\n\n"
         "🗓️ Échéances :\n" + "\n".join(_lignes_ech) + "\n\n"
