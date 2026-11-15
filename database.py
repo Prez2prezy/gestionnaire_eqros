@@ -4106,7 +4106,7 @@ _COTIS_MONTANT_CLES = ("cotis_montant_adulte_abo", "cotis_montant_adulte_reab",
 def cotis_parametres_lire():
     """Les réglages de la cotisation : montants (adulte/jeune ×
     abonnement/réabonnement), échéance de l'année pastorale, porteur des
-    reçus. Les valeurs posées par le diocèse répondent d'abord ; le code
+    reçus. Les réglages enregistrés répondent d'abord ; le code
     tient le reste."""
     params = dict(COTIS_DEFAUTS)
     try:
