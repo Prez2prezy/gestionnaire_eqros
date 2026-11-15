@@ -9,6 +9,8 @@ from datetime import date, timedelta
 from database import (c, commit_and_sync, enregistrer_chaine_seance,
                       derniere_chaine_seance, historique_chaines_seance,
                       _assurer_dizaines_journal,
+                      # v7.15.0 — la relance mue en onglet (lecture seule)
+                      cotis_relances_lignes, cotis_parametres_lire,
                       intentions_reserve_du_numero,
                       ajouter_intention_reserve, remplacer_intention_reserve,
                       reserve_lignes,
@@ -691,11 +693,74 @@ def _message_rappel_dizaine_visiteur(libelle):
             "Que la Vierge Marie veille sur toi! 🙏")
 
 
+def _relance_groupe_aff(equipe_id, equipe_nom, lignes, annee_debut, reglages,
+                        replier=True):
+    """v7.15.0 — LE GROUPE D'UNE ÉQUIPE dans l'onglet « 📣 Relances » : la
+    liste des en attente (nature/montant/échéance posée par « 👤 Mon
+    profil »), le lien WhatsApp « 📱 Rappeler » de chacun quand son numéro
+    est connu (la force de l'ancienne section, accueillie dans la nouvelle),
+    puis le message collectif prêt à copier, signé du responsable de
+    L'ÉQUIPE (colonne « responsable », sinon le compte connecté côté
+    responsable d'équipe). Lecture seule — on ne fait que relire la base.
+    replier=True (paroisse/diocèse, plusieurs équipes) encadre le groupe
+    d'un expander ; False (responsable d'équipe, une seule équipe) l'affiche
+    à plat, comme la section déplacée de la caisse."""
+    _resp = ""
+    try:
+        _row_r = c.execute("SELECT responsable FROM equipes WHERE id=?",
+                           (int(equipe_id),)).fetchone()
+        _resp = str(_row_r[0] or "").strip() if _row_r else ""
+    except Exception:
+        _resp = ""
+    if not _resp:
+        _resp = str(st.session_state.get('username', "") or "")
+    _titre = f"📌 {equipe_nom} — {len(lignes)} en attente"
+    _ctx = (replier if replier is not None else True)
+    if _ctx:
+        _boite = st.expander(_titre)
+    else:
+        _boite = st.container()
+    with _boite:
+        for _l in lignes:
+            _lbl_rel = ("📝 Abonnement (mention NOUVEAU)"
+                        if _l["nature"] == "abonnement"
+                        else "🔄 Réabonnement")
+            _suffixe = (" délai de rigueur"
+                        if _l["nature"] == "reabonnement" else "")
+            st.write(f"- **{_l['nom']} {_l['prenom']}** "
+                     f"({_l['matloc'] or '—'}) — {_lbl_rel} · "
+                     f"{cotis_relance_fcfa(_l['montant'])} FCFA · "
+                     f"au plus tard le {_l['echeance_aff']}{_suffixe}"
+                     + cotis_relance_ligne_urgence(_l["jours"]))
+            if str(_l.get("whatsapp") or "").strip():
+                _msg_m = cotis_relance_message_membre(
+                    _l, annee_debut, reglages, responsable_nom=_resp)
+                _lien_m = lien_whatsapp(str(_l["whatsapp"]).strip(), _msg_m)
+                if _lien_m:
+                    st.markdown(f'<a href="{_lien_m}" target="_blank" '
+                                f'class="whatsapp-link">📱 Rappeler '
+                                f'{html.escape(str(_l["prenom"] or ""))}</a>',
+                                unsafe_allow_html=True)
+        st.markdown("##### 📋 Message collectif prêt à copier (WhatsApp)")
+        st.caption("Le bouton de copie est en haut à droite du cadre.")
+        st.code(cotis_relance_message_collectif(
+            equipe_nom, annee_debut, lignes, reglages,
+            responsable_nom=_resp), language=None)
+
+
 def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
     # v7.8.14 — SÉLECTEUR PERSISTANT : les onglets simples perdaient la main à
     # chaque widget modifié (p.ex. l'année des rappels ramenait aux
     # Anniversaires). Le radio retient la section active toute la session.
-    _lbl_wa = ["🎂 Anniversaires", "📢 Rappels réabonnement",
+    # v7.15.0 — LA RELANCE MUE EN ONGLET (préconisation du diocèse) : la
+    # section « 📢 Rappels réabonnement » — l'ancêtre grossier, une liste et
+    # un lien — cède la place à « 📣 Relances », la relance née en v7.14.4
+    # déplacée de la caisse d'équipe : les en attente avec la nature posée
+    # par « 👤 Mon profil », SON échéance, le message prêt à copier signé du
+    # responsable — et le lien WhatsApp de chacun. Le libellé du radio reste
+    # STABLE (le compte changeant se dit dans la section, pas dans le
+    # libellé : un radio persistant ne survivrait pas à un libellé vivant).
+    _lbl_wa = ["🎂 Anniversaires", "📣 Relances",
                "📿 Dizaines du jour", "📿 Espace de prière"]
     _wa_actif = st.radio("Section", _lbl_wa, key="wa_onglet", horizontal=True,
                          label_visibility="collapsed")
@@ -721,27 +786,35 @@ def afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None):
         else: st.info("🎉 Aucun anniversaire aujourd'hui")
 
     elif _wa_actif == _lbl_wa[1]:
-        # Défaut = année PASTORALE (pas civile) : évite les faux rappels de janvier à août
-        annee_defaut = get_periode_pastorale()[0]
-        annee = st.number_input("Année de début", 2020, date.today().year + 1, min(annee_defaut, date.today().year + 1), key="rappel_whats")
-        query = '''SELECT m.nom, m.prenom, m.whatsapp, e.nom_equipe, p.nom FROM membres m
-                   JOIN equipes e ON m.equipe_id=e.id JOIN paroisses p ON m.paroisse_id=p.id
-                   WHERE m.statut='actif' AND m.id NOT IN (SELECT a.membre_id FROM abonnements a WHERE a.annee_debut=? AND a.statut='paye')'''
-        params = [annee]
-        if equipe_id:
-            query += " AND m.equipe_id = ?"; params.append(equipe_id)
-        elif paroisse_id:
-            query += " AND m.paroisse_id = ?"; params.append(paroisse_id)
-        query += " ORDER BY p.nom, e.nom_equipe, m.nom"
-        retard = c.execute(query, params).fetchall()
-        if retard:
-            for m in retard:
-                st.markdown(f"**❌ {m[0]} {m[1]}** - 📍 {m[4]} / {m[3]}")
-                if m[2]:
-                    lien = lien_whatsapp(m[2], f"Bonjour {m[0]} {m[1]},\\n\\nVotre réabonnement pour la période {periode_affichage(annee)} n'a pas été enregistré. Merci de régulariser.")
-                    if lien: st.markdown(f'<a href="{lien}" target="_blank" class="whatsapp-link">📱 Rappeler</a>', unsafe_allow_html=True)
-                st.markdown("---")
-        else: st.success(f"🎉 Tous à jour pour {periode_affichage(annee)} !")
+        # v7.15.0 — LE CONTENU DE L'ONGLET (déplacé de la caisse d'équipe,
+        # v7.14.4) : l'année pastorale en cours porte la relance — pas de
+        # sélecteur, l'échéance qui concerne chacun est lue dans les
+        # réglages du diocèse. Le nombre d'en attente se dit dans le titre,
+        # pas dans le libellé du radio.
+        _annee_rel = get_periode_pastorale()[0]
+        _reglages_rel = cotis_reglages_aff(cotis_parametres_lire())
+        _rel = cotis_relances_lignes(equipe_id=equipe_id,
+                                     paroisse_id=paroisse_id,
+                                     annee_debut=_annee_rel)
+        st.markdown(f"### 📣 Relances — {len(_rel):02d} en attente")
+        st.caption("On ne fait que relire la base — rien n'est écrit ici : "
+                   "la relance dit la même chose que la carte du membre.")
+        if not _rel:
+            st.success("✅ Tous à jour ! Aucune relance à porter.")
+        else:
+            _groupes = {}
+            for _l in _rel:
+                _groupes.setdefault(
+                    (_l["equipe_id"], _l["equipe"], _l["paroisse"]),
+                    []).append(_l)
+            if len(_groupes) == 1 and equipe_id:
+                (_eid_g, _eq_g, _par_g), _lignes_g = next(iter(_groupes.items()))
+                _relance_groupe_aff(_eid_g, _eq_g, _lignes_g, _annee_rel,
+                                    _reglages_rel, replier=False)
+            else:
+                for (_eid_g, _eq_g, _par_g), _lignes_g in _groupes.items():
+                    _relance_groupe_aff(_eid_g, _eq_g, _lignes_g, _annee_rel,
+                                        _reglages_rel, replier=True)
 
     elif _wa_actif == _lbl_wa[2]:
         # v7.11.1 — LES DIZAINES DU JOUR : « Peut-on alerter directement une
