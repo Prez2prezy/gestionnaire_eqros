@@ -1226,10 +1226,13 @@ def show_equipe():
     pid = pid_result[0]
     max_membres = get_max_membres(eid)
 
-    # v7.15.0 — « 📣 Relances » remplace « 💬 WhatsApp » : la relance (née en
-    # v7.14.4 dans la caisse) mue en onglet à la place de la section
-    # « 📢 Rappels réabonnement » — préconisation du diocèse.
-    _rubriques_eq = ["👥 Mon équipe", "👤 Mes membres", "📅 Abonnement - Réabonnement", "📌 Suivi", "📣 Relances", "📦 Archives"]
+    # v7.15.1 — LA RUBRIQUE « 💬 WhatsApp » RÉTABLIE (demande du diocèse) :
+    # le menu retrouve son nom d'origine et la page son titre « 💬 Messages
+    # WhatsApp - Équipe x ». La relance (née en v7.14.4 dans la caisse, mue
+    # en onglet en v7.15.0) reste à sa place — l'onglet « 📣 Relances » dans
+    # afficher_whatsapp_tabs, à la place de la section « 📢 Rappels
+    # réabonnement ». Le meilleur des deux mondes, au mot près.
+    _rubriques_eq = ["👥 Mon équipe", "👤 Mes membres", "📅 Abonnement - Réabonnement", "📌 Suivi", "💬 WhatsApp", "📦 Archives"]
     if "nav_eq" in st.session_state and st.session_state["nav_eq"] not in _rubriques_eq:
         del st.session_state["nav_eq"]
     if "nav_eq" not in st.session_state:
@@ -1695,13 +1698,12 @@ def show_equipe():
             st.markdown("---")
             afficher_etat_presences_globales(equipe_id=eid)
 
-    elif menu == "📣 Relances":
-        # v7.15.0 — LA PAGE SE MUE : « 💬 Messages WhatsApp - Équipe x »
-        # devient « 📣 Relances - Équipe x ». Le contenu vivant de la relance
-        # (déplacé de la caisse) porte l'onglet du même nom dans
-        # afficher_whatsapp_tabs ; les autres sections (Anniversaires,
-        # Dizaines du jour, Espace de prière) gardent leur place.
-        st.markdown(f'<h2 style="color:#1A237E;">📣 Relances - {nom_equipe}</h2>', unsafe_allow_html=True)
+    elif menu == "💬 WhatsApp":
+        # v7.15.1 — LA PAGE REPREND SON TITRE : « 💬 Messages WhatsApp -
+        # Équipe x » (rubrique rétablie). L'onglet « 📣 Relances » (déplacé de
+        # la caisse) y reste à sa place ; les autres sections (Anniversaires,
+        # Dizaines du jour, Espace de prière) gardent la leur.
+        st.markdown(f'<h2 style="color:#1A237E;">💬 Messages WhatsApp - {nom_equipe}</h2>', unsafe_allow_html=True)
         afficher_whatsapp_tabs(equipe_id=eid)
     
     elif menu == "📦 Archives":
