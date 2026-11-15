@@ -22,9 +22,10 @@ from database import (c, commit_and_sync, verifier_reparer_intentions, jours_dep
                       # v7.14.2 — la mention « NOUVEAU » (champ « Statut »)
                       cotis_membre_nouveau, cotis_nature_membre,
                       # v7.14.3 — le numéro manquant se remplit tout seul
-                      cotis_recu_numero_attribuer,
-                      # v7.14.4 — la relance (lecture seule, rien n'écrit)
-                      cotis_relances_lignes)
+                      # v7.15.0 — la relance (v7.14.4) a déménagé au menu :
+                      # cotis_relances_lignes et les messages de relance se
+                      # vivent désormais dans components.afficher_whatsapp_tabs.
+                      cotis_recu_numero_attribuer)
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
@@ -35,11 +36,7 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
                         enregistrer_presence_equipe, afficher_etat_presences_globales,
                         bloc_chaine_seance,
                         # v7.14.0 — la caisse de la cotisation (reçus numérotés)
-                        recu_pdf_de_numero,
-                        # v7.14.4 — les messages de relance prêts à copier
-                        cotis_reglages_aff, cotis_relance_ligne_urgence,
-                        cotis_relance_fcfa,
-                        cotis_relance_message_collectif, cotis_relance_message_membre)
+                        recu_pdf_de_numero)
 from stcompat import comp_html
 
 
@@ -1229,7 +1226,10 @@ def show_equipe():
     pid = pid_result[0]
     max_membres = get_max_membres(eid)
 
-    _rubriques_eq = ["👥 Mon équipe", "👤 Mes membres", "📅 Abonnement - Réabonnement", "📌 Suivi", "💬 WhatsApp", "📦 Archives"]
+    # v7.15.0 — « 📣 Relances » remplace « 💬 WhatsApp » : la relance (née en
+    # v7.14.4 dans la caisse) mue en onglet à la place de la section
+    # « 📢 Rappels réabonnement » — préconisation du diocèse.
+    _rubriques_eq = ["👥 Mon équipe", "👤 Mes membres", "📅 Abonnement - Réabonnement", "📌 Suivi", "📣 Relances", "📦 Archives"]
     if "nav_eq" in st.session_state and st.session_state["nav_eq"] not in _rubriques_eq:
         del st.session_state["nav_eq"]
     if "nav_eq" not in st.session_state:
@@ -1538,56 +1538,12 @@ def show_equipe():
         _mc2.metric("💰 Total collecté", f"{_fr(_total_fcfa)} FCFA")
         _mc3.metric("⏳ Reste à régler", f"{max(_nb_membres - _cotisants, 0)}")
 
-        # v7.14.4 — LA RELANCE (lecture seule) : qui n'est pas à jour, avec
-        # la nature posée par « 👤 Mon profil », le montant attendu et
-        # SON échéance (réabonnement au délai de rigueur, abonnement des
-        # nouveaux au 31/12) — plus le message prêt à copier pour
-        # WhatsApp. On ne fait que RELIRE la base : la relance n'écrit
-        # rien, elle dit la même chose que la carte du membre.
-        _rel = cotis_relances_lignes(equipe_id=eid, annee_debut=annee)
-        _reglages_rel = cotis_reglages_aff(_reglages)
-        # v7.14.5 — LA SIGNATURE : le nom du responsable (colonne
-        # « responsable » de l'équipe, sinon le compte connecté) complète
-        # la signature « Votre responsable — {équipe} » des messages.
-        _resp_nom = ""
-        try:
-            _row_r = c.execute("SELECT responsable FROM equipes WHERE id=?",
-                               (eid,)).fetchone()
-            _resp_nom = str(_row_r[0] or "").strip() if _row_r else ""
-        except Exception:
-            _resp_nom = ""
-        if not _resp_nom:
-            _resp_nom = str(st.session_state.get('username', "") or "")
-        with st.expander(f"📣 Relances — {len(_rel):02d} en attente"):
-            st.caption("On ne fait que relire la base — rien n'est écrit ici : "
-                       "la relance dit la même chose que la carte du membre.")
-            if not _rel:
-                st.success("✅ Tous à jour ! Aucune relance à porter.")
-            else:
-                for _l in _rel:
-                    _lbl_rel = ("📝 Abonnement (mention NOUVEAU)"
-                                if _l["nature"] == "abonnement"
-                                else "🔄 Réabonnement")
-                    _suffixe = (" délai de rigueur"
-                                if _l["nature"] == "reabonnement" else "")
-                    st.write(f"- **{_l['nom']} {_l['prenom']}** "
-                             f"({_l['matloc'] or '—'}) — {_lbl_rel} · "
-                             f"{cotis_relance_fcfa(_l['montant'])} FCFA · "
-                             f"au plus tard le {_l['echeance_aff']}{_suffixe}"
-                             + cotis_relance_ligne_urgence(_l["jours"]))
-                st.markdown("##### 📋 Message collectif prêt à copier (WhatsApp)")
-                st.caption("Le bouton de copie est en haut à droite du cadre.")
-                st.code(cotis_relance_message_collectif(
-                    nom_equipe, annee, _rel, _reglages_rel,
-                    responsable_nom=_resp_nom), language=None)
-                _noms_rel = [f"{_l['nom']} {_l['prenom']}" for _l in _rel]
-                _choix_rel = st.selectbox("Message pour un membre en particulier",
-                                          _noms_rel,
-                                          key=f"relance_choix_{eid}_{annee}")
-                st.code(cotis_relance_message_membre(
-                    _rel[_noms_rel.index(_choix_rel)], annee, _reglages_rel,
-                    responsable_nom=_resp_nom),
-                    language=None)
+        # v7.15.0 — LA RELANCE A DÉMÉNAGÉ : la section « 📣 Relances — NN
+        # en attente » (v7.14.4) a quitté la caisse pour devenir l'onglet
+        # « 📣 Relances » du menu — à la place de la section « 📢 Rappels
+        # réabonnement » (préconisation du diocèse). La caisse garde ses
+        # métriques et ses reçus ; la relance se vit maintenant au menu,
+        # on ne la relit plus deux fois.
 
         # v7.14.0 — LE PANNEAU DU REÇU (posé à l'enregistrement d'un
         # paiement, ou ouvert par le bouton 🧾 d'une ligne) : le reçu se
@@ -1739,8 +1695,13 @@ def show_equipe():
             st.markdown("---")
             afficher_etat_presences_globales(equipe_id=eid)
 
-    elif menu == "💬 WhatsApp":
-        st.markdown(f'<h2 style="color:#1A237E;">💬 Messages WhatsApp - {nom_equipe}</h2>', unsafe_allow_html=True)
+    elif menu == "📣 Relances":
+        # v7.15.0 — LA PAGE SE MUE : « 💬 Messages WhatsApp - Équipe x »
+        # devient « 📣 Relances - Équipe x ». Le contenu vivant de la relance
+        # (déplacé de la caisse) porte l'onglet du même nom dans
+        # afficher_whatsapp_tabs ; les autres sections (Anniversaires,
+        # Dizaines du jour, Espace de prière) gardent leur place.
+        st.markdown(f'<h2 style="color:#1A237E;">📣 Relances - {nom_equipe}</h2>', unsafe_allow_html=True)
         afficher_whatsapp_tabs(equipe_id=eid)
     
     elif menu == "📦 Archives":
