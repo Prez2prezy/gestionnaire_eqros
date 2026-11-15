@@ -137,7 +137,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.15.1"
+_VERSION_APPLI = "v7.15.2"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -347,6 +347,10 @@ def _liens_meme_onglet(cle):
         nativement (target="_self" garantit l'onglet courant)."""
     script = (
         "<script>(function(){var d=window.parent.document;var essais=0;"
+        "try{var p=window.frameElement.parentElement;"
+        "p.style.height='0px';p.style.overflow='hidden';"
+        "p.style.margin='-16px 0';p.style.padding='0';"
+        "p.style.background='transparent';}catch(e){}"
         "var t=setInterval(function(){essais++;"
         "var as=d.querySelectorAll('.menu-ligne a,.mob-panneau a,.pdr-v910 a');var n=0;"
         "for(var i=0;i<as.length;i++){"
@@ -475,12 +479,26 @@ def _render_theme(compact=False):
         ".block-container { padding-top: 0px !important;"
         " padding-bottom: 4rem !important; max-width: 1050px !important; }"
     )
+    # v7.15.2 — LA MACHINERIE INVISIBLE NE LAISSE AUCUN VIDE AU-DESSUS DE
+    # L'ENTÊTE : le CSS du thème et le div caché du pont (#pont_memoire)
+    # sont muets mais leurs conteneurs Streamlit gardaient leur interligne
+    # de 16 px — quatre d'entre eux s'empilent avant l'entête à chaque
+    # atterrissage (66 à 150 px de vide sombre selon les écrans, captures
+    # du diocèse). Ces porteurs remontent d'un interligne : l'entête
+    # touche le haut de l'écran, sur tout téléphone, sans aucun script.
+    regle_machinerie = (
+        '[data-testid="stElementContainer"]'
+        ':has([data-testid="stMarkdownContainer"] > style:first-child), '
+        '[data-testid="stElementContainer"]'
+        ':has([data-testid="stMarkdownContainer"] > div[hidden]) '
+        '{ margin-top: -16px !important; }\n'
+    )
     st.markdown(
         '<style>'
         # v7.8.11 — police manuscrite des titres de section du livret
         # (@import DOIT précéder toute règle CSS) ; repli local si hors-ligne.
         + "@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&display=swap');\n"
-        + regle_contenu + "\n" + regle_sticky +
+        + regle_contenu + "\n" + regle_machinerie + regle_sticky +
         """
     [data-testid="stHeader"] { display: none !important; }
     .stApp, [data-testid="stAppViewContainer"] { background-color: #0a0f2c !important; }
@@ -2807,6 +2825,13 @@ def _render_mini_lecteur(pid=None):
         try {
             var f = window.frameElement;
             if (f) { f.style.display = 'none'; }
+            // v7.15.2 — le conteneur Streamlit de l'iframe se replie aussi
+            // (hauteur nulle + interligne mangé) : jamais de vide au-dessus
+            // de l'entête, même escamoté.
+            var p = f ? f.parentElement : null;
+            if (p) { p.style.height = '0px'; p.style.overflow = 'hidden';
+                     p.style.margin = '-16px 0'; p.style.padding = '0';
+                     p.style.background = 'transparent'; }
         } catch (e) {}
     }
     function flotter() {
@@ -2824,7 +2849,7 @@ def _render_mini_lecteur(pid=None):
             try {
                 var p = f.parentElement;
                 if (p) { p.style.height = '0px'; p.style.overflow = 'hidden';
-                         p.style.margin = '0'; p.style.padding = '0';
+                         p.style.margin = '-16px 0'; p.style.padding = '0';
                          p.style.background = 'transparent'; }
             } catch (e) {}
             var doc = f.ownerDocument;
@@ -5055,11 +5080,12 @@ def _carte_aubergiste(matloc=None):
     action : ordre croissant, le N° méd. juste sous le mien me porte, la
     chaîne se referme toute seule. Sans intention posée à mon N° méd. :
     règle de la maison — « La Paix dans le monde » veille jusqu'à la
-    prochaine séance. Lecture seule ; le ton reste celui de la promesse du
-    Samaritain, jamais de la vérification : aucune dizaine notée n'est une
-    prière absente — le cahier ne retient que ce qui se pointe. La carte se
-    montre à coup sûr (elle ne se dérobe jamais : quand l'aubergiste n'est
-    pas encore identifiable, elle le dit)."""
+    prochaine séance. Lecture seule. v7.15.2 — à la demande du diocèse :
+    le sous-titre « La 📿 mémoire de celui / celle qui me porte » et le
+    garde-fou « Aucune dizaine notée… » quittent la carte (le titre et le
+    sceau disent tout) ; le sceau de Luc 10,35 s'agrandit et passe en
+    gras. La carte se montre à coup sûr (elle ne se dérobe jamais : quand
+    l'aubergiste n'est pas encore identifiable, elle le dit)."""
     if not matloc:
         return
 
@@ -5076,9 +5102,7 @@ def _carte_aubergiste(matloc=None):
 
     # ---- l'en-tête ----
     _blocs.append('<div style="color:' + _titres + '; font-weight:bold; font-size:1rem;">'
-                  '🛖 Mémoire de l’aubergiste — Luc 10,35</div>'
-                  '<div style="color:' + _doux + '; font-size:0.78rem; margin-top:2px;">'
-                  'La 📿 mémoire de celui / celle qui me porte dans la ⛓️ chaîne</div>')
+                  '🛖 Mémoire de l’aubergiste — Luc 10,35</div>')
 
     # ---- qui me porte ? (la séance d'abord, les N° méd. ensuite) ----
     try:
@@ -5107,8 +5131,9 @@ def _carte_aubergiste(matloc=None):
                           '🛖 L’aubergiste attend : dès que les N° méd. de ton équipe '
                           'seront posés (1 à 20, dans « 👤 Mes membres »), la chaîne se '
                           'refermera toute seule et sa fidélité viendra ici.</div>')
+        # v7.15.2 — le sceau agrandi et en gras (demande du diocèse).
         _blocs.append('<div style="border-top:1px solid ' + _or + '; margin-top:10px; padding-top:7px; '
-                      'color:' + _doux + '; font-size:0.75rem; font-style:italic;">'
+                      'color:' + _doux + '; font-size:0.95rem; font-weight:bold; font-style:italic;">'
                       '« Prends soin de cet homme. Et ce que tu dépenseras en plus, je te le rendrai '
                       'quand je reviendrai. » — Luc 10,35</div>')
         st.markdown('<div style="background:' + _nuit + '; border:2px solid ' + _or
@@ -5176,14 +5201,12 @@ def _carte_aubergiste(matloc=None):
                       '<div style="color:' + _corps + '; font-size:0.85rem;">📿 '
                       + str(_tot_a) + ' dizaine(s) sur 14 jours · ' + str(_mois_a) + ' ce mois'
                       + (" · 🔥 " + str(_fl_a) + " jour(s) de suite" if _fl_a else "")
-                      + '</div>'
-                      '<div style="color:' + _doux + '; font-size:0.72rem; margin-top:4px;">'
-                      'Aucune dizaine notée n’est une prière absente : le cahier ne retient que '
-                      'ce qui se pointe — le Seigneur, lui, voit le cœur.</div>')
+                      + '</div>')
 
     # ---- le sceau de l'Écriture ----
+    # v7.15.2 — le sceau agrandi et en gras (demande du diocèse).
     _blocs.append('<div style="border-top:1px solid ' + _or + '; margin-top:10px; padding-top:7px; '
-                  'color:' + _doux + '; font-size:0.75rem; font-style:italic;">'
+                  'color:' + _doux + '; font-size:0.95rem; font-weight:bold; font-style:italic;">'
                   '« Prends soin de cet homme. Et ce que tu dépenseras en plus, je te le rendrai '
                   'quand je reviendrai. » — Luc 10,35</div>')
 
@@ -5261,8 +5284,10 @@ def _pont_memoire_hors_ligne(membre):
                     matloc=_mat, nom=_nom or None, equipe_id=membre[10],
                     paroisse_id=membre[11], est_membre=True, jours=_jours)
                 st.session_state["pont_recues"] = int(_aj) + int(_dj)
+                # v7.15.2 — le mot doux naît ICI (sous l'entête, depuis que
+                # le pont vit après elle) et plus jamais au-dessus.
                 if _aj:
-                    st.session_state["flash_success"] = (
+                    st.success(
                         "🕊️ " + str(_aj)
                         + (" journée" if _aj == 1 else " journées")
                         + " priée(s) hors ligne "
@@ -5273,7 +5298,7 @@ def _pont_memoire_hors_ligne(membre):
                             if _dj == 1 else
                             "Tes " + str(_dj) + " journées priées hors ligne étaient "
                             "déjà dans la chaîne")
-                    st.session_state["flash_warning"] = _phr + " — rien n'a été recompté. 🕊️"
+                    st.warning(_phr + " — rien n'a été recompté. 🕊️")
             except Exception:
                 logger.warning("_pont_memoire_hors_ligne : réception manquée")
         # l'adresse s'allège — le paramètre a vécu
@@ -5322,6 +5347,40 @@ def _pont_memoire_hors_ligne(membre):
                     _params["qui"] = str(_iqui).strip()
         except Exception:
             logger.warning("pont profil : intention indisponible")
+        # v7.15.2 — L'AUBERGISTE VOYAGE AVEC LE PROFIL : la carte « 🛖
+        # Mémoire de l'aubergiste : Luc 10,35 » de l'application (MA DIZAINE)
+        # dira la même chose que la carte de l'Espace, au mot près — SON N°,
+        # SON nom, la séance en vigueur (ou rien), « Son intention » (celle
+        # posée à MON N° méd., la voix même de la carte web) et SA fidélité
+        # des 14 derniers jours. Lecture pure — la base n'est pas touchée.
+        try:
+            _aub_p = aubergiste_du_membre(_mat)
+            if _aub_p and _aub_p.get("aub_matloc"):
+                _params["aub"] = str(int(_aub_p["aub_num"]))
+                _params["aubnom"] = str(_aub_p["aub_nom"]).strip()
+                if _aub_p.get("via") == "seance" and _aub_p.get("seance_date"):
+                    _params["aubdate"] = str(_aub_p["seance_date"])
+                if _aub_p.get("mon_num") is not None:
+                    try:
+                        _sitx, _squ = intention_reserve_pour_numero(
+                            int(_aub_p["mon_num"]),
+                            equipe_id=int(_aub_p["equipe_id"]), en_place=True) \
+                            or (None, None)
+                        if _sitx and str(_sitx).strip():
+                            _params["sitx"] = str(_sitx).strip()
+                    except Exception:
+                        logger.warning(
+                            "pont profil : intention de l'aubergiste indisponible")
+                try:
+                    _sja = serie_dizaines_membre(
+                        str(_aub_p["aub_matloc"]).strip().upper(), 14)
+                    _aubj = ",".join(_j for (_j, _f) in _sja if _f)
+                    if _aubj:
+                        _params["aubj"] = _aubj
+                except Exception:
+                    pass
+        except Exception:
+            logger.warning("pont profil : aubergiste indisponible")
         if _mes_jours:
             _params["jours"] = _mes_jours
         _qs = urllib.parse.urlencode(_params, quote_via=urllib.parse.quote)
@@ -6249,11 +6308,6 @@ def _corps_espace_membre(matloc_membre=None):
                                lien_theme="?espace=1&nav=1&r=2")
         return
 
-    # v7.13.12 — LE PONT DE LA MÉMOIRE (hors-ligne ↔ Espace) : le téléphone
-    # annonce ses journées priées (?pont_jours=…) et reçoit la fidélité du
-    # web (#pont_memoire) — la base ne passe que par la porte du livre.
-    _pont_memoire_hors_ligne(membre)
-
     # v7.6 : compteur membre — 1 visite = 1 ARRIVÉE (même sémantique)
     if "nav" not in st.query_params and "visite_membre" not in st.session_state:
         st.session_state["visite_membre"] = True
@@ -6264,6 +6318,16 @@ def _corps_espace_membre(matloc_membre=None):
     _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert,
                    rubriques=(None if livre_ouvert else RUBRIQUES_MEMBRE),
                    rub_act=rub, sub_act=sub, pid=pid_m)
+
+    # v7.15.2 — LE PONT VIT SOUS L'ENTÊTE : la carte « 🕊 Le pont vers
+    # l'application », son bouton et le flash des journées reçues ne se
+    # posent plus AU-DESSUS de l'entête (ils la poussaient vers le bas —
+    # captures du diocèse) : ils naissent ICI, juste après elle. La
+    # machinerie muette (#pont_memoire) voyage avec, sans prendre de place.
+    # v7.13.12 — LE PONT DE LA MÉMOIRE (hors-ligne ↔ Espace) : le téléphone
+    # annonce ses journées priées (?pont_jours=…) et reçoit la fidélité du
+    # web (#pont_memoire) — la base ne passe que par la porte du livre.
+    _pont_memoire_hors_ligne(membre)
 
     if livre_ouvert:
         if st.session_state.get("flt_ouvert"):
