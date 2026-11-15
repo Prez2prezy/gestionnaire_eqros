@@ -820,7 +820,7 @@ def show_paroisse():
         
         st.markdown("---")
         
-        for eq in c.execute("SELECT id, nom_equipe FROM equipes WHERE paroisse_id=? ORDER BY nom_equipe", (pid,)).fetchall():
+        for eq in c.execute("SELECT id, nom_equipe, responsable FROM equipes WHERE paroisse_id=? ORDER BY nom_equipe", (pid,)).fetchall():
             stats_eq = c.execute('''SELECT COUNT(m.id) as total, SUM(CASE WHEN a.annee_debut=? AND a.statut='paye' THEN 1 ELSE 0 END) as payes FROM membres m LEFT JOIN abonnements a ON m.id = a.membre_id AND a.annee_debut=? WHERE m.equipe_id=? AND m.statut='actif' GROUP BY m.equipe_id''', (annee, annee, eq[0])).fetchone()
             
             if stats_eq:
@@ -855,7 +855,8 @@ def show_paroisse():
                                        "à porter au responsable de l'équipe.")
                             st.code(cotis_relance_message_collectif(
                                 eq[1], annee,
-                                _rel_eq, cotis_reglages_aff(cotis_parametres_lire())),
+                                _rel_eq, cotis_reglages_aff(cotis_parametres_lire()),
+                                responsable_nom=str(eq[2] or "").strip()),
                                 language=None)
 
     elif menu == "📌 Suivi":
