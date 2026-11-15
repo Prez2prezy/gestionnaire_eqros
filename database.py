@@ -2598,6 +2598,194 @@ def intentions_reserve_surplus(jour_visiteur=None, matloc=None, texte_exclu=None
 
 
 # ======================================================================
+# v7.15.0 — LE MÉMOIRE DE L'AUBERGISTE (Luc 10,35)
+# ======================================================================
+# « Le lendemain, il tire deux deniers, les donne à l'hôte et dit :
+#   Prends soin de cet homme. Et ce que tu dépenseras en plus, je te le
+#   rendrai quand je reviendrai. » — Luc 10,35
+# Dans la ⛓️ chaîne, chaque équipier est cet aubergiste : à la séance,
+# l'intention confiée est déposée au N° méd. de la personne PRIÉE
+# (v7.11.0), et le maillon qui porte ce N° la garde jusqu'à la prochaine
+# séance — ses deux deniers. Le surplus des visiteurs est le « ce que tu
+# dépenseras en plus » (v7.9.19), et la nouvelle séance est le « quand je
+# reviendrai ». Sans séance ouverte, ou emplacement vide, « La Paix dans
+# le monde » veille d'office — la règle de la maison (secours de la
+# chaîne, INTENTIONS_UNIVERSELLES[0]). La carte du même nom dans l'Espace
+# personnel relit ce mémoire — AUCUNE écriture : on ne fait que relire ce
+# que la base sait déjà, et elle ne note jamais une prière absente.
+
+
+def memoire_aubergiste(matloc, limite=5):
+    """Le mémoire du portage d'un membre (v7.15.0), lecture seule — la
+    matière de la carte « 🛖 Mémoire de l'aubergiste : Luc 10,35 », sœur de
+    « 📿 Mémoire de mes dizaines ».
+    matloc : le membre aubergiste. limite : nombre de portages passés
+    relus (les plus récents d'abord).
+    Retourne un dict (toujours, même hors chaîne — jamais d'exception) :
+      {equipe_id, equipe_nom, numero_med, slot, prochain_nom,
+       seance_date,            # ISO de la séance en vigueur (None si aucune)
+       depot, depot_qui,       # l'intention EN PLACE à son slot (la même
+                               # voix que sa dizaine) ; None → « La Paix
+                               # dans le monde » veille à sa place
+       surplus,                # [(texte, qui)] — les intentions confiées
+                               # par les visiteurs (« ce que tu dépenseras
+                               # en plus »)
+       heritage,               # (texte, qui) hors chaîne — l'intention
+                               # portée à sa dernière présence, gardée
+                               # jusqu'à son retour
+       dizaines,               # dizaines notées depuis la séance (le
+                               # cahier ne retient que ce qui se pointe)
+       portages}               # [{date, date_fin, slot, depots, dizaines}]
+                               # les portages refermés — les deux deniers
+                               # déposés à chaque période, tels que la
+                               # base les retient encore.
+    Règle d'or (v7.10.1) appliquée comme dans la dizaine : le membre ne
+    voit jamais la sienne. Aucun geste n'écrit ici."""
+    _vide = {"equipe_id": None, "equipe_nom": None, "numero_med": None,
+             "slot": None, "prochain_nom": None, "seance_date": None,
+             "depot": None, "depot_qui": None, "surplus": [], "heritage": None,
+             "dizaines": 0, "portages": []}
+    _k = str(matloc or "").upper().strip()
+    if not _k:
+        return _vide
+    try:
+        _eq, _num, _slot, _pnom = contexte_chaine_membre(_k)
+    except Exception as e:
+        logger.warning(f"memoire_aubergiste (contexte) : {e!r}")
+        return _vide
+    _mem = dict(_vide)
+    _mem["equipe_id"] = _eq
+    _mem["numero_med"] = _num
+    _mem["slot"] = _slot
+    _mem["prochain_nom"] = _pnom
+    if not _eq:
+        return _mem
+    try:
+        _r_eq = c.execute("SELECT nom_equipe FROM equipes WHERE id=?",
+                          (int(_eq),)).fetchone()
+        _mem["equipe_nom"] = (_r_eq[0] if _r_eq else None)
+    except Exception as e:
+        logger.warning(f"memoire_aubergiste (équipe) : {e!r}")
+    # La séance en vigueur et l'historique (le plus récent d'abord)
+    _hist = []
+    try:
+        _hist = historique_chaines_seance(int(_eq),
+                                          limite=max(int(limite) + 1, 2))
+    except Exception as e:
+        logger.warning(f"memoire_aubergiste (historique) : {e!r}")
+    if _hist and _hist[0][1]:
+        _mem["seance_date"] = str(_hist[0][1])[:10]
+    # La règle d'or du lecteur : jour ET nom de sa fiche, comme à la dizaine
+    _jour_exclu, _nom_exclu = fiche_membre(_k)
+
+    def _d_iso(_s):
+        try:
+            return date.fromisoformat(str(_s)[:10])
+        except Exception:
+            return None
+
+    def _dizaines_de(_deb, _fin=None):
+        """Les dizaines notées du membre sur une période (le cahier du jour
+        — lecture douce : la table peut dormir, le compte rend zéro)."""
+        try:
+            _assurer_dizaines_journal()
+            _prm = [str(_k), str(_deb)]
+            _sql = ("SELECT COUNT(*) FROM dizaines_journal "
+                    "WHERE matloc=? AND jour>=? AND type='membre'")
+            if _fin:
+                _sql += " AND jour<?"
+                _prm.append(str(_fin))
+            return int(c.execute(_sql, _prm).fetchone()[0] or 0)
+        except Exception as e:
+            logger.warning(f"memoire_aubergiste (dizaines) : {e!r}")
+            return 0
+
+    # LE DÉPÔT D'AUJOURD'HUI — l'intention EN PLACE à son slot, la même
+    # voix que la ligne de sa dizaine ; vide → « La Paix dans le monde »
+    # veille d'office jusqu'à la prochaine séance.
+    if _slot is not None:
+        try:
+            _res = intention_reserve_pour_numero(
+                _slot, jour_exclu=_jour_exclu, nom_exclu=_nom_exclu,
+                equipe_id=int(_eq), en_place=True)
+        except Exception as e:
+            logger.warning(f"memoire_aubergiste (dépôt) : {e!r}")
+            _res = None
+        if _res and str(_res[0] or "").strip():
+            _mem["depot"] = str(_res[0]).strip()
+            _mem["depot_qui"] = (str(_res[1] or "").strip() or None)
+        try:
+            _mem["surplus"] = intentions_reserve_surplus(matloc=_k)
+        except Exception as e:
+            logger.warning(f"memoire_aubergiste (surplus) : {e!r}")
+        if _mem["seance_date"]:
+            _mem["dizaines"] = _dizaines_de(_mem["seance_date"])
+    # L'HÉRITAGE — hors de la chaîne (présent spirituellement), l'intention
+    # portée à sa dernière présence physique reste attachée sans échéance
+    # jusqu'à son retour (v7.13.0) : l'aubergiste garde son dépôt même loin.
+    elif _num:
+        try:
+            _att = prochain_attache("M:" + _k)
+        except Exception as e:
+            logger.warning(f"memoire_aubergiste (héritage) : {e!r}")
+            _att = None
+        if _att and str(_att[0] or "").strip():
+            _mem["heritage"] = (str(_att[0]).strip(),
+                                str(_att[1] or "").strip() or None)
+    # LES PORTAGES REFERMÉS — séance après séance : les deux deniers
+    # déposés à SON slot sur la période (tels que la base les retient
+    # encore — une intention remplacée en place n'a plus l'ancien texte),
+    # et les dizaines notées sur la même période.
+    try:
+        _chrono = list(reversed(_hist[:max(int(limite) + 1, 2)]))  # ancien d'abord
+        for _i in range(len(_chrono) - 1):  # la dernière = séance en vigueur
+            (_hid_i, _hd_i, _ho_i, _ha_i, _henr_i) = _chrono[_i]
+            (_hid_f, _hd_f, _ho_f, _ha_f, _henr_f) = _chrono[_i + 1]
+            if _num is None:
+                continue
+            try:
+                _nums = [int(x) for x in str(_ho_i or "").split(",") if str(x).strip()]
+            except ValueError:
+                _nums = []
+            if _num not in _nums:
+                continue  # pas aubergiste sur cette période
+            _slot_i = _nums[(_nums.index(_num) + 1) % len(_nums)]
+            _d_deb, _d_fin = _d_iso(_hd_i), _d_iso(_hd_f)
+            if _d_deb is None:
+                continue
+            _depots = []
+            try:
+                _rows = c.execute("""SELECT texte, qui, auteur_nom, jour_naissance
+                                       FROM intentions_reserve
+                                      WHERE equipe_id=? AND numero_med=?
+                                        AND (source IS NULL OR source='chaine')
+                                        AND TRIM(COALESCE(texte,'')) != ''
+                                        AND date_ajout >= ? AND date_ajout < ?
+                                      ORDER BY id ASC""",
+                                  (int(_eq), int(_slot_i),
+                                   _d_deb.isoformat(),
+                                   (_d_fin.isoformat() if _d_fin
+                                    else date.today().isoformat()))).fetchall()
+                for (_t, _q, _a, _jn) in _rows:
+                    if _est_propre_a(_q, _a, _jn, _nom_exclu, _jour_exclu):
+                        continue  # la règle d'or vaut aussi au mémoire
+                    _depots.append((str(_t).strip(),
+                                    str(_q or "").strip()
+                                    or str(_a or "").strip() or None))
+            except Exception as e:
+                logger.warning(f"memoire_aubergiste (dépôts passés) : {e!r}")
+            _mem["portages"].append({
+                "date": _d_deb.isoformat(),
+                "date_fin": (_d_fin.isoformat() if _d_fin else None),
+                "slot": _slot_i, "depots": _depots,
+                "dizaines": _dizaines_de(_d_deb.isoformat(),
+                                         _d_fin.isoformat() if _d_fin else None)})
+    except Exception as e:
+        logger.warning(f"memoire_aubergiste (portages) : {e!r}")
+    return _mem
+
+
+# ======================================================================
 # v7.9.4 — L'ATTACHEMENT DE L'INTENTION DU PROCHAIN
 # ======================================================================
 # « L'intention du prochain attribuée à un membre / visiteur s'attache à
