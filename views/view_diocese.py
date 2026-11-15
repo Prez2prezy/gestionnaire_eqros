@@ -507,7 +507,7 @@ def show_diocese():
 
     _rubriques_dio = [
         "🏛️ Voir diocèse", "🏘️ Créer paroisses", "📋 Gérer paroisses",
-        "📅 Abonnement - Réabonnement", "📌 Suivi", "🕊️ Espace spirituel", "📣 Relances",
+        "📅 Abonnement - Réabonnement", "📌 Suivi", "🕊️ Espace spirituel", "💬 WhatsApp",
         "🔍 Rechercher matricule", "🔐 Gérer les accès", "📊 Statistiques", "📥 Export Excel",
         "📦 Archives", "🗑️ Réinitialiser"
     ]
@@ -1178,12 +1178,11 @@ def show_diocese():
                                 st.session_state.pop("confirm_sup_autres", None)
                                 st.rerun()
 
-    elif menu == "📣 Relances":
-        # v7.15.0 — « 📣 Relances - {diocèse} » remplace « 💬 Messages
-        # WhatsApp - {diocèse} » : l'onglet « 📣 Relances » (déplacé de la
-        # caisse, préconisation du diocèse) porte la page, groupé par
-        # équipe et paroisse ; les autres sections gardent leur place.
-        st.markdown(f'<h2 style="color:#1A237E;">📣 Relances - {nom_dio}</h2>', unsafe_allow_html=True)
+    elif menu == "💬 WhatsApp":
+        # v7.15.1 — « 💬 Messages WhatsApp - {diocèse} » RÉTABLI : l'onglet
+        # « 📣 Relances » (déplacé de la caisse) y reste à sa place, groupé
+        # par équipe et paroisse ; les autres sections gardent leur place.
+        st.markdown(f'<h2 style="color:#1A237E;">💬 Messages WhatsApp - {nom_dio}</h2>', unsafe_allow_html=True)
         afficher_whatsapp_tabs(equipe_id=None, paroisse_id=None)
 
     elif menu == "🔍 Rechercher matricule":
