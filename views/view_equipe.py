@@ -1490,7 +1490,7 @@ def show_equipe():
         annee = st.number_input("Année de début", 2020, annee_pastorale_en_cours, annee_pastorale_en_cours)
         st.write(f"**Période :** {periode_affichage(annee)}")
 
-        # v7.14.0 — les réglages posés par le diocèse (montants, échéance,
+        # v7.14.0 — les réglages de la caisse (montants, échéance,
         # porteur des reçus)
         _reglages = cotis_parametres_lire()
 
@@ -1546,6 +1546,18 @@ def show_equipe():
         # rien, elle dit la même chose que la carte du membre.
         _rel = cotis_relances_lignes(equipe_id=eid, annee_debut=annee)
         _reglages_rel = cotis_reglages_aff(_reglages)
+        # v7.14.5 — LA SIGNATURE : le nom du responsable (colonne
+        # « responsable » de l'équipe, sinon le compte connecté) complète
+        # la signature « Votre responsable — {équipe} » des messages.
+        _resp_nom = ""
+        try:
+            _row_r = c.execute("SELECT responsable FROM equipes WHERE id=?",
+                               (eid,)).fetchone()
+            _resp_nom = str(_row_r[0] or "").strip() if _row_r else ""
+        except Exception:
+            _resp_nom = ""
+        if not _resp_nom:
+            _resp_nom = str(st.session_state.get('username', "") or "")
         with st.expander(f"📣 Relances — {len(_rel):02d} en attente"):
             st.caption("On ne fait que relire la base — rien n'est écrit ici : "
                        "la relance dit la même chose que la carte du membre.")
@@ -1566,13 +1578,15 @@ def show_equipe():
                 st.markdown("##### 📋 Message collectif prêt à copier (WhatsApp)")
                 st.caption("Le bouton de copie est en haut à droite du cadre.")
                 st.code(cotis_relance_message_collectif(
-                    nom_equipe, annee, _rel, _reglages_rel), language=None)
+                    nom_equipe, annee, _rel, _reglages_rel,
+                    responsable_nom=_resp_nom), language=None)
                 _noms_rel = [f"{_l['nom']} {_l['prenom']}" for _l in _rel]
                 _choix_rel = st.selectbox("Message pour un membre en particulier",
                                           _noms_rel,
                                           key=f"relance_choix_{eid}_{annee}")
                 st.code(cotis_relance_message_membre(
-                    _rel[_noms_rel.index(_choix_rel)], annee, _reglages_rel),
+                    _rel[_noms_rel.index(_choix_rel)], annee, _reglages_rel,
+                    responsable_nom=_resp_nom),
                     language=None)
 
         # v7.14.0 — LE PANNEAU DU REÇU (posé à l'enregistrement d'un
@@ -1628,7 +1642,7 @@ def show_equipe():
                                else "🔄 Réabonnement")
                 with st.expander(f"{m[1]} {m[2]} ({m[3] or '—'}) – ❌ Non enregistré · {_lbl_nature}"):
                     # v7.14.3 — le montant se montre, ne se discute plus :
-                    # il est posé par le diocèse selon « 👤 Mon profil ».
+                    # il suit la nature lue selon « 👤 Mon profil ».
                     _montant = st.number_input("Montant (FCFA)", value=int(_sug), disabled=True,
                                                key=f"cotis_mont_{m[0]}_{annee}_{_nature}")
                     _mode_lbl = st.selectbox("Mode de paiement", ["💵 Espèces", "🌊 Wave", "📱 Orange Money", "🟡 MTN MoMo", "💳 Autre"], key=f"cotis_mode_{m[0]}_{annee}")
