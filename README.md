@@ -2235,11 +2235,11 @@ maison.*
   NOUVEAU) ». Les badges « 🧒 tarif jeune » / « 🧑 tarif adulte » ont
   quitté la liste avec elle.
 - **Le montant se montre, ne se discute plus** — le champ « Montant
-  (FCFA) » est automatique et non modifiable : posé par le diocèse selon
-  le profil du membre (5 000 adulte · 3 500 nouveau Jeune · 2 000 Jeune).
+  (FCFA) » est automatique et non modifiable : il suit le profil du
+  membre (5 000 adulte · 3 500 nouveau Jeune · 2 000 Jeune).
   La ligne garde « Mode de paiement » et « Note (facultative) ».
-- **L'encadré de la caisse épuré** — « 💼 Montants posés par le diocèse »
-  et « 📌 Règle de la maison » ont quitté l'écran ; il reste « 🗓️
+- **L'encadré de la caisse épuré** — l'encadré des montants et « 📌
+  Règle de la maison » ont quitté l'écran ; il reste « 🗓️
   Échéances : • Abonnement (nouveaux) — 31/12/2026 · • Réabonnement —
   15/12/2026 (délai de rigueur) », sous « Période : Sept 2026 – Août
   2027 ».
@@ -2318,6 +2318,29 @@ maison.*
   nouvelle, AUCUNE écriture — le geste entier est un SELECT ; les
   réglages du diocèse restent où ils sont.
 - `_VERSION_APPLI = "v7.14.4"`.
+
+### 57. v7.14.5 — Le message de relance, retouché au mot du diocèse : plus de redondance, le nom du responsable signe
+
+MOT DU USER (le gabarit annoté du message de relance) : la salutation
+ne répète plus l'équipe (la signature la porte déjà) ; la parenthèse
+qui accompagnait « 💼 Montants » quitte TOUTE l'application ; le nom du
+responsable complète la signature ; la carte « 👤 Mon profil » est dite
+« dans ton Espace personnel ».
+
+- **Le message collectif, au mot près** — « 🙏 Chers équipiers, » (l'équipe
+  n'est plus dite deux fois) ; « 💼 Montants : » (la parenthèse qui
+  l'accompagnait est retirée de l'app entière : message de relance,
+  réglages du diocèse, README, commentaires) ; « Ta carte « 👤
+  Mon profil » dans ton Espace personnel te dit ta situation exacte. » ;
+  la signature devient le NOM du responsable (colonne « responsable » de
+  l'équipe — sinon le compte connecté) puis « Votre responsable —
+  {équipe} », séparés du corps par une ligne vide. Sans nom connu, la
+  signature garde « Votre responsable — {équipe} » seule.
+- **Le message pour UN membre signe pareil** — même signature (nom +
+  « Votre responsable — {équipe} »).
+- **Lecture seule, toujours** — aucun écrit de plus : on ne fait que
+  relire la colonne « responsable » qui existe déjà.
+- `_VERSION_APPLI = "v7.14.5"`.
 
 ## 🛠️ Maintenance
 
