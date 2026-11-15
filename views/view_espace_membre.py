@@ -121,7 +121,9 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       cotis_parametres_lire, cotis_categorie_membre,
                       cotis_membre_nouveau,
                       # v7.14.3 — le numéro manquant se remplit tout seul
-                      cotis_recu_numero_attribuer)
+                      cotis_recu_numero_attribuer,
+                      # v7.15.0 — le mémoire de l'aubergiste (Luc 10,35)
+                      memoire_aubergiste)
 from services import (safe_date, compter_visite, lien_whatsapp, urls_galerie,
                       URL_ESPACE_SPIRITUEL, get_periode_pastorale)
 
@@ -132,7 +134,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.14.5"
+_VERSION_APPLI = "v7.15.0"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -5016,6 +5018,136 @@ def _carte_memoire_membre(matloc=None):
         + '</div></div>', unsafe_allow_html=True)
 
 
+def _carte_aubergiste(matloc=None):
+    """v7.15.0 — « 🛖 Mémoire de l'aubergiste : Luc 10,35 », la sœur de
+    « 📿 Mémoire de mes dizaines » (même nuit, même liseré d'or), posée
+    sous elle sur l'accueil. Le Samaritain laissa à l'aubergiste deux
+    deniers : « Prends soin de cet homme. Et ce que tu dépenseras en plus,
+    je te le rendrai quand je reviendrai. » Dans la ⛓️ chaîne, chaque
+    équipier est cet aubergiste : il porte l'intention posée au N° méd. de
+    son prochain jusqu'à la prochaine séance, et le surplus des visiteurs
+    s'ajoute (« ce que tu dépenseras en plus »). La carte relit le mémoire
+    du portage — lecture seule, elle ne note jamais une prière absente :
+    le cahier ne retient que ce qui se pointe ; le ton est celui de la
+    promesse du Samaritain, jamais de la vérification. Garde-fou de la
+    maison : le membre ne voit que les intentions QUI LUI ONT ÉTÉ
+    CONFIÉES — jamais le tableau des autres (règle d'or v7.10.1 incluse :
+    sa propre intention ne lui revient pas)."""
+    if not matloc:
+        return
+    try:
+        _mem = memoire_aubergiste(matloc, limite=5)
+    except Exception:
+        return
+
+    def _d_fr(_iso):
+        _d = safe_date(_iso)
+        return _d.strftime("%d/%m/%Y") if _d else str(_iso or "")
+
+    def _courte(_t, n=64):
+        _t = str(_t or "").strip()
+        return (_t if len(_t) <= n else _t[:n].rstrip() + "…")
+
+    def _esc(_t):
+        return html.escape(str(_t or ""))
+
+    _or, _nuit, _doux = "#FFD700", "#121a45", "#8a93c9"
+    _titres, _corps = "#FFD000", "#e8eaf6"
+    _blocs = []
+
+    # ---- l'en-tête ----
+    _blocs.append('<div style="color:' + _titres + '; font-weight:bold; font-size:1rem;">'
+                  '🛖 Mémoire de l\u2019aubergiste — Luc 10,35</div>'
+                  '<div style="color:' + _doux + '; font-size:0.78rem; margin-top:2px;">'
+                  'Les deux deniers confiés — le dépôt veille ici, séance après séance</div>')
+
+    # ---- le portage d'aujourd'hui ----
+    if _mem["equipe_id"] is None:
+        _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:8px;">'
+                      '🛖 L\u2019aubergiste attend : dès que ton équipe enregistrera sa prière '
+                      'mensuelle (⛓️ la chaîne des présents), ton dépôt viendra veiller ici.</div>')
+    elif not _mem["seance_date"]:
+        _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:8px;">'
+                      '⛓️ Pas encore de séance enregistrée pour <b>' + _esc(_mem["equipe_nom"])
+                      + '</b> : la prière mensuelle n\u2019a pas encore ouvert la chaîne. '
+                      'Jusque-là — règle de la maison — ton portage veille sur '
+                      '<b>« La Paix dans le monde »</b>.</div>')
+    elif _mem["slot"] is not None:
+        _qui_prochain = (f" — {_esc(_mem['prochain_nom'])}"
+                         if _mem.get("prochain_nom") else "")
+        _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:8px;">'
+                      '⛓️ Séance du <b>' + _d_fr(_mem["seance_date"]) + '</b> — tu portes l\u2019intention '
+                      'posée au N° méd. <b>' + f"{int(_mem['slot']):02d}" + '</b>' + _qui_prochain + '.</div>')
+        if _mem["depot"]:
+            _pour = (f" <span style=\"color:{_doux}; font-size:0.78rem;\">(pour "
+                     + _esc(_mem["depot_qui"]) + ")</span>"
+                     if _mem.get("depot_qui") and _mem["depot_qui"] != "notre prochain" else "")
+            _blocs.append('<div style="background:#1b2a5e; border:1px solid ' + _or
+                          + '; border-radius:10px; padding:8px 10px; margin:8px 0 4px 0;">'
+                          '<div style="color:' + _titres + '; font-size:0.8rem;">🕯️ Les deux deniers confiés</div>'
+                          '<div style="color:' + _corps + '; font-size:0.86rem; font-style:italic; margin-top:3px;">« '
+                          + _esc(_courte(_mem["depot"], 140)) + ' »' + _pour + '</div></div>')
+        else:
+            _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:6px;">'
+                          '🕊️ Aucune intention posée à cet emplacement : jusqu\u2019à la prochaine '
+                          'séance, tu veilles sur <b>« La Paix dans le monde »</b>.</div>')
+        if _mem["surplus"]:
+            _s_txt = ""
+            for (_s_t, _s_q) in _mem["surplus"][:3]:
+                _s_txt += ('<div style="color:' + _corps + '; font-size:0.8rem; margin-top:3px;">· « '
+                           + _esc(_courte(_s_t, 80)) + ' »</div>')
+            _plus = (f'<div style="color:{_doux}; font-size:0.72rem;">… et encore '
+                     f'{len(_mem["surplus"]) - 3} intention(s) à ta dizaine.</div>'
+                     if len(_mem["surplus"]) > 3 else "")
+            _blocs.append('<div style="margin-top:6px;">'
+                          '<div style="color:' + _titres + '; font-size:0.8rem;">✨ « Ce que tu dépenseras en plus » — '
+                          f'{len(_mem["surplus"])} intention(s) confiée(s) par nos visiteurs</div>'
+                          + _s_txt + _plus + '</div>')
+    elif _mem.get("heritage"):
+        _h_t, _h_q = _mem["heritage"]
+        _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:8px;">'
+                      '🪶 Hors de la dernière chaîne, tu gardes en héritage l\u2019intention portée '
+                      'à ta dernière présence — elle t\u2019attend jusqu\u2019à ton retour : '
+                      '<b>« ' + _esc(_courte(_h_t, 120)) + ' »</b>.</div>')
+
+    # ---- la fidélité du portage (le ton : promesse, jamais la vérification) ----
+    if _mem["slot"] is not None and _mem.get("dizaines") is not None:
+        _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:8px;">'
+                      '📿 ' + str(int(_mem["dizaines"] or 0)) + ' dizaine(s) notée(s) depuis la séance.</div>'
+                      '<div style="color:' + _doux + '; font-size:0.72rem; margin-top:2px;">'
+                      'Aucune dizaine notée n\u2019est une prière absente : le cahier ne retient que '
+                      'ce qui se pointe — le Seigneur, lui, voit le cœur.</div>')
+
+    # ---- les portages refermés (le mémoire) ----
+    if _mem["portages"]:
+        _lignes = ""
+        for _p in reversed(_mem["portages"]):  # le plus ancien en bas
+            _depots = _p.get("depots") or []
+            _premier = ("« " + _esc(_courte(_depots[0][0], 70)) + " »" if _depots else "aucun dépôt retenu")
+            _periode = _d_fr(_p["date"]) + ' → ' + (_d_fr(_p["date_fin"]) if _p.get("date_fin") else "en cours")
+            _lignes += ('<div style="background:' + ("#1b2a5e" if _depots else "#121a45")
+                        + '; border:1px solid ' + (_or if _depots else "#27306b")
+                        + '; border-radius:8px; padding:5px 8px; margin-top:4px;">'
+                        '<div style="color:' + _corps + '; font-size:0.78rem;">⛓️ ' + _periode
+                        + ' · N° méd. ' + f"{int(_p['slot']):02d}"
+                        + ' · ' + str(len(_depots)) + ' dépôt(s) · '
+                        + str(int(_p.get("dizaines") or 0)) + ' dizaine(s) notée(s)</div>'
+                        '<div style="color:' + _doux + '; font-size:0.72rem; font-style:italic;">'
+                        + _premier + '</div></div>')
+        _blocs.append('<div style="color:' + _titres + '; font-size:0.85rem; font-weight:bold; margin-top:10px;">'
+                      '🗄️ Les portages refermés</div>' + _lignes)
+
+    # ---- le sceau de l'Écriture ----
+    _blocs.append('<div style="border-top:1px solid ' + _or + '; margin-top:10px; padding-top:7px; '
+                  'color:' + _doux + '; font-size:0.75rem; font-style:italic;">'
+                  '« Prends soin de cet homme. Et ce que tu dépenseras en plus, je te le rendrai '
+                  'quand je reviendrai. » — Luc 10,35</div>')
+
+    st.markdown('<div style="background:' + _nuit + '; border:2px solid ' + _or
+                + '; border-radius:15px; padding:14px 16px; margin:10px;">'
+                + "".join(_blocs) + '</div>', unsafe_allow_html=True)
+
+
 def _route_vers_application(route, matloc=None):
     """v7.13.14 — la route du téléphone, emballée pour les Navigateurs.
 
@@ -6131,6 +6263,11 @@ def _corps_espace_membre(matloc_membre=None):
         # v7.13.1 — « 📿 Mémoire de mes dizaines » entre la carte de
         # bienvenue et « 📿 Ta dizaine du jour ».
         _carte_memoire_membre(matloc_membre)
+        # v7.15.0 — « 🛖 Mémoire de l'aubergiste : Luc 10,35 », la sœur du
+        # mémoire : les deux deniers confiés par la chaîne, le surplus des
+        # visiteurs, les portages refermés — la promesse du Samaritain,
+        # jamais une note d'absence.
+        _carte_aubergiste(matloc_membre)
         # v7.13.13 — LA SECONDE BERGE : le web rend sa fidélité au téléphone.
         _bouton_retour_application(matloc_membre)
         # v7.14.1 — « 💳 Abonnement - Réabonnement » : l'état de l'année
