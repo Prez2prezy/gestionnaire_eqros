@@ -25,7 +25,12 @@ from database import (c, commit_and_sync, verifier_reparer_intentions, jours_dep
                       # v7.15.0 — la relance (v7.14.4) a déménagé au menu :
                       # cotis_relances_lignes et les messages de relance se
                       # vivent désormais dans components.afficher_whatsapp_tabs.
-                      cotis_recu_numero_attribuer)
+                      cotis_recu_numero_attribuer,
+                      # v7.15.3 — le registre des cotisations (mensuelle,
+                      # spéciale, évènementielle, extraordinaire)
+                      COTIS_DIV_TYPES, cotis_div_enregistrer, cotis_div_etat,
+                      cotis_div_montant_suggere, cotis_div_parametres_lire,
+                      cotis_div_supprimer, cotis_div_type_label)
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
@@ -1667,6 +1672,14 @@ def show_equipe():
                 df = pd.DataFrame(data); df.index = df.index + 1; st.dataframe(df, width="stretch")
             else: st.success("🎉 Tous les membres sont à jour !")
 
+        # v7.15.3 — LE REGISTRE DES COTISATIONS : la suite naturelle de la
+        # caisse — les cotisations mensuelles, spéciales, évènementielles
+        # et extraordinaires, notées membre par membre. Elles apparaissent
+        # aussitôt dans « 💰 État des mes cotisations » du membre, en face
+        # de « 👤 Mon profil ». Pas de reçu numéroté ici : le registre dit
+        # l'état ; le reçu reste réservé à l'abonnement annuel.
+        _section_registre_equipe(eid, annee, _membres_eq)
+
     elif menu == "📌 Suivi":
         st.markdown(f'<h2 style="color:#1A237E;">📌 Suivi et Agenda - {nom_equipe}</h2>', unsafe_allow_html=True)
         # v7.8.14 — SÉLECTEUR PERSISTANT (remplace st.tabs, qui ne garde AUCUNE
@@ -1776,3 +1789,146 @@ def show_equipe():
                             else: st.info("Un transféré ou un défunt ne peut pas être réintégré.")
         else: 
             st.info("Aucune archive.")
+
+
+def _section_registre_equipe(eid, annee, membres_eq):
+    """v7.15.3 — LE REGISTRE DES COTISATIONS (section de la caisse
+    « 📅 Abonnement - Réabonnement ») : les cotisations MENSUELLE,
+    SPÉCIALE, ÉVÈNEMENTIELLE et EXTRAORDINAIRE, notées membre par membre
+    par la responsable d'équipe. Chaque ligne porte le montant, la date du
+    versement et le mode de paiement — rien d'autre, le diocèse l'a dit
+    ainsi. Le membre relit tout aussitôt dans « 💰 État des mes
+    cotisations » (en face de « 👤 Mon profil »). Pas de reçu numéroté
+    ici : le registre dit l'état, le reçu reste réservé à l'abonnement
+    annuel. La mensuelle se lit aussi en GRILLE DES 12 MOIS de l'année
+    pastorale (septembre → août), posée par la date du versement."""
+    _mois_lbls = {1: "Janv.", 2: "Févr.", 3: "Mars", 4: "Avr.", 5: "Mai",
+                  6: "Juin", 7: "Juil.", 8: "Août", 9: "Sept.", 10: "Oct.",
+                  11: "Nov.", 12: "Déc."}
+    _modes_lbls = {"especes": "💵 Espèces", "wave": "🌊 Wave",
+                   "orange_money": "📱 Orange Money", "mtn_momo": "🟡 MTN MoMo",
+                   "autre": "💳 Autre"}
+
+    def _fr(_n):
+        return f"{int(_n):,}".replace(",", " ")
+
+    st.markdown("---")
+    st.markdown("### 💰 Le registre des cotisations")
+    st.caption("Mensuelle, spéciale, évènementielle, extraordinaire — note un versement, "
+               "le membre le voit aussitôt dans « 💰 État des mes cotisations ». "
+               "Pas de reçu numéroté ici : le registre dit l'état.")
+    _reglages_div = cotis_div_parametres_lire()
+    _totaux_eq = c.execute("""SELECT COUNT(*), COALESCE(SUM(montant), 0)
+                              FROM cotisations_diverses
+                              WHERE membre_id IN (SELECT id FROM membres
+                                                  WHERE equipe_id=? AND statut='actif')
+                              AND annee_debut=?""", (eid, annee)).fetchone()
+    _tarif_mens = int(_reglages_div.get("cotis_div_montant_mensuelle", 0))
+    _rc1, _rc2, _rc3 = st.columns(3)
+    _rc1.metric("🧾 Lignes notées", f"{int(_totaux_eq[0] or 0):02d}")
+    _rc2.metric("💰 Total du registre", f"{_fr(_totaux_eq[1] or 0)} FCFA")
+    _rc3.metric("🧮 Tarif mensuel posé", (f"{_fr(_tarif_mens)} FCFA"
+                                          if _tarif_mens > 0 else "libre"))
+
+    # LA CORRECTION EN DEUX TEMPS : le 🗑️ d'une ligne ouvre la
+    # confirmation ci-dessous — rien ne quitte le registre sans un
+    # deuxième geste posé en connaissance de cause.
+    if st.session_state.get('cotis_div_del_id'):
+        _l_del = c.execute("""SELECT d.montant, d.type_cotisation, d.date_versement,
+                                     m.nom, m.prenom
+                              FROM cotisations_diverses d
+                              JOIN membres m ON d.membre_id=m.id
+                              WHERE d.id=?""",
+                            (st.session_state['cotis_div_del_id'],)).fetchone()
+        if _l_del:
+            st.warning(f"🗑️ Retirer la ligne « {_l_del[3]} {_l_del[4]} — "
+                       f"{_fr(_l_del[0])} FCFA du {_l_del[2] or '?'} "
+                       f"({cotis_div_type_label(_l_del[1]) or _l_del[1]}) » ?")
+            _cc1, _cc2 = st.columns(2)
+            with _cc1:
+                if st.button("✔️ Oui, retirer cette ligne",
+                             key="cotis_div_del_ok"):
+                    cotis_div_supprimer(st.session_state['cotis_div_del_id'])
+                    del st.session_state['cotis_div_del_id']
+                    st.success("Ligne retirée du registre.")
+                    st.rerun()
+            with _cc2:
+                if st.button("✖ Annuler", key="cotis_div_del_non"):
+                    del st.session_state['cotis_div_del_id']
+                    st.rerun()
+        else:
+            del st.session_state['cotis_div_del_id']
+
+    for m in (membres_eq or []):
+        _etat_m = cotis_div_etat(m[0], annee)
+        _nb_l = len(_etat_m["lignes"])
+        _total_m = int(_etat_m["total"])
+        with st.expander(f"{m[1]} {m[2]} ({m[3] or '—'}) — "
+                         f"{_nb_l:02d} ligne(s) · {_fr(_total_m)} FCFA"):
+            if _nb_l:
+                for _l in _etat_m["lignes"]:
+                    _lcol, _xcol = st.columns([7, 1])
+                    with _lcol:
+                        _d_l = safe_date(_l[3])
+                        _d_txt = _d_l.strftime("%d/%m/%Y") if _d_l else (_l[3] or "—")
+                        st.info(f"{_d_txt} · {cotis_div_type_label(_l[1]) or _l[1]} · "
+                                f"{_fr(_l[2])} FCFA · "
+                                f"{_modes_lbls.get(_l[4] or '', _l[4] or '—')}"
+                                + (f" · noté par {_l[5]}" if _l[5] else ""))
+                    with _xcol:
+                        if st.button("🗑️", key=f"cotis_div_del_{_l[0]}",
+                                     help="Retirer cette ligne (avec confirmation)"):
+                            st.session_state['cotis_div_del_id'] = _l[0]
+                            st.rerun()
+            else:
+                st.caption("Rien de noté pour l'instant — le premier versement ouvrira le registre.")
+
+            # LA GRILLE DES 12 MOIS (mensuelle) : chaque mois de l'année
+            # pastorale, de septembre à août, avec le total versé ce mois.
+            st.markdown("**🧮 Mensuelle — l'année mois par mois**")
+            _grille = st.columns(6)
+            for _i, _mois in enumerate((9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8)):
+                _val = int(_etat_m["mois"].get(_mois, 0))
+                with _grille[_i % 6]:
+                    st.markdown(
+                        '<div style="border:1px solid {} ; border-radius:9px;'
+                        ' padding:4px 6px; margin:2px 0; font-size:0.78rem;'
+                        ' text-align:center; background:{};">{}<br><b>{}</b></div>'.format(
+                            "#66bb6a" if _val > 0 else "#b0a8c8",
+                            "#e8f5e9" if _val > 0 else "#f5f2fa",
+                            _mois_lbls[_mois],
+                            (_fr(_val) + " FCFA") if _val > 0 else "—"),
+                        unsafe_allow_html=True)
+
+            # LA SAISIE : le type d'abord — le montant proposé suit le
+            # type choisi (le tarif réglé dans la caisse diocèse, 0 = libre).
+            _lbls_types = [f"{_lbl}" for _code, _lbl in COTIS_DIV_TYPES]
+            _type_lbl = st.selectbox("Type de cotisation", _lbls_types,
+                                     key=f"cotis_div_type_{m[0]}")
+            _code = COTIS_DIV_TYPES[_lbls_types.index(_type_lbl)][0]
+            _sug = cotis_div_montant_suggere(_code)
+            _montant = st.number_input(
+                "Montant (FCFA)", min_value=0, value=int(_sug), step=100,
+                key=f"cotis_div_mont_{m[0]}_{_code}",
+                help=("Tarif réglé dans « 💼 Caisse du diocèse » — ajustable."
+                      if _sug > 0 else
+                      "Aucun tarif réglé pour ce type — saisie libre."))
+            _dv = st.date_input("Date du versement", value=date.today(),
+                                key=f"cotis_div_date_{m[0]}")
+            _mode_lbl = st.selectbox("Mode de paiement",
+                                     list(_modes_lbls.values()),
+                                     key=f"cotis_div_mode_{m[0]}")
+            if st.button("✅ Noter dans le registre", key=f"cotis_div_go_{m[0]}"):
+                _mode_code = {v: k for k, v in _modes_lbls.items()}[_mode_lbl]
+                _id_l = cotis_div_enregistrer(
+                    m[0], annee, _code, int(_montant), date_versement=_dv,
+                    mode_paiement=_mode_code,
+                    enregistre_par=st.session_state.get('username'),
+                    origine="caisse_equipe")
+                if _id_l:
+                    st.success(f"✅ {_lbls_types[_lbls_types.index(_type_lbl)]} "
+                               f"de {_fr(_montant)} FCFA notée pour {m[1]} {m[2]} — "
+                               "visible aussitôt dans « 💰 État des mes cotisations ».")
+                    st.rerun()
+                else:
+                    st.error("Le versement n'a pas pu être noté — réessaie.")
