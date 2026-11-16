@@ -2565,6 +2565,71 @@ par le diocèse (0 = libre) ; registre simple (pas de reçu) ; icône 💰.
   v7.14.3. La base de production n'est jamais touchée.
 - `_VERSION_APPLI = "v7.15.3"`.
 
+### 63. v7.16.0 — Le « 💰 Total dû à ce jour », l'abonnement dans l'état, la précision libre et le verset
+
+MOT DU USER : « 1. Mettre "« Prends soin de cet homme. Et ce que tu dépenseras
+en plus, je te le rendrai quand je reviendrai. » — Luc 10 35" dans la grille de
+"📿 Mémoire de mes dizaines" juste en dessous et au dessus de "Ta fidélité du
+jour — les 14 derniers jours". 2. La caisse et "💰 État de mes cotisations" —
+a. l'état fait le point des cotisations pas encore réglé, comment cela est-il
+géré lorsqu'il s'acquitte de cette dette ? b. Remplacer "💰 Total de l'année"
+par "💰 Total dû à ce jour". c. Afficher le montant du total dû dans
+l'expander. d. Chaque sortie de champ réactualise le formulaire et rend
+laborieux les saisies. e. les types de cotisation (Mensuelle, Spéciale,
+Évènementielle et Extraordinaire) sont en fait des catégories — est-il
+possible de spécifier ladite cotisation par saisie ? f. Les abonnements et
+réabonnements doivent partir de "💰 État de mes cotisations" / "💰 Total dû à
+ce jour". »
+
+- **LE VERSET LUC 10,35** — posé dans « 📿 Mémoire de mes dizaines » juste
+  sous le titre et juste au-dessus de « Ta fidélité du jour — les 14 derniers
+  jours » : « Prends soin de cet homme. Et ce que tu dépenseras en plus, je
+  te le rendrai quand je reviendrai. » — Luc 10,35 (citation au trait doré,
+  en italique) — dans la carte du membre ET dans son écho visiteur.
+- **LE « 💰 TOTAL DÛ À CE JOUR »** — à la place du total de l'année, la
+  dette du membre : les mois ÉCOULÉS de l'année pastorale qu'aucun versement
+  mensuel ne couvre × le tarif mensuel réglé (0 = saisie libre → rien n'est
+  dû de ce chef) + l'abonnement non réglé (au montant réglé pour CE membre :
+  « NOUVEAU » → abonnement au 31/12, sinon réabonnement au délai de rigueur ;
+  adulte/jeune selon l'équipe). Rien de dû → la carte passe au vert « ✅ À
+  jour » ; le « 🕊️ Déjà versé cette année pastorale » le rappelle en dessous.
+  Le montant campe aussi dans le TITRE de l'encart (« 💰 État de mes
+  cotisations — dû : 6 000 FCFA »), visible sans ouvrir.
+- **L'ABONNEMENT DANS L'ÉTAT** — le « 📅 Abonnement / Réabonnement » fait
+  partie de « 💰 État de mes cotisations » : réglé → « ✅ réglé » avec le
+  montant, la date et le reçu numéroté ; à régler → « ⏳ à régler » avec le
+  montant attendu et l'échéance qui concerne le membre.
+- **QUAND LE MEMBRE S'ACQUITTE** — dès que la responsable note son versement
+  (expédition du registre, ou abonnement réglé dans sa caisse), la ligne
+  apparaît à l'instant, le mois passe en vert et le « Total dû à ce jour »
+  baisse d'autant — la grille et le total dû disent la même chose.
+- **LES QUATRE TYPES deviennent des catégories, NOMMABLES** — le champ
+  « Précision — nomme la cotisation (facultatif) » (texte libre, 80
+  caractères) voyage dans chaque ligne expédiée et se relit dans la caisse
+  (« 01/11 · Mensuelle — Cotisation des fêtes · 500 FCFA … ») comme dans
+  l'état du membre. Colonne douce `precision` posée en migration idempotente
+  sur `cotisations_diverses`.
+- **LES SAISIES deviennent tranquilles** — l'expédition vit dans UN SEUL
+  `st.form` : catégorie, montant, date, mode, précision et destinataires se
+  remplissent sans AUCUNE réactualisation ; rien ne part qu'au « 📮
+  Expédier ». Les tarifs réglés voyagent dans le libellé de chaque catégorie
+  (« Mensuelle — 500 FCFA (tarif réglé) », « Spéciale — saisie libre ») et
+  dans l'aide du montant.
+- **La règle d'or** — lecture pure côté membre, « posé par le diocèse »
+  toujours banni, la base de production jamais montée (bancs sur copies
+  neuves, fixtures nettoyées).
+- **Banc d'épreuve** — `scripts/test_v7160.py` (52 vérifications : la
+  précision, la migration douce, le total dû — mensuelle écoulée non versée,
+  abonnement payé/à régler, nature NOUVEAU, tarif jeune, fenêtre pas ouverte
+  ou entière, tarif libre —, le form, les libellés, le verset aux deux
+  cartes, la version, la compile ×8) et `scripts/test_v7160_vue.py` (AppTest,
+  base NEUVE : le form d'expédition, la précision en base, le verset entre
+  le titre et la fidélité, l'abonnement à régler, la dette qui baisse à
+  chaque versement jusqu'à « ✅ À jour »). Régressions repassées et
+  actualisées : v7.15.4 (37 ✅) + sa vue, v7.15.3 (42 ✅) + sa vue,
+  v7.15.2 (27 ✅), v7.15.1 (29 ✅), v7.15.0 + vue, v7.14.5, v7.14.3.
+- `_VERSION_APPLI = "v7.16.0"`.
+
 ### 62. v7.15.4 — La coquille corrigée et l'expédition du registre (« Tous ou certains »)
 
 MOT DU USER : « 💰 une coquille — "État de mes cotisations". Chez le responsable
