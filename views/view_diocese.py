@@ -766,16 +766,18 @@ def show_diocese():
                         st.error("Les réglages n'ont pas pu être posés — réessaie.")
 
         # v7.15.3 — LES RÉGLAGES DU REGISTRE : les quatre montants par
-        # défaut des cotisations mensuelle, spéciale, évènementielle et
-        # extraordinaire. Ils règlent les suggestions de la caisse
+        # défaut des catégories mensuelle, spéciale, évènementielle et
+        # extraordinaire (v7.16.0 : quatre catégories, nommables par la
+        # précision libre). Ils règlent les suggestions de la caisse
         # d'équipe (« 💼 Abonnement - Réabonnement », section registre) et
         # le tarif affiché au membre dans « 💰 État de mes cotisations ».
         # 0 = saisie libre : aucun montant imposé ni affiché.
         _reglages_div = cotis_div_parametres_lire()
-        with st.expander("⚙️ Réglages du registre des cotisations (mensuelle, spéciale, évènementielle, extraordinaire)"):
+        with st.expander("⚙️ Réglages du registre des cotisations (catégories : mensuelle, spéciale, évènementielle, extraordinaire)"):
             st.caption("Ces montants règlent les suggestions de la caisse d'équipe et le tarif "
-                       "affiché au membre. Laisses 0 pour un type à saisie libre — aucun "
-                       "montant n'est alors imposé ni affiché.")
+                       "affiché au membre. Laisses 0 pour une catégorie à saisie libre — aucun "
+                       "montant n'est alors imposé ni affiché. La catégorie peut être nommée par "
+                       "la responsable à l'expédition (champ « Précision »).")
             with st.form("cotis_div_reglages_dio"):
                 _d1, _d2 = st.columns(2)
                 with _d1:
