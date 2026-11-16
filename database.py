@@ -681,8 +681,16 @@ def init_tables_and_migrations():
         mode_paiement TEXT,
         enregistre_par TEXT,
         origine TEXT DEFAULT 'caisse_equipe',
+        precision TEXT,
         cree_le TEXT
     )""")
+
+    # v7.16.0 — LA PRÉCISION DE LA COTISATION : les quatre types du registre
+    # sont en fait des CATÉGORIES ; la responsable peut nommer la cotisation
+    # par saisie libre (« Cotisation des fêtes… »). Migration douce et
+    # ré-exécutable sur les bases posées avant v7.16.0 : une colonne à NULL,
+    # rien d'existant ne bouge.
+    safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN precision TEXT")
 
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
     try:
@@ -4841,12 +4849,16 @@ def cotis_div_montant_suggere(type_cotisation):
 
 def cotis_div_enregistrer(membre_id, annee_debut, type_cotisation, montant,
                           date_versement=None, mode_paiement=None,
-                          enregistre_par=None, origine="caisse_equipe"):
+                          enregistre_par=None, origine="caisse_equipe",
+                          precision=None):
     """UNE LIGNE DU REGISTRE : la responsable d'équipe note un versement
     (mensuelle, spéciale, évènementielle ou extraordinaire). INSERT pur —
     rien d'existant n'est modifié, ni ici ni ailleurs. La date du versement
-    est celle d'aujourd'hui si aucune n'est passée. Retourne l'id de la
-    ligne, None si le geste n'a pas pu être posé."""
+    est celle d'aujourd'hui si aucune n'est passée. v7.16.0 — `precision` :
+    le NOM de la cotisation donné par la responsable (les quatre types sont
+    des catégories) — texte libre, nettoyé, 80 caractères au plus, vide →
+    NULL. Retourne l'id de la ligne, None si le geste n'a pas pu être
+    posé."""
     _lbl = cotis_div_type_label(type_cotisation)
     if _lbl is None:
         logger.warning("cotis_div_enregistrer : type de cotisation inconnu")
@@ -4859,16 +4871,17 @@ def cotis_div_enregistrer(membre_id, annee_debut, type_cotisation, montant,
     if hasattr(_d, "isoformat"):
         _d = _d.isoformat()
     _d = str(_d or date.today().isoformat())
+    _precision = str(precision or "").strip()[:80] or None
     with _verrou_db:
         try:
             c.execute("""INSERT INTO cotisations_diverses
                          (membre_id, annee_debut, type_cotisation, montant,
                           date_versement, mode_paiement, enregistre_par,
-                          origine, cree_le)
-                         VALUES (?,?,?,?,?,?,?,?,?)""",
+                          origine, precision, cree_le)
+                         VALUES (?,?,?,?,?,?,?,?,?,?)""",
                       (membre_id, int(annee_debut),
                        str(type_cotisation).strip().lower(), _montant, _d,
-                       mode_paiement, enregistre_par, origine,
+                       mode_paiement, enregistre_par, origine, _precision,
                        datetime.now().isoformat(timespec="seconds")))
             _id = c.lastrowid
             commit_and_sync()
@@ -4880,16 +4893,19 @@ def cotis_div_enregistrer(membre_id, annee_debut, type_cotisation, montant,
 
 def cotis_div_envoyer_groupe(membres_ids, annee_debut, type_cotisation, montant,
                              date_versement=None, mode_paiement=None,
-                             enregistre_par=None, origine="caisse_equipe"):
+                             enregistre_par=None, origine="caisse_equipe",
+                             precision=None):
     """L'EXPÉDITION DU REGISTRE (v7.15.4) : la responsable d'équipe choisit
-    le type, le montant (celui qui est proposé), la date et le mode de
+    la catégorie, le montant (celui qui est proposé), la date et le mode de
     paiement, puis expédie à TOUTE l'équipe ou à CERTAINS membres seulement
     — et chaque membre le voit aussitôt dans « 💰 État de mes cotisations ».
     Une ligne par membre choisi, chacune signée et datée ; les doublons
     d'identifiants sont fondus (pas deux lignes pour le même membre d'un
-    même geste). Un seul verrou, un seul commit : le geste est un bloc —
-    si une ligne ne passe pas, rien n'est posé. Retourne le nombre de
-    lignes posées (0 si le geste n'a pas pu être posé)."""
+    même geste). v7.16.0 — `precision` : le NOM de la cotisation donné par
+    la responsable (texte libre, nettoyé, 80 caractères au plus), porté par
+    CHAQUE ligne expédiée. Un seul verrou, un seul commit : le geste est un
+    bloc — si une ligne ne passe pas, rien n'est posé. Retourne le nombre
+    de lignes posées (0 si le geste n'a pas pu être posé)."""
     _lbl = cotis_div_type_label(type_cotisation)
     if _lbl is None:
         logger.warning("cotis_div_envoyer_groupe : type de cotisation inconnu")
@@ -4902,6 +4918,7 @@ def cotis_div_envoyer_groupe(membres_ids, annee_debut, type_cotisation, montant,
     if hasattr(_d, "isoformat"):
         _d = _d.isoformat()
     _d = str(_d or date.today().isoformat())
+    _precision = str(precision or "").strip()[:80] or None
     try:
         _ids = list(dict.fromkeys(int(_m) for _m in (membres_ids or [])
                                   if _m is not None and int(_m) > 0))
@@ -4916,11 +4933,11 @@ def cotis_div_envoyer_groupe(membres_ids, annee_debut, type_cotisation, montant,
                 """INSERT INTO cotisations_diverses
                    (membre_id, annee_debut, type_cotisation, montant,
                     date_versement, mode_paiement, enregistre_par,
-                    origine, cree_le)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                    origine, precision, cree_le)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 [(_mid, int(annee_debut),
                   str(type_cotisation).strip().lower(), _montant, _d,
-                  mode_paiement, enregistre_par, origine,
+                  mode_paiement, enregistre_par, origine, _precision,
                   datetime.now().isoformat(timespec="seconds"))
                  for _mid in _ids])
             commit_and_sync()
@@ -4949,9 +4966,10 @@ def cotis_div_lignes(membre_id, annee_debut, type_cotisation=None):
     """LECTURE PURE — les lignes du registre d'un membre pour l'année
     pastorale (toutes, ou d'un seul type), du plus récent au plus ancien.
     (id, type_cotisation, montant, date_versement, mode_paiement,
-    enregistre_par, origine)"""
+    enregistre_par, origine, precision) — v7.16.0 : la précision (le nom
+    libre de la cotisation) voyage avec chaque ligne, None si absente."""
     _sql = """SELECT id, type_cotisation, montant, date_versement,
-                     mode_paiement, enregistre_par, origine
+                     mode_paiement, enregistre_par, origine, precision
               FROM cotisations_diverses
               WHERE membre_id=? AND annee_debut=?"""
     _args = [membre_id, annee_debut]
@@ -5004,3 +5022,89 @@ def cotis_div_etat(membre_id, annee_debut):
     except Exception as e:
         logger.warning(f"cotis_div_etat : {e!r}")
         return _etat
+
+
+def cotis_div_total_du(membre_id, annee_debut):
+    """v7.16.0 — CE QUI RESTE DÛ À CE JOUR (lecture pure) : la dette du
+    membre pour l'année pastorale, telle que « 💰 État de mes cotisations »
+    la porte — le « Total dû à ce jour » remplace le total de l'année, et
+    l'abonnement en fait partie (demande du diocèse).
+    — L'ABONNEMENT (ou le réabonnement) : s'il n'est pas réglé (aucune
+      ligne payée dans `abonnements` pour l'année), il est dû au montant
+      réglé pour CE membre (mention « NOUVEAU » → abonnement, sinon
+      réabonnement ; adulte/jeune selon le nom de l'équipe). Réglé : 0.
+    — LA MENSUELLE : chaque mois ÉCOULÉ de la fenêtre pastorale (sept. N
+      → août N+1) sans aucun versement mensuel noté compte le tarif
+      mensuel réglé dans « 💼 Caisse du diocèse » (0 = saisie libre →
+      rien n'est dû de ce chef). Un mois où un versement mensuel est
+      noté est un mois soldé — la grille et le total dû disent la même
+      chose ; dès que la responsable note le versement (expédition du
+      registre ou paiement d'abonnement), la dette baisse d'autant.
+    Retourne un dict :
+    {mensuelle, abonnement, total, tarif_mensuel, mois_dus (labels des
+    mois écoulés non versés), mois_ecoules, abonnement_paye,
+    abonnement_nature, abonnement_attendu, abonnement_recu (dict ou
+    None), abonnement_echeance}"""
+    _mois_lbls = {1: "Janv.", 2: "Févr.", 3: "Mars", 4: "Avr.", 5: "Mai",
+                  6: "Juin", 7: "Juil.", 8: "Août", 9: "Sept.", 10: "Oct.",
+                  11: "Nov.", 12: "Déc."}
+    _res = {"mensuelle": 0, "abonnement": 0, "total": 0, "tarif_mensuel": 0,
+            "mois_dus": [], "mois_ecoules": 0, "abonnement_paye": False,
+            "abonnement_nature": "reabonnement", "abonnement_attendu": 0,
+            "abonnement_recu": None, "abonnement_echeance": ""}
+    try:
+        _annee = int(annee_debut)
+        # Les mois ÉCOULÉS de la fenêtre pastorale, jusqu'à aujourd'hui
+        # inclus — avant septembre, la fenêtre n'a pas encore ouvert.
+        _auj = date.today()
+        if _auj >= date(_annee, 9, 1):
+            _res["mois_ecoules"] = max(0, min(
+                12, (_auj.year - _annee) * 12 + _auj.month - 9 + 1))
+
+        # La mensuelle : le tarif réglé dans « 💼 Caisse du diocèse »
+        # (0 = saisie libre, rien n'est dû de ce chef), multiplié par les
+        # mois écoulés qu'aucun versement mensuel ne couvre.
+        _tarif = cotis_div_montant_suggere("mensuelle")
+        _res["tarif_mensuel"] = _tarif
+        if _tarif > 0 and _res["mois_ecoules"] > 0:
+            _grille = cotis_div_etat(membre_id, _annee)["mois"]
+            for _mois in (9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8)[:_res["mois_ecoules"]]:
+                if int(_grille.get(_mois, 0)) <= 0:
+                    _res["mensuelle"] += _tarif
+                    _res["mois_dus"].append(_mois_lbls.get(_mois, str(_mois)))
+
+        # L'abonnement : réglé pour cette année → 0 ; sinon dû au montant
+        # réglé pour CE membre (nature « NOUVEAU » → abonnement, sinon
+        # réabonnement ; adulte/jeune selon l'équipe).
+        _nat = cotis_nature_membre(membre_id, _annee)
+        try:
+            _r = c.execute("""SELECT numero_recu, montant, type_abonnement,
+                                     date_paiement, mode_paiement, origine,
+                                     enregistre_par
+                              FROM abonnements
+                              WHERE membre_id=? AND annee_debut=?
+                                    AND statut='paye'""",
+                           (membre_id, _annee)).fetchone()
+            if _r:
+                _res["abonnement_recu"] = {
+                    "numero": _r[0], "montant": int(_r[1] or 0),
+                    "type": _r[2] or _nat, "date": _r[3], "mode": _r[4],
+                    "origine": _r[5], "par": _r[6]}
+        except Exception as e:
+            logger.warning(f"cotis_div_total_du (reçu) : {e!r}")
+        if _res["abonnement_recu"]:
+            _res["abonnement_paye"] = True
+            _nat = _res["abonnement_recu"]["type"]
+            _res["abonnement_attendu"] = _res["abonnement_recu"]["montant"]
+        else:
+            _res["abonnement_attendu"] = int(
+                cotis_montant_suggere(membre_id, _nat)[0])
+            _res["abonnement"] = _res["abonnement_attendu"]
+        _res["abonnement_nature"] = _nat
+        _res["abonnement_echeance"] = str(cotis_echeance_nature(_nat))
+
+        _res["total"] = _res["mensuelle"] + _res["abonnement"]
+        return _res
+    except Exception as e:
+        logger.warning(f"cotis_div_total_du : {e!r}")
+        return _res
