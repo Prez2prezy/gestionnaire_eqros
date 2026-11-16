@@ -769,7 +769,7 @@ def show_diocese():
         # défaut des cotisations mensuelle, spéciale, évènementielle et
         # extraordinaire. Ils règlent les suggestions de la caisse
         # d'équipe (« 💼 Abonnement - Réabonnement », section registre) et
-        # le tarif affiché au membre dans « 💰 État des mes cotisations ».
+        # le tarif affiché au membre dans « 💰 État de mes cotisations ».
         # 0 = saisie libre : aucun montant imposé ni affiché.
         _reglages_div = cotis_div_parametres_lire()
         with st.expander("⚙️ Réglages du registre des cotisations (mensuelle, spéciale, évènementielle, extraordinaire)"):
