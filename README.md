@@ -2462,6 +2462,109 @@ j'atterris sur la page web. Vois comment régler ce problème. »
   barre du feuillet (.flt-barre) prend le relais, collée en haut.
 - `_VERSION_APPLI = "v7.15.1"`.
 
+### 60. v7.15.2 — La carte épurée, le sceau en gras, le pont sous l'entête, et l'aubergiste dans l'application
+
+MOT DU USER : « 1 - À retirer : "La 📿 mémoire de celui / celle qui me porte
+dans la ⛓️ chaîne" ; "Aucune dizaine notée n'est une prière absente : le
+cahier ne retient que ce qui se pointe — le Seigneur, lui, voit le cœur."
+2. Agrandir un peu et mettre en gras "Prends soin de cet homme. Et ce que
+tu dépenseras en plus, je te le rendrai quand je reviendrai." — Luc 10,35.
+3. 🛖 "Mémoire de l'aubergiste : Luc 10,35" pas visible dans l'application.
+4. Entête (voir captures d'écran). »
+
+- **🛖 La carte épurée** — le sous-titre « La 📿 mémoire de celui / celle
+  qui me porte dans la ⛓️ chaîne » et le garde-fou « Aucune dizaine notée
+  n'est une prière absente… » quittent la carte : le titre et le sceau
+  disent tout. La carte garde SON maillon (la voix même de la séance),
+  « 🕯️ Son intention (N° méd. …) », « 📿 Sa mémoire de dizaines » avec sa
+  grille, et ne se dérobe jamais (les deux « L'aubergiste attend »).
+- **Le sceau agrandi et en gras** — « Prends soin de cet homme. Et ce que
+  tu dépenseras en plus, je te le rendrai quand je reviendrai. » — Luc
+  10,35 : `font-size: 0.95rem` + `font-weight: bold` (il était en 0.75rem
+  fin), aux DEUX endroits — la carte pleine et la carte qui attend.
+- **LE PONT VIT SOUS L'ENTÊTE** — `_pont_memoire_hors_ligne` est appelé
+  APRÈS `_render_header` dans le flux membre : la carte « 🕊 Le pont vers
+  l'application », son bouton « ✋ Reprendre dans l'application » et le
+  flash des journées reçues ne poussent plus l'entête vers le bas (capture
+  1 du diocèse). Le flash naît en direct (`st.success`/`st.warning`) sous
+  l'entête — plus jamais posé en session au-dessus d'elle.
+- **LA MACHINERIE INVISIBLE NE LAISSE AUCUN VIDE** — le CSS du thème et le
+  div caché du pont (#pont_memoire) sont muets mais leurs conteneurs
+  Streamlit gardaient leur interligne de 16 px : quatre s'empilaient avant
+  l'entête à chaque atterrissage (66 à 150 px de vide sombre selon les
+  écrans, capture 2 du diocèse). Désormais ils remontent d'un interligne :
+  règle CSS `margin-top: -16px` sur `[data-testid="stElementContainer"]` qui
+  porte un `<style>` seul ou un `div[hidden]` ; le script des liens et le
+  mini-lecteur (flotter/escamoter) replient leur propre conteneur. Vérifié
+  au navigateur (Streamlit 1.67, mobile 430 px) : l'entête touche le haut
+  de l'écran sur le pont, l'accueil et la lecture ; la colle sticky reste
+  intacte ; le flash arrive sous l'entête.
+- **L'AUBERGISTE VOYAGE AVEC LE PROFIL (lecture pure)** — la route
+  `?pont=profil` porte en plus `aub` (SON N°), `aubnom` (SON nom),
+  `aubdate` (la séance en vigueur, s'il y en a une), `sitx` (« Son
+  intention » — l'intention posée à MON N° méd., la voix même de la carte
+  web) et `aubj` (SA fidélité des 14 derniers jours). La carte du pont dit
+  « N informations » de plus ; la base n'est jamais écrite.
+- **Dans l'APPLICATION (MA DIZAINE, kit v9)** — « 🛖 Mémoire de
+  l'aubergiste : Luc 10,35 » est posée sous « 📿 Mémoire de mes dizaines »
+  sur la page du membre : SON maillon (« ⛓️ Séance du 01/11/2026 — N° 14 —
+  … prie pour … — N° méd. 10. » ou « les N° méd. entrent en action »),
+  « 🕯️ Son intention », SA fidélité des 14 derniers jours (la même grille
+  2×7 que la mienne), puis le SCEAU agrandi et en gras. Quand
+  l'aubergiste n'est pas encore identifiable, la carte le dit — elle ne se
+  dérobe jamais. Le retour de l'Espace le dit : « 🛖 Mémoire de
+  l'aubergiste à jour ».
+- **La règle d'or du pont reste entière** — tout ce qui voyage est relu
+  (`aubergiste_du_membre`, `intention_reserve_pour_numero` en_place=True,
+  `serie_dizaines_membre`) : AUCUNE migration, AUCUNE écriture.
+- `_VERSION_APPLI = "v7.15.2"`.
+
+### 61. v7.15.3 — Le registre des cotisations : « 💰 État des mes cotisations » en face de « 👤 Mon profil »
+
+MOT DU USER : « Évoquant les abonnements et réabonnements, je voudrai rappeler qu'en dehors,
+il existe d'autres types de cotisations : mensuelles, spéciales, évènementielles et
+extraordinaires pour lesquelles je souhaiterai tenir un registre pour chaque membre. Il sera
+nommé "État des mes cotisations" et logé dans un expander comme "👤 Mon profil" et placé à son
+opposé sur la même ligne. » — Réponses du diocèse : la responsable d'équipe note ; chaque ligne
+porte le mode de paiement ; la mensuelle vit en grille des 12 mois ; quatre montants réglables
+par le diocèse (0 = libre) ; registre simple (pas de reçu) ; icône 💰.
+
+- **UNE TABLE NOUVELLE, POSÉE DOUCEMENT** — `cotisations_diverses`
+  (`CREATE TABLE IF NOT EXISTS`, ré-exécutable) : membre, année pastorale,
+  type (`mensuelle` / `speciale` / `evenementielle` / `extraordinaire`),
+  montant, date du versement, mode de paiement, signature de qui a noté,
+  origine. Rien d'existant ne bouge — ni les membres, ni les abonnements,
+  ni aucun écran.
+- **LES QUATRE MONTANTS DU DIOCÈSE** — dans « 📅 Abonnement - Réabonnement »
+  (diocèse), un nouvel expander « ⚙️ Réglages du registre des cotisations » :
+  mensuelle, spéciale, évènementielle, extraordinaire (0 = saisie libre).
+  Ils règlent les suggestions de la caisse d'équipe et le tarif affiché au
+  membre (le tarif de la mensuelle seulement — les trois autres restent des
+  montants notés au cas par cas).
+- **LA CAISSE D'ÉQUIPE NOTE** — section « 💰 Le registre des cotisations »
+  sous les onglets de la caisse annuelle : compteurs (lignes notées · total
+  du registre · tarif mensuel), puis membre par membre — les lignes
+  existantes (date · type · montant · mode · noté par), la GRILLE DES 12
+  MOIS de la mensuelle (sept. → août, cochée quand versée), la saisie (le
+  montant proposé suit le type choisi), la correction EN DEUX TEMPS
+  (🗑️ puis confirmation). Chaque ligne est signée du responsable
+  (`origine='caisse_equipe'`).
+- **LE MEMBRE RELIT, EN FACE DE SON PROFIL** — « 💰 État des mes
+  cotisations » campé sur la même ligne que « 👤 Mon profil »
+  (`st.columns(2)`, profil à gauche, registre à son opposé), même forme
+  (popover). LECTURE PURE : la grille des 12 mois de la mensuelle (mois
+  réglés · total · tarif posé), les lignes des trois autres types (date ·
+  montant · mode), le total de l'année. Le registre vide parle gentiment
+  (« 🕊️ Rien de noté pour l'instant… »). Pas de reçu numéroté ici : le
+  registre dit l'état, le reçu reste réservé à l'abonnement annuel.
+- **Banc d'épreuve** — `scripts/test_v7153.py` (42 vérifications : table,
+  réglages, écrire/lire/corriger, lecture pure de la vue, compile ×8) et
+  `scripts/test_v7153_vue.py` (AppTest, base NEUVE : le vrai geste de la
+  responsable jusqu'à l'œil du membre). Régressions repassées et
+  actualisées : v7.15.2 (27 ✅), v7.15.1 (29 ✅), v7.15.0 + vue, v7.14.5,
+  v7.14.3. La base de production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.15.3"`.
+
 ## 🛠️ Maintenance
 
 - Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
