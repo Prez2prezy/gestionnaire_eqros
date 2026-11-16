@@ -127,7 +127,7 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       # v7.15.1 — l'aubergiste qui me porte (Luc 10,35)
                       aubergiste_du_membre,
                       intention_reserve_pour_numero,
-                      # v7.15.3 — « 💰 État des mes cotisations » (lecture pure)
+                      # v7.15.3 — « 💰 État de mes cotisations » (lecture pure)
                       cotis_div_etat, cotis_div_parametres_lire,
                       COTIS_DIV_TYPES)
 from services import (safe_date, compter_visite, lien_whatsapp, urls_galerie,
@@ -140,7 +140,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.15.3"
+_VERSION_APPLI = "v7.15.4"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -5008,7 +5008,7 @@ def _carte_cotisation_membre(membre):
 
 
 def _etat_cotisations_membre(membre):
-    """v7.15.3 — « 💰 État des mes cotisations » : LE REGISTRE DU MEMBRE,
+    """v7.15.3 — « 💰 État de mes cotisations » : LE REGISTRE DU MEMBRE,
     posé en face de « 👤 Mon profil » sur la même ligne (demande du
     diocèse). LECTURE PURE — ici, on ne note rien : la responsable
     d'équipe tient le registre dans sa caisse (« 💼 Abonnement -
@@ -6449,7 +6449,7 @@ def _corps_espace_membre(matloc_membre=None):
     _scroll_top_si_nouvelle_page("mbr", rub, sub)
 
     # v7.15.3 — LES DEUX CAMPENT ENSEMBLE SUR LA MÊME LIGNE (demande du
-    # diocèse) : « 👤 Mon profil » à gauche, « 💰 État des mes cotisations »
+    # diocèse) : « 👤 Mon profil » à gauche, « 💰 État de mes cotisations »
     # à son opposé à droite — même forme (popover), deux registres dos à
     # dos. Le profil se relit comme avant, mot pour mot.
     _col_profil, _col_cotis = st.columns(2)
@@ -6467,7 +6467,7 @@ def _corps_espace_membre(matloc_membre=None):
             d_adh = safe_date(membre[5])
             st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
     with _col_cotis:
-        with st.popover("💰 État des mes cotisations"):
+        with st.popover("💰 État de mes cotisations"):
             _etat_cotisations_membre(membre)
 
     # v7.7.2 — le badge de bienvenue n'apparaît QUE sur l'accueil
