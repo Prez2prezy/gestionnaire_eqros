@@ -663,6 +663,27 @@ def init_tables_and_migrations():
     safe_migrate("ALTER TABLE membres ADD COLUMN mention_nouveau TEXT")
     safe_migrate("ALTER TABLE membres ADD COLUMN mention_annee INTEGER")
 
+    # v7.15.3 — LE REGISTRE DES COTISATIONS (mensuelle, spéciale,
+    # évènementielle, extraordinaire) : une table NOUVELLE, posée doucement
+    # et ré-exécutable — rien d'existant ne bouge, aucune ligne des autres
+    # tables n'est modifiée. Chaque ligne du registre porte le membre, son
+    # année pastorale, le type de cotisation, le montant, la date du
+    # versement, le mode de paiement et la signature de qui l'a noté
+    # (la caisse d'équipe). Pas de reçu numéroté ici : le registre dit
+    # l'état, le reçu reste réservé à l'abonnement annuel.
+    c.execute("""CREATE TABLE IF NOT EXISTS cotisations_diverses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        membre_id INTEGER,
+        annee_debut INTEGER,
+        type_cotisation TEXT,
+        montant REAL DEFAULT 0,
+        date_versement DATE,
+        mode_paiement TEXT,
+        enregistre_par TEXT,
+        origine TEXT DEFAULT 'caisse_equipe',
+        cree_le TEXT
+    )""")
+
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
     try:
         anciens_evts = c.execute("SELECT id, equipe_id FROM evenements WHERE equipe_id IS NOT NULL AND paroisse_id IS NULL AND diocese_id IS NULL").fetchall()
@@ -4728,3 +4749,206 @@ def cotis_recu_info(numero_recu):
     except Exception as e:
         logger.warning(f"cotis_recu_info : {e!r}")
         return None
+
+
+# ────────────────────────────────────────────────────────────────────────
+# v7.15.3 — LE REGISTRE DES COTISATIONS (mensuelle, spéciale,
+# évènementielle, extraordinaire)
+# La caisse annuelle (au-dessus) porte l'abonnement ; le registre porte
+# TOUTES LES AUTRES cotisations du membre, notées par la responsable
+# d'équipe dans « 💼 Caisse de mon équipe ». Chaque ligne porte type,
+# montant, date du versement et mode de paiement — rien d'autre, le
+# diocèse l'a dit ainsi. Pas de reçu numéroté ici : le registre dit
+# l'état (« 💰 État des mes cotisations », en face de « 👤 Mon profil »).
+# Les montants PAR DÉFAUT du registre sont les réglages du diocèse
+# (posés dans « 💼 Caisse du diocèse », stockés dans parametres_app) ;
+# tant que rien n'y a été posé, 0 répond à sa place : 0 = saisie libre,
+# la base n'est jamais écrite sans un geste du diocèse ou du responsable.
+# ────────────────────────────────────────────────────────────────────────
+
+COTIS_DIV_TYPES = (
+    ("mensuelle", "Mensuelle"),
+    ("speciale", "Spéciale"),
+    ("evenementielle", "Évènementielle"),
+    ("extraordinaire", "Extraordinaire"),
+)
+
+COTIS_DIV_DEFAUTS = {
+    "cotis_div_montant_mensuelle": 0,        # Mensuelle (FCFA) — 0 = libre
+    "cotis_div_montant_speciale": 0,         # Spéciale (FCFA) — 0 = libre
+    "cotis_div_montant_evenementielle": 0,   # Évènementielle (FCFA) — 0 = libre
+    "cotis_div_montant_extraordinaire": 0,   # Extraordinaire (FCFA) — 0 = libre
+}
+
+_COTIS_DIV_MONTANT_CLES = tuple(COTIS_DIV_DEFAUTS)
+
+
+def cotis_div_type_label(code):
+    """Le libellé français d'un type de cotisation (« Mensuelle »…) ;
+    None si le code est inconnu — la porte reste fermée aux autres."""
+    for _code, _lbl in COTIS_DIV_TYPES:
+        if _code == str(code or "").strip().lower():
+            return _lbl
+    return None
+
+
+def cotis_div_parametres_lire():
+    """Les quatre montants par défaut du registre, réglés par le diocèse
+    (0 = saisie libre). Les réglages posés répondent d'abord ; le code
+    tient le reste."""
+    params = dict(COTIS_DIV_DEFAUTS)
+    try:
+        _assurer_parametres()
+        for _cle in COTIS_DIV_DEFAUTS:
+            _r = c.execute("SELECT valeur FROM parametres_app WHERE cle=?",
+                           (_cle,)).fetchone()
+            if _r and _r[0] is not None and str(_r[0]).strip() != "":
+                params[_cle] = _r[0]
+    except Exception as e:
+        logger.warning(f"cotis_div_parametres_lire : {e!r}")
+    for _cle in COTIS_DIV_DEFAUTS:
+        try:
+            params[_cle] = max(0, int(float(params[_cle])))
+        except Exception:
+            params[_cle] = 0
+    return params
+
+
+def cotis_div_parametres_ecrire(montants=None):
+    """Le diocèse pose (ou repositionne) les montants par défaut du
+    registre. `montants` : dict partiel {clé: valeur} sur
+    _COTIS_DIV_MONTANT_CLES ; 0 = saisie libre."""
+    _assurer_parametres()
+    try:
+        for _cle, _val in (montants or {}).items():
+            if _cle in _COTIS_DIV_MONTANT_CLES and _val is not None:
+                c.execute("""INSERT INTO parametres_app (cle, valeur) VALUES (?, ?)
+                             ON CONFLICT(cle) DO UPDATE SET valeur=excluded.valeur""",
+                          (_cle, str(max(0, int(_val)))))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"cotis_div_parametres_ecrire : {e!r}")
+        return False
+
+
+def cotis_div_montant_suggere(type_cotisation):
+    """Le montant que le diocèse a posé pour CE type du registre
+    (0 = saisie libre). Type inconnu : 0."""
+    return int(cotis_div_parametres_lire().get(
+        "cotis_div_montant_" + str(type_cotisation or "").strip().lower(), 0))
+
+
+def cotis_div_enregistrer(membre_id, annee_debut, type_cotisation, montant,
+                          date_versement=None, mode_paiement=None,
+                          enregistre_par=None, origine="caisse_equipe"):
+    """UNE LIGNE DU REGISTRE : la responsable d'équipe note un versement
+    (mensuelle, spéciale, évènementielle ou extraordinaire). INSERT pur —
+    rien d'existant n'est modifié, ni ici ni ailleurs. La date du versement
+    est celle d'aujourd'hui si aucune n'est passée. Retourne l'id de la
+    ligne, None si le geste n'a pas pu être posé."""
+    _lbl = cotis_div_type_label(type_cotisation)
+    if _lbl is None:
+        logger.warning("cotis_div_enregistrer : type de cotisation inconnu")
+        return None
+    try:
+        _montant = max(0, int(montant or 0))
+    except Exception:
+        _montant = 0
+    _d = date_versement
+    if hasattr(_d, "isoformat"):
+        _d = _d.isoformat()
+    _d = str(_d or date.today().isoformat())
+    with _verrou_db:
+        try:
+            c.execute("""INSERT INTO cotisations_diverses
+                         (membre_id, annee_debut, type_cotisation, montant,
+                          date_versement, mode_paiement, enregistre_par,
+                          origine, cree_le)
+                         VALUES (?,?,?,?,?,?,?,?,?)""",
+                      (membre_id, int(annee_debut),
+                       str(type_cotisation).strip().lower(), _montant, _d,
+                       mode_paiement, enregistre_par, origine,
+                       datetime.now().isoformat(timespec="seconds")))
+            _id = c.lastrowid
+            commit_and_sync()
+            return _id
+        except Exception as e:
+            logger.warning(f"cotis_div_enregistrer : {e!r}")
+            return None
+
+
+def cotis_div_supprimer(ligne_id):
+    """Retire UNE ligne du registre (la correction du responsable, posée
+    en connaissance de cause derrière une confirmation). Rien d'autre ne
+    bouge. Retourne True si une ligne a été retirée."""
+    with _verrou_db:
+        try:
+            c.execute("DELETE FROM cotisations_diverses WHERE id=?",
+                      (ligne_id,))
+            commit_and_sync()
+            return True
+        except Exception as e:
+            logger.warning(f"cotis_div_supprimer : {e!r}")
+            return False
+
+
+def cotis_div_lignes(membre_id, annee_debut, type_cotisation=None):
+    """LECTURE PURE — les lignes du registre d'un membre pour l'année
+    pastorale (toutes, ou d'un seul type), du plus récent au plus ancien.
+    (id, type_cotisation, montant, date_versement, mode_paiement,
+    enregistre_par, origine)"""
+    _sql = """SELECT id, type_cotisation, montant, date_versement,
+                     mode_paiement, enregistre_par, origine
+              FROM cotisations_diverses
+              WHERE membre_id=? AND annee_debut=?"""
+    _args = [membre_id, annee_debut]
+    if type_cotisation:
+        _sql += " AND type_cotisation=?"
+        _args.append(str(type_cotisation).strip().lower())
+    _sql += " ORDER BY date_versement DESC, id DESC"
+    try:
+        return c.execute(_sql, _args).fetchall()
+    except Exception as e:
+        logger.warning(f"cotis_div_lignes : {e!r}")
+        return []
+
+
+def cotis_div_etat(membre_id, annee_debut):
+    """LECTURE PURE — L'ÉTAT DU REGISTRE d'un membre pour l'année
+    pastorale, tel que « 💰 État des mes cotisations » le relit :
+    `lignes`  — toutes les lignes (cotis_div_lignes) ;
+    `totaux`  — {type: total FCFA} pour les quatre types ;
+    `total`   — le total de l'année, tous types confondus ;
+    `mois`    — la grille de la MENSUELLE : {mois calendaire 1-12 : total
+                versé ce mois}. Les mois se lisent dans la date du
+                versement (le diocèse l'a dit ainsi : pas de mois porté
+                par la ligne) ; seuls les versements tombés DANS la fenêtre
+                de l'année pastorale (1er sept. N → 31 août N+1) comptent."""
+    _etat = {"lignes": [], "totaux": {}, "total": 0, "mois": {}}
+    try:
+        _lignes = cotis_div_lignes(membre_id, annee_debut)
+        _etat["lignes"] = _lignes
+        for _code, _lbl in COTIS_DIV_TYPES:
+            _etat["totaux"][_code] = 0
+        _d_debut = date(int(annee_debut), 9, 1)
+        _d_fin = date(int(annee_debut) + 1, 8, 31)
+        for _l in _lignes:
+            _code = _l[1]
+            _montant = int(_l[2] or 0)
+            if _code in _etat["totaux"]:
+                _etat["totaux"][_code] += _montant
+            _etat["total"] += _montant
+            if _code == "mensuelle" and _l[3]:
+                try:
+                    _dv = date.fromisoformat(str(_l[3])[:10])
+                    if _d_debut <= _dv <= _d_fin:
+                        _mois = _dv.month
+                        _etat["mois"][_mois] = (_etat["mois"].get(_mois, 0)
+                                                + _montant)
+                except Exception:
+                    pass
+        return _etat
+    except Exception as e:
+        logger.warning(f"cotis_div_etat : {e!r}")
+        return _etat
