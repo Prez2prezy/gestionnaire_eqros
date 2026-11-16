@@ -32,7 +32,9 @@ from database import (c, commit_and_sync, safe_migrate,
                       # v7.14.0 — la caisse de la cotisation
                       cotis_parametres_lire, cotis_parametres_ecrire,
                       # v7.14.4 — le livre des relances (lecture seule)
-                      cotis_relances_lignes)
+                      cotis_relances_lignes,
+                      # v7.15.3 — le registre des cotisations (montants du diocèse)
+                      cotis_div_parametres_lire, cotis_div_parametres_ecrire)
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation,
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale,
                       supprimer_photo, afficher_messages_flash, lien_whatsapp, URL_ESPACE_SPIRITUEL,
@@ -762,6 +764,44 @@ def show_diocese():
                         st.rerun()
                     else:
                         st.error("Les réglages n'ont pas pu être posés — réessaie.")
+
+        # v7.15.3 — LES RÉGLAGES DU REGISTRE : les quatre montants par
+        # défaut des cotisations mensuelle, spéciale, évènementielle et
+        # extraordinaire. Ils règlent les suggestions de la caisse
+        # d'équipe (« 💼 Abonnement - Réabonnement », section registre) et
+        # le tarif affiché au membre dans « 💰 État des mes cotisations ».
+        # 0 = saisie libre : aucun montant imposé ni affiché.
+        _reglages_div = cotis_div_parametres_lire()
+        with st.expander("⚙️ Réglages du registre des cotisations (mensuelle, spéciale, évènementielle, extraordinaire)"):
+            st.caption("Ces montants règlent les suggestions de la caisse d'équipe et le tarif "
+                       "affiché au membre. Laisses 0 pour un type à saisie libre — aucun "
+                       "montant n'est alors imposé ni affiché.")
+            with st.form("cotis_div_reglages_dio"):
+                _d1, _d2 = st.columns(2)
+                with _d1:
+                    _dv_mens = st.number_input("Cotisation mensuelle (FCFA)", min_value=0,
+                                               value=int(_reglages_div.get("cotis_div_montant_mensuelle", 0)), step=100,
+                                               help="Le tarif mensuel de l'année pastorale — 0 = saisie libre")
+                    _dv_spec = st.number_input("Cotisation spéciale (FCFA)", min_value=0,
+                                               value=int(_reglages_div.get("cotis_div_montant_speciale", 0)), step=500,
+                                               help="Montant proposé à la saisie — 0 = saisie libre")
+                with _d2:
+                    _dv_eve = st.number_input("Cotisation évènementielle (FCFA)", min_value=0,
+                                              value=int(_reglages_div.get("cotis_div_montant_evenementielle", 0)), step=500,
+                                              help="Montant proposé à la saisie — 0 = saisie libre")
+                    _dv_ext = st.number_input("Cotisation extraordinaire (FCFA)", min_value=0,
+                                              value=int(_reglages_div.get("cotis_div_montant_extraordinaire", 0)), step=500,
+                                              help="Montant proposé à la saisie — 0 = saisie libre")
+                if st.form_submit_button("💾 Poser les réglages du registre"):
+                    if cotis_div_parametres_ecrire(montants={
+                            "cotis_div_montant_mensuelle": _dv_mens,
+                            "cotis_div_montant_speciale": _dv_spec,
+                            "cotis_div_montant_evenementielle": _dv_eve,
+                            "cotis_div_montant_extraordinaire": _dv_ext}):
+                        st.success("Réglages du registre posés — caisses d'équipe et états des membres suivent ces valeurs.")
+                        st.rerun()
+                    else:
+                        st.error("Les réglages du registre n'ont pas pu être posés — réessaie.")
 
         total_membres = c.execute("SELECT COUNT(*) FROM membres WHERE statut='actif'").fetchone()[0]
         payes = c.execute("SELECT COUNT(*) FROM abonnements WHERE annee_debut=? AND statut='paye'", (annee_debut,)).fetchone()[0]
