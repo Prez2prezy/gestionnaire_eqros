@@ -2519,7 +2519,7 @@ tu dépenseras en plus, je te le rendrai quand je reviendrai." — Luc 10,35.
   `serie_dizaines_membre`) : AUCUNE migration, AUCUNE écriture.
 - `_VERSION_APPLI = "v7.15.2"`.
 
-### 61. v7.15.3 — Le registre des cotisations : « 💰 État des mes cotisations » en face de « 👤 Mon profil »
+### 61. v7.15.3 — Le registre des cotisations : « 💰 État de mes cotisations » en face de « 👤 Mon profil »
 
 MOT DU USER : « Évoquant les abonnements et réabonnements, je voudrai rappeler qu'en dehors,
 il existe d'autres types de cotisations : mensuelles, spéciales, évènementielles et
@@ -2549,7 +2549,7 @@ par le diocèse (0 = libre) ; registre simple (pas de reçu) ; icône 💰.
   montant proposé suit le type choisi), la correction EN DEUX TEMPS
   (🗑️ puis confirmation). Chaque ligne est signée du responsable
   (`origine='caisse_equipe'`).
-- **LE MEMBRE RELIT, EN FACE DE SON PROFIL** — « 💰 État des mes
+- **LE MEMBRE RELIT, EN FACE DE SON PROFIL** — « 💰 État de mes
   cotisations » campé sur la même ligne que « 👤 Mon profil »
   (`st.columns(2)`, profil à gauche, registre à son opposé), même forme
   (popover). LECTURE PURE : la grille des 12 mois de la mensuelle (mois
@@ -2564,6 +2564,43 @@ par le diocèse (0 = libre) ; registre simple (pas de reçu) ; icône 💰.
   actualisées : v7.15.2 (27 ✅), v7.15.1 (29 ✅), v7.15.0 + vue, v7.14.5,
   v7.14.3. La base de production n'est jamais touchée.
 - `_VERSION_APPLI = "v7.15.3"`.
+
+### 62. v7.15.4 — La coquille corrigée et l'expédition du registre (« Tous ou certains »)
+
+MOT DU USER : « 💰 une coquille — "État de mes cotisations". Chez le responsable
+d'équipe, une section "Le registre des cotisations" dans sa caisse ✅ : il choisit
+le type, saisit le montant proposé, sélectionne ceux qui vont recevoir (Tous ou
+certains), "expédie" — le membre le voit à l'instant même. »
+
+- **LA COQUILLE CORRIGÉE** — « État des mes cotisations » devient « 💰 État de
+  mes cotisations » (le popover du membre, la caisse d'équipe, les
+  commentaires) : la grammaire reprend sa place, les deux registres restent
+  dos à dos sur la même ligne. Le MOT DU USER de l'entrée 61 garde son
+  orthographe d'alors, mot pour mot — c'est de l'archive.
+- **L'EXPÉDITION, UN SEUL GESTE** — dans « 💰 Le registre des cotisations »
+  de la caisse d'équipe, la saisie membre par membre s'efface : le type
+  d'abord, le montant proposé suit le type (réglé dans « 💼 Caisse du
+  diocèse », 0 = libre), la date et le mode de paiement, puis CEUX QUI
+  REÇOIVENT — « 👥 Toute l'équipe — chaque membre reçoit » d'une seule coche,
+  ou « 👥 Ceux qui reçoivent » (multiselect, certains seulement) — et
+  « 📮 Expédier ». Une ligne par membre choisi, signée à ton nom, posée d'un
+  bloc en base (`cotis_div_envoyer_groupe` : un verrou, un commit, doublons
+  fondus) ; sans destinataire choisi, le geste reste prudent (avertissement).
+- **LE MOT DE L'EXPÉDITION** — après le geste, le retour dit combien de
+  membres ont reçu (« ✅ Mensuelle de 500 FCFA du 01/11/2026 expédiée à
+  2 membres — chacun la voit aussitôt dans « 💰 État de mes cotisations » »).
+  Le membre relit à l'instant même (lecture pure inchangée) ; la correction
+  en deux temps (🗑️ puis confirmation) et la grille des 12 mois restent à
+  leur place.
+- **Banc d'épreuve** — `scripts/test_v7154.py` (37 vérifications :
+  l'expédition en base — doublons fondus, certains seulement, signatures —,
+  la coquille bannie des quatre fichiers, la section au source, la version,
+  la compile ×8) et `scripts/test_v7154_vue.py` (AppTest, base NEUVE : toute
+  l'équipe d'un geste, puis certains seulement, et l'œil de Jean et de
+  Marie). Régressions repassées et actualisées : v7.15.3 (42 ✅) + sa vue
+  (le geste relu en expédition), v7.15.2 (27 ✅), v7.15.1 (29 ✅), v7.15.0 +
+  vue, v7.14.5, v7.14.3. La base de production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.15.4"`.
 
 ## 🛠️ Maintenance
 
