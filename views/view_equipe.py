@@ -1795,20 +1795,23 @@ def show_equipe():
 
 
 def _section_registre_equipe(eid, annee, membres_eq):
-    """v7.15.4 — LE REGISTRE DES COTISATIONS (section de la caisse
+    """v7.16.0 — LE REGISTRE DES COTISATIONS (section de la caisse
     « 📅 Abonnement - Réabonnement ») : les cotisations MENSUELLE,
-    SPÉCIALE, ÉVÈNEMENTIELLE et EXTRAORDINAIRE, expédiées par la
-    responsable d'équipe en UN SEUL GESTE — elle choisit le type, le
-    montant est proposé (le tarif réglé dans « 💼 Caisse du diocèse »,
-    0 = libre), elle coche ceux qui reçoivent — TOUTE l'équipe ou
-    CERTAINS membres seulement — et elle expédie : une ligne par membre
+    SPÉCIALE, ÉVÈNEMENTIELLE et EXTRAORDINAIRE — quatre CATÉGORIES que la
+    responsable peut nommer d'une précision libre (« Cotisation des
+    fêtes… ») — expédiées par la responsable d'équipe en UN SEUL GESTE,
+    DANS UN SEUL FORM : plus aucune réactualisation à chaque champ
+    (demande du diocèse) — la catégorie, le montant (le tarif réglé dans
+    « 💼 Caisse du diocèse », 0 = libre, voyage dans le libellé de chaque
+    catégorie), la date, le mode, la précision et les destinataires se
+    remplissent tranquillement, et rien ne part qu'au « 📮 Expédier » —
+    TOUTE l'équipe ou CERTAINS membres seulement. Une ligne par membre
     choisi, signée et datée, vue aussitôt par chacun dans « 💰 État de
-    mes cotisations » (en face de « 👤 Mon profil »). Chaque ligne porte
-    la date du versement et le mode de paiement — rien d'autre, le
-    diocèse l'a dit ainsi. Pas de reçu numéroté ici : le registre dit
-    l'état, le reçu reste réservé à l'abonnement annuel. La mensuelle se
-    lit aussi en GRILLE DES 12 MOIS de l'année pastorale (septembre →
-    août), posée par la date du versement."""
+    mes cotisations » (en face de « 👤 Mon profil »). Pas de reçu
+    numéroté ici : le registre dit l'état, le reçu reste réservé à
+    l'abonnement annuel. La mensuelle se lit aussi en GRILLE DES 12 MOIS
+    de l'année pastorale (septembre → août), posée par la date du
+    versement."""
     _mois_lbls = {1: "Janv.", 2: "Févr.", 3: "Mars", 4: "Avr.", 5: "Mai",
                   6: "Juin", 7: "Juil.", 8: "Août", 9: "Sept.", 10: "Oct.",
                   11: "Nov.", 12: "Déc."}
@@ -1821,10 +1824,11 @@ def _section_registre_equipe(eid, annee, membres_eq):
 
     st.markdown("---")
     st.markdown("### 💰 Le registre des cotisations")
-    st.caption("Mensuelle, spéciale, évènementielle, extraordinaire — choisis le "
-               "type, le montant est proposé, coche ceux qui reçoivent "
-               "(toute l'équipe ou certains) et expédie : chacun le voit "
-               "aussitôt dans « 💰 État de mes cotisations ». "
+    st.caption("Mensuelle, spéciale, évènementielle, extraordinaire — quatre "
+               "catégories : choisis la catégorie, tape le montant (il est "
+               "proposé), nomme la cotisation si tu veux, coche ceux qui "
+               "reçoivent (toute l'équipe ou certains) et expédie : chacun le "
+               "voit aussitôt dans « 💰 État de mes cotisations ». "
                "Pas de reçu numéroté ici : le registre dit l'état.")
 
     # v7.15.4 — LE MOT DE L'EXPÉDITION : posé en session avant le rerun,
@@ -1876,65 +1880,86 @@ def _section_registre_equipe(eid, annee, membres_eq):
         else:
             del st.session_state['cotis_div_del_id']
 
-    # v7.15.4 — L'EXPÉDITION : un seul bloc de saisie pour toute l'équipe —
-    # le type d'abord, le montant proposé suit le type choisi (le tarif
-    # réglé dans la caisse diocèse, 0 = libre), puis la date, le mode et
-    # CEUX QUI REÇOIVENT : toute l'équipe d'une coche, ou certains membres.
-    _lbls_types = [f"{_lbl}" for _code, _lbl in COTIS_DIV_TYPES]
-    _type_lbl = st.selectbox("Type de cotisation", _lbls_types,
-                             key="cotis_div_type_exp")
-    _code = COTIS_DIV_TYPES[_lbls_types.index(_type_lbl)][0]
-    _sug = cotis_div_montant_suggere(_code)
-    _montant = st.number_input(
-        "Montant (FCFA)", min_value=0, value=int(_sug), step=100,
-        key=f"cotis_div_mont_exp_{_code}",
-        help=("Tarif réglé dans « 💼 Caisse du diocèse » — ajustable."
-              if _sug > 0 else
-              "Aucun tarif réglé pour ce type — saisie libre."))
-    _dcol1, _dcol2 = st.columns(2)
-    with _dcol1:
-        _dv = st.date_input("Date du versement", value=date.today(),
-                            key="cotis_div_date_exp")
-    with _dcol2:
+    # v7.16.0 — L'EXPÉDITION, EN UN SEUL FORM : plus aucune
+    # réactualisation à chaque champ (demande du diocèse) — la catégorie,
+    # le montant, la date, le mode, la précision et les destinataires se
+    # remplissent tranquillement ; rien ne part qu'au « 📮 Expédier ».
+    # Les tarifs réglés dans « 💼 Caisse du diocèse » voyagent dans le
+    # libellé de chaque catégorie (0 = saisie libre) et dans l'aide du
+    # montant — le libellé ne rerun pas, tout se voit d'un coup d'œil.
+    _tarifs_aide = " · ".join(
+        (f"{_lbl} {_fr(cotis_div_montant_suggere(_cd))} FCFA"
+         if cotis_div_montant_suggere(_cd) > 0 else f"{_lbl} libre")
+        for _cd, _lbl in COTIS_DIV_TYPES)
+    _lbls_types = [
+        (f"{_lbl} — {_fr(cotis_div_montant_suggere(_cd))} FCFA (tarif réglé)"
+         if cotis_div_montant_suggere(_cd) > 0 else f"{_lbl} — saisie libre")
+        for _cd, _lbl in COTIS_DIV_TYPES]
+    _lbls_m = {f"{_m[1]} {_m[2]} ({_m[3] or '—'})": _m[0]
+               for _m in (membres_eq or [])}
+    with st.form("cotis_div_expedie"):
+        _type_lbl = st.selectbox("Catégorie de cotisation", _lbls_types,
+                                 key="cotis_div_type_exp")
+        _idx_type = (_lbls_types.index(_type_lbl)
+                     if _type_lbl in _lbls_types else 0)
+        _code = COTIS_DIV_TYPES[_idx_type][0]
+        _sug = cotis_div_montant_suggere(_code)
+        _ec1, _ec2 = st.columns(2)
+        with _ec1:
+            _montant = st.number_input(
+                "Montant (FCFA)", min_value=0, value=int(_sug), step=100,
+                key="cotis_div_mont_exp",
+                help=("Tarifs réglés dans « 💼 Caisse du diocèse » : "
+                      + _tarifs_aide + " — le champ reste ajustable."))
+        with _ec2:
+            _dv = st.date_input("Date du versement", value=date.today(),
+                                key="cotis_div_date_exp")
         _mode_lbl = st.selectbox("Mode de paiement",
                                  list(_modes_lbls.values()),
                                  key="cotis_div_mode_exp")
-    _tous = st.checkbox("👥 Toute l'équipe — chaque membre reçoit",
-                        key="cotis_div_tous")
-    if _tous:
-        st.caption("🕊️ Une ligne par membre de l'équipe — chacun la voit "
-                   "aussitôt dans « 💰 État de mes cotisations ».")
-        _ids_cibles = [_m[0] for _m in (membres_eq or [])]
-    else:
-        _lbls_m = {f"{_m[1]} {_m[2]} ({_m[3] or '—'})": _m[0]
-                   for _m in (membres_eq or [])}
-        _choisis = st.multiselect("👥 Ceux qui reçoivent",
-                                  options=list(_lbls_m.keys()),
-                                  key="cotis_div_dest")
-        _ids_cibles = [_lbls_m[_l] for _l in _choisis]
-    if st.button("📮 Expédier", key="cotis_div_exp_go",
-                 help="Une ligne par membre choisi, signée à ton nom — "
-                      "chacun la voit aussitôt dans son registre."):
-        _mode_code = {v: k for k, v in _modes_lbls.items()}[_mode_lbl]
-        if not _ids_cibles:
-            st.warning("Choisis d'abord ceux qui reçoivent — toute "
-                       "l'équipe, ou certains membres seulement.")
-        else:
-            _nb = cotis_div_envoyer_groupe(
-                _ids_cibles, annee, _code, int(_montant),
-                date_versement=_dv, mode_paiement=_mode_code,
-                enregistre_par=st.session_state.get('username'),
-                origine="caisse_equipe")
-            if _nb:
-                _plur = "s" if _nb > 1 else ""
-                st.session_state['cotis_div_flash'] = (
-                    f"✅ {_type_lbl} de {_fr(_montant)} FCFA du "
-                    f"{_dv.strftime('%d/%m/%Y')} expédiée à {_nb} "
-                    f"membre{_plur} — chacun la voit aussitôt dans "
-                    "« 💰 État de mes cotisations ».")
-                st.rerun()
+        _precision = st.text_input(
+            "Précision — nomme la cotisation (facultatif)",
+            max_chars=80, key="cotis_div_precision",
+            placeholder="ex. Cotisation des fêtes, Chapelet de l’unité…",
+            help=("Les quatre catégories peuvent être précisées d'un mot à "
+                  "toi — le membre relit ce nom dans son état."))
+        _tous = st.checkbox(
+            "👥 Toute l'équipe — chaque membre reçoit",
+            key="cotis_div_tous",
+            help="Une ligne par membre de l'équipe — chacun la voit "
+                 "aussitôt dans « 💰 État de mes cotisations ».")
+        _choisis = st.multiselect(
+            "👥 Ceux qui reçoivent (laisse vide si « Toute l'équipe » est "
+            "cochée)",
+            options=list(_lbls_m.keys()),
+            key="cotis_div_dest")
+        if st.form_submit_button("📮 Expédier", key="cotis_div_exp_go",
+                                 help="Une ligne par membre choisi, signée à "
+                                      "ton nom — chacun la voit aussitôt dans "
+                                      "son registre."):
+            _mode_code = {v: k for k, v in _modes_lbls.items()}[_mode_lbl]
+            _ids_cibles = ([_m[0] for _m in (membres_eq or [])] if _tous
+                           else [_lbls_m[_l] for _l in _choisis])
+            if not _ids_cibles:
+                st.warning("Choisis d'abord ceux qui reçoivent — toute "
+                           "l'équipe, ou certains membres seulement.")
             else:
-                st.error("L'expédition n'a pas pu être posée — réessaie.")
+                _nb = cotis_div_envoyer_groupe(
+                    _ids_cibles, annee, _code, int(_montant),
+                    date_versement=_dv, mode_paiement=_mode_code,
+                    enregistre_par=st.session_state.get('username'),
+                    origine="caisse_equipe",
+                    precision=(_precision or "").strip() or None)
+                if _nb:
+                    _plur = "s" if _nb > 1 else ""
+                    st.session_state['cotis_div_flash'] = (
+                        f"✅ {cotis_div_type_label(_code)} de {_fr(_montant)} "
+                        f"FCFA du {_dv.strftime('%d/%m/%Y')} expédiée à {_nb} "
+                        f"membre{_plur} — chacun la voit aussitôt dans "
+                        "« 💰 État de mes cotisations ».")
+                    st.rerun()
+                else:
+                    st.error("L'expédition n'a pas pu être posée — réessaie.")
 
     for m in (membres_eq or []):
         _etat_m = cotis_div_etat(m[0], annee)
@@ -1948,8 +1973,10 @@ def _section_registre_equipe(eid, annee, membres_eq):
                     with _lcol:
                         _d_l = safe_date(_l[3])
                         _d_txt = _d_l.strftime("%d/%m/%Y") if _d_l else (_l[3] or "—")
-                        st.info(f"{_d_txt} · {cotis_div_type_label(_l[1]) or _l[1]} · "
-                                f"{_fr(_l[2])} FCFA · "
+                        _prec = str(_l[7] or "").strip() if len(_l) > 7 else ""
+                        st.info(f"{_d_txt} · {cotis_div_type_label(_l[1]) or _l[1]}"
+                                + (f" — {_prec}" if _prec else "")
+                                + f" · {_fr(_l[2])} FCFA · "
                                 f"{_modes_lbls.get(_l[4] or '', _l[4] or '—')}"
                                 + (f" · noté par {_l[5]}" if _l[5] else ""))
                     with _xcol:
