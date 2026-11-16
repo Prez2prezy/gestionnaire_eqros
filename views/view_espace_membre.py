@@ -126,7 +126,10 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       memoire_aubergiste,
                       # v7.15.1 — l'aubergiste qui me porte (Luc 10,35)
                       aubergiste_du_membre,
-                      intention_reserve_pour_numero)
+                      intention_reserve_pour_numero,
+                      # v7.15.3 — « 💰 État des mes cotisations » (lecture pure)
+                      cotis_div_etat, cotis_div_parametres_lire,
+                      COTIS_DIV_TYPES)
 from services import (safe_date, compter_visite, lien_whatsapp, urls_galerie,
                       URL_ESPACE_SPIRITUEL, get_periode_pastorale)
 
@@ -137,7 +140,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.15.2"
+_VERSION_APPLI = "v7.15.3"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -5004,6 +5007,103 @@ def _carte_cotisation_membre(membre):
                    "en attendant, la caisse de ton équipe te reçoit.")
 
 
+def _etat_cotisations_membre(membre):
+    """v7.15.3 — « 💰 État des mes cotisations » : LE REGISTRE DU MEMBRE,
+    posé en face de « 👤 Mon profil » sur la même ligne (demande du
+    diocèse). LECTURE PURE — ici, on ne note rien : la responsable
+    d'équipe tient le registre dans sa caisse (« 💼 Abonnement -
+    Réabonnement », section registre) ; ce que tu vois, elle vient de
+    l'écrire, et tu le vois aussitôt.
+    — MENSUELLE : la grille des 12 mois de l'année pastorale
+    (septembre → août), cochée quand versée, avec le tarif posé par le
+    diocèse s'il en a posé un (0 = libre, rien n'est affiché) ;
+    — SPÉCIALE, ÉVÈNEMENTIELLE, EXTRAORDINAIRE : leurs lignes (date ·
+    montant · mode de paiement) et leur total.
+    Pas de reçu numéroté ici : le registre dit l'état, le reçu reste
+    réservé à l'abonnement annuel."""
+    if not membre:
+        return
+    _mid = membre[0]
+    _annee = get_periode_pastorale()[0]
+    _etat = cotis_div_etat(_mid, _annee)
+    _reglages_div = cotis_div_parametres_lire()
+    _mois_lbls = {1: "Janv.", 2: "Févr.", 3: "Mars", 4: "Avr.", 5: "Mai",
+                  6: "Juin", 7: "Juil.", 8: "Août", 9: "Sept.", 10: "Oct.",
+                  11: "Nov.", 12: "Déc."}
+    _modes_lbls = {"especes": "💵 Espèces", "wave": "🌊 Wave",
+                   "orange_money": "📱 Orange Money", "mtn_momo": "🟡 MTN MoMo",
+                   "autre": "💳 Autre"}
+
+    def _fr(_n):
+        return f"{int(_n):,}".replace(",", " ")
+
+    st.caption(f"Année pastorale {_annee} - {_annee + 1} — noté par ta "
+               "responsable d'équipe")
+    if not _etat["lignes"]:
+        st.info("🕊️ Rien de noté pour l'instant — ta responsable d'équipe "
+                "ouvrira ton registre dès ta première cotisation (mensuelle, "
+                "spéciale, évènementielle ou extraordinaire).")
+        return
+
+    # LA MENSUELLE EN GRILLE : l'année pastorale mois par mois, de
+    # septembre à août — le mois payé porte son total, les autres
+    # gardent leur trait discret.
+    _tarif_mens = int(_reglages_div.get("cotis_div_montant_mensuelle", 0))
+    _mois_payes = len(_etat["mois"])
+    st.markdown(f"**🧮 Mensuelle — {_mois_payes} mois sur 12 · "
+                f"{_fr(_etat['totaux']['mensuelle'])} FCFA**"
+                + (f" *(tarif posé : {_fr(_tarif_mens)} FCFA/mois)*"
+                   if _tarif_mens > 0 else ""))
+    _cell = ('<div style="border:1px solid {bord}; border-radius:8px;'
+             ' padding:3px 2px; margin:2px 0; font-size:0.72rem;'
+             ' text-align:center; background:{fond}; color:{encre};">'
+             '{mois}<br><b>{val}</b></div>')
+    for _rang in (0, 1, 2):
+        _cols = st.columns(4)
+        for _j, _mois in enumerate((9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8)[_rang * 4:_rang * 4 + 4]):
+            _val = int(_etat["mois"].get(_mois, 0))
+            with _cols[_j]:
+                st.markdown(_cell.format(
+                    bord=("#66bb6a" if _val > 0 else "#b0a8c8"),
+                    fond=("#e8f5e9" if _val > 0 else "#f5f2fa"),
+                    encre=("#1b5e20" if _val > 0 else "#7a7292"),
+                    mois=_mois_lbls[_mois],
+                    val=((_fr(_val) + " F") if _val > 0 else "—")),
+                    unsafe_allow_html=True)
+
+    # LES TROIS AUTRES TYPES : leurs lignes (date · montant · mode) et
+    # leur total ; rien de noté, une seule ligne discrète le dit.
+    for _code, _lbl in COTIS_DIV_TYPES:
+        if _code == "mensuelle":
+            continue
+        _lignes_t = [_l for _l in _etat["lignes"] if _l[1] == _code]
+        if _lignes_t:
+            st.markdown(f"**✨ {_lbl} — {_fr(_etat['totaux'][_code])} FCFA**")
+            for _l in _lignes_t[:6]:
+                _d_l = safe_date(_l[3])
+                _d_txt = _d_l.strftime("%d/%m/%Y") if _d_l else (_l[3] or "—")
+                st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
+                            f"{_d_txt} · {_fr(_l[2])} FCFA · "
+                            f"{_modes_lbls.get(_l[4] or '', _l[4] or '—')}</span>",
+                            unsafe_allow_html=True)
+            if len(_lignes_t) > 6:
+                st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
+                            f"… et {len(_lignes_t) - 6} autre(s) versement(s)</span>",
+                            unsafe_allow_html=True)
+        else:
+            st.markdown(f"<span style='font-size:0.8rem; color:#8a82a2;'>"
+                        f"✨ {_lbl} — rien de noté</span>",
+                        unsafe_allow_html=True)
+
+    # LE TOTAL DE L'ANNÉE, tous types confondus, à la mine du registre.
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%);'
+        ' border:1px solid #d1c4e9; border-radius:10px; padding:8px 12px;'
+        ' margin-top:6px; text-align:center; color:#4A148C;'
+        ' font-weight:bold;">💰 Total de l\'année : '
+        + _fr(_etat["total"]) + ' FCFA</div>', unsafe_allow_html=True)
+
+
 def _cases_memoire(matloc, nb=14):
     """v7.15.1 — LA GRILLE DES DERNIERS JOURS, posée hors carte pour servir
     deux fois : « 📿 Mémoire de mes dizaines » (la mienne) et « 🛖 Mémoire
@@ -6348,18 +6448,27 @@ def _corps_espace_membre(matloc_membre=None):
     # v7.9.3 — la page ouverte commence EN HAUT de l'écran (feuillets)
     _scroll_top_si_nouvelle_page("mbr", rub, sub)
 
-    with st.popover("👤 Mon profil"):
-        if membre[6]:
-            try: st.image(membre[6], width=130)
-            except Exception: pass
-        st.markdown(f"**{membre[1]} {membre[2]}**")
-        st.caption(f"MatLoc : `{membre[3]}`")
-        st.write(f"👥 Équipe : **{membre[8] or '—'}**")
-        st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
-        st.write(f"💬 WhatsApp : {membre[4] or '—'}")
-        st.write(f"📿 N° méditation : {membre[7] or '—'}")
-        d_adh = safe_date(membre[5])
-        st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
+    # v7.15.3 — LES DEUX CAMPENT ENSEMBLE SUR LA MÊME LIGNE (demande du
+    # diocèse) : « 👤 Mon profil » à gauche, « 💰 État des mes cotisations »
+    # à son opposé à droite — même forme (popover), deux registres dos à
+    # dos. Le profil se relit comme avant, mot pour mot.
+    _col_profil, _col_cotis = st.columns(2)
+    with _col_profil:
+        with st.popover("👤 Mon profil"):
+            if membre[6]:
+                try: st.image(membre[6], width=130)
+                except Exception: pass
+            st.markdown(f"**{membre[1]} {membre[2]}**")
+            st.caption(f"MatLoc : `{membre[3]}`")
+            st.write(f"👥 Équipe : **{membre[8] or '—'}**")
+            st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
+            st.write(f"💬 WhatsApp : {membre[4] or '—'}")
+            st.write(f"📿 N° méditation : {membre[7] or '—'}")
+            d_adh = safe_date(membre[5])
+            st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
+    with _col_cotis:
+        with st.popover("💰 État des mes cotisations"):
+            _etat_cotisations_membre(membre)
 
     # v7.7.2 — le badge de bienvenue n'apparaît QUE sur l'accueil
     if rub == "🏠 Actualités":
