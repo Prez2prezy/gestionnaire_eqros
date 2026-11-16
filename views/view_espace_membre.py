@@ -129,7 +129,10 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       intention_reserve_pour_numero,
                       # v7.15.3 — « 💰 État de mes cotisations » (lecture pure)
                       cotis_div_etat, cotis_div_parametres_lire,
-                      COTIS_DIV_TYPES)
+                      COTIS_DIV_TYPES,
+                      # v7.16.0 — le « Total dû à ce jour » (dette mensuelle
+                      # + abonnement, lecture pure)
+                      cotis_div_total_du)
 from services import (safe_date, compter_visite, lien_whatsapp, urls_galerie,
                       URL_ESPACE_SPIRITUEL, get_periode_pastorale)
 
@@ -140,7 +143,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.15.4"
+_VERSION_APPLI = "v7.16.0"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -5007,26 +5010,37 @@ def _carte_cotisation_membre(membre):
                    "en attendant, la caisse de ton équipe te reçoit.")
 
 
-def _etat_cotisations_membre(membre):
-    """v7.15.3 — « 💰 État de mes cotisations » : LE REGISTRE DU MEMBRE,
-    posé en face de « 👤 Mon profil » sur la même ligne (demande du
-    diocèse). LECTURE PURE — ici, on ne note rien : la responsable
-    d'équipe tient le registre dans sa caisse (« 💼 Abonnement -
-    Réabonnement », section registre) ; ce que tu vois, elle vient de
-    l'écrire, et tu le vois aussitôt.
-    — MENSUELLE : la grille des 12 mois de l'année pastorale
-    (septembre → août), cochée quand versée, avec le tarif posé par le
-    diocèse s'il en a posé un (0 = libre, rien n'est affiché) ;
+def _etat_cotisations_membre(membre, _du=None):
+    """v7.16.0 — « 💰 État de mes cotisations » : LE REGISTRE DU MEMBRE,
+    posé en face de « 👤 Mon profil » sur la même ligne. LECTURE PURE —
+    ici, on ne note rien : la responsable d'équipe tient le registre dans
+    sa caisse (« 💼 Abonnement - Réabonnement », section registre) ; ce
+    que tu vois, elle vient de l'écrire, et tu le vois aussitôt — et dès
+    qu'elle note ton versement (expédition du registre ou abonnement
+    réglé), le « Total dû à ce jour » baisse d'autant.
+    — MENSUELLE : la grille des 12 mois de l'année pastorale (septembre →
+    août), cochée quand versée, avec le tarif réglé dans « 💼 Caisse du
+    diocèse » s'il en a posé un (0 = libre, rien n'est affiché) ;
     — SPÉCIALE, ÉVÈNEMENTIELLE, EXTRAORDINAIRE : leurs lignes (date ·
-    montant · mode de paiement) et leur total.
-    Pas de reçu numéroté ici : le registre dit l'état, le reçu reste
-    réservé à l'abonnement annuel."""
+    précision · montant · mode de paiement) et leur total — la précision
+    est le nom libre que la responsable a donné à la cotisation (v7.16.0) ;
+    — L'ABONNEMENT (ou le réabonnement) fait partie de l'état : réglé →
+    sa ligne (montant · date · reçu) ; à régler → le montant attendu et
+    son échéance (v7.16.0, demande du diocèse) ;
+    — LE « 💰 TOTAL DÛ À CE JOUR » remplace le total de l'année : les mois
+    écoulés de mensuelle non versés (au tarif réglé) + l'abonnement non
+    réglé — 0 FCFA = à jour, carte verte ; le déjà versé le rappelle en
+    dessous.
+    Pas de reçu numéroté ici pour le registre : le reçu reste réservé à
+    l'abonnement annuel."""
     if not membre:
         return
     _mid = membre[0]
     _annee = get_periode_pastorale()[0]
     _etat = cotis_div_etat(_mid, _annee)
     _reglages_div = cotis_div_parametres_lire()
+    if _du is None:
+        _du = cotis_div_total_du(_mid, _annee)
     _mois_lbls = {1: "Janv.", 2: "Févr.", 3: "Mars", 4: "Avr.", 5: "Mai",
                   6: "Juin", 7: "Juil.", 8: "Août", 9: "Sept.", 10: "Oct.",
                   11: "Nov.", 12: "Déc."}
@@ -5037,13 +5051,21 @@ def _etat_cotisations_membre(membre):
     def _fr(_n):
         return f"{int(_n):,}".replace(",", " ")
 
+    def _fr_liste(_lst):
+        if not _lst:
+            return ""
+        if len(_lst) == 1:
+            return _lst[0]
+        return ", ".join(_lst[:-1]) + " et " + _lst[-1]
+
     st.caption(f"Année pastorale {_annee} - {_annee + 1} — noté par ta "
                "responsable d'équipe")
     if not _etat["lignes"]:
         st.info("🕊️ Rien de noté pour l'instant — ta responsable d'équipe "
                 "ouvrira ton registre dès ta première cotisation (mensuelle, "
                 "spéciale, évènementielle ou extraordinaire).")
-        return
+        if int(_du["total"]) <= 0 and _du["abonnement_paye"]:
+            return
 
     # LA MENSUELLE EN GRILLE : l'année pastorale mois par mois, de
     # septembre à août — le mois payé porte son total, les autres
@@ -5052,7 +5074,7 @@ def _etat_cotisations_membre(membre):
     _mois_payes = len(_etat["mois"])
     st.markdown(f"**🧮 Mensuelle — {_mois_payes} mois sur 12 · "
                 f"{_fr(_etat['totaux']['mensuelle'])} FCFA**"
-                + (f" *(tarif posé : {_fr(_tarif_mens)} FCFA/mois)*"
+                + (f" *(tarif réglé : {_fr(_tarif_mens)} FCFA/mois)*"
                    if _tarif_mens > 0 else ""))
     _cell = ('<div style="border:1px solid {bord}; border-radius:8px;'
              ' padding:3px 2px; margin:2px 0; font-size:0.72rem;'
@@ -5071,8 +5093,10 @@ def _etat_cotisations_membre(membre):
                     val=((_fr(_val) + " F") if _val > 0 else "—")),
                     unsafe_allow_html=True)
 
-    # LES TROIS AUTRES TYPES : leurs lignes (date · montant · mode) et
-    # leur total ; rien de noté, une seule ligne discrète le dit.
+    # LES TROIS AUTRES CATÉGORIES : leurs lignes (date · précision ·
+    # montant · mode) et leur total ; rien de noté, une seule ligne
+    # discrète le dit. La précision est le nom libre de la cotisation
+    # (v7.16.0) — portée entre la date et le montant quand elle existe.
     for _code, _lbl in COTIS_DIV_TYPES:
         if _code == "mensuelle":
             continue
@@ -5082,8 +5106,10 @@ def _etat_cotisations_membre(membre):
             for _l in _lignes_t[:6]:
                 _d_l = safe_date(_l[3])
                 _d_txt = _d_l.strftime("%d/%m/%Y") if _d_l else (_l[3] or "—")
+                _prec = str(_l[7] or "").strip() if len(_l) > 7 else ""
+                _seg_prec = f" · {_prec}" if _prec else ""
                 st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
-                            f"{_d_txt} · {_fr(_l[2])} FCFA · "
+                            f"{_d_txt}{_seg_prec} · {_fr(_l[2])} FCFA · "
                             f"{_modes_lbls.get(_l[4] or '', _l[4] or '—')}</span>",
                             unsafe_allow_html=True)
             if len(_lignes_t) > 6:
@@ -5095,13 +5121,62 @@ def _etat_cotisations_membre(membre):
                         f"✨ {_lbl} — rien de noté</span>",
                         unsafe_allow_html=True)
 
-    # LE TOTAL DE L'ANNÉE, tous types confondus, à la mine du registre.
-    st.markdown(
-        '<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%);'
-        ' border:1px solid #d1c4e9; border-radius:10px; padding:8px 12px;'
-        ' margin-top:6px; text-align:center; color:#4A148C;'
-        ' font-weight:bold;">💰 Total de l\'année : '
-        + _fr(_etat["total"]) + ' FCFA</div>', unsafe_allow_html=True)
+    # v7.16.0 — L'ABONNEMENT FAIT PARTIE DE L'ÉTAT (demande du diocèse) :
+    # réglé → la ligne du reçu (montant · date · numéro) ; à régler → le
+    # montant attendu pour CE membre et l'échéance qui le concerne.
+    _nat_lbl = ("Abonnement" if _du["abonnement_nature"] == "abonnement"
+                else "Réabonnement")
+    if _du["abonnement_paye"] and _du["abonnement_recu"]:
+        _r_ab = _du["abonnement_recu"]
+        _d_p = safe_date(_r_ab["date"])
+        _d_ab = _d_p.strftime("%d/%m/%Y") if _d_p else (_r_ab["date"] or "—")
+        st.markdown(f"**📅 {_nat_lbl} {_annee} - {_annee + 1} — ✅ réglé**")
+        st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
+                    f"{_d_ab} · {_fr(_r_ab['montant'])} FCFA"
+                    + (f" · reçu {_r_ab['numero']}" if _r_ab["numero"] else "")
+                    + "</span>", unsafe_allow_html=True)
+    else:
+        _ech_aff = str(_du["abonnement_echeance"] or "")
+        try:
+            _d_e = date.fromisoformat(_ech_aff)
+            _ech_aff = _d_e.strftime("%d/%m/%Y")
+        except Exception:
+            pass
+        st.markdown(f"**📅 {_nat_lbl} {_annee} - {_annee + 1} — ⏳ à régler**")
+        st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
+                    f"{_fr(_du['abonnement_attendu'])} FCFA"
+                    + (f" · échéance le {_ech_aff}" if _ech_aff else "")
+                    + " · chez ta responsable d'équipe</span>",
+                    unsafe_allow_html=True)
+
+    # LA MENSUELLE ENCORE DÛE : les mois écoulés que rien ne couvre, au
+    # tarif réglé — la dette se lit aussi mois par mois.
+    if _du["mensuelle"] > 0:
+        st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
+                    f"🧮 Mensuelle — {_fr_liste(_du['mois_dus'])} à régler "
+                    f"· {_fr(_du['mensuelle'])} FCFA</span>",
+                    unsafe_allow_html=True)
+
+    # LE TOTAL DÛ À CE JOUR (v7.16.0, à la place du total de l'année) :
+    # les mois de mensuelle écoulés non versés + l'abonnement non réglé.
+    # Rien de dû → la carte passe au vert, « À jour ». Le déjà versé le
+    # rappelle juste en dessous.
+    _du_tot = int(_du["total"])
+    if _du_tot <= 0:
+        st.markdown(
+            '<div style="background:linear-gradient(135deg,#e8f5e9 0%,#f1f8e9 100%);'
+            ' border:1px solid #a5d6a7; border-radius:10px; padding:8px 12px;'
+            ' margin-top:6px; text-align:center; color:#1b5e20;'
+            ' font-weight:bold;">💰 Total dû à ce jour : 0 FCFA — ✅ À jour</div>',
+            unsafe_allow_html=True)
+    else:
+        st.markdown(
+            '<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%);'
+            ' border:1px solid #d1c4e9; border-radius:10px; padding:8px 12px;'
+            ' margin-top:6px; text-align:center; color:#4A148C;'
+            ' font-weight:bold;">💰 Total dû à ce jour : '
+            + _fr(_du_tot) + ' FCFA</div>', unsafe_allow_html=True)
+    st.caption(f"🕊️ Déjà versé cette année pastorale : {_fr(_etat['total'])} FCFA")
 
 
 def _cases_memoire(matloc, nb=14):
@@ -5158,7 +5233,12 @@ def _carte_memoire_membre(matloc=None):
         ' padding:14px 16px; margin:10px;">'
         '<div style="color:#FFD000; font-weight:bold; font-size:1rem;">'
         '📿 Mémoire de mes dizaines</div>'
-        '<div style="color:#8a93c9; font-size:0.78rem; margin-top:2px;">'
+        '<div style="border-left:2px solid #FFD700; padding-left:8px;'
+        ' margin-top:7px; color:#8a93c9; font-size:0.72rem;'
+        ' font-style:italic; line-height:1.5;">« Prends soin de cet homme. '
+        'Et ce que tu dépenseras en plus, je te le rendrai quand je '
+        'reviendrai. » — Luc 10,35</div>'
+        '<div style="color:#8a93c9; font-size:0.78rem; margin-top:4px;">'
         'Ta fidélité du jour — les 14 derniers jours</div>'
         '<div style="display:flex; flex-wrap:wrap; gap:5px; margin:10px 0 6px 0;">'
         + _cases + '</div>'
@@ -6032,7 +6112,12 @@ def _carte_memoire_visiteur(jrnais):
         ' padding:14px 16px; margin:10px;">'
         '<div style="color:#FFD000; font-weight:bold; font-size:1rem;">'
         '📿 Mémoire de mes dizaines</div>'
-        '<div style="color:#8a93c9; font-size:0.78rem; margin-top:2px;">'
+        '<div style="border-left:2px solid #FFD700; padding-left:8px;'
+        ' margin-top:7px; color:#8a93c9; font-size:0.72rem;'
+        ' font-style:italic; line-height:1.5;">« Prends soin de cet homme. '
+        'Et ce que tu dépenseras en plus, je te le rendrai quand je '
+        'reviendrai. » — Luc 10,35</div>'
+        '<div style="color:#8a93c9; font-size:0.78rem; margin-top:4px;">'
         'Ta fidélité du jour — les 14 derniers jours</div>'
         '<div style="display:flex; flex-wrap:wrap; gap:5px; margin:10px 0 6px 0;">'
         + _cases + '</div>'
@@ -6467,8 +6552,20 @@ def _corps_espace_membre(matloc_membre=None):
             d_adh = safe_date(membre[5])
             st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
     with _col_cotis:
-        with st.popover("💰 État de mes cotisations"):
-            _etat_cotisations_membre(membre)
+        # v7.16.0 — le montant du « Total dû à ce jour » campe dans le
+        # titre de l'encart, visible d'un coup d'œil sans l'ouvrir
+        # (demande du diocèse). La lecture se fait une fois ici puis
+        # voyage jusqu'à la fonction — lecture pure des deux côtés.
+        _du_pop = None
+        try:
+            _du_pop = cotis_div_total_du(membre[0], get_periode_pastorale()[0])
+        except Exception:
+            _du_pop = None
+        _du_txt = f"{int(_du_pop['total']) if _du_pop else 0:,}".replace(",", " ")
+        _lbl_cotis = (f"💰 État de mes cotisations — dû : {_du_txt} FCFA"
+                      + (" ✅" if _du_pop and int(_du_pop['total']) <= 0 else ""))
+        with st.popover(_lbl_cotis):
+            _etat_cotisations_membre(membre, _du=_du_pop)
 
     # v7.7.2 — le badge de bienvenue n'apparaît QUE sur l'accueil
     if rub == "🏠 Actualités":
