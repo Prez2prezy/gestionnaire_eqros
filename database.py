@@ -4759,7 +4759,7 @@ def cotis_recu_info(numero_recu):
 # d'équipe dans « 💼 Caisse de mon équipe ». Chaque ligne porte type,
 # montant, date du versement et mode de paiement — rien d'autre, le
 # diocèse l'a dit ainsi. Pas de reçu numéroté ici : le registre dit
-# l'état (« 💰 État des mes cotisations », en face de « 👤 Mon profil »).
+# l'état (« 💰 État de mes cotisations », en face de « 👤 Mon profil »).
 # Les montants PAR DÉFAUT du registre sont les réglages du diocèse
 # (posés dans « 💼 Caisse du diocèse », stockés dans parametres_app) ;
 # tant que rien n'y a été posé, 0 répond à sa place : 0 = saisie libre,
@@ -4878,6 +4878,58 @@ def cotis_div_enregistrer(membre_id, annee_debut, type_cotisation, montant,
             return None
 
 
+def cotis_div_envoyer_groupe(membres_ids, annee_debut, type_cotisation, montant,
+                             date_versement=None, mode_paiement=None,
+                             enregistre_par=None, origine="caisse_equipe"):
+    """L'EXPÉDITION DU REGISTRE (v7.15.4) : la responsable d'équipe choisit
+    le type, le montant (celui qui est proposé), la date et le mode de
+    paiement, puis expédie à TOUTE l'équipe ou à CERTAINS membres seulement
+    — et chaque membre le voit aussitôt dans « 💰 État de mes cotisations ».
+    Une ligne par membre choisi, chacune signée et datée ; les doublons
+    d'identifiants sont fondus (pas deux lignes pour le même membre d'un
+    même geste). Un seul verrou, un seul commit : le geste est un bloc —
+    si une ligne ne passe pas, rien n'est posé. Retourne le nombre de
+    lignes posées (0 si le geste n'a pas pu être posé)."""
+    _lbl = cotis_div_type_label(type_cotisation)
+    if _lbl is None:
+        logger.warning("cotis_div_envoyer_groupe : type de cotisation inconnu")
+        return 0
+    try:
+        _montant = max(0, int(montant or 0))
+    except Exception:
+        _montant = 0
+    _d = date_versement
+    if hasattr(_d, "isoformat"):
+        _d = _d.isoformat()
+    _d = str(_d or date.today().isoformat())
+    try:
+        _ids = list(dict.fromkeys(int(_m) for _m in (membres_ids or [])
+                                  if _m is not None and int(_m) > 0))
+    except Exception:
+        logger.warning("cotis_div_envoyer_groupe : identifiants illisibles")
+        return 0
+    if not _ids:
+        return 0
+    with _verrou_db:
+        try:
+            c.executemany(
+                """INSERT INTO cotisations_diverses
+                   (membre_id, annee_debut, type_cotisation, montant,
+                    date_versement, mode_paiement, enregistre_par,
+                    origine, cree_le)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                [(_mid, int(annee_debut),
+                  str(type_cotisation).strip().lower(), _montant, _d,
+                  mode_paiement, enregistre_par, origine,
+                  datetime.now().isoformat(timespec="seconds"))
+                 for _mid in _ids])
+            commit_and_sync()
+            return len(_ids)
+        except Exception as e:
+            logger.warning(f"cotis_div_envoyer_groupe : {e!r}")
+            return 0
+
+
 def cotis_div_supprimer(ligne_id):
     """Retire UNE ligne du registre (la correction du responsable, posée
     en connaissance de cause derrière une confirmation). Rien d'autre ne
@@ -4916,7 +4968,7 @@ def cotis_div_lignes(membre_id, annee_debut, type_cotisation=None):
 
 def cotis_div_etat(membre_id, annee_debut):
     """LECTURE PURE — L'ÉTAT DU REGISTRE d'un membre pour l'année
-    pastorale, tel que « 💰 État des mes cotisations » le relit :
+    pastorale, tel que « 💰 État de mes cotisations » le relit :
     `lignes`  — toutes les lignes (cotis_div_lignes) ;
     `totaux`  — {type: total FCFA} pour les quatre types ;
     `total`   — le total de l'année, tous types confondus ;
