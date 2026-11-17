@@ -143,7 +143,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.16.0"
+_VERSION_APPLI = "v7.16.1"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -551,7 +551,10 @@ def _render_theme(compact=False):
     [data-testid="stAlert"] { background-color: #151b3d !important; }
     [data-testid="stAlert"] p { color: #e8eaf6 !important; }
     [data-testid="stPopover"] { width: fit-content !important; max-width: 260px !important; margin-left: 0 !important; }
-    [data-testid="stPopover"] button { background-color: #4527a0 !important; color: #ffffff !important; border: 1px solid #5e35b1 !important; border-radius: 20px !important; font-weight: 600 !important; }
+    [data-testid="stPopover"] button { background-color: #4527a0 !important; color: #ffffff !important; border: 1px solid #5e35b1 !important; border-radius: 20px !important; font-weight: 600 !important;
+        /* v7.16.1 — le libellé se déplie sur DEUX LIGNES (titre puis le dû) : le bouton grandit en hauteur au lieu de sortir de la marge (téléphone surtout). */
+        white-space: pre-line !important; height: auto !important; min-height: 38px !important; line-height: 1.35 !important; text-align: left !important; }
+    [data-testid="stPopover"] button p { white-space: pre-line !important; }
     [data-testid="stPopover"] button:hover { background-color: #5e35b1 !important; }
     [data-testid="stNumberInput"] { max-width: 220px !important; margin-left: auto !important; margin-right: auto !important; }
     [data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] { display: none !important; }
@@ -603,6 +606,19 @@ def _render_theme(compact=False):
         .logo-bloc { width: 136px; }
         [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
         [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { min-width: 0 !important; }
+        /* v7.16.1 — LES DEUX ENCARTS s'empilent l'un sous l'autre sur téléphone
+           (une ligne chacun, pleine largeur) : le bouton « 💰 État de mes
+           cotisations » ne sort plus de la marge. :has() tient au bloc qui
+           CONTIENT un popover — aucun autre empilement n'est touché ; sans
+           :has(), les deux colonnes restent côte à côte avec le libellé
+           replié sur 2 lignes (dégradation gracieuse). */
+        .stApp [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
+            { flex-direction: column !important; gap: 8px !important; }
+        .stApp [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
+            > [data-testid="stColumn"]
+            { width: 100% !important; min-width: 100% !important;
+              flex: 1 1 100% !important; }
+        [data-testid="stPopover"] { max-width: 100% !important; }
     }
     @media (max-width: 360px) {
         .logo-bloc { width: 126px; }
@@ -1340,7 +1356,12 @@ def _traiter_lien_profond_livret():
             _nettoyer_params_livret()
             return
     st.session_state["flt_cle"] = f"{_fa}-{_fm}"
-    st.session_state["flt_page"] = 0
+    # v7.16.1 — LA RELIRE ENVOIE AU SOMMAIRE (demande du diocèse) : le
+    # livret s'ouvre sur la couverture et son sommaire (page -1), comme le
+    # bouton « 📖 Ouvrir le livret » de la vitrine — et non plus sur la
+    # première section (page 0).
+    st.session_state["flt_page"] = -1
+    st.session_state["flt_sens"] = "avant"
     st.session_state["flt_ouvert"] = True
     st.session_state.pop("diz_ouvert", None)
     _nettoyer_params_livret()
@@ -5019,18 +5040,23 @@ def _etat_cotisations_membre(membre, _du=None):
     qu'elle note ton versement (expédition du registre ou abonnement
     réglé), le « Total dû à ce jour » baisse d'autant.
     — MENSUELLE : la grille des 12 mois de l'année pastorale (septembre →
-    août), cochée quand versée, avec le tarif réglé dans « 💼 Caisse du
-    diocèse » s'il en a posé un (0 = libre, rien n'est affiché) ;
+    août), cochée quand le versement est noté (réglé), avec le tarif réglé
+    dans « 💼 Caisse du diocèse » s'il en a posé un (0 = libre, rien n'est
+    affiché) ;
     — SPÉCIALE, ÉVÈNEMENTIELLE, EXTRAORDINAIRE : leurs lignes (date ·
-    précision · montant · mode de paiement) et leur total — la précision
-    est le nom libre que la responsable a donné à la cotisation (v7.16.0) ;
+    précision · montant) et leur total — la précision est le nom libre que
+    la responsable a donné à la cotisation (v7.16.0). v7.16.1 : la ligne
+    en attente de son versement s'affiche EN VERT « ⏳ à régler » — la
+    relance (« il y a une contribution de 3 000 FCFA pour l'Épiphanie ») ;
+    réglée, elle porte son mode de paiement ✅ ;
     — L'ABONNEMENT (ou le réabonnement) fait partie de l'état : réglé →
     sa ligne (montant · date · reçu) ; à régler → le montant attendu et
     son échéance (v7.16.0, demande du diocèse) ;
     — LE « 💰 TOTAL DÛ À CE JOUR » remplace le total de l'année : les mois
     écoulés de mensuelle non versés (au tarif réglé) + l'abonnement non
-    réglé — 0 FCFA = à jour, carte verte ; le déjà versé le rappelle en
-    dessous.
+    réglé + les lignes des autres catégories encore « ⏳ à régler »
+    (v7.16.1) — 0 FCFA = à jour, carte verte ; le déjà versé (les lignes
+    réglées) le rappelle en dessous.
     Pas de reçu numéroté ici pour le registre : le reçu reste réservé à
     l'abonnement annuel."""
     if not membre:
@@ -5108,10 +5134,22 @@ def _etat_cotisations_membre(membre, _du=None):
                 _d_txt = _d_l.strftime("%d/%m/%Y") if _d_l else (_l[3] or "—")
                 _prec = str(_l[7] or "").strip() if len(_l) > 7 else ""
                 _seg_prec = f" · {_prec}" if _prec else ""
-                st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
-                            f"{_d_txt}{_seg_prec} · {_fr(_l[2])} FCFA · "
-                            f"{_modes_lbls.get(_l[4] or '', _l[4] or '—')}</span>",
-                            unsafe_allow_html=True)
+                # v7.16.1 — LA RELANCE EN VERT : la ligne qui attend son
+                # versement s'affiche « ⏳ à régler » sur fond vert ; réglée,
+                # elle porte son mode de paiement et le petit ✅.
+                if not (_l[8] if len(_l) > 8 else False):
+                    st.markdown(
+                        "<span style='font-size:0.8rem; color:#1b5e20;"
+                        " background:#e8f5e9; border:1px solid #a5d6a7;"
+                        " border-radius:8px; padding:2px 8px; display:"
+                        "inline-block; margin:1px 0;'>⏳ à régler · "
+                        f"{_d_txt}{_seg_prec} · {_fr(_l[2])} FCFA</span>",
+                        unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
+                                f"{_d_txt}{_seg_prec} · {_fr(_l[2])} FCFA · "
+                                f"{_modes_lbls.get(_l[4] or '', _l[4] or '—')} ✅</span>",
+                                unsafe_allow_html=True)
             if len(_lignes_t) > 6:
                 st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
                             f"… et {len(_lignes_t) - 6} autre(s) versement(s)</span>",
@@ -5176,7 +5214,8 @@ def _etat_cotisations_membre(membre, _du=None):
             ' margin-top:6px; text-align:center; color:#4A148C;'
             ' font-weight:bold;">💰 Total dû à ce jour : '
             + _fr(_du_tot) + ' FCFA</div>', unsafe_allow_html=True)
-    st.caption(f"🕊️ Déjà versé cette année pastorale : {_fr(_etat['total'])} FCFA")
+    st.caption(f"🕊️ Déjà versé cette année pastorale : "
+               f"{_fr(_etat.get('total_regle', _etat['total']))} FCFA")
 
 
 def _cases_memoire(matloc, nb=14):
@@ -5234,7 +5273,7 @@ def _carte_memoire_membre(matloc=None):
         '<div style="color:#FFD000; font-weight:bold; font-size:1rem;">'
         '📿 Mémoire de mes dizaines</div>'
         '<div style="border-left:2px solid #FFD700; padding-left:8px;'
-        ' margin-top:7px; color:#8a93c9; font-size:0.72rem;'
+        ' margin-top:7px; color:#ffffff; font-weight:bold; font-size:0.72rem;'
         ' font-style:italic; line-height:1.5;">« Prends soin de cet homme. '
         'Et ce que tu dépenseras en plus, je te le rendrai quand je '
         'reviendrai. » — Luc 10,35</div>'
@@ -6113,7 +6152,7 @@ def _carte_memoire_visiteur(jrnais):
         '<div style="color:#FFD000; font-weight:bold; font-size:1rem;">'
         '📿 Mémoire de mes dizaines</div>'
         '<div style="border-left:2px solid #FFD700; padding-left:8px;'
-        ' margin-top:7px; color:#8a93c9; font-size:0.72rem;'
+        ' margin-top:7px; color:#ffffff; font-weight:bold; font-size:0.72rem;'
         ' font-style:italic; line-height:1.5;">« Prends soin de cet homme. '
         'Et ce que tu dépenseras en plus, je te le rendrai quand je '
         'reviendrai. » — Luc 10,35</div>'
@@ -6514,29 +6553,15 @@ def _corps_espace_membre(matloc_membre=None):
     # web (#pont_memoire) — la base ne passe que par la porte du livre.
     _pont_memoire_hors_ligne(membre)
 
-    if livre_ouvert:
-        if st.session_state.get("flt_ouvert"):
-            # v7.8 — livret mensuel en autonomie (logo + carte espace)
-            # v7.10.4 — le lecteur voyage : le membre répond à la fin de la
-            # lecture sous sa signature (MatLoc), comme dans la vitrine.
-            _render_feuillet_autonome(lecteur={
-                "est_membre": True, "matloc": membre[3],
-                "nom_membre": ((membre[1] or "") + " " + (membre[2] or "")).strip(),
-                "equipe_id": membre[10], "paroisse_id": membre[11]})
-            return
-        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True,
-                                matloc=membre[3],
-                                nom_membre=((membre[1] or "") + " " + (membre[2] or "")).strip(),
-                                equipe_id=membre[10], paroisse_id=membre[11])
-        return
-
-    # v7.9.3 — la page ouverte commence EN HAUT de l'écran (feuillets)
-    _scroll_top_si_nouvelle_page("mbr", rub, sub)
-
     # v7.15.3 — LES DEUX CAMPENT ENSEMBLE SUR LA MÊME LIGNE (demande du
     # diocèse) : « 👤 Mon profil » à gauche, « 💰 État de mes cotisations »
     # à son opposé à droite — même forme (popover), deux registres dos à
     # dos. Le profil se relit comme avant, mot pour mot.
+    # v7.16.1 — LES ENCARTS SUIVENT LE MEMBRE PARTOUT : ils campent ICI,
+    # juste sous l'entête, sur toutes les rubriques — le fil d'actualité,
+    # Mes évènements, Rosaire, Galerie, Archives, Thème — et même le livre
+    # ouvert (feuillet ou dizaine), où l'écran restait sans eux (observé
+    # par le diocèse : « visibles seulement en fil d'actualité »).
     _col_profil, _col_cotis = st.columns(2)
     with _col_profil:
         with st.popover("👤 Mon profil"):
@@ -6562,10 +6587,36 @@ def _corps_espace_membre(matloc_membre=None):
         except Exception:
             _du_pop = None
         _du_txt = f"{int(_du_pop['total']) if _du_pop else 0:,}".replace(",", " ")
-        _lbl_cotis = (f"💰 État de mes cotisations — dû : {_du_txt} FCFA"
-                      + (" ✅" if _du_pop and int(_du_pop['total']) <= 0 else ""))
+        # v7.16.1 — LE BOUTON HORS MARGE SE REPLIE : titre et message sur
+        # DEUX LIGNES (demande du diocèse — téléphone surtout). Le CSS de
+        # la maison passe le libellé du popover en pre-line ; quand rien
+        # n'est dû, la deuxième ligne porte le « ✅ À jour ».
+        if _du_pop and int(_du_pop['total']) > 0:
+            _lbl_cotis = ("💰 État de mes cotisations\n"
+                          f"— doit : {_du_txt} FCFA")
+        else:
+            _lbl_cotis = "💰 État de mes cotisations\n✅ À jour"
         with st.popover(_lbl_cotis):
             _etat_cotisations_membre(membre, _du=_du_pop)
+
+    if livre_ouvert:
+        if st.session_state.get("flt_ouvert"):
+            # v7.8 — livret mensuel en autonomie (logo + carte espace)
+            # v7.10.4 — le lecteur voyage : le membre répond à la fin de la
+            # lecture sous sa signature (MatLoc), comme dans la vitrine.
+            _render_feuillet_autonome(lecteur={
+                "est_membre": True, "matloc": membre[3],
+                "nom_membre": ((membre[1] or "") + " " + (membre[2] or "")).strip(),
+                "equipe_id": membre[10], "paroisse_id": membre[11]})
+            return
+        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True,
+                                matloc=membre[3],
+                                nom_membre=((membre[1] or "") + " " + (membre[2] or "")).strip(),
+                                equipe_id=membre[10], paroisse_id=membre[11])
+        return
+
+    # v7.9.3 — la page ouverte commence EN HAUT de l'écran (feuillets)
+    _scroll_top_si_nouvelle_page("mbr", rub, sub)
 
     # v7.7.2 — le badge de bienvenue n'apparaît QUE sur l'accueil
     if rub == "🏠 Actualités":
