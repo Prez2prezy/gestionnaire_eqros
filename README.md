@@ -1,2752 +1,6753 @@
-# 📿 Gestionnaire des Équipes du Rosaire — Diocèse de Grand-Bassam
-
-Application **Streamlit** de gestion administrative, spirituelle et missionnaire
-des Équipes du Rosaire : paroisses, équipes, membres, abonnements, présences,
-agenda, espace spirituel (prières, méditations, musiques, thème pastoral,
-rosaire quotidien) et canal de communication avec validation diocésaine.
-
----
-
-## 🗂️ Structure du projet
-
-```
-app.py                              # Point d'entrée : connexion, sessions, routage des rôles
-database.py                         # Connexion (Turso ou SQLite locale), schéma, migrations
-services.py                         # Sécurité, médias, Telegram, sessions, export Excel, stats
-components.py                       # Composants partagés : agenda, WhatsApp, QR, thème pastoral…
-mysteres.py                         # Les 20 mystères du Rosaire + calcul de la dizaine du jour
-views/
-    __init__.py
-    view_diocese.py                 # Administration diocèse (12 rubriques)
-    view_paroisse.py                # Administration paroisse (équipes, membres, abonnements)
-    view_equipe.py                  # Espace responsable d'équipe
-    view_communication.py           # Cellule Communication : préparation & soumission
-    view_communication_validation.py # SAS diocèse : validation & publication
-    view_espace_membre.py           # Espace communautaire public + espace membre (QR matloc)
-    livret_thematique.py            # Données du livret de méditation du mois du Rosaire
-images/                             # logo.png (livré — chapelet doré, remplaçable par le logo officiel, même nom)
-photos/                             # Photos locales (si pas de Cloudinary)
-```
-
-## 🚀 Lancer en local
-
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-```
-
-Première connexion : utilisateur **diocese**, mot de passe **admin123**
-(changez-le immédiatement via l'écran de connexion si `RESET_TOKEN` est
-configuré, ou directement en base).
-
-## 🔑 Configuration (facultative)
-
-Copiez `.streamlit/secrets.toml.example` vers `.streamlit/secrets.toml` et
-renseignez ce dont vous disposez :
-
-| Clé | Utilité | Sans cette clé |
-|-----|---------|----------------|
-| `TURSO_URL` + `TURSO_AUTH_TOKEN` | Base Turso (multi-utilisateurs temps réel) | SQLite locale `gestion_religieuse.db` |
-| `RESET_TOKEN` | Encart « mot de passe oublié » sur l'écran de connexion | Encart masqué |
-| `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` | Notifications (soumissions, publications, évènements) | Notifications ignorées |
-| `CLOUDINARY_*` | Hébergement des photos / PDF / audio / vidéo | Champs « lien imgbb » à utiliser |
-
-## ☁️ Déployer sur Streamlit Cloud
-
-1. Poussez ce dossier dans un dépôt GitHub.
-2. Sur https://share.streamlit.io → **New app** → sélectionnez le dépôt,
-   fichier principal : `app.py`.
-3. Menu de l'app → **Settings → Secrets** → collez le contenu de votre
-   `secrets.toml` (au minimum les clés Turso en production).
-4. Le fichier `requirements.txt` installe automatiquement les dépendances.
-
-## 👥 Rôles et comptes
-
-| Rôle | Créé | Accède à |
-|------|------|----------|
-| `diocese` | Automatique au premier lancement | Administration complète (12 rubriques) |
-| `paroisse` | À la création d'une paroisse (rubrique « 🏘️ Créer paroisses ») | Équipes, membres, abonnements, agenda de sa paroisse |
-| `equipe` | À la création d'une équipe par la paroisse | Son équipe : membres, présences, agenda, WhatsApp |
-| `communication` | Rubrique « 🔐 Gérer les accès » du diocèse (section 📡 Service Communication) | Canal de soumission — tout passe par le SAS diocèse |
-
-Les identifiants `paroisse_*` sont affichés à la création et expédiables
-par WhatsApp en un clic ; les mots de passe peuvent être réinitialisés dans
-« 🔐 Gérer les accès ».
-
-## 🕊️ Espace communautaire (public)
-
-URL : `https://VOTRE-APP.streamlit.app/?espace=1`
-
-- Quatre rubriques publiques : Actualités, Rosaire, Thème, Archives.
-- **Dizaine du jour** : le visiteur saisit son jour de naissance → l'app
-  calcule le(s) mystère(s) du jour (portage fidèle de la règle Android).
-- **QR paroissiaux signés** : `?espace=1&p=ID_PAROISSE` — compte les visites
-  par paroisse d'origine (rubrique « 📋 Gérer paroisses » → QR de la paroisse).
-- **Espace membre** : `?espace=1&matloc=MATLOC` — le MatLoc du membre
-  (imprimé sur ses fiches/QR) débloque « Mes évènements », Réponses de
-  Communion, le feuillet mensuel en équipe et la dizaine personnalisée.
-- **📰 Actualités de la Paroisse (v7.8.6)** : dans le fil d'actualité, un
-  visiteur arrivé via le QR d'une paroisse (ou un membre de cette paroisse)
-  voit les prochains évènements créés par les équipes de SA paroisse (et par
-  la paroisse elle-même). Périmètre strict : jamais au-delà — un évènement
-  d'équipe n'apparaît ni pour les autres paroisses, ni pour le visiteur sans
-  contexte paroissial. La Réponse de Communion reste dans « 📅 Mes
-  évènements » côté membre ; le Coin Affiche applique le même filtre.
-
-## 📖 Le feuillet mensuel de prière (v7.8)
-
-La zone « 📅 Sous-thème du mois » de la page 🕯️ Thème → Vue d'ensemble est
-remplacée par le **feuillet mensuel de prière** :
-
-- **Vitrine** : badge « 📖 LE FEUILLET MENSUEL DE PRIÈRE N° X » (N° = rang du
-  mois pastoral : septembre = N°1 … août = N°12), « Mois de … », Sommaire du
-  feuillet, bouton **« 📖 Ouvrir le livret »**.
-- **Livret en autonomie** : comme la dizaine du jour, le livret s'ouvre en
-  plein écran — entête réduite au logo + carte de l'espace (Membre /
-  Communautaire), sans bandes défilantes ni thème de l'année. Le titre de la
-  page reste toujours visible en haut (barre fixe), la pagination seule
-  (« Page X / N ») clôt chaque page sous un trait fin.
-- **Soumission (v7.8.6)** : après la saisie des sections (Service
-  Communication → 🕯️ Thème pastoral → 2️⃣ bis), le bouton **« 📨 Soumettre le
-  feuillet au diocèse »** envoie le feuillet au SAS (« 🕊️ Soumissions du
-  Service Communication » → « 🟡 En attente de validation »). Le Service
-  Communication ne publie JAMAIS d'elle-même ; la resoumission reste
-  possible (mise à jour de l'alerte).
-- **Saisie unique (v7.8.7)** : les rubriques invariables d'un mois à
-  l'autre (Salve Regina, Prière à l'Esprit-Saint, Invocation à Marie…)
-  ne se saisissent qu'UNE fois. Pour un nouveau mois, la section vide
-  affiche **« ♻️ Reprendre le texte du mois précédent »** : un clic recopie
-  la dernière saisie connue de cette rubrique (mois précédents, années
-  antérieures). Le texte est ensuite ajustable avant enregistrement.
-- **Publication (diocèse seul)** : au SAS, le diocèse relit l'aperçu
-  (mois pastoral + sections saisies) puis **« ✅ Publier »** déclenche
-  l'alerte « 📖 Nouveau feuillet » en tête du fil d'actualité (visible
-  45 jours, masquable via « 📌 Marquer comme lue »). Le clic sur l'alerte
-  ouvre directement le livret du feuillet annoncé.
-- **Publication programmée (v7.8.8 — tous types de soumission)** : dans
-  chaque soumission en attente, le diocèse peut choisir **« 🗓️ Programmer
-  la publication »** (date + heure) au lieu de « ✅ Publier ». Le contenu
-  reste invisible jusqu'à l'échéance, puis est publié automatiquement :
-  chaque chargement de page sert de réveil (lazy cron, Abidjan = UTC).
-  Zone « 🗓️ Programmées » au SAS (avec ▶️ Publier maintenant / ↩️ Revenir
-  en attente) ; le Journal et le bloc feuillet affichent l'échéance.
-- **Retour en haut de page (v7.8.2)** : à chaque tour de page (Suivant,
-  Précédent, choix dans le Sommaire), la lecture reprend automatiquement en
-  haut — le titre est visible sans scroller.
-- **Archives (v7.8.2)** : les feuillets précédents sont archivés dans
-  🕯️ Thème → 🔭 Vue d'ensemble, sous forme d'**expanders** (« 📚 Les
-  feuillets précédents ») ; le lien « 📖 Relire ce feuillet » de chaque
-  expander rouvre le livret en autonomie via `?flt=1&fa=ANNÉE&fm=MOIS`.
-
-## 🎧 Lecteur compagnon — la musique suit la prière (v7.8.9)
-
-Avant v7.8.9, le bouton « 🎧 Ouvrir l'onglet d'écoute dédié » ouvrait un
-deuxième onglet : pratique sur PC, presque inutilisable sur téléphone (on ne
-revient pas aisément à l'appli). Le lecteur compagnon corrige cela :
-
-- **Téléphone (≤ 820 px)** : le bouton devient **« 🎧 Écouter en priant »** et
-  navigue dans le MÊME onglet. La page d'écoute porte une barre dorée
-  **« ◀️ Revenir à l'appli »** : un tap ramène à l'Espace de Prière.
-- **Mini-barre compagnon** : dès qu'une musique a été lancée, une barre
-  flottante (▶️/⏸️, titre, ⏭️) apparaît en bas de TOUTES les pages de
-  l'espace — accueil, 📿 Rosaire chez les Équipiers, livret, archives — et
-  **reprend automatiquement la musique là où elle s'était arrêtée**
-  (mémoire `sessionStorage` de l'onglet ; oubli automatique après 2 h).
-  La playlist continue même en passant d'une page à l'autre.
-- **PC** : le bouton dédié ouvre une **fenêtre/onglet compagnon nommé**
-  « rosaire_ecoute », réutilisé à chaque clic (jamais dupliqué) ; la page
-  d'écoute y affiche l'astuce « réduisez la fenêtre » à la place du bouton
-  Revenir.
-- **Contrôles système** : la piste en cours est déclarée à l'API Media
-  Session — titre + ⏮️ ⏯️ ⏭️ sur l'écran verrouillé et dans les
-  notifications (Android/iPhone), sans rouvrir l'appli.
-- **📺 Vignette flottante** (Picture-in-Picture) sur les lecteurs, quand le
-  navigateur le permet : la vignette reste au-dessus des autres onglets.
-- **Correctif sanitizeur** : Streamlit 1.66 injecte `target="_blank"` +
-  `rel="noopener"` dans toutes les ancres de `st.markdown` ; le fixer
-  `_fixer_liens_ecoute` rétablit `_self`/le nom de fenêtre en JS après
-  rendu (motif éprouvé `_liens_meme_onglet` v7.8.1) — sans lui, chaque clic
-  ouvrait un nouvel onglet et la mémoire de lecture se perdait.
-
-## 🎨 Couverture du livret & corrections facilitées (v7.8.10)
-
-- **Couverture du livret** : le feuillet mensuel a désormais une vraie
-  couverture, du même style que la couverture de la dizaine (bleu nuit +
-  or). Elle accompagne **① l'alerte « 📖 Nouveau feuillet »** du fil
-  d'actualité (mention « 🔔 Nouveau · publié le … » intégrée) et **② le
-  livret lui-même** : le sommaire s'ouvre sous la couverture, comme un
-  livret papier (couverture → sommaire → pages). La couverture affiche le
-  N° du feuillet, le mois pastoral, et le thème de l'année pastorale.
-- **Couverture personnalisée (facultatif)** : Service Communication →
-  🕯️ Thème pastoral → 2️⃣ bis → expander **« 🎨 Couverture du livret »** :
-  collez le lien imgbb de la couverture scannée du feuillet ; elle est
-  montrée au-dessus de la carte (alerte + sommaire). Sans image, la
-  couverture générée automatiquement suffit. Table `feuillets_couvertures`
-  (une image par mois pastoral, écrasable à volonté).
-- **Corrections facilitées** : chaque triplet (année, mois, section) a ses
-  propres clés de widget. Sélectionner une rubrique au vert ✅ (ex.
-  « 5. Prière à l'Esprit-Saint ») affiche IMMÉDIATEMENT son titre ET son
-  texte enregistré — fini les champs vides qui obligeaient à reprendre
-  toute la procédure. Le bouton ♻️ purge les clés contextuelles : le texte
-  repris s'affiche après le rerun.
-- **Republication d'une version corrigée** : après publication, le bloc
-  soumission ne disparaît plus (les `elif` court-circuités retiraient le
-  bouton) : un bouton **« 📨 Soumettre une version corrigée au diocèse »**
-  apparaît. La validation du diocèse met à jour `date_publication` —
-  l'alerte du fil se rafraîchit (nouvelle date) et la communauté lit le
-  livret corrigé. Idem après un refus : le bouton de soumission revient.
-- **Ouvrir le livret à la couverture** : depuis la vitrine (Vue
-  d'ensemble), le bouton « 📖 Ouvrir le livret » atterrit sur la couverture.
-  Depuis l'alerte, le clic ouvre toujours directement la lecture (la
-  couverture vient d'être vue dans l'alerte).
-
-## ✒️ Mise en page du livret, photos placées, alerte fiabilisée (v7.8.11)
-
-- **Typographie du feuillet (comme le livret papier)** — les pages du livret
-  sont mises en page automatiquement (`_mise_en_page_feuillet`) :
-  ① les marqueurs **R. / T. / 1. / 2. / 3+T.** (suivis de `.`, `:` ou `—`)
-  sont en gras ; ② le texte des réponses **T. / 3+T.** est entièrement en
-  gras (y compris les vers qui suivent, jusqu'à la ligne vide) ; ③ la
-  section **« 7. À l'écoute de la Parole de Dieu »** est tout en gras
-  SAUF le titre du passage (Évangile…, Au Livre des Psaumes…, Lecture… —
-  rendu en italique centré) ; ④ la section **« 11. Salve Regina »** est
-  tout en gras ; ⑤ un **interligne** plus généreux sépare deux marqueurs ;
-  ⑥ dans **« 4. Célébrons en équipe »**, la légende des rôles
-  (R — Responsable… / 1 — 1er lecteur · 2 — 2e lecteur · 3 — Chantre ·
-  T — Tous ensemble) est en gras et la ligne **« Accueil »** devient une
-  puce soulignée de taille sous-titre ; ⑦ les **titres de rubrique** sont
-  écrits en police manuscrite (Caveat via Google Fonts ; repli local
-  Segoe Print / Comic Sans MS si hors-ligne) ; ⑧ la barre fixe du livret
-  suit le même style.
-- **Cadre photo sous chaque titre de section** : chaque page porte un cadre
-  façon photo papier (image encadrée, bordure or) ou, à défaut d'image, un
-  emplacement pointillé « 📷 Photo de la rubrique » — comme un livret à
-  illustrer.
-- **Position de la photo (demande n°3)** : dans la saisie d'une section
-  (2️⃣ bis), un menu **« 🖼️ Position de la photo dans le livret »** propose
-  ⬆️ au-dessus du texte (centrée, défaut), ▶️ à droite ou ◀️ à gauche — la
-  photo flotte alors dans la page et le texte l'habille (empilement
-  automatique sur mobile). Colonne `feuillet_sections.pos_image`
-  (migration idempotente). Le bouton ♻️ reprend aussi la position.
-- **Photos du fil du jour** : à la soumission d'une Prière/Méditation, un
-  menu « Position de la photo » permet droite/gauche — le préfixe
-  `[droite]`/`[gauche]` du lien est interprété à l'affichage : l'image
-  flotte DANS la carte « Prière/Méditation du jour ». Sans préfixe,
-  l'image reste centrée au-dessus (comportement initial). Dans les
-  expanders (Actualités, etc.), le préfixe est simplement nettoyé.
-- **Alerte fiabilisée (demande n°2)** : l'alerte « 🔔 Nouveau feuillet »
-  annonce désormais le **dernier mois pastoral publié récemment** (et non
-  la dernière publication en date) : republier le feuillet de septembre
-  après celui d'octobre ne renvoie plus l'alerte sur septembre — la
-  couverture personnalisée d'octobre s'affiche bien dans l'alerte. Une
-  publication à date illisible est annoncée sans mention de date
-  (auto-réparation) ; hors délai de 45 jours, pas d'alerte.
-- **Publications de feuillets blindées** : la publication (et la
-  republication d'une version corrigée) passe par UPDATE puis INSERT —
-  robuste même si la base ancienne n'a pas la contrainte UNIQUE ; une
-  migration dédoublonne `feuillets_publications` et pose l'index unique
-  `(annee_debut, mois)` (fini les lignes jumelles qui embrouillaient
-  l'alerte).
-
-## 🟡 État de publication affiché — fin du mystère « alerte bloquée » (v7.8.12)
-
-- **Le constat** : la couverture d'octobre apparaissait au sommaire du
-  livret mais l'alerte 🔔 restait sur septembre. Cause établie (base en
-  main) : **octobre n'avait jamais traversé le circuit SAS** — aucune
-  soumission « 📨 » pour ce mois, donc pas de ligne dans
-  `feuillets_publications`. Le test « de bout en bout » du 18/10 portait
-  sur la version corrigée de SEPTEMBRE (les seules soumissions de
-  feuillet de l'historique). Et la couverture personnalisée enregistrée
-  l'avait été pour septembre aussi (mois resté dans le sélecteur).
-  L'alerte était donc **conforme au principe SAS** : elle annonce le
-  dernier mois PUBLIÉ par le diocèse.
-- **Le malentendu** : l'URL de test `?flt=1&fa=2026&fm=2` (lien profond)
-  ouvre le livret d'octobre même non publié — la vitrine aussi dès qu'une
-  section est saisie. On croyait donc le mois « publié » sans l'être.
-- **Correctifs (transparence d'état)** :
-  ① la **vitrine** du feuillet affiche un bandeau « 🟡 Livret en
-  préparation » quand le mois affiché n'a pas de publication diocèse
-  (avec rappel du dernier mois réellement publié) ;
-  ② l'expander **« 🎨 Couverture du livret »** (2️⃣ bis) affiche
-  désormais le **mois ciblé** (« 🖼️ Mois ciblé : N° 2 · Octobre 2026 »)
-  et un avertissement si ce mois n'est pas encore publié — la couverture
-  accompagnera l'alerte après validation diocèse.
-- **Pour faire basculer l'alerte sur octobre** : 2️⃣ bis → sélectionner
-  Octobre 2026 → enregistrer la couverture (mois ciblé affiché) →
-  « 📨 Soumettre le feuillet au diocèse » → côté diocèse « ✅ Valider » →
-  l'alerte 🔔 passe automatiquement à octobre avec sa couverture.
-
-## 📿🔑 2 icônes PWA · intentions aux équipes · photos nouvelle mise en page (v7.8.14)
-
-### 1. Deux icônes d'application — l'icône Streamlit a disparu des deux côtés
-- **📿 « Rosaire — Espaces de prière »** : ouverte via `?espace=…` (Membre,
-  Communautaire) ou la page Réponse de Communion (`?e=…`).
-- **🔑 « Rosaire — Administration »** : connexion + rôles diocèse / paroisse /
-  équipe / communication.
-- L'échange est **automatique selon la partie ouverte** : le favicon de
-  l'onglet, l'icône « Ajouter à l'écran d'accueil » (manifeste PWA) et
-  l'apple-touch-icon sont injectés à chaque chargement
-  (`components.injecter_icone_pwa`), le manifeste pointant l'icône
-  correspondante. Les icônes (chapelet doré / clé dorée, fond bleu nuit
-  liseré or) vivent dans **`static/`** (4 tailles chacune + 2 manifestes).
-- **Indispensable** : `.streamlit/config.toml` contient désormais
-  `server.enableStaticServing = true` (sinon `/app/static/…` renvoie du HTML).
-
-### 2. « 🙏 Vos intentions à une équipe » — le circuit complet
-- **Espace de Prière** (public ET membre) : la rubrique se présente dans le
-  langage du dépliant (bannière bleu-or « Un jour, une dizaine ») **juste
-  avant « 📰 Actualités de la Paroisse »** : choix de l'équipe (pré-sélection
-  de l'équipe du membre), texte (600 car. max), anonymat possible → la
-  table `intentions_equipes` reçoit l'intention, le flash confirme.
-- **Gestionnaire → « 📌 Suivi et Agenda - Équipe X »** : le 4ᵉ onglet
-  « 🙏 Vos intentions à une équipe » est la boîte de réception du
-  responsable — compteur (🆕 Reçues / 🕊️ En prière / 🗄️ Archivées),
-  🕊️ **Prise en prière**, 🗄️ **Archiver** (archivés consultables, supprimables),
-  et principe **« être une tombe »** rappelé en tête.
-
-### 3. Photos du livret — la nouvelle mise en page (remplace le centrage)
-- **a. Bande du titre** : la page ouvre sur une bande — titre manuscrit sur
-  les **¾ à gauche**, photo sur le **quart à l'extrême droite** ; sans photo,
-  emplacement pointillé 📷.
-- **b. Photos du corps** : **2 maximum**, chacune en 🡕 haut droite /
-  🡖 haut gauche / 🡘 bas droite / 🡗 bas gauche (~¼ de page, texte habillé,
-  **proportions d'origine** — aucun rognage). Schéma : `image_titre`,
-  `image_url2`, `pos_image2` (migration douce automatique).
-- **Couverture non rognée** : l'image de couverture s'affiche telle quelle
-  (proportions d'origine, bornée à 420 px de haut).
-
-### 4. A− / A+ en haut du livret
-Deux mini-boutons très petits règlent la taille du texte de **90 % à 150 %**
-(pas de 10), mémorisés pour la session (légende « 🔍 Taille du texte : N % »).
-
-### 5. Fin de la défaillance « retour à l'onglet primaire »
-Les onglets Streamlit n'ont **aucune mémoire** : chaque coche ou bouton
-(« 💾 Enregistrer la couverture », « 📨 Soumettre », année des rappels…)
-ramenait au 1er onglet. Tous les blocs à interaction sont remplacés par des
-**sélecteurs persistants** (st.radio avec clé de session) : 📡 Service
-Communication, 📌 Suivi et Agenda (équipe, paroisse, diocèse), 💬 WhatsApp.
-
-### 6. Correction au passage
-Le rappel ♻️ « Reprendre le texte du mois précédent » affichait la valeur de
-`pos_image` à la place de l'année (indice 4 au lieu de 5) — corrigé.
-
-## 🙏 Intentions : Espace communautaire + cadre doré (v7.8.15)
-
-### 1. « 🙏 Vos intentions à une équipe » réservée à l'Espace communautaire
-Le bloc n'apparaît **plus côté Membre** (vue `matloc`) : il est présenté
-UNIQUEMENT dans l'Espace communautaire de la paroisse (`?p=…` / QR paroissial),
-juste avant « 📰 Actualités de la Paroisse ». Côté code, `_render_fil_actualites`
-gagne un paramètre `intentions=True` — l'appel de la vue Membre passe
-`intentions=False`.
-
-### 2. Le bloc « comme le dépliant » — un seul cadre doré
-- **Cadre or** (bordure 2 px #FFD700, fond bleu nuit #121a45, coins arrondis,
-  ombre) englobant **tout** : bannière, badge, expanseur, champs, cases, bouton.
-- **Bannière** (dégradé #1A237E→#4527a0, titre Georgia doré) :
-  « 🙏 Vos intentions à une équipe » + **« Confie à Notre Dame du Rosaire ton
-  intention de prière par le canal d'une équipe »** + badge 🤫 « être une tombe ».
-- **👥 Choix de l'équipe** : expanseur au liseré or ; après clic, son titre
-  affiche le choix (« … — Équipe Espérance ») et le choix est mémorisé.
-- **Champs à liséré doré** (#C9A227 sur fond #0d1338) : **Nom et Prénom\***,
-  **Contact WhatsApp / Adresse mail\***, **Intention de prière\*** (600 car.),
-  précédés de « * » indique les champs obligatoires.
-- **☑ Case obligatoire** : « En envoyant cette intention, j'accepte que
-  certaines données techniques soient utilisées à des fins de sécurité et de
-  lutte contre les envois automatisés (spam) » + expanseur **🔒 Politique de
-  confidentialité**.
-- Soumission validée champ par champ (message « Il manque : … »), champs vidés
-  après succès **sans perdre la saisie** en cas de refus (clés par génération).
-
-### 3. Côté responsable — le contact arrive avec l'intention
-- La table `intentions_equipes` gagne la colonne `auteur_contact`
-  (migration douce automatique).
-- Dans « 📌 Suivi et Agenda » → onglet « 🙏 Vos intentions à une équipe » :
-  chaque carte affiche **📞 Contact : …** sauf si 🕊️ anonyme (le nom devient
-  « Anonyme » et le contact est masqué). Compteurs, Prise en prière, Archiver
-  et principe « être une tombe » inchangés.
-
-### 4. Techniquement
-Le cadre doré est posé par un mini-script (même mécanisme que
-`injecter_icone_pwa`) qui ajoute la classe `.int-cadre-or` au container bordé
-`st.container(border=True)` — le CSS par classe ne touche donc que ce bloc,
-quel que soit le thème ou la version de Streamlit.
-
-### 5. PWA — guide pas à pas
-La réalisation des 2 icônes (📿 Espaces / 🔑 Administration) est documentée
-pas à pas dans **`GUIDE_PWA_v7.8.15.md`** : ce qui est déjà dans le ZIP, la
-vérification sur ordinateur (F12 → Application → Manifest), l'installation
-Android/iPhone, le dépannage (cache, HTTPS, réinstallation) et le remplacement
-des icônes par vos dessins.
-
-## ☁️ Hotfix fiabilité Streamlit Cloud / Turso (v7.8.16)
-
-Correctif des trois incidents observés dans les journaux Cloud, **après un
-déploiement réussi, tout se répare tout seul au premier démarrage** :
-
-### 1. La base distante se répare automatiquement
-Sur la base Turso créée par une version antérieure, la table
-`intentions_equipes` existait **sans** les colonnes récentes
-(`anonyme`, `auteur_contact`) → la soumission plantait
-(« table intentions_equipes has no column named anonyme »). Désormais :
-- `database.py` crée la table à l'init et y applique 2 `safe_migrate`
-  idempotents (ils s'exécutent à chaque démarrage sans risque) ;
-- `_assurer_table_intentions` (vue membre) et
-  `_assurer_table_intentions_eq` (vue équipe) ajoutent elles aussi les
-  colonnes manquantes par `ALTER TABLE` doux — **sans toucher aux données**.
-
-### 2. Les micro-coupures Turso ne font plus planter les pages
-L'erreur Hrana « connection closed before message completed » (et les
-erreurs http / timeout transitoires) est désormais **rattrapée** : 3
-tentatives espacées d'une seconde avec reconnexion, puis seulement
-l'erreur remonte. La mini-barre musicale (mini-lecteur), purement
-décorative, s'escamote si la base ne répond pas — la page de l'Espace de
-Prière s'affiche quand même.
-
-### 3. Fin des avertissements « Please replace st.components.v1.html with st.iframe »
-Nouveau module **`stcompat.py`** (à la racine de `app/`) : TOUT le rendu
-HTML/JS (injection PWA, scripts de mesure, lecteurs, cadre doré) passe par
-`comp_html()` — `st.iframe` sur Streamlit récent (hauteur bornée à 1 px
-pour les scripts invisibles), repli automatique `components.v1.html` sur
-les anciennes versions. Les journaux Cloud redeviennent silencieux.
-
-### 4. La soumission d'intention est blindée
-Si l'envoi échoue malgré les tentatives (réseau), un **message doux** invite
-à réessayer et la saisie est **conservée** — plus jamais de traceback à
-l'écran du fidèle.
-
-### 5. v7.8.17 — la boîte de réception du responsable devient infaillible
-Symptôme : « Impossible de lire les intentions pour le moment. » dans
-l'onglet **🙏** de « 📌 Suivi et Agenda », sans aucune trace dans les
-journaux (un `except` muet). Cause : la base Cloud, créée par un brouillon
-antérieur, peut manquer de **n'importe quelle** colonne de
-`intentions_equipes` — la réparation v7.8.16 ne couvrait que deux d'entre
-elles (très probablement `date_statut` manquait aussi). Correctif :
-- **`database.verifier_reparer_intentions()`** — appelée par les 2 vues
-  avant toute lecture/écriture : sonde de lecture complète ; en cas d'échec,
-  ALTER doux de **chaque** colonne attendue puis re-sonde ; si ça échoue
-  encore, **reconnexion** de la base (cache de statements périmé) et
-  nouvelle sonde ; chaque incident est **journalisé** ;
-- l'onglet équipe journalise l'erreur réelle et explique quoi faire.
-
-### 6. v7.9.0 — LA CHAÎNE DE PRIÈRE UNIVERSELLE 🔗
-L'idée : **faire dire une dizaine au visiteur qui dépose une intention** —
-celui qui confie devient « le prochain » de celui qui prie.
-
-- **Formulaire d'intention** (Espace communautaire) :
-  - nouveau champ obligatoire **« Jour de naissance (1 - 31) »** : clé
-    discrète de la chaîne — il garantit que le fidèle ne priera **jamais
-    SA propre intention** (le livret écarte automatiquement les intentions
-    portant le même jour de naissance que le lecteur) ;
-  - la case « 🕊️ Rester anonyme » est **retirée** ; placeholders adaptés
-    (« Ex : N'guess KONÉ » / « …ou nguekon@exemple.com ») ; badge
-    « 🤫 Tu es le prochain de l'équipe qui prie pour toi… » ;
-  - après l'envoi : bandeau **« 📿 Prier ma dizaine maintenant »** qui
-    ouvre directement le livret — le fidèle participe aussitôt à la chaîne.
-- **Le livret « 🕯️ Un jour, une dizaine »** : la dernière intention de
-  chaque mystère (« Intention du prochain dans la chaine de prière ») est
-  désormais **DYNAMIQUE** — elle porte une vraie intention confiée par un
-  fidèle (idem dans le Rosaire complet de l'Espace). La chaîne ne se casse
-  jamais : sans intention disponible, elle retombe sur « La Paix dans le
-  monde ».
-- **Nouvel onglet « 🙏 Coins des Intentions »** (4ᵉ onglet de
-  « 📌 Suivi et Agenda » côté paroisse) :
-  - **bilan** de toutes les intentions confiées aux équipes
-    (🆕 reçues / 🕊️ prises en charge / 🗄️ archivées), détail par équipe
-    avec ancienneté ;
-  - règle rappelée partout : **une intention prise en charge dure au
-    minimum 20 jours (20 mystères), sinon jusqu'à la prochaine prière
-    mensuelle** (badge J+X/20, alerte « ✅ à archiver » à l'échéance) ;
-  - **réglage de la chaîne** : 1ᵉʳ choix = les intentions **reçues** (la
-    plus ancienne d'abord), 2ᵉ = les **prises en charge**, 3ᵉ = les
-    **intentions universelles** (« La Paix dans le monde », « Le Sacrement
-    de la réconciliation », « La gestion juste et durable de la ressource
-    vitale : l'eau » — choix fixe ou rotation quotidienne) ; aperçu en
-    direct de ce que lira le visiteur.
-- **SAS diocèse (v7.9.0 au passage)** : les soumissions déjà publiées qui
-  traînaient encore dans « 🟡 En attente de validation » sont désormais
-  **détectées** (titre/type déjà présent dans la table cible) et rangées
-  sans republication — section « 🧹 Déjà publiés — à ranger » ; le compteur
-  d'attente redevient exact ; si le rangement d'une publication échoue
-  (micro-coupure Turso), l'erreur est affichée au lieu d'un succès
-  mensonger.
-- Technique : colonne `jour_naissance` (migration idempotente + réparation
-  v7.8.17 étendue), table `parametres` (clé/valeur) pour les réglages de
-  la chaîne, fonction `intention_du_prochain()` dans `database.py`.
-
-### 7. v7.9.1 — La chaîne prend vie : lendemain, anonyme, Galerie + 🚦
-Retours de validation de la v7.9.0, tous intégrés :
-
-- **Le modèle d'intercession** — la ligne dynamique du livret devient :
-  « 🕯️ Vierge Marie, mère de Dieu, **intercède pour {Prénom - Nom du
-  visiteur} : {son intention}** » ; pour une intention anonyme :
-  « intercède pour **cet anonyme** : … » ; pour une intention universelle
-  (3ᵉ choix) : « intercède : … » (identique dans le Rosaire complet, le
-  livre page-à-page et l'aperçu paroisse).
-- **La case « 🕊️ Rester anonyme » est de retour** : le responsable voit
-  « Anonyme » et le contact reste masqué ; le nom devient facultatif
-  (au moins l'un des deux : nom OU anonyme). Le contact est toujours
-  enregistré — il porte la règle d'unicité.
-- **Règle du lendemain (automatique)** : chaque intention reçue passe
-  « 🕊️ Prise en charge » **au lendemain de sa réception, pour 20 jours**
-  (20 mystères) — `date_statut` est datée réception + 1, le décompte
-  J+X/20 ne dépend pas du moment du balayage. Le bouton 🕊️ du
-  responsable garde un sens : prise en charge **immédiate** le jour même.
-- **Unicité par numéro** : **un même numéro de téléphone ne peut pas
-  porter 2 intentions prises en charge** — vérifié à la soumission
-  (message doux, saisie conservée) ET au balayage automatique ; les
-  numéros sont comparés après normalisation (espaces, tirets, indicatif
-  +225 / 00 225).
-- **Tirage « selon le N° méd. »** : chaque visiteur reçoit l'intention
-  placée à SON rang dans la file (sa clé = jour de naissance), au sein
-  d'une fenêtre de 20 jours — il retrouve la même intention à chaque
-  dizaine de la période, et deux N° méd. différents portent des
-  intentions différentes dès que la file le permet. La règle d'or
-  (personne ne prie sa propre intention) est conservée.
-- **Rectifications de textes** : « Votre intention a été confiée à
-  l'Équipe … » (sans guillemets) ; CTA « 📿 À vous maintenant : égrenez
-  une dizaine et porter en prière votre prochain ».
-- **🖼️ Galerie +** — nouvelle rubrique des Espaces de Prière (public ET
-  membre), placée après « 🕯️ Thème », avec 2 sous-rubriques :
-  **🏞️ Souvenirs** (photos des évènements) et **💬 Témoignages**
-  (grâces reçues). Le diocèse publie et retire depuis son nouveau menu
-  « 🖼️ Galerie + » (titre, photo par lien https, date, lieu, signature) ;
-  la communauté lit des cartes style dépliant.
-- **🚦 Tableau de bord** — 2ᵉ onglet de « 📊 Statistiques - {paroisse} » :
-  effectifs, abonnements de l'année pastorale (recouvrement), intentions
-  (reçues / en prière / archivées / **20 mystères accomplis à archiver**),
-  prochaine prière de l'agenda, arrivées QR paroissial (30 jours) et
-  santé de chaque équipe.
-- Technique : table `galerie_plus` (créée à l'init + doucement pour les
-  bases distantes), `prise_en_charge_automatique()`, `contact_en_priere()`,
-  `intention_du_prochain_detail()` (texte + intercédé), rubrique placée
-  pour préserver les liens `?r=1` / `?r=2` existants.
-
-### 8. v7.9.2 — La chaîne en direct : dizaines pointées, Galerie + réorganisée, programmation traçable 📿
-Observations et suggestions des utilisateurs, toutes intégrées :
-
-- **« Y a-t-il une possibilité de savoir si un membre / un visiteur fait
-  sa dizaine ? » — OUI, désormais :**
-  - le **pointage volontaire** « ✅ J'ai égrené ma dizaine aujourd'hui »
-    apparaît sur la DERNIÈRE page du livre « 🕯️ Un jour, une dizaine » —
-    il atteste d'une dizaine égrenée DANS l'application (jamais du contenu
-    de la prière, qui reste personnel) ;
-  - **membre** : identifié par son MatLoc — 1 pointage par jour
-    (contrainte UNIQUE), avec flamme 🔥 (jours consécutifs) et total du
-    mois ; **visiteur** : compté comme un « passage » anonyme (1 par
-    session et par jour, sans identité exigée) ;
-  - le responsable d'équipe voit dans **« 📊 Engagement spirituel »** le
-    nouveau bloc **« 📿 Chaîne des dizaines — aujourd'hui »** : qui a
-    pointé, qui n'a pas encore pointé, la participation de l'équipe, la
-    série des 7 derniers jours ;
-  - le **🚦 Tableau de bord paroisse** affiche 2 nouveaux KPI
-    (« 📿 Dizaines pointées aujourd'hui » pour ses équipes + « 🔥
-    Passages visiteurs ») et la santé par équipe gagne la colonne
-    « 📿 Dizaines aujourd'hui » ;
-  - technique : table `dizaines_journal` (créée à l'init + doucement,
-    zéro action manuelle sur Cloud) et fonctions `pointer_dizaine()`,
-    `stats_dizaines_jour()`, `serie_dizaines()`, `compteur_dizaines_mois()`.
-- **🖼️ Galerie + réorganisée** :
-  - le menu autonome du diocèse **disparaît** ;
-  - la **SAISIE** rejoint un onglet « 🖼️ Galerie + » de la section
-    « 📡 Communication » (à côté du SAS « 🕊️ Soumissions ») ;
-  - l'**ARCHIVE après publication** devient un onglet « 🖼️ Galerie + » de
-    « 📋 Contenu existant », entre « 🙏 Prières / 📖 Méditations » et
-    « 🎵 Musiques » — même mécanique à coches avec confirmation, photo
-    distante supprimée avec l'entrée ;
-  - la rubrique communauté change de place dans l'**Espace Membre** :
-    « 🖼️ Galerie + » se situe maintenant **entre « 📅 Mes évènements » et
-    « 📖 Archives »** (l'Espace communautaire garde son ordre ; les liens
-    `?r=1` (Thème) restent valables).
-- **Publications programmées — fiabilisées et TRANSPARENTES** (signalement
-  « des publications programmées publiées avant l'échéance ») :
-  - le réveil automatique est **testé sain** (une soumission programmée
-    dans 5 jours n'est PAS publiée) ; il est en plus **blindé** :
-    double protection temporelle (filtre SQL + re-parsing Python — un
-    format de date inattendu n'est JAMAIS publié), **réclamation
-    anti-course** (deux sessions ouvertes en même temps ne publient
-    chacune leur copie), **auto-réparation** après 10 min d'une
-    réclamation bloquée par un crash, et plus aucune exception ne peut
-    casser une page ;
-  - **traçabilité totale** : chaque publication enregistre
-    `date_decision` + `auteur_decision` ; « 📔 Historique des décisions »
-    affiche désormais « publiée le {date} · 👤 diocèse — clic « ✅
-    Publier » » ou « · ⏰ publication automatique — programmation
-    respectée » — impossible de confondre un clic et une échéance ;
-  - **UX anti-erreur** : résumé LIVE avant de programmer (« → Résumé :
-    publication le 27/10/2026 à 23:59 (dans 5 jour(s)) »), mention
-    explicite que « ✅ Publier » reste une publication immédiate, flash
-    enrichi, compte à rebours « ⏳ dans 5 j 14 h » sur chaque élément de
-    « 🗓️ Programmées ».
-
-### 9. v7.9.3 — Accueil harmonisé, pied de page, pointage « Terminer », réserve des N° méd. 🔒
-Retours de validation v7.9.2, tous intégrés :
-
-- **Accueil harmonisé (le fil d'actualité allégé)** :
-  - « 🙏 Vos intentions à une équipe » **remonte** : elle quitte le fil
-    d'actualité et se place juste après le dépliant, **AVANT « 🕯️ Un
-    jour, une dizaine »**, dont elle reprend EXACTEMENT le langage
-    visuel (dégradé #1A237E→#283593, liseré or 2 px, titre Georgia) —
-    un Accueil homogène : dépliant → intentions → dizaine ;
-  - le fil d'actualité est **allégé à UNE section**, celle qui correspond
-    à nos attentes : la **prière/méditation du jour** (couronnée de
-    l'alerte feuillet). Le 📣 Coin Affiche, « 📰 Actualités de la
-    Paroisse » et « 📰 Actualités du diocèse » quittent l'Accueil (code
-    conservé : repassez `FIL_ALLEGEE = False` dans
-    `views/view_espace_membre.py` pour réafficher l'ancien fil) ;
-  - le texte du dépliant suit le nouvel ordre (« Juste en dessous :
-    confiez votre intention… puis entrez dans la dizaine »).
-- **Pied de page du site + « 🔒 Politique de confidentialité »** :
-  - un **pied de page** apparaît sur TOUTES les pages des Espaces de
-    Prière (communautaire, membre, livre ouvert) : signature du
-    Mouvement + la politique de confidentialité complète en encart
-    repliable (données recueillies / usage / vos droits) ;
-  - l'expander RGPD du formulaire des intentions reste en place (le
-    consentement doit être informé sur place).
-- **« ✕ Terminer » pointe la dizaine — cause incognito** :
-  - chaque mystère a sa fin (page GLORIA PATRI) : un bouton « ✕
-    Terminer » y figure désormais À CÔTÉ de « Suivant ▶ » ; **en
-    cliquant dessus, il est pointé** — sans demander qui prie (membre :
-    1 pointage/jour par MatLoc ; visiteur : un passage anonyme) — puis
-    le livre se referme ;
-  - le pointage explicite « ✅ J'ai égrené ma dizaine aujourd'hui »
-    s'affiche maintenant sur la VRAIE dernière page, chaque jour (le
-    livre du jour ne contient qu'UN mystère : la fin est la page
-    Gloria, l'outro « Salve Regina » n'existe que le jour du mystère
-    N° 20) ;
-  - les responsables le voient : la légende du bloc « 📿 Chaîne des
-    dizaines » mentionne les deux boutons.
-- **📚 La réserve d'intentions — 20 intentions par N° méd.** :
-  - « Les visiteurs du jour reçoivent les intentions de leurs prochains
-    selon leurs N° méd. et méditent sur 20 jours : il est capital d'avoir
-    AU PRÉALABLE 20 intentions pour chacun des N° méd. Ça sera l'affaire
-    des responsables d'équipe et paroissial. » — c'est fait ;
-  - nouvelle table **`intentions_reserve`** (N° méd. 1-20, texte,
-    auteur, équipe, paroisse, date) créée à l'init ET doucement — zéro
-    action manuelle sur Cloud ;
-  - **côté responsable d'équipe** (onglet « 🙏 Vos intentions à une
-    équipe ») et **côté responsable paroissial** (onglet « 🙏 Coins des
-    Intentions ») : une **grille des 20 emplacements** (X/20, or quand
-    l'objectif est atteint), le formulaire **« ➕ Ajouter une intention à
-    la réserve »** (membre choisi → son N° méd. désigne l'emplacement et
-    son nom signe l'intention), la liste des lignes posées avec retrait
-    🗑️, et la confirmation flash ;
-  - **la chaîne puise d'abord dans la réserve** : un visiteur dont le
-    N° méd. correspond à un emplacement nourri reçoit une intention de
-    CETTE réserve (rotation à chaque fenêtre de 20 jours) ; réserve
-    vide → la file des soumissions (comportement v7.9.1) ; mode
-    « universelle » choisi par la paroisse → prioritaire comme avant ;
-    la règle d'or reste garantie (la réserve n'a pas de jour de
-    naissance : elle n'entre jamais en conflit avec la clé du lecteur).
-- **Pages remontées à l'ouverture (comme les feuillets)** :
-  - à l'ouverture d'une page (changement de rubrique/sous-rubrique), la
-    lecture repart DU HAUT de l'écran — même mécanique « nonce » que le
-    retournement des pages du livret (`_scroll_top_si_nouvelle_page`) ;
-  - l'entête est un peu plus compacte (logo 190→170 px, 150→136 et
-    138→126 sur petits écrans) : la hauteur mesurée suit
-    automatiquement, le contenu commence un peu plus haut ;
-  - les interactions DANS une page (expander, bouton) ne repositionnent
-    pas l'écran — seul un changement de page le fait.
-
-## 🕊️ 10. v7.9.4 — La réserve affine son modèle (1 intention par N° méd., zone du jour, attachement 20 jours)
-
-- **Compteurs de dénombrement** (harmonisation « Équipe 5 → 1/12 membres ») :
-  - Paroisse « 👥 Mes équipes » : le titre devient **« 👥 Équipes de {paroisse} — N équipe(s) · M membre(s) »** ;
-  - Diocèse « 📋 Gérer paroisses » : **« 📋 Consultation des paroisses — N paroisse(s) »**,
-    et le détail interne **« 👥 Équipes de {paroisse} — N équipe(s) »** ;
-- **📚 Réserve d'intentions — 1 intention par N° méd.** (le modèle v7.9.3
-  s'affine) :
-  - **UNE seule intention par N° méd.** : chaque emplacement (1-20) porte
-    une intention — « Que chacun ait sa dernière intention selon son N°
-    méd. » ; un second ajout au même emplacement est refusé avec un
-    message doux (flash visible même l'encart refermé) ;
-  - **la ZONE DU JOUR** (`intentions_du_jour`) : toute intention confiée
-    dans « 🙏 Vos intentions à une équipe » y est recueillie en plus de
-    la boîte du responsable (dont le travail ne change pas) ;
-  - **LE LENDEMAIN**, chaque intention recueillie entre dans la réserve
-    en remplaçant AU HASARD l'une des intentions en place
-    (`traiter_intentions_du_jour`, idempotent, silencieux) ; l'ancienne
-    passe en historique (`active=0`) — et si les demandes abondent, le
-    stock tournant du N° méd. s'élargit d'autant (quota augmenté, la
-    rotation par cycle de 20 jours s'en charge) ;
-  - **L'ATTACHEMENT** (`attributions_prochain`) : l'intention du prochain
-    reçue S'ATTACHE à son lecteur — **période désignée du membre (clé
-    M:matloc) / 20 jours du visiteur (clé J:n° méd.)** — même si la
-    réserve se renouvelle entre-temps ; échue, le tirage reprend dans la
-    réserve renouvelée ;
-  - **la règle d'or vaut aussi dans la réserve** : le jour de naissance
-    du lecteur écarte l'intention qu'il a lui-même confiée ;
-  - les responsables d'équipe et paroissial gardent le même bloc
-    (grille 1/N°, or quand l'emplacement est pourvu, objectif « 20 au
-    total ») ;
-- **Message d'unicité repensé** (fidèle qui revient) : « 📿 Tu es déjà
-  porté(e) en prière depuis le {date}. Ne brise pas la CHAÎNE DE PRIÈRE.
-  Continue de méditer ta dizaine à CAUSE DE TON PROCHAIN. » suivie de
-  **Matthieu 7.12** — plus aucune formulation de contrôle ;
-- **« 🔒 Politique de confidentialité » retirée du formulaire** des
-  intentions : elle vit désormais UNIQUEMENT en pied de page (la case de
-  consentement renvoie « en pied de page ») ;
-- **Pointage au ton complice** (fin de méditation) :
-  - « 📿 La chaîne compte sur **Toi** — Marque ta présence du jour et ta
-    gratitude envers La Vierge Marie pour l'écoute » ;
-  - bouton **« ✅ Merci Sainte Mère pour ton aide de ce jour! »** ;
-  - remerciement **« 📿 Ta dizaine est capitale pour la chaîne — Merci
-    pour ta fidélité! — X dizaine(s) ce mois — À demain! 🕊️ »** (le
-    compteur du mois est montré au membre) ;
-  - les mentions de mécanisme disparaissent (« Le pointage enregistre… »,
-    « Pointée ! … est enregistrée », « Dizaine d'aujourd'hui pointée »,
-    info-bulle du « ✕ Terminer ») — jamais l'impression d'une
-    surveillance ;
-- **« J'ai honoré mon engagement de ce jour »** : au retour de la
-  méditation, le bouton s'affiche juste après « 📿 Égrener la dizaine »
-  (membre comme visiteur, quand la dizaine du jour est faite) — un clic,
-  et il s'efface jusqu'à demain, comme « 📌 Marquer comme lue » ;
-- tables nouvelles créées automatiquement (init + création douce,
-  zéro action Cloud) : `intentions_du_jour`, `attributions_prochain` ;
-  colonnes `active` / `qui` / `jour_naissance` ajoutées en ALTER doux à
-  `intentions_reserve`.
-
-### 11. v7.9.5 — « Chaîne des dizaines — aujourd'hui » : le même nom ne figure plus des deux côtés 📿
-
-- **Correctif** (onglet « 📊 Engagement spirituel » de l'équipe) :
-  « ⏳ Pas encore pointé aujourd'hui » listait **chaque** équipier actif,
-  y compris ceux qui viennent de pointer — le même nom s'affichait dans
-  « ✅ Ont pointé » ET dans « ⏳ Pas encore » (le rapprochement comparait
-  des noms à un ensemble de MatLoc ; il se lit désormais par **MatLoc**,
-  la clé unique qui a pointé) ;
-- la liste « ⏳ Pas encore » ne contient plus que ceux qui n'ont pas
-  encore marqué leur dizaine du jour, et « toute l'équipe est à jour
-  🎉 » revient dès que le dernier a pointé ; la métrique
-  « 📿 Dizaines pointées aujourd'hui » est inchangée ;
-- aucun changement de base, aucune donnée à retoucher : le pointage
-  existant était juste, seul l'affichage des listes est corrigé.
-
-### 12. v7.9.6 — Fin de dizaine : deux rôles bien distincts, une carte qui se referme 📿
-
-- **« ✕ Terminer » retrouve sa discrétion** : sa confirmation devient la
-  ligne courte **« 📿 À demain! 🕊️ »** — il ne répète plus le
-  remerciement complet avec le compteur du mois ; **le remerciement
-  complet (« 📿 Ta dizaine est capitale pour la chaîne — Merci pour ta
-  fidélité! — X dizaine(s) ce mois — À demain! 🕊️ ») reste la voix du
-  seul bouton « ✅ Merci Sainte Mère pour ton aide de ce jour! »** de la
-  dernière page — deux gestes, deux tonalités, plus de doublon ;
-- **« J'ai honoré mon engagement de ce jour » referme désormais LA CARTE
-  ENTIÈRE**, exactement comme « 📌 Marquer comme lue » referme la
-  sienne : la bannière « 📿 Ta dizaine du jour », le bouton
-  « 📿 Égrener la dizaine » et le bouton lui-même s'effacent jusqu'à
-  demain (membre comme visiteur) ; le livre déjà ouvert, lui, reste
-  prioritaire — on ne ferme pas une lecture en cours ;
-- aucun changement de base ni de migration : deux ajustements d'écran.
-
-### 13. v7.9.7 — Le raccourci de l'application : une vraie app, qui se souvient du fidèle 📿
-
-- **Plein écran, comme une vraie app** : les métas « capable »
-  (Android + iPhone) et la barre d'état sont posées à chaque chargement —
-  depuis « Ajouter à l'écran d'accueil », l'application s'ouvre SANS
-  barre de navigateur, avec le bon nom (« Rosaire — Espaces de prière »
-  côté fidèles, « Rosaire — Administration » côté gestionnaire) ;
-- **la mémoire du fidèle** : le raccourci posé depuis un lien personnel
-  ouvrait l'espace « générique » (le manifeste pointe `/?espace=1`,
-  sans matloc) — désormais le navigateur retient le dernier lien
-  personnel ouvert et le restitue à l'ouverture suivante : le fidèle
-  retrouve SON espace, sa bannière, sa dizaine du jour, sans rien
-  ressaisir ; un lien personnel rouvert rafraîchit la mémoire ;
-- **100 % navigateur** (localStorage du téléphone) : aucune table,
-  aucune donnée serveur, rien à migrer — un appareil qui n'a ouvert que
-  le lien public reste neutre, et l'administration n'a aucune mémoire ;
-- les deux manifestes gagnent leurs champs d'identité (`id`, `scope`,
-  `lang`) : Android distingue proprement l'app « Espaces » de l'app
-  « Administration » au moment de l'installation.
-
-### 14. v7.9.8 — Le raccourci porte le bon nom, l'icône se reconnaît d'un coup d'œil 📿
-
-- **Des noms distincts** : le navigateur nomme le raccourci d'après le
-  titre de l'onglet — identique des deux côtés avant (« Gestionnaire des
-  Équipes du Rosaire… »). Désormais **« Rosaire »** côté Espace de
-  prière et **« Rosaire Admin »** côté gestionnaire, onglet compris ;
-- **Une icône admin refondue** : la clé dorée passe sur **fond violet**
-  (la couleur de l'interface de gestion), l'Espace garde son chapelet
-  doré sur bleu nuit — plus aucune confusion une fois les pastilles
-  recadrées en rond et réduites ;
-- **Le bon geste, rappelé en page** : la carte « raccourcis » de la page
-  de recherche du navigateur n'écrit JAMAIS sur l'écran d'accueil — le
-  rappel « menu ⋮ → Ajouter à l'écran d'accueil » est affiché dans la
-  carte d'accueil de l'Espace et, en légende, sous la connexion ;
-- **Plus de version en retard** : la carte d'accueil, la carte membre, la
-  bannière « Rosaire selon le thème », la ligne N° méd. et le pied de
-  page lisent UNE constante (`_VERSION_APPLI`) — les « v7.6 » figés
-  disparaissent ;
-- aucun changement de base ni de migration.
-
-### 15. v7.9.9 — La zone du jour devient un écran, le pied de page porte la robe du Mouvement 🕯️
-
-- **🕯️ La zone du jour (diocèse → « 🕯️ Zone du jour »)** : la demande
-  « Afin d'harmoniser l'intention du prochain à l'affichage, il est
-  nécessaire de la traiter auparavant. Créer donc une zone qui recevra
-  toutes les intentions du jour » prend forme d'écran. La table
-  `intentions_du_jour` (v7.9.4) reçoit déjà chaque intention confiée ;
-  elle est désormais VISIBLE : compteurs (⏳ en attente · ✅ entrées en
-  réserve aujourd'hui · 🌙 écartées), puis chaque intention se déplie —
-  texte d'origine, **« ✨ Harmoniser le texte »** (l'entrée en réserve du
-  lendemain emporte le texte soigné, et c'est lui que la chaîne affiche)
-  et **« 🌙 Écarter de la chaîne »** (`traitee=2` : le transfert
-  automatique ne la prendra jamais). Aucune migration : la table
-  suffit ;
-- **🟣 Pied de page refondu sur le modèle du site du Mouvement**
-  (equipes-rosaire.org) : trois colonnes — la marque (📿 + nom +
-  diocèse), « LE ROSAIRE EN ÉQUIPE » (menus tirés de l'entête de
-  l'application), « NOUS CONTACTER » — sur fond **violet nuit**, celui
-  du badge « Bienvenue » (`#4A148C`), barre noire de copyright
-  (« © 2026 Les Équipes du Rosaire — Diocèse de Grand-Bassam ») et
-  emplacement Facebook (constante `LIEN_FACEBOOK` : renseignée → l'icône
-  apparaît ; vide → elle reste absente). La « 🔒 Politique de
-  confidentialité » complète y demeure, rejointe par une « 🍪 Politique
-  de cookies » ;
-- **Raccourci, suite** : l'adresse du manifeste porte désormais une
-  version (`manifest_*.json?v=799`) — le navigateur relit les bons noms
-  et les bonnes icônes au prochain « Ajouter à l'écran d'accueil ».
-  Rappel du geste sur le téléphone : **supprimer l'ancien raccourci**
-  (il garde pour toujours le visage qu'il avait au moment où il a été
-  posé), puis menu ⋮ → « Ajouter à l'écran d'accueil » APRÈS déploiement ;
-- **Dénombrement allégé** : le titre paroissial devient
-  « 👥 Équipes de {paroisse} — N équipe(s) » (le compte des membres
-  disparaît du titre, à la demande) ;
-- aucun changement de base ni de migration.
-
-### 16. v7.9.10 — Le sas des intentions, la publication à 00h00, le raccourci incassable 🕊️
-
-- **🕯️ La zone du jour DÉMÉNAGE chez la paroisse** (« Les intentions c'est
-  une affaire des paroisses et de ses équipes ») : elle quitte le menu du
-  diocèse et devient le **sas des intentions** en tête de « 🙏 Coins des
-  Intentions » (📌 Suivi et Agenda - Paroisse), portée sur les intentions
-  de LA maison (équipe de la paroisse ou paroisse notée). Chaque
-  intention confiée y transite — **aucune ne peut être publiée sans y
-  passer** ;
-- **🕊️ « Traiter & envoyer en réserve » (immédiat)** : le responsable
-  harmonise le texte (orthographe, dignité, clarté) et l'envoie en
-  réserve SUR LE CHAMP — plus d'attente du lendemain. **🌙 Écarter de la
-  chaîne** demeure (`traitee=2`) ;
-- **⏰ La publication se fait à 00h00 du jour suivant** : toute arrivée en
-  réserve naît `publiee=0` avec `date_publication` = demain ; le réveil
-  `publier_reserve_due()` — appelé à chaque tirage — la rend visible à
-  l'heure dite. Le transfert automatique du lendemain (v7.9.4) respecte
-  la même règle ; les intentions déjà en place avant v7.9.10 restent
-  publiées comme avant (`DEFAULT 1`) ;
-- **📱 Le raccourci devient incassable** : le favicon de l'onglet et
-  l'icône iPhone sont désormais INCORPORÉS à la page (images base64 —
-  ni 404, ni cache possible), le manifeste reste versionné
-  (`?v=7910`), et deux **pages d'installation** (`static/install_rosaire.html`
-  et `install_rosaire_admin.html`) portent le vrai visage — nom « Rosaire »
-  / « Rosaire Admin », chapelet doré / clé — DÈS LE PREMIER OCTET : le
-  raccourci posé depuis elles ne peut plus porter le nom ni l'icône de
-  Streamlit (c'était le cas quand il était posé pendant l'écran de
-  chargement bleu). Les liens vers ces pages sont dans la carte de
-  bienvenue (espaces) et sous la connexion (administration) ;
-- **🦶 Pied de page — la disposition demandée** : colonne 1 — 🔒
-  Politique de confidentialité · 🍪 Politique de cookies ; colonne 2 —
-  le logo, LES ÉQUIPES DU ROSAIRE, DIOCÈSE DE GRAND-BASSAM, le nom de la
-  paroisse du fidèle, « Contactez le responsable paroissial » (WhatsApp
-  quand il est renseigné) ; colonne 3 — 🏠 Actualités · 📿 Rosaire ·
-  🕯️ Thème · 🖼️ Galerie + · 📖 Archives (les cinq rubriques, dans
-  l'ordre, naviguant dans l'onglet courant). Fond violet nuit du badge
-  « Bienvenue », barre © 2026, Facebook conditionnel ;
-- **⚠️ Erreurs récurrentes du Cloud, traitées** : le veilleur de fichiers
-  est désarmé (`fileWatcherType = "none"` — fini les
-  « inotify instance limit reached » au démarrage) et le rattrapage des
-  micro-coupures embrasse la transaction rendue au repos trop longtemps
-  (SQLITE_BUSY / « idle for too long » / rollback) + un commit rejoué ;
-- **Migration douce** : deux colonnes ajoutées à `intentions_reserve`
-  (`publiee INTEGER DEFAULT 1`, `date_publication TEXT`) — idempotentes,
-  silencieuses, rien à faire manuellement.
-
-### 17. v7.9.11 — Le tableau de la chaîne, la paix des cinq téléphones, le pied de page assagi 📋
-
-- **📋 Le tableau de la chaîne, jour par jour** (à la demande du
-  fondateur) : dans « 📿 Chaîne des dizaines » (onglet 📊 Engagement
-  spirituel de l'équipe), les deux listes du jour (« ✅ Ont pointé » /
-  « ⏳ Pas encore pointé ») laissent place à une **grille jour × membre**
-  — « ✅ » dans la case du membre qui a fait sa méditation du jour, vide
-  sinon. La ligne du jour vit en tête (✨) ; **à 00h00 elle s'archive
-  toute seule** — les lignes passées demeurent consultables à souhait —
-  et la ligne du nouveau jour s'affiche. Une ligne « 📿 Total » résume
-  la période (7, 14 ou 30 jours au choix) ; **le même tableau sert aux
-  visiteurs** (passages anonymes, comptés jour par jour, sans jamais les
-  nommer) — `tableau_pointages_equipe()` / `tableau_pointages_visiteurs()`
-  dans `database.py`, le journal `dizaines_journal` relu tel quel (rien
-  n'est jamais effacé, aucun changement de schéma) ;
-- **🤝 La paix des cinq téléphones** (formation pastorale, cinq
-  téléphones sur toutes les pages) : toutes les requêtes partageaient le
-  même fil de la base — lectures croisées d'un fidèle à l'autre,
-  identifiants confondus, transactions rendues au repos (SQLITE_BUSY).
-  Désormais (`database.py`) : **un verrou sérialise chaque requête et
-  chaque commit**, et **les lignes sont capturées à l'instant de
-  l'exécution** — le résultat de chacun appartient à chacun
-  (`ResultatRequete`, `lastrowid`/`rowcount`/`description` par fil).
-  Aucun changement d'écran, aucune opération : la même prière, sans
-  bousculade. Le rattrapage des micro-coupures Hrana/Turso (v7.8.16,
-  v7.9.10) demeure à l'identique ;
-- **🔐 La connexion tient au copier-coller** (`app.py`) : les deux
-  champs forment désormais UN SEUL formulaire — coller l'utilisateur
-  puis le mot de passe ne déclenche plus de rechargement intermédiaire
-  qui essuyait le premier champ (« Identifiants incorrects » alors que
-  tout était pourtant collé). Tout part ensemble, au clic ; la parade
-  AUTOFILL (v2) demeure pour les gestionnaires de mots de passe ;
-- **🦶 Pied de page assagi** (`view_espace_membre.py`) : la colonne
-  centrale porte désormais le **logo des Équipes du Rosaire** (le
-  chapelet doré du Mouvement, dessiné pour lui :
-  `static/logo_equipes_rosaire.png`) et non plus l'icône de
-  l'application ; les trois phrases d'appel sont retirées (« Un jour,
-  une dizaine — la chaîne de prière universelle… », « Parle à ton
-  responsable d'équipe… », et la signature de version). Restent :
-  politiques, identité, paroisse du fidèle, contact responsable, les
-  cinq rubriques, © 2026, Facebook conditionnel ;
-- **🕯️ Zone du jour** (v7.9.10, vérifiée intacte) : le sas reste en tête
-  de 🙏 Coins des Intentions — « 🕊️ Traiter & envoyer en réserve »
-  immédiat, publication à 00h00 du jour suivant ;
-- **L'icône « Streamlit » du raccourci** : abandon respecté (décision du
-  fondateur) — plus aucune retouche de ce côté ; tout le dispositif
-  v7.9.8/7.9.10 (manifestes versionnés, pages d'installation, visages
-  incorporés) demeure en l'état ;
-- `_VERSION_APPLI = "v7.9.11"` ; aucun changement de base.
-
-### 18. v7.9.12 — La sentinelle du paquet complet 🕊️
-
-- **🕊️ La sentinelle du paquet complet** (`app.py`) : le 26 octobre au
-  soir, un versement arrivé incomplet chez l'hébergeur (les vues
-  nouvelles devant un `database.py` resté ancien) a fait voir un mur de
-  code à la place des pages. Désormais le cœur du paquet se fait
-  reconnaître AVANT tout autre import ; si l'un des gestes récents lui
-  manque (`tableau_pointages_equipe`, `tableau_pointages_visiteurs`,
-  `publier_reserve_due`, `envoyer_intention_du_jour_en_reserve`), la
-  maison affiche sa note douce — « 🕊️ Un instant — la maison se pare » —
-  et s'arrête net : jamais de traceback, ni pour la fondatrice, ni pour
-  les fidèles. La note signifie une seule chose : le versement est
-  incomplet — tout re-verser (d'abord vider le dépôt, ensuite verser le
-  paquet entier) ;
-- **Le scénario réel rejoué en test** : un arbre à l'ancien cœur (extrait
-  du zip v7.9.10) avec l'`app.py` actuel → la note douce s'affiche,
-  l'exécution s'arrête avant tout, zéro exception ; sur le dépôt complet,
-  la sentinelle se tait ;
-- `scripts/test_v795.py` réécrit à l'image du tableau de la chaîne
-  (v7.9.11) : le ✅ doit tomber dans SA case de la grille jour × membre,
-  le bug noms↔MatLoc (v7.9.2) reste mort ; cas limite de la membre sans
-  MatLoc précisé (pas de colonne, dénominateur des actifs) ;
-- `_VERSION_APPLI = "v7.9.12"` ; aucun changement de base.
-
-### 19. v7.9.13 — La main prudente du cœur 🤲
-
-- **🤲 La main prudente** (`database.py`) : le 26 octobre au soir, le
-  versement complet étant en place, les journaux du Cloud ont montré une
-  dernière pierre — chaque écriture (connexion, compteur de visites,
-  préparation de la mémoire) trébuchait au moment où le cœur relevait le
-  résultat de la requête, chez l'hébergeur seulement (les essais locaux,
-  au dialecte différent, ne pouvaient pas le voir). Désormais le cœur ne
-  demande plus de lignes à une écriture — une écriture n'en a pas à
-  rendre — et relève chaque métadonnée avec des gants : si le conducteur
-  distant se dérobe, la requête poursuit sa route au lieu de s'arrêter.
-  Les lectures restent exactement fidèles : une vraie erreur de lecture
-  remonte toujours, comme avant ;
-- **Le scénario de production rejoué en test** (`scripts/test_v7913.py`)
-  : un conducteur simulé au tempérament observé en production, branché
-  sur le vrai cœur — la chaîne du login (SELECT → INSERT → DELETE), le
-  CREATE TABLE de l'installation, les écritures aux métadonnées
-  dérobantes, la lecture honnête, sqlite3 réel et les fils concurrents :
-  24 contrôles, zéro exception ;
-- `_VERSION_APPLI = "v7.9.13"` ; aucun changement de base de données,
-  aucune migration.
-
-### 20. v7.9.14 — Le chapelet qui ne se perd plus, la paroisse qui est dite 📿
-
-- **📿 Le logo qui ne se perd plus** (`views/view_espace_membre.py`) : le
-  chapelet doré du pied de page est cherché d'abord À CÔTÉ DU MODULE
-  (l'adresse certaine, où que la maison soit installée), puis au coin
-  habituel ; relevé une seule fois puis gardé en mémoire, il ne dépend
-  plus du lieu d'où la page parle. S'il manque vraiment, un chapelet
-  emoji sobre le remplace — jamais de vide qui ressemble à un oubli ;
-- **🕯️ Le nom de la paroisse, dit quand il peut l'être** : le pied de
-  page montre désormais la paroisse chaque fois qu'il peut la connaître —
-  celle du fidèle reconnu (même si son statut dort : le pied ne décide
-  rien, il dit bonjour), sinon celle qui a ouvert la porte (QR / lien
-  paroissial qui a mené ici), avec le contact de son responsable ;
-  sinon, pied sobre — aucune placeholder, jamais ;
-- `scripts/test_v7914.py` : 28 contrôles — logo trouvé « ailleurs »
-  (maison installée dans un autre dossier), logo vraiment absent
-  (remplacement sobre), passant sans rien (pied net), passant accueilli
-  par une paroisse (nom + WhatsApp + adresse dans les liens), fidèle
-  reconnu, fidèle au statut endormi ;
-- `_VERSION_APPLI = "v7.9.14"` ; aucun changement de base de données,
-  aucune migration.
-
-### 21. v7.9.15 — Le logo partout, le menu du pied de page à droite 📿
-
-- **📿 Le fichier `images/logo.png` est désormais livré dans le paquet**
-  (c'est le chapelet doré sur fond violet). Jusqu'ici, l'application le
-  cherchait mais il n'était jamais livré : l'entête de l'Espace, la page
-  « Devenir membre » et l'écran de connexion affichaient un simple emoji
-  📿 à sa place. Pour passer un jour au logo officiel du Mouvement, il
-  suffira de déposer la nouvelle image sous le même nom — aucun code à
-  modifier ;
-- **📿 Recherche du logo renforcée** (`views/view_espace_membre.py`,
-  `app.py`) : le logo est cherché à côté des fichiers de l'application
-  (où qu'elle soit installée), puis depuis le dossier de lancement ; en
-  dernier recours, le chapelet livré dans `static/` prend le relais.
-  S'applique aux 4 emplacements : entête de l'Espace, page « Devenir
-  membre », pied de page, écran de connexion (colonne de gauche) ;
-- **➡️ Pied de page : la 3e colonne (menu) est décalée à droite** sur
-  les écrans larges : elle se cale sur le bord droit, bien séparée de la
-  colonne centrale (logo, nom, contact). Sur téléphone, les colonnes
-  s'empilent comme avant ;
-- `scripts/test_v7915.py` : logo trouvé depuis un autre dossier de
-  lancement, logo absent → emoji sobre (jamais de vide), entête et pied
-  de page rendus avec le chapelet incorporé, colonne droite présente ;
-- `_VERSION_APPLI = "v7.9.15"` ; aucun changement de base de données,
-  aucune migration.
-
-### 22. v7.9.16 — Le logo du pied de page en grand, la ligne « Paroisse » 📿
-
-- **📿 Logo du pied de page agrandi** : même largeur que le nom
-  « LES ÉQUIPES DU ROSAIRE » (≈ 240 px, proportion carrée conservée —
-  l'image est carrée) ; il se réduit proprement si l'écran est étroit
-  (`max-width:100%`). L'ombre suit désormais la forme ronde du chapelet
-  (`drop-shadow`) au lieu d'un carré (`box-shadow`) ; les attributs
-  figés `width="64"` sont retirés (taille pilotée par le CSS) ;
-- **🕯️ Ligne paroisse libellée** : « 🕯️ Paroisse : Nom de la paroisse »
-  (avant : le nom seul) ;
-- `scripts/test_v7916.py` : 12 contrôles (taille CSS 240 px + secours
-  `max-width`, ombre ronde, libellé paroisse, pied sobre sans paroisse,
-  colonne droite conservée) ; `test_v7914` mis à jour au nouveau
-  libellé ; vérification de version de `test_v7915` rendue insensible
-  au numéro ;
-- `_VERSION_APPLI = "v7.9.16"` ; aucun changement de base de données,
-  aucune migration.
-
-### 23. v7.9.18 — Republier, les actualités dans le fil, multi-photos, chaîne de séance ⛓️
-
-- **📤 Bouton « Republier »** (sceau du diocèse, section « 🧹 Déjà publiés —
-  à ranger ») : 2e bouton à côté de « ✅ Marquer comme publié (sans
-  republier) ». Il ajoute le contenu de la soumission comme une NOUVELLE
-  publication (utile quand la version en ligne diffère — ex. bande
-  défilante remplacée). L'insertion est factorisée (`_inserer_publie`,
-  partagée avec « ✅ Publier ») : une seule logique ;
-- **détection des doublons affinée** (`_deja_publie`) : pour prière,
-  méditation, bande défilante et actualité, le TEXTE doit correspondre en
-  plus du titre — un même titre avec un contenu différent est une NOUVELLE
-  version, elle repart dans « En attente de validation » (audio : titre +
-  fichier) ;
-- **📰 Actualités dans le fil d'actualité** : `_render_actualites` est
-  appelée DANS `_render_fil_actualites` (public + membre) — le fil allégé
-  v7.9.3 les masquait totalement (publications `actualite` invisibles
-  nulle part) ; titre « 📰 Actualités », appels extérieurs retirés ;
-- **📷 Multi-photos Galerie +** (Souvenirs / Témoignages) :
-  `file_uploader(accept_multiple_files=True)` dans la saisie diocèse
-  (téléversement Cloudinary via `sauvegarder_illustration`) ; les URLs
-  cohabitent dans `image_url` séparées par « | » (`urls_galerie`,
-  `supprimer_photos_galerie` dans services.py) ; l'affichage Espace de
-  Prière boucle sur toutes les photos ; rétrocompatible (1 URL = rendu
-  inchangé) ;
-- **⛓️ Chaîne de la dernière séance** : nouvelle table `chaine_seances`
-  (equipe_id, date_seance, ordre = N° méd. « 10,17,09,… », absents =
-  « présents spirituellement », date_enregistrement) + `_assurer_table_
-  chaine_seances` (création douce), `enregistrer_chaine_seance`,
-  `derniere_chaine_seance`, `historique_chaines_seance` (database.py) ;
-  bloc `bloc_chaine_seance(equipes, prefixe)` dans components.py :
-  traduction maillon par maillon (« X aura pour prochain Y — N° méd. Z,
-  méditera et priera son intention jusqu'à la prochaine séance », chaîne
-  refermée sur le premier), intention du prochain lue dans la réserve
-  (`intention_reserve_pour_numero`), saisie avec aperçu en direct
-  (virgules ou flèches), vérification des N°, historique 12 séances ;
-  intégré dans l'onglet intentions (équipe) et « 🙏 Coins des Intentions »
-  (paroisse) ;
-- `scripts/test_v7918.py` : parser de l'ordre (virgules/flèches, boucle
-  fermée, doublons), enregistrement + lecture de la dernière chaîne,
-  `_inserer_publie` par type, détection titre+texte, `urls_galerie` /
-  `supprimer_photos_galerie`, rendus AppTest (bloc chaîne, galerie,
-  fil) ;
-- `_VERSION_APPLI = "v7.9.18"` ; une seule nouveauté de base :
-  la table `chaine_seances` (création douce, idempotente).
-
-### 24. v7.9.19 — Chaîne YouTube, photos sans hébergeur, réserve réunie, carte repliée 📚
-
-- **▶️ Chaîne YouTube dans le pied de page** : la ligne « ▶️ Notre chaîne
-  YouTube » rejoint la colonne centrale, sous le contact du responsable
-  paroissial (constante `LIEN_YOUTUBE_CHAINE` en tête de
-  `view_espace_membre.py` ; vide = ligne absente) ;
-- **🛕 Carte vidéo juste avant le pied de page** : la carte « Annonce de
-  pèlerinage » quitte la tête du fil d'actualité et s'ouvre maintenant sur
-  toutes les pages de l'Espace de Prière, juste avant le pied de page
-  (appel dans `show_espace_membre`, entre le corps de page et
-  `_render_pied_de_page`) ;
-- **🖼️ Galerie + : plus d'échec qui bloque** — quand l'hébergement d'images
-  (Cloudinary) n'est pas configuré ou indisponible, chaque photo est quand
-  même acceptée : elle est réduite (800 px, JPG) et rangée dans
-  `static/galerie/` (nouveau `sauvegarder_photo_locale` dans services.py) ;
-  son adresse `/app/static/galerie/…` s'affiche comme n'importe quelle
-  photo (affichage Espace de Prière élargi, suppression locale avec
-  l'entrée) ; le message d'échec ne survient que si MÊME le rangement
-  local a échoué ;
-- **➕ Champs de lien additionnels** dans la saisie Galerie + : le bouton
-  « ➕ Ajouter un champ photo » (à côté du champ « LIEN de photo ») crée
-  autant de champs que voulu (« ➖ Un champ de moins » pour réduire) ; les
-  champs sont préservés quand on corrige une saisie (fin de
-  `clear_on_submit`, nettoyage par génération `gal_gen`) ;
-- **📚 Réserve d'intentions réunie** (paroisse) : titre simplifié
-  « 📚 Réserve d'intentions » ; la liste « 🗂️ Intentions en réserve —
-  toutes les équipes » réunit les réserves des équipes (membres comme
-  visiteurs), lecture seule ; retirés : « ➕ Ajouter une intention à la
-  réserve », l'ancienne liste paroissiale et « ⛓️ Chaîne de la dernière
-  séance » au niveau paroisse ;
-- **📚 Réserve d'équipe : la chaîne d'abord** : « ⛓️ Chaîne de la dernière
-  séance » passe AVANT la réserve (c'est elle qui la pourvoit) ; dans
-  « ⛓️ Enregistrer la chaîne d'une séance », la liste des membres s'affiche
-  à la verticale juste après la date, avec la zone de saisie de SON
-  intention en face de chaque membre — elle rejoint directement la réserve
-  (jamais par la 🕯️ Zone du jour) ; « ➕ Ajouter une intention à la
-  réserve » retiré (équipe et paroisse) ;
-- **⛓️ Phrase de chaîne** : « N° 10 — X prie pour Y — N° méd. 17. » (au
-  lieu de « X aura pour prochain Y… ») ; sous chaque maillon, TOUTES les
-  intentions du N° méd. (principale + surplus) ;
-- **➕ Le surplus est bienvenu** : `ajouter_intention_reserve` n'accepte
-  plus seulement une intention par N° méd. — un N° peut en porter
-  plusieurs ; le membre ou le visiteur qui médite ce N° voit ses
-  intentions augmentées selon le surplus (`intentions_reserve_du_numero`,
-  `intentions_reserve_surplus` dans database.py ; la ligne du livret
-  ajoute « 🕯️ Et elle intercède aussi … » pour chaque surplus) ; la grille
-  des compteurs affiche « 1/1 +2 » quand un N° porte un surplus ;
-- **🙏 « Vos intentions à une équipe » repliée à l'arrivée** : la rubrique
-  reste un expander habillé comme la carte « 📿 Découvrez les Équipes du
-  Rosaire ! » (dégradé, liseré or, coins arrondis), se présente repliée
-  sous forme de carte, avec la mini-ligne « cliquez pour ouvrir ▾ / cliquez
-  pour replier ▴ » (posée et retournée par le mini-script) ;
-- **Colonne centrale du pied équidistante** : sur les écrans larges, les
-  trois colonnes ont exactement la même largeur (le centre du logo tombe
-  au juste milieu des deux extrêmes, le menu reste calé à droite ; mobile
-  inchangé) ;
-- `_VERSION_APPLI = "v7.9.19"` ; aucun changement de schéma de base.
-
-### 25. v7.9.20 — La vidéo à la demande, la réserve qui se renouvelle, les cartes qui restent closes 📿
-
-- **🛕 La carte vidéo porte son nom d'aujourd'hui** : la date du pèlerinage
-  est passée — « Annonce de pèlerinage » devient **« Vidéo à la demande »**
-  partout : constante `LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE`, fonction
-  `_carte_vidéo_a_la_demande`, titre de la carte, phrase « Regardez la
-  vidéo à la demande sur la chaîne des Équipes du Rosaire — Diocèse de
-  Grand-Bassam », `title` du lecteur. Le lecteur, la place (juste avant le
-  pied de page) et le remplacement par un simple lien restent inchangés ;
-- **📚 La réserve d'intentions a une durée de vie** (`purger_reserve_expiree`
-  dans database.py, réveil paresseux appelé aux lectures comme aux tirages) :
-  une intention confiée par un **VISITEUR** (🕯️ Zone du jour) vit **20 jours
-  après sa prise en charge** — elle quitte la réserve à 00h00 du 21ᵉ jour ;
-  une intention de **MEMBRE** (posée en face de son N° dans la ⛓️ Chaîne)
-  vit **jusqu'à la prochaine séance** : la nouvelle saisie de la chaîne la
-  libère (`enregistrer_chaine_seance` ; celles notées à cette séance suivent
-  juste après, intouchées ; une correction de saisie le même jour ne
-  détruit rien) ; les vieilles lignes orphelines d'avant les réserves
-  d'équipe suivent la règle des 20 jours ; les libérées passent `active=0`
-  et quittent vues, compteurs et tirages ; le message d'enregistrement de
-  la chaîne signale combien d'intentions ont quitté la réserve ;
-- **🔔📿 La mémoire d'un jour des deux cartes tient EN BASE**
-  (`cartes_vues`, création douce ; `marquer_carte_vue` / `carte_deja_vue`) :
-  la session est vidée à chaque rechargement et les cookies sont refusés
-  quand l'Espace est vu depuis une page extérieure — la carte revenait
-  donc sans cesse. Désormais « 📌 Marquer l'alerte comme lue » et « J'ai
-  honoré mon engagement de ce jour » notent la fermeture en base, pour la
-  journée, via une clé du lecteur sans cookie ni session
-  (`_cle_lecteur_pdr` : MatLoc du membre dans l'adresse ; empreinte hachée
-  navigateur + adresse réseau pour un visiteur — aucune donnée personnelle
-  gardée) ; la carte revient le lendemain, ou dès qu'un NOUVEAU feuillet
-  paraît ; les cookies (v7.9.17) restent posés en secours quand ils
-  marchent ;
-- **📿 Le visiteur retrouve sa présence du jour** : après un rechargement,
-  « ✅ Merci Sainte Mère pour ton aide de ce jour ! » et le bouton « J'ai
-  honoré mon engagement de ce jour » reviennent (la présence du visiteur
-  est retrouvée en base par son jour de naissance,
-  `dizaine_visiteur_pointee`) — et un passage ne compte plus deux fois
-  dans la chaîne quand la page est rechargée ;
-- `_VERSION_APPLI = "v7.9.20"` ; un seul ajout de schéma, création douce :
-  la table `cartes_vues` (aucune opération demandée à l'hébergeur).
-
-### 26. v7.10.0 — Le questionnaire du feuillet, l'envoi en mission, les dizaines hors ligne 📝✈️📥
-
-- **📝 Le questionnaire du feuillet mensuel** : les questions et exercices du
-  feuillet deviennent un questionnaire répondu dans l'Espace de Prière.
-  *Composition* (Service Communication → 🕯️ Thème pastoral, zone « 1 Bis. » —
-  nommée « 2️⃣ ter » à sa naissance, renumérotée en v7.10.2,
-  `gerer_questionnaire_feuillet` dans components.py) : lignes en forme de
-  question repérées dans le texte des sections saisies (`feuillet_questions_detecter`,
-  reprise d'un clic) ou questions tapées à la main ; trois types de réponse
-  (texte libre / Oui-Non / choix proposés), question obligatoire ou non,
-  ordre ajustable (⬆️ ⬇️), question active ou retirée ; lecture des réponses
-  reçues, par question (compteurs pour Oui-Non et choix, réponses signées
-  ligne à ligne) et carnet Excel. *Réponse* (🕯️ Thème → Vue d'ensemble, sous
-  la vitrine du feuillet, `_render_questionnaire_mensuel` — appelée pour les
-  visiteurs comme pour les membres, la page Thème portant désormais le
-  contexte du lecteur) : un membre répond sous son MatLoc (clé « M:… », ses
-  réponses reviennent pré-remplies, il peut les corriger et renvoyer) ; un
-  visiteur signe du nom qu'il choisit (clé « N:nom-doux ») ; les questions
-  obligatoires sont exigées ; répondre à nouveau remplace SES réponses du
-  mois, jamais celles des autres (tables `feuillet_questions` et
-  `feuillet_reponses`, création douce dès l'init et à la volée) ;
-- **✈️ L'envoi en mission** (équipe → 📌 Suivi → onglet « ✈️ Envoi en
-  mission », `_onglet_missions` dans view_equipe.py) : le responsable ouvre
-  une mission (nom, objectif, date, lieu, personnes de l'équipe choisies
-  par cases à cocher + personnes venues d'ailleurs une par ligne) ; le
-  Gestionnaire en tire la **FICHE D'ENVOI EN MISSION** imprimable
-  (`_fiche_envoi_html` : entête Mouvement/diocèse avec logo, bandeau
-  équipe/paroisse/date/lieu, objectif, grille numérotée des envoyés avec
-  N° méd. et contact, Marc 16,15, signatures responsable d'équipe +
-  responsable paroissial) ; après la mission, le **RAPPORT DE MISSION** se
-  remplit (déroulement, grâces reçues, difficultés, propositions,
-  participants effectifs) et donne la **FICHE DE RAPPORT DE MISSION**
-  imprimable (`_fiche_rapport_html`). L'impression (`_rendre_fiche_imprimable`)
-  sort la fiche SEULE sur le papier (CSS @media print ciblé) via le bouton
-  « 🖨️ Imprimer la fiche (ou l'enregistrer en PDF) » ; chaque fiche
-  s'emporte aussi en fichier HTML autonome (bouton « 📥 Télécharger ») ;
-  les fiches se gardent dans l'équipe, re-imprimables à souhait ; mission
-  retirée = suppression définitive volontaire (tables `missions`,
-  `mission_creer` / `missions_equipe` / `mission_rapport_enregistrer` /
-  `mission_supprimer`) ;
-- **📥 Les dizaines priées hors ligne** (la récupération « comme ✕
-  Terminer ») : en fin de livre « 🕯️ Un jour, une dizaine », sous le
-  pointage du jour, l'expander « 📿 Tu as prié hors ligne ? Remets tes
-  journées dans la chaîne » (`_recuperer_dizaines_hors_ligne`) reçoit le
-  fichier exporté/partagé par l'application Android de méditation du
-  quotidien (fonctionne sans internet). Le lecteur (`_lire_jours_dans_fichier`)
-  est tolérant : JSON (liste de dates ou d'objets avec un champ
-  date/jour/date_prière/…) comme texte simple (une date par ligne, tout
-  séparateur) ; formats reconnus 2026-10-28, 28/10/2026, 28-10-2026,
-  28.10.2026, « 28 octobre 2026 » ; les dates à venir et les lignes
-  incompréhensibles sont écartées (plafond 400 journées par fichier,
-  `MAX_IMPORT_DIZAINES`). L'enregistrement (`importer_dizaines_hors_ligne`
-  dans database.py) est IDEMPOTENT : membre par MatLoc (UNIQUE matloc+jour)
-  et visiteur par (jrnais, jour) — repasser le même fichier ne recompte
-  rien ; le jour du fichier qui tombe aujourd'hui vaut présence du jour
-  (la bannière « J'ai honoré mon engagement » revient) ; message de
-  confirmation : ajoutées / déjà comptées / laissées de côté ;
-- `_VERSION_APPLI = "v7.10.0"` ; la sentinelle du paquet complet (app.py)
-  connaît désormais `feuillet_reponses_enregistrer`, `mission_creer` et
-  `importer_dizaines_hors_ligne` ; trois tables neuves à création douce
-  (`feuillet_questions`, `feuillet_reponses`, `missions`) — aucune
-  opération demandée à l'hébergeur.
-
-### 26. v7.10.1 — La vidéo reste à l'accueil, la règle d'or pour les membres, la maison rapide 🛕📜⚡
-
-- **🛕 La vidéo ne suit plus le lecteur partout** (demande : « la vidéo à la
-  demande se comporte comme un pied de page ») : la carte
-  (`_carte_vidéo_a_la_demande` dans `show_espace_membre`) ne s'ouvre PLUS
-  sur toutes les pages de l'Espace de Prière. Elle retrouve sa place de
-  carte d'accueil : visible uniquement sur la page d'arrivée
-  (« 🏠 Actualités », publique comme membre), juste avant le pied de page
-  — absente du livre ouvert (dizaine, méditation, prière des intentions,
-  livret mensuel) et des autres rubriques (Rosaire, Thème, Galerie,
-  Archives, Mes évènements). La prière reste toute à la prière ;
-- **⚡ Le lecteur vidéo se réveille en douceur** : `loading="lazy"` sur
-  l'iframe YouTube — la carte est en bas de page, le navigateur ne charge
-  plus la vidéo à l'ouverture, seulement quand le fidèle descend la voir ;
-- **📜 La règle d'or pour les MEMBRES** (demande : « je suis en train de
-  prier pour moi-même ») : jusqu'ici seul le VISITEUR était protégé par
-  son jour de naissance. Désormais la fiche du membre
-  (`fiche_membre(matloc)` : jour de naissance tiré de la date de
-  naissance — « 1990-05-17 » comme « 17/05/1991 » — ET nom complet
-  prénom+nom, lue une seule fois par visite) écarte SES PROPRES
-  intentions : au tirage principal (pool `intentions_equipes`, par jour
-  ET par nom), dans le surplus de la réserve
-  (`intentions_reserve_du_numero(..., nom_exclu=…)` — une intention notée
-  à son nom dans la chaîne de séance ne lui revient plus), et une
-  attachement ancienne qui serait la sienne n'est plus montrée (le tirage
-  la remplace tout seul). La clé de nom remet les mots en ordre
-  (`_nom_cle` : « Odette ONIBONKOU » = « ONIBONKOU Odette » — la fiche
-  porte Prénom Nom, la chaîne note Nom Prénom). Le visiteur du même N°
-  méd. continue de porter l'intention du membre, et rien ne change pour
-  lui ; s'il ne reste que la sienne, le membre reçoit le secours
-  universel (« La Paix dans le monde ») — la chaîne ne se casse jamais ;
-- **⚡ La maison rapide** (demande : « la lenteur au clic Égrener la
-  dizaine et à l'ouverture de l'Espace ») : les contrôles doux de tables
-  (`_assurer_*` : 7 fonctions) repartaient À CHAQUE PAGE — le contrôle de
-  `intentions_reserve` seul relançait 5 ALTER perdus à chaque appel, et
-  il était appelé plusieurs fois par page : jusqu'à 36 requêtes pour
-  ouvrir la dizaine, dont 20 allers-retours perdus (chez l'hébergeur
-  distant, chaque requête est un aller-retour réseau — c'était la
-  lenteur). Désormais chaque table est reconnue UNE FOIS par processus
-  (`_TABLES_RECONNUES`, `_table_reconnue` / `_table_averee`) : la même
-  ouverture descend à 18 requêtes, et sur un serveur en route chaude les
-  contrôles ne coûtent plus AUCUNE requête. Mesures réelles : accueil
-  16 → 15 requêtes, dizaine 36 → 18 (et 0 contrôle répété ensuite) ;
-- `_VERSION_APPLI = "v7.10.1"` ; AUCUN changement de schéma de base de
-  données, aucune opération demandée à l'hébergeur.
-
-### 27. v7.10.2 — La vidéo porte son nouveau lien, les paroisses se partagent les intentions, le questionnaire passe par le diocèse 🛕📚📋
-
-- **🛕 Nouveau lien de la vidéo à la demande** (lien changé par l'utilisatrice
-  sur l'application, adopté ici pour que les prochains paquets le portent) :
-  `LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE` =
-  `https://www.youtube.com/watch?v=hYv04JVIALI&list=RDhYv04JVIALI&start_radio=1`
-  (l'ancien `youtu.be/RHrIgEeepO8` disparaît). La carte extrait l'identifiant
-  du format `watch?v=` comme de `youtu.be/` : les deux écritures marchent.
-- **📚 Les paroisses se voient et se partagent les intentions** (demande :
-  « les paroisses ne se voient pas, par conséquent elles ne peuvent pas se
-  partager les intentions ») : la réserve était déjà LA MÊME pour tout le
-  diocèse (les tirages de l'Espace puisent dedans sans frontière) — ce qui
-  manquait, c'est la VUE. Désormais chaque intention en réserve porte le
-  NOM DE SA PAROISSE (celle de son équipe, ou celle notée à l'entrée en
-  réserve pour les visiteurs — `reserve_lignes_paroisse_nommee`) : la vue
-  paroisse (« 🙏 Coins des Intentions » → 📚 Réserve) liste « toutes les
-  paroisses » avec 🏘️ sur chaque ligne, et le diocèse reçoit UN MENU
-  PROPRE « 📚 Réserve d'intentions » (entre « 📌 Suivi » et « 🕯️ Espace
-  spirituel ») avec la grille des 20 N° méd. et la liste étiquetée par
-  paroisse. Chacune voit ce que les autres partagent ; la chaîne fait
-  circuler le reste.
-- **📋 Le questionnaire SOUMIS AU DIOCÈSE** (question : « le questionnaire
-  du feuillet n'est-il pas soumis au diocèse ? ») : SI, désormais — la
-  même règle que le feuillet (« le Service Communication ne publie JAMAIS
-  d'elle-même », v7.8.6). Zone « 1 Bis. » : après les questions, le bloc
-  « 📨 Soumettre le questionnaire au diocèse » (résumé lisible des questions
-  actives emporté dans la soumission ; statuts 🟡 attente / ✅ validé le…
-  / ❌ refusé + motif / 🗓️ programmée, comme le feuillet) ; côté diocèse au
-  SAS, la soumission « 📋 Questionnaire du feuillet » se lit (les questions
-  s'affichent une à une) et « ✅ Publier » lève le voile (« ❌ Refuser » le
-  garde posé, motif communiqué). TANT QUE le diocèse n'a pas validé le mois,
-  le questionnaire NE PARAÎT PAS dans l'Espace de Prière
-  (`feuillet_questionnaire_publie` en garde de `_render_questionnaire_mensuel`).
-  Une correction se resoumet (version corrigée) comme le feuillet. AUCUNE
-  nouvelle table : la soumission vit dans `soumissions_comm`
-  (type `questionnaire`, convention date_evenement=année / lieu=mois).
-- **✍️ Reprise d'une question d'un clic RÉPARÉE** (défaut : « Écris d'abord
-  la question. » au moment d'ajouter, obligeant à copier-coller) : la
-  question reprise par « ➕ Reprendre » rejoint le champ par SA CLÉ
-  (`qf_new_txt`, posée dans la session avant le dessin du champ) — avant,
-  la valeur passée en `value` était ignorée quand le champ avait déjà vécu.
-  Le clic remplit, on retouche si on veut, « 💾 Ajouter » prend.
-- **🔢 La numérotation redevient la nôtre** (proposition adoptée telle
-  quelle) : « 2️⃣ bis. Le feuillet mensuel en Équipe » → **« 1. Le feuillet
-  mensuel en Équipe »** et « 2️⃣ ter. Le questionnaire du feuillet » →
-  **« 1 Bis. Le questionnaire du feuillet »** — l'ancien préfixe « 2️⃣ »
-  portait le souvenir des zones 1️⃣/2️⃣/3️⃣ retirées en v7.8.5 (le « 2️⃣ est
-  resté » après l'import).
-- `_VERSION_APPLI = "v7.10.2"` ; AUCUN changement de schéma de base de
-  données (la soumission du questionnaire réutilise `soumissions_comm`),
-  aucune opération demandée à l'hébergeur.
-
-### 28. v7.10.3 — La réserve redevient l'affaire des paroisses, le diocèse s'efface 📚
-
-- **Correction de lecture de la v7.10.2 ②** : l'observation « les paroisses
-  ne se voient pas, par conséquent elles ne peuvent pas se partager les
-  intentions » n'était pas une demande de partage — c'était le rappel du
-  principe posé dès la v7.9.10 (« les intentions, c'est une affaire des
-  paroisses ») : **les intentions sont une affaire de paroisse, de ses
-  membres et de ses visiteurs ; le diocèse n'a rien à voir dedans.**
-- **La rubrique « 📚 Réserve d'intentions » QUITTE le menu du diocèse**
-  (entre « 📌 Suivi » et « 🕯️ Espace spirituel ») : l'écran et son entrée de
-  menu disparaissent. La réserve se lit là où elle vit : dans la vue
-  paroisse (« 🙏 Coins des Intentions » → 📚 Réserve) et dans chaque équipe.
-- **La vue paroisse reprend sa liste d'origine** : « 🗂️ Intentions en
-  réserve — toutes les ÉQUIPES », sans nom de paroisse sur les lignes
-  (la fonction d'étiquetage `reserve_lignes_paroisse_nommee`, v7.10.2, est
-  retirée). La réserve réunit les intentions des MEMBRES (posées en face de
-  chaque membre dans la ⛓️ Chaîne de la dernière séance) et des VISITEURS
-  (passées par la 🕯️ Zone du jour) ; lecture seule ici.
-- **Rien d'autre ne bouge** : la grille des 20 N° méd. et les compteurs
-  restent ceux de la chaîne universelle ; les tirages de l'Espace de
-  Prière, la 🕯️ Zone du jour (paroissiale, v7.9.10), les durées de vie
-  (visiteur 20 jours, membre jusqu'à la prochaine séance) et le surplus ne
-  changent pas. La vidéo (nouveau lien) et le questionnaire soumis au
-  diocèse (v7.10.2 ① et ③) restent tels quels.
-- `_VERSION_APPLI = "v7.10.3"` ; AUCUN changement de schéma de base de
-  données, aucune opération demandée à l'hébergeur.
-
-### 29. v7.10.4 — Le questionnaire vit sa vie après publication, et tout se lit à nouveau 📝🕯️👁️
-
-- **Le parcours du questionnaire, une fois publié** — il paraît sous le
-  feuillet (🕯️ Thème → 🔭 Vue d'ensemble), il y reste pendant son mois, et
-  il **revient avec son feuillet à la relecture** : à la FIN de la lecture
-  du livret (dernière page, comme les exercices au dos d'un livret papier),
-  le questionnaire du mois relu attend le lecteur — celui qui n'avait pas
-  répondu peut encore répondre, membre (sous son MatLoc) comme visiteur
-  (nom choisi). Les réponses nourrissent toujours le MÊME mois.
-- **Nouvel onglet « 🕯️ Thème »** dans « 🕊️ Gestion de l'Espace Spirituel →
-  📋 Contenu existant », entre « 🙏 Prières / 📖 Méditations » et
-  « 🖼️ Galerie + » : la gestion APRÈS publication, mois par mois (feuillet
-  du moment comme mois passés). L'onglet montre l'état du mois (feuillet
-  publié ? questionnaire voilé/soumis/paru ?), les questions telles que les
-  fidèles les voient, et **les réponses reçues question par question** avec
-  le carnet Excel. Les retouches de questions restent en « 1 Bis. » (📡
-  Communication) ; la parution reste au SAS.
-- **Qui voit les réponses ?** La cellule Communication et le diocèse, dans
-  cet onglet — jamais les fidèles entre eux : chacun ne retrouve que SES
-  réponses (elles l'attendent dans le formulaire, il peut les corriger et
-  renvoyer). Elles demeurent mois après mois ; le carnet les emporte à tout
-  moment. La lecture des réponses est devenue une fonction partagée : la
-  zone « 1 Bis. » et l'onglet « 🕯️ Thème » servent la même.
-- **Les textes invisibles sont revenus à la lumière** : l'Administration
-  est peinte sur fond blanc et l'Espace de Prière sur fond bleu nuit, mais
-  les libellés des champs, les notes, les alertes et les titres d'expanders
-  suivaient le mode (clair/sombre) du téléphone — sur un écran en mode
-  sombre, les textes de la ⛓️ chaîne d'une séance et du questionnaire
-  devenaient invisibles sur blanc ; sur un écran clair, c'était le tour des
-  questions dans l'Espace. Chaque espace verrouille désormais SES couleurs
-  de lecture (encre bleue sur blanc / clair sur bleu nuit), quel que soit
-  le mode du lecteur — les cartes jaunes gardent leur encre foncée (v7.7.4).
-- `_VERSION_APPLI = "v7.10.4"` ; AUCUN changement de schéma de base de
-  données, aucune opération demandée à l'hébergeur.
-
-### 30. v7.11.0 — L'intention appartient à celui qui est prié, et tout se lit quelle que soit la page ⛓️🕯️
-
-- **L'appartenance des intentions dans la chaîne** — sous chaque maillon
-  « X prie pour Y », l'intention affichée est celle de **Y** (la personne
-  PRIÉE), lue dans la 📚 réserve à SON N° méd. ; sans intention, la carte
-  ne dit plus « ajoutez-la dans la réserve » mais prie le membre PAR SON
-  NOM : « ⚠️ {Nom} — N° méd. Y est prié(e) de communiquer son intention au
-  responsable. »
-- **L'enregistrement d'une séance pose les intentions maillon par maillon**
-  (fin de la liste « une zone par membre » qui faisait écrire l'intention
-  du prochain en face du mauvais nom — c'est elle qui attribuait à tort les
-  intentions dans la réserve) : après la date, l'ordre et les absents, la
-  zone « 🕯️ L'intention de {Nom} (N° méd. Y) » apparaît sous chaque
-  maillon, et l'intention rejoint la réserve à la hauteur de Y.
-- **Pastorale ouverte à tous** : les « présents spirituellement » (hors
-  chaîne) ont aussi leur zone d'intention dans l'enregistrement — leurs
-  intentions sont accueillies comme celles des visiteurs, à leur N° méd.
-- **Les connecteurs de la carte** (« prie pour », « — N° méd. X. ») et les
-  textes d'intention portent leur couleur claire : posés sur la carte bleu
-  nuit, ils ne devaient plus rien hériter de l'encre foncée de la page.
-- **Les libellés du questionnaire restent lisibles sous toutes leurs
-  formes** : chaque espace verrouille ses couleurs de lecture pour TOUTES
-  les façons que Streamlit a de dessiner un champ (toutes versions), le
-  formulaire du questionnaire ne dessine plus de cadre clair dans l'Espace,
-  et ce qui s'écrit dans un champ reste foncé sur blanc — à la vitrine
-  comme à la fin de la lecture du livret.
-- **Onglet « 🕯️ Thème »** (📋 Contenu existant) : l'étiquette « 📝
-  questionnaire » ne se pose plus que sur les mois qui portent réellement
-  un questionnaire (questions ou soumission) — avant, tous les mois la
-  portaient.
-- `_VERSION_APPLI = "v7.11.0"` ; AUCUN changement de schéma de base de
-  données, aucune opération demandée à l'hébergeur.
-
-### 31. v7.11.1 — L'alerte d'une semaine, les missions en période et en groupes, les dizaines du jour ⏳✈️
-
-- **🔔 L'alerte « nouveau feuillet » vit UNE SEMAINE** (à la demande : «
-  maintenir l'alerte pendant une semaine après sa première diffusion ») :
-  la fenêtre passe de 45 jours à 7 jours, comptés depuis la PREMIÈRE
-  diffusion. Une nouvelle colonne `feuillets_publications.premiere_diffusion`
-  est posée UNE FOIS à la première publication ; républications d'une
-  version corrigée ne la touchent plus — l'alerte ne rallonge pas et ne
-  revient pas. Pendant la semaine, elle revient chaque jour tant qu'elle
-  n'est pas marquée lue ce jour-là (mémoire d'un jour inchangée) ; la
-  mention porte « en diffusion depuis le JJ/MM/AAAA » (la première
-  diffusion, pas la républication).
-- **✈️ Les missions se déroulent sur UNE PÉRIODE** : « une mission se
-  déroule sur une période débutant le lendemain de la dernière séance de
-  prière mensuelle jusqu'à la prochaine séance ». Le formulaire propose
-  d'office le lendemain de la dernière séance enregistrée (chaîne de
-  séance de l'équipe) ; la fin se laisse vide = « jusqu'à la prochaine
-  séance » — dès que la séance suivante est enregistrée, la période se
-  referme toute seule sur sa date (nouvelle fonction
-  `mission_prochaine_seance`). Nouvelles colonnes `missions.date_debut`,
-  `date_fin` (retro-remplies avec `date_mission`) ; les fiches d'envoi et
-  de rapport affichent « 🗓️ Période : du … au … / jusqu'à la prochaine
-  séance ».
-- **✈️ L'équipe se scinde en groupes** : chaque mission porte son groupe
-  (A…Z, choisi à la préparation) et l'onglet se range par groupe — « ✈️
-  Les missions de l'équipe : groupe A », « groupe B », … Les missions
-  anciennes sans groupe rejoint le groupe A (rien ne se perd). La fiche
-  d'envoi porte « Équipe : … — groupe X ».
-- **📿 Dizaines du jour (onglet 💬 WhatsApp)** : réponse directe à «
-  peut-on alerter une personne sur son téléphone pour faire sa dizaine ?
-  » — la liste de ceux qui n'ont PAS encore pointé leur dizaine du jour,
-  chacun avec son bouton « 📱 Rappeler sa dizaine » : le message WhatsApp
-  s'ouvre déjà écrit chez le membre (le canal qui marche partout,
-  aujourd'hui, sans rien installer). Tout le monde a prié ? Un vert «
-  merci pour la chaîne » le dit.
-- `_VERSION_APPLI = "v7.11.1"` ; changement de schéma : 3 colonnes
-  `missions` + 1 colonne `feuillets_publications` (migrations idempotentes,
-  rétro-compatibles — aucune opération demandée à l'hébergeur).
-
-### 32. v7.12.0 — La chaîne alerte les téléphones : rondes 4×/jour, visiteurs dénombrés, fiches en PDF 🔔📅📄
-
-- **⏰ La ronde des dizaines (4 fois par jour)** : à **06h00, 12h00,
-  18h00 et 21h00** (heures de Côte d'Ivoire — l'hébergeur tourne déjà à
-  l'heure ivoirienne), la liste de ceux qui n'ont pas encore fait leur
-  dizaine est mise à jour et le rappel part. Mécanisme « lazy cron »
-  comme les publications programmées : le premier chargement de page
-  après l'heure dite sert la ronde, une seule fois (réclamation en base
-  `dizaines_rondes`). L'onglet 💬 WhatsApp affiche la bannière des rondes
-  (dernière mise à jour + comptages + rappels partis).
-- **🕯️ Les visiteurs de la chaîne rejoignent la liste** : tout visiteur
-  ayant confié une intention (zone du jour non traitée + réserve active
-  et publiée) doit sa dizaine chaque jour ; il est identifié comme les
-  membres — les anonymes portent **« Anonyme 1, Anonyme 2, Anonyme 3, … »
-  selon l'index du dénombrement** (l'ordre d'entrée dans la chaîne, stable
-  d'un jour à l'autre ; un rang par jour de naissance). Le contact laissé
-  à l'envoi voyage désormais avec l'intention (colonne
-  `intentions_reserve.auteur_contact`, rétro-remplie depuis la zone du
-  jour) : le bouton « 📱 Rappeler sa dizaine » s'ouvre chez le visiteur.
-- **📅 Le rappel calendrier (.ics)** — dans la carte « 🔔 Me rappeler ma
-  dizaine sur mon téléphone » de l'accueil de l'Espace (membres ET
-  visiteurs) : un fichier rendez-vous récurrent « 📿 Ma dizaine du jour »
-  à ajouter UNE fois (heure au choix : 06h/12h/18h/21h) — le téléphone
-  sonne chaque jour, même sans internet.
-- **🔔 La notification de l'application (push PWA)** — même carte : le
-  téléphone qui dit oui est noté (`push_abonnements`) ; les rondes lui
-  envoient le rappel tant que sa dizaine attend. Clés VAPID nées et
-  vivant en base (`parametres_app`) — RIEN à configurer. Le service
-  worker `static/sw.js` porte la notification ; sur iPhone, l'appli doit
-  être installée (iOS 16.4+). Le jour de naissance dévoilé (dizaine ou
-  intention) alimente l'abonnement (`push_abonnement_note_jrnais`) pour
-  ne pas réveiller qui a déjà prié.
-- **📄 La fiche de mission s'enregistre en PDF** : bouton DÉDIÉ
-  « 📄 Enregistrer la fiche en PDF » — un vrai fichier A4 (en-tête du
-  mouvement, bandeau d'identité, tableau des envoyés, deux signatures,
-  pied) ; dépendance `reportlab` ajoutée. L'aperçu vit DANS SON CADRE
-  (document autonome à hauteur juste) : le bouton 🖨️ posé dedans
-  n'imprime que la fiche, jamais le reste de la page.
-- **✈️ Missions — retouches** : le groupe se choisit de **A à J** (12
-  membres max par équipe — 20 à Notre Dame de l'Assomption : même par
-  groupes de 2, J suffit) ; le titre identifie l'équipe et le compteur
-  disparaît : « ✈️ Les missions de l'équipe 3 : groupe A » ; la fiche de
-  rapport porte les DEUX signatures « Le Responsable du groupe » et
-  « Le Responsable de l'équipe ».
-- `_VERSION_APPLI = "v7.12.0"` ; changement de schéma : colonne
-  `intentions_reserve.auteur_contact` + tables `dizaines_rondes`,
-  `push_abonnements`, `parametres_app` (migrations douces idempotentes —
-  aucune opération demandée à l'hébergeur).
-
-### 33. v7.12.1 — Les messages des membres portent le lien de SON espace (MatLoc) 🙏🌹
-
-- **📿 Le message WhatsApp des dizaines reformulé comme demandé** — pour
-  chaque membre en attente, le responsable ouvre un message déjà écrit :
-
-  ```
-  Bonjour Ahua Innocent 🙏
-  Un petit rappel fraternel : ta dizaine du jour t'attend 🌹
-
-  https://…streamlit.app/?espace=1&matloc=GBA-OISOJ
-
-  Que la Vierge Marie veille sur toi! 🙏
-  ```
-
-  Le membre est salué EN ENTIER (nom + prénom) ; la rose 🌹 remplace le
-  chapelet sur la ligne du rappel ; et surtout le lien porte **son
-  MatLoc** (`?espace=1&matloc=…`) : en le touchant, il arrive DIRECTEMENT
-  sur son espace, sans taper son code. Un membre sans MatLoc reçoit le
-  lien public — personne n'est exclu.
-- **🕯️ Les visiteurs suivent la même voix** : « Bonjour Anonyme 1 🙏 »
-  (ou son nom signé), même rappel, même clôture — le lien reste public,
-  le visiteur n'ayant pas de MatLoc.
-- **🔔 La notification de la ronde s'accorde** : même corps (« Un petit
-  rappel fraternel… »), même clôture ; elle portait déjà le lien MatLoc
-  de l'abonnement.
-- `_VERSION_APPLI = "v7.12.1"` ; aucun changement de schéma.
-
-### 34. v7.12.2 — Les raccourcis, pour de bon
-
-Le dossier des raccourcis est refermé une fois pour toutes : la page
-d'installation ne propose plus seulement le geste du menu, elle **pose une
-vraie application**.
-
-- **📲 Le bouton or « Installer l'application »** : quand le téléphone
-  sait installer (Android, Chrome), un vrai bouton apparaît tout seul en
-  haut de la page d'installation — un toucher, une acceptation, et
-  l'application est posée : icône au bon visage (chapelet doré / clé
-  dorée), ouverture plein écran, directement dans l'Espace ou la
-  connexion.
-- **🕊️ La page d'installation s'efface ensuite** : quand on ouvre le
-  raccourci, elle revoit immédiatement vers l'Espace de Prière (en
-  conservant le fidèle mémorisé et sa paroisse) — la carte d'installation
-  ne réapparaît jamais après la pose. Idem côté administration.
-- **👁️ Veille navigateur intégré** : ouverte depuis WhatsApp, Instagram
-  ou Facebook, la page l'annonce et explique le premier geste (« ⋮ →
-  Ouvrir dans le navigateur ») — le raccourci ne se pose que depuis le
-  navigateur.
-- **🔔 Le passeur des rappels s'installe partout** : la page
-  d'installation comme l'Espace de Prière installent désormais le service
-  worker des rondes dès l'arrivée (silencieusement, sans jamais demander
-  la permission) — le téléphone tient une « vraie application », et les
-  rondes 06h00 · 12h00 · 18h00 · 21h00 peuvent frapper même app fermée.
-- **Versionnage** : manifestes et icônes passent à `?v=7122` (les
-  téléphones relisent noms et visages au prochain ajout), le sw.js
-  enregistré passe à `?v=7122` des deux côtés.
-- `sw.js` : un nouveau maillon « passeur » (chaque demande file au
-  réseau, rien n'est retenu) — c'est lui qui rend la page « installable »
-  aux yeux du téléphone ; rien d'autre ne change pour l'application.
-- `_VERSION_APPLI = "v7.12.2"` ; aucun changement de schéma.
-
-### 35. v7.12.3 — Le dossier invisible retrouvé
-
-La page d'installation tournait le dos aux téléphones : chaque demande
-de fichier (carte d'installation, manifeste, icônes, passeur) recevait
-en retour la coquille de l'application — d'où la page blanche. Cause :
-le réglage qui active le service du dossier `static/` voyage dans un
-dossier qui commence par un point (`.streamlit/`) ; invisible dans les
-sélections ordinaires, il s'est égaré au versement dans le dépôt.
-
-- **Le réglage est dans l'app depuis v7.8.14** : rien à changer dans le
-  code — il faut seulement que le dossier `.streamlit/` (avec son
-  `config.toml`) soit présent à la racine du dépôt ;
-- **Le geste de réparation** : sur GitHub, « Add file → Create new
-  file », nommer `.streamlit/config.toml` (le point crée le dossier),
-  coller le contenu et valider — l'application redémarre toute seule ;
-- **La chaîne de vérification** : le lien violet « page d'installation »
-  ouvre la carte dorée en 2-3 secondes, le bouton or « 📲 Installer
-  l'application » attend en haut ; le badge de l'Espace affichera
-  v7.12.3 après le versement de ce paquet ;
-- `_VERSION_APPLI = "v7.12.3"` ; aucun changement de schéma ; aucun
-  changement de comportement pour les membres.
-
-### 36. v7.12.4 — La note au mot près, et les intentions qui se remplacent
-
-- **La note de la ⛓️ Chaîne de la dernière séance au mot près** :
-  « le voisin de droite devient le "prochain" de celui de la gauche »,
-  « L'ordre peut varier d'une séance à l'autre », et le paragraphe du
-  remplacement — « une intention de la chaîne de la dernière séance
-  remplace l'ancienne et reste visible dès son enregistrement chez le
-  N° méd. qui la porte — c'est elle qui pourvoit la 📚 réserve
-  d'intentions ». 🤫 Les intentions se portent, elles ne se commentent
-  pas.
-- **✏️ Mettre à jour les intentions de la dernière séance** : sous la
-  carte de la chaîne en vigueur, un nouvel espace reprend maillon par
-  maillon « X prie pour Y » avec, préremplie, l'intention que Y porte
-  déjà — ce qui change est remplacé (l'ancienne s'efface, la nouvelle
-  devient visible aussitôt sous le maillon), le surplus du N° méd.
-  reste intact, et rien à refaire pour ce qui ne bouge pas.
-  `database.py` gagne `remplacer_intention_reserve` (remplacement en
-  place : l'ordre de la réserve est préservé, le surplus ne bouge pas ;
-  s'il n'y a rien en place, l'intention est posée).
-- `_VERSION_APPLI = "v7.12.4"` ; aucun changement de schéma.
-
-### 37. v7.13.0 — Les règles de la ⛓️ Chaîne au complet, le livre qui se termine en merci, et l'icône qui ouvre le bon côté
-
-- **⛓️ Les règles de la Chaîne de la dernière séance, encodees** :
-  * une intention de la Chaîne est **d'office prise en charge** (elle
-    reste visible dès son enregistrement, sans attendre le lendemain) ;
-  * une intention de la Chaîne d'une équipe **ne peut pas être portée par
-    un membre d'une autre équipe**, quand bien même ils auraient les N°
-    méd. identiques — le tirage du membre est désormais limité à la
-    réserve de SON équipe (et aux intentions sans équipe) ;
-  * la réserve est pourvue par les intentions de la Chaîne de l'équipe et
-    de celles des visiteurs ; elle **nourrit** l'intention du prochain du
-    visiteur (en premier), les présents spirituellement (en plus de leur
-    héritage), et le surplus chez les membres présents physiquement
-    **tant qu'il provient d'un visiteur** ;
-  * l'équipier absent garde **son héritage** — l'intention qu'il portait à
-    sa dernière présence physique — jusqu'à son retour : à
-    l'enregistrement d'une séance, l'intention portée est capturée AVANT
-    la libération et s'attache à lui sans échéance ; celui qui revient
-    dans la chaîne repart à neuf. Le membre EN chaîne lit désormais,
-    à chaque ouverture du livret, l'intention EN PLACE au N° méd. de son
-    prochain (le remplacement se voit aussitôt) ;
-  * la note de la carte ⛓️ porte les règles au mot près ; la carte ne
-    montre plus que les intentions de l'équipe (et `remplacer_intention_
-    reserve` ne touche jamais la rangée d'une autre équipe) ;
-  * colonne `source` sur `intentions_reserve` ('chaine' / 'visiteur',
-    migration idempotente) + `fiche_membre_chaine`, `contexte_chaine_
-    membre`, `_pose_heritages_equipe`, `serie_dizaines_membre`.
-- **🕯️ Lignes d'intercession sans coquille ni redondance** : quand
-  l'intention nomme déjà sa bénéficiaire (« pour Jeanne A. … »), la ligne
-  ne répète plus « pour {qui} : » — fini le « pour AKA Jeanne : pour
-  Jeanne A. … ». Le livret comme l'aperçu paroisse passent par le même
-  helper `ligne_intercession` (components.py).
-- **📖 Livret « 🕯️ Un jour, une dizaine » réorganisé** : la page du
-  pointage (« 📿 La chaîne compte sur Toi » + bouton « ✅ Merci Sainte
-  Mère pour ton aide de ce jour ! ») devient l'AVANT-dernière, réduite à
-  la présence du jour et à la gratitude ; une NOUVELLE dernière page
-  accueille « 📿 Ta dizaine est capitale pour la chaîne — Merci pour ta
-  fidélité! — N dizaine(s) ce mois — À demain! 🕊️ » (sans les textes de
-  prière) quand le bouton ✅ (ou « ✕ Terminer ») a été touché ; l'expander
-  « 📿 Tu as prié hors ligne ? » passe en veilleuse
-  (`_RECUP_HORS_LIGNE_ACTIVEE = False`).
-- **📿 Ma mémoire du tableau, cadre doré dans le fil** : le membre voit
-  dans le fil de l'actualité sa propre ligne du tableau de la chaîne —
-  les 14 derniers jours (✅/·), le compteur du mois et la flamme des
-  jours de suite (`_carte_memoire_membre` ; le fil des visiteurs ne
-  change pas).
-- **🙏 « Vos intentions à une équipe » extériorisée** : la carte dorée
-  interne devient le visage du dépliant replié — c'est elle que le
-  visiteur voit avant d'ouvrir (la bannière est hissée dans le titre du
-  dépliant, le vieux libellé texte s'efface).
-- **▷ Consignes vivantes des dépliants** : « cliquez pour replier ▴ »
-  déplié, « cliquez pour déplier ▾ » plié — sur le dépliant de découverte
-  comme sur la carte des intentions.
-- **📲 L'icône PWA ouvre le bon côté, même quand le statique trébuche** :
-  le manifeste voyage DANS la page (URI data:, adresses absolues, icônes
-  incorporées) — le raccourci posé depuis l'Espace ouvre l'Espace
-  (?espace=1) et porte le bon visage, même si /app/static/* répond mal ;
-  version du manifeste 7130.
-- `_VERSION_APPLI = "v7.13.0"` ; schéma : colonne `source` ajoutée à
-  `intentions_reserve` (ALTER doux idempotent, aucune autre migration).
-
-### 38. v7.13.1 — La programmation retrouvée, le parchemin qui porte le pointage
-
-- **⏰ LA PROGRAMMATION EN PANNE — trouvée et réparée** : le conducteur de
-  base distante (`libsql-experimental`, réinstallé à sa dernière version
-  lors du redéploiement de la réparation) rapporte un `rowcount` cumulatif
-  non fiable ; la réclamation anti-course du réveil (« != 1 ») se croyait
-  toujours devancée et le réveil devenait MUET — les publications
-  programmées n'étaient plus jamais effectuées. Désormais la réclamation
-  se fait PAR JETON relu (jamais par rowcount), le réveil journalise son
-  compte (dûes / publiées) et rend son compte à l'appelant ; les réservations
-  de rondes de rappels, le retrait en réserve et le compte des intentions
-  libérées passent eux aussi PAR LECTURE. `libsql-experimental` est épinglé
-  (`==0.0.55`). Un bouton « ⏰ Réveiller la programmation maintenant »
-  accompagne « 🗓️ Programmées » : il déclenche le réveil à la main et dit
-  ce qu'il a fait.
-- **📖 Le parchemin jaune porte le pointage** : la dernière page de contenu
-  du livre (le GLORIA PATRI et ses deux invocations — ou la Salve Regina le
-  jour du N° 20) accueille SOUS la prière « 📿 La chaîne compte sur Toi » et
-  le bouton « ✅ Merci Sainte Mère de Dieu pour ton aide de ce jour ! » —
-  sans Suivant, sans ✕ Terminer, sans expander. Le clic ouvre la page du
-  remerciement (« 📿 Ta dizaine est capitale… — À demain! 🕊️ ») dont le
-  bouton « ✕ Terminer » ramène au fil de l'actualité. La sortie « déjà
-  marquée » est prévue (message + ✕ Terminer).
-- **📿 « Mémoire de mes dizaines »** (ex « Ma mémoire du tableau ») : la
-  carte dorée se pose entre la carte de bienvenue et « 📿 Ta dizaine du
-  jour », les jours les plus récents d'abord (✨03/11 → 02/11 → …).
-- **🙏 La carte « Vos intentions à une équipe » n'est plus un pis-aller** :
-  le titre est DORÉ dès le premier rendu (CSS `:has` — plus d'attente du
-  script), et le script patiente jusqu'à 10 s pour hisser la carte dorée
-  complète en titre du dépliant.
-- **🌹 Les textes des rappels** (membre : « …Va sur ta page perso en
-  cliquant sur ce lien 🌹 » ; visiteur : « …Clique sur ce lien 🌹 ») —
-  posés directement dans le dépôt, confirmés.
-- `_VERSION_APPLI = "v7.13.1"` ; aucun changement de schéma.
-
-### 39. v7.13.2 — Le titre rendu à son or, la Ronde rendue à son équipe
-
-- **🙏 Le titre « Vos intentions à une équipe » est doré POUR DE BON** :
-  une fois la carte hissée en titre du dépliant, elle quittait le conteneur
-  où vivait sa règle d'or — et une règle blanche, plus spécifique, prenait
-  le dessus. L'or est désormais posé DEUX FOIS (dans le style de la page,
-  par identifiant, et dans la bannière elle-même, en ligne) : il suit la
-  carte partout, dès le premier rendu, sur tous les navigateurs.
-- **⏰ La Ronde des dizaines regarde la bonne maison** : au niveau d'une
-  équipe, la bannière (06h00 · 12h00 · 18h00 · 21h00) parle DÉSORMAIS DE
-  CETTE ÉQUIPE — sa liste d'attente (membres + visiteurs accueillis) et ses
-  rappels 🔔 partis ; au niveau d'une paroisse, les comptages de ses
-  équipes ; le niveau diocèse garde la ronde globale. Une petite table
-  miroir (`dizaines_rondes_equipes` — création douce idempotente, aucune
-  donnée existante touchée) est remplie par chaque ronde ; jusqu'à la
-  première ronde de la journée, la bannière d'une équipe retombe sur la
-  mention horaire simple.
-- `_VERSION_APPLI = "v7.13.2"` ; `libsql-experimental` reste épinglé.
-
-### 41. v7.13.4 — L'espace du visiteur (21 jours), les rappels qui portent l'adresse du cœur, et les guides de la maison
-
-*Merci La Vierge Marie — trois chantiers dans un même souffle : l'espace du
-fidèle qui confie son intention, le rappel Telegram qui porte enfin LE lien
-du membre (celui avec le MatLoc), et deux guides pour transmettre la
-maison.*
-
-- **🕊️ L'espace visiteur temporaire (21 jours)** — tout fidèle qui dépose
-  une intention dans « 🙏 Vos intentions à une équipe » reçoit, juste après
-  l'envoi, une clé et un lien (`?espace=1&vis=CLÉ`) : SA page à lui :
-  * son intention relue (datée, nommée à l'équipe, anonyme si anonyme) ;
-  * sa carte dorée « 📿 Mémoire de mes dizaines » (miroir visiteur de la
-    carte du membre : 14 jours, compteur du mois, flamme 🔥) — portée par
-    son jour de naissance, la même clé que le sas de la chaîne ;
-  * « 📿 Ta dizaine du jour » avec le CTA qui ouvre le livret DÉJÀ
-    positionné au mystère du jour — le sas est franchi d'avance (son jour
-    de naissance est posé en session) : rien à retaper ;
-  * la carte 🔔 des rappels (calendrier + notification), comme pour tous ;
-  * PAS les rubriques complètes — « comme un membre, mais juste pour
-    faire sa dizaine » : le reste de la vie de l'app ne le concerne pas ;
-  * à 21 jours, l'espace s'achève doucement : écran de remerciement et le
-    retour vers l'Espace de Prière (aucune suppression : la table garde
-    tout) ;
-  * les 21 jours sont affichés (« ouvert encore N jour(s), jusqu'au
-    JJ/MM/AAAA ») ; la page visiteur est épurée aussi de la carte vidéo ;
-    lien inconnu → un mot doux, et la porte de l'Espace de Prière reste
-    là.
-  * schéma : table `espaces_visiteurs` (création douce idempotente : cle,
-    nom, contact, jrnais, intention_id, equipe_id, paroisse_id,
-    date_creation, date_expiration) — aucune table existante touchée.
-- **✈️ Telegram — le lien du MEMBRE, celui avec le MatLoc, partout** :
-  * l'accueil apparié (« 📿 C'est noté ! ») porte désormais le lien de
-    l'Espace du membre pré-rempli (`?espace=1&matloc=…`) — celui qui
-    ouvrait l'Espace communautaire n'était pas LE sien ;
-  * le rappel de ronde annonce « Ouvre ton Espace tout prêt : » avant le
-    lien (le lien MatLoc était déjà là — la phrase le rend évident) ;
-  * **le bouton « ✈️ Recevoir le rappel par Telegram » est lisible pour
-    de bon** : le CSS global des liens (`.stApp .stMarkdown a`, lilas
-    `!important`) écrasait son style inline — le sélecteur l'épargne
-    désormais (`a:not(.btn-telegram-ro)`) et le bouton porte le bleu nuit
-    maison, l'encre blanche posée en `!important`, le liseré or : lisible
-    en mode clair comme sombre.
-- **📖 Les guides de la maison** (livrés à part, dans le dossier de la
-  livraison) : « Guide d'utilisation — Partie administrative » (les quatre
-  accès : équipe, paroisse, diocèse, communication) et « Guide
-  d'utilisation — Partie Espace » (visiteur, membre, espace visiteur de
-  21 jours) — à imprimer, partager, adapter.
-- `_VERSION_APPLI = "v7.13.4"` ; schéma : table `espaces_visiteurs`
-  (création douce idempotente, aucune table existante modifiée).
-
-### 40. v7.13.3 — Le fond bleu clair retrouvé, la Ronde qui parle sur Telegram
-
-- **⏰ Ronde des dizaines : le fond bleu clair est RETROUVÉ pour de bon** :
-  la bannière porte son fond bleu clair `#E8EAF6` (liseré `#9FA8DA`, encre
-  `#1A237E`) DANS son propre bloc HTML — plus par un `st.info` dont
-  l'habillage dépendait du thème de l'écran. **La mention horaire** (celle
-  qu'une équipe voyait en attendant sa première ronde notée depuis la
-  v7.13.2) **porte elle aussi le fond bleu clair en dur**. La portée de la
-  v7.13.2 est intacte : équipe / paroisse / diocèse. La bannière annonce
-  désormais « rappels partis — push et Telegram ».
-- **✈️ LA RONDE PARLE AUSSI SUR TELEGRAM (rappels 100 % automatiques)** :
-  * le bot de la maison (celui des notifications, token déjà en secrets)
-    gagne une OREILLE : `telegram_recolter_liaisons` lit au fil des
-    chargements de page (au plus une fois par minute, même charpente
-    lazy-cron que les rondes) les « /start <MatLoc> » — le membre n'a
-    qu'à toucher « Démarrer » sur le message déjà écrit par le lien ;
-  * table `telegram_liaisons` (migration douce idempotente) : chat_id,
-    matloc, nom, lie_le — un compte suit un membre, /stop le retire,
-    403 (porte fermée) aussi ;
-  * à chaque ronde (06h00 · 12h00 · 18h00 · 21h00), chaque compte
-    apparié dont la dizaine attend reçoit le même rappel fraternel que
-    sur WhatsApp — la voix de la maison, le lien avec MatLoc pré-rempli ;
-    les envois sont comptés ÉQUIPE PAR ÉQUIPE dans la miroir de la
-    v7.13.2 (comme les push) ;
-  * **confidentialité** : rien ne part vers personne sans son /start (la
-    porte ne s'ouvre que de l'intérieur) ; les publications restent au
-    chat des responsables — la boîte d'un membre ne reçoit QUE le rappel
-    de sa dizaine, jamais rien d'autre ;
-  * dans la carte « 🔔 Me rappeler ma dizaine sur mon téléphone » de
-    l'Espace, la troisième voie « ✈️ Ou par Telegram » : bouton
-    « ✈️ Recevoir le rappel par Telegram » (membres), état « Ton
-    Telegram est à l'écoute » quand c'est apparié ;
-  * `/stop` remet le silence ; un code inconnu n'appaire personne.
-- **💬 WhatsApp de paroisse : la fuite est fermée** — la vue paroisse
-  passe la paroisse courante aux quatre onglets (🎂 Anniversaires,
-  📢 Rappels réabonnement, 📿 Dizaines du jour, 📿 Espace de prière) :
-  les membres d'une autre paroisse n'y apparaissent plus jamais. Le
-  diocèse, lui, voit tout (voulu).
-- **📿 Dizaines du jour : la section se raconte** — ouverte sans équipe
-  ni paroisse (vue diocèse), elle dit enfin CE QU'ELLE CONTIENT : la
-  liste tenue ÉQUIPE PAR ÉQUIPE, les membres et visiteurs en attente,
-  le message WhatsApp prêt à partir, la bannière des rondes ; la ligne
-  d'invitation des vues équipe/paroisse est élargie au même ton.
-- **✅ Le bouton « ✅ Merci Sainte Mère de Dieu pour ton aide de ce
-  jour ! » est un vrai bouton** : une consigne l'annonce (« 👆 Touche ce
-  bouton pour marquer ta présence du jour — la page du remerciement
-  s'ouvrira ensuite ») pour le membre comme pour le visiteur — fini la
-  double perception confirmation/bouton.
-- `_VERSION_APPLI = "v7.13.3"` ; schéma : table `telegram_liaisons`
-  (création douce idempotente, aucune table existante modifiée).
-
-### 42. v7.13.7 — La page d'installation lisible pour de bon, et l'appel aux tests en deux visages
-
-- **🖍️ La zone des gestes Android/iPhone est redevenue lisible** : sur la
-  page d'installation intégrée (v7.13.6), la feuille de l'Espace repeignait
-  les étapes (`li`, `b`) en lavande clair sur la carte claire, et le bouton
-  « ◀️ Revenir à l'Espace de Prière » en lilas sur or — Streamlit retire
-  les `!important` des styles EN LIGNE (leçon déjà apprise avec le bouton
-  ✈️ en v7.13.4). Toute la page passe désormais par des classes de la
-  feuille (`inst-carte`, `inst-titre`, `inst-note`, `inst-pouce`,
-  `inst-retour`) : encre foncée garantie sur la carte claire, or et bleu
-  nuit garantis sur le bouton de retour ; le sélecteur des liens lilas
-  épargne le bouton (`:not(.inst-retour)`).
-- **👉 « Le plus simple » écrit en tête** : une carte jaune à liseré doré
-  annonce, AVANT les gestes de secours, le chemin court — toucher le bouton
-  or « Installer l'application », répondre « Installer » quand le
-  téléphone demande confirmation, l'icône 📿 se pose toute seule (et la
-  page confirme « ✅ Posée ! » toute seule).
-- **📨 L'appel aux tests existe en deux visages** : le texte WhatsApp de la
-  ronde (lien de l'Espace communautaire) et sa version personnelle — le
-  même message avec le lien de l'Espace de chaque équipier
-  (`?espace=1&matloc=…`). Textes livrés hors application.
-- `_VERSION_APPLI = "v7.13.7"` ; aucun changement de schéma ; aucun
-  changement de fichier statique (`_ver_pwa` reste 7136).
-
-### 43. v7.13.8 — Le bouton or qui ne disparaît plus, et les gestes de l'ordinateur
-
-- **📲 Le bouton or est là pour de bon, sur tous les écrans** : en
-  v7.13.6/7 il ne s'affichait que si le navigateur annonçait savoir
-  installer (`beforeinstallprompt`) — sur un navigateur silencieux
-  (ordinateur typiquement) il s'effaçait après quelques secondes et la
-  carte jaune promettait un bouton absent (constat du fidèle, capture à
-  l'appui : « Juste au-dessus, je ne vois pas aucun bouton »). Le bouton
-  reste désormais TOUJOURS visible ; la décision se prend au toucher :
-  installation native quand l'annonce est là, sinon le bouton conduit
-  LUI-MÊME aux gestes du menu (défilement doux + halo doré autour de la
-  carte des gestes), avec la note honnête sous le bouton.
-- **💻 Une carte « Ordinateur — Chrome / Edge » rejoint les gestes
-  Android/iPhone** : icône d'installation dans la barre d'adresse, menu
-  ⋮ → « Enregistrer et partager » → « Installer l'application » (ou
-  « Créer un raccourci ») — et le mot doux : sur ordinateur, l'Espace vit
-  très bien dans son onglet, l'icône de l'écran d'accueil attend les
-  téléphones.
-- **👉 La carte jaune dit la vérité des deux mondes** : « si le téléphone
-  demande confirmation, réponds "Installer" ; si rien ne s'ouvre, le
-  bouton t'emmène lui-même aux gestes du menu — même résultat, même
-  visage doré. »
-- `_VERSION_APPLI = "v7.13.8"` ; aucun changement de schéma ; aucun
-  changement de fichier statique (`_ver_pwa` reste 7136).
-
-### 44. v7.13.9 — Le manifeste de la même origine : l'icône porte enfin son nom, et les gestes viennent à la page
-
-- **📿 L'icône posée ne s'appelle plus « Streamlit »** : les captures du
-  terrain (dialogue d'installation nommant « Streamlit », bateau rouge ;
-  icône ouvrant la page des responsables) ont montré que l'URI `data:` —
-  une adresse SANS origine — était écartée par Chrome au moment
-  d'installer : le raccourci repartait sans manifeste et ouvrait la
-  racine… c'est-à-dire l'Administration. Le manifeste voyage désormais
-  en **`blob:`** — une pièce jointe fabriquée PAR la page, portant
-  l'adresse du site elle-même (même origine) — avec secours `data:` puis
-  `/app/static/` (`injecter_icone_pwa`, `_ver_pwa` → 7139). L'icône posée
-  depuis l'Espace ouvre l'Espace du fidèle (start_url avec matloc) ;
-  celle posée depuis l'Administration ouvre l'Administration.
-- **📲 Les gestes viennent à la page, plus aucun voyage obligatoire** :
-  les badges de bienvenue (membre et communautaire) portent un déplieur
-  « Les gestes, ici même — sans changer de page » (Android ⋮ / iPhone
-  Partager) ; le lien vers la page d'installation (bouton or) reste le
-  chemin doré. Fini l'attente qui tournait quand la salle dormait.
-- **🔑 La barre latérale de l'Administration dit les gestes elle-même** :
-  le lien vers `/app/static/install_rosaire_admin.html` (répondu par la
-  coquille HTML — le voyage tournait puis retenait l'Administration) est
-  remplacé par un expander « 📲 Poser le raccourci — les gestes », avec
-  le mot honnête : l'icône posée d'ici ouvre l'Administration ; celle de
-  l'Espace se pose depuis l'Espace.
-- **🕊️ La page d'installation dit les deux pièges** : la vieille icône
-  « Streamlit » posée par un essai d'avant (appui long → Supprimer, puis
-  reposer) et le temps de patience quand la page revient après une pause.
-- **Cohérence statique** : `manifest_*.json` (?v=7139) et pages
-  `install_rosaire*.html` passent au motif blob: — prêtes si le service
-  statique de la plateforme revient.
-- `_VERSION_APPLI = "v7.13.9"` ; aucun changement de schéma ; aucun
-  changement de données — la base vit chez l'hébergeur, on n'y touche
-  jamais.
-
-### 45. v7.13.10 — Fini le cache-cache : la carte d'identité vérifiée, et plus aucun lien qui fait tourner la roue
-
-- **📿 La carte d'identité est VÉRIFIÉE avant d'être gardée** : les
-  transports « exotiques » (URI `data:` en v7.13.0-8, pièce jointe
-  `blob:` en v7.13.9) dépendaient de la bonne volonté du téléphone au
-  moment d'installer — d'où l'icône « Streamlit » au bateau rouge,
-  teigneuse. Désormais la page pose D'EMBLÉE la carte de la maison même
-  — le fichier `/app/static/manifest_*.json` servi par l'application à
-  la MÊME origine que la page, le seul transport que tous les
-  téléphones acceptent — puis la relit elle-même (`fetch`, sans
-  mémoire) : si elle répond bien par une fiche Rosaire, rien ne bouge ;
-  si elle répond par autre chose, la page fabrique sa fiche en `data:`
-  (adresses absolues, icônes incorporées) et la pose à sa place
-  (`injecter_icone_pwa`, `_ver_pwa` → 71310). Plus aucune trace de
-  `blob:` ; plus aucune carte posée à l'aveugle.
-- **📲 Le lien qui faisait tourner la roue indéfiniment n'existe plus** :
-  la phrase « 📲 Garde-le sous la main… » des badges de bienvenue
-  (membre et communautaire) ne contenait plus d'ancre — mais elle
-  gardait un lien « page d'installation » qui RECHARGEAIT toute la
-  page (constat du terrain : « il tourne indéfiniment comme
-  précédemment de l'autre côté »). Les deux ancres disparaissent ;
-  un VRAI bouton de l'application « 📲 Ouvrir la page d'installation »
-  prend le relais : un simple changement de paramètre Streamlit
-  (`st.query_params`), l'onglet ne se recharge JAMAIS — donc plus
-  aucune roue, même quand la salle dort. Le Matloc reste dans
-  l'adresse.
-- **◀️ Le retour de la page d'installation ne voyage plus non plus** :
-  l'ancre « Revenir à l'Espace de Prière » (même famille de roue) est
-  remplacée par un bouton doré de l'application — le paramètre
-  `installer` s'efface, l'Espace revient, sans rechargement.
-- **🏛️ La config de la maison est lue PARTOUT** : `.streamlit/config.toml`
-  (enableStaticServing) voyage aussi à la racine du dépôt — les
-  versions de Streamlit qui ne lisent que la racine la trouvent, celles
-  qui lisent le dossier de l'application aussi. Le service statique
-  (carte d'identité, pages de secours, passeur) redevient déterministe.
-- **Cohérence statique** : `manifest_*.json` (?v=71310), pages
-  `install_rosaire*.html` (?v=71310) alignées sur la cascade vérifiée ;
-  passeur enregistré en `?v=71310` (même contenu, aucune surprise).
-- `_VERSION_APPLI = "v7.13.10"` ; aucun changement de schéma ; aucun
-  changement de données — la base vit chez l'hébergeur, on n'y touche
-  jamais.
-
-### 46. v7.13.11 — Le raccourci prend sa retraite ; la programmation se saisit sans rechargement
-
-- **📵 Le raccourci quitte la plateforme** (demande du fidèle : « retire
-  tout ce qui est en lien avec le raccourci ») : plus aucun manifeste
-  d'installation (`manifest_*.json` quittent le paquet), plus aucune
-  page d'installation (`install_rosaire*.html` partent), plus aucun
-  bouton ni geste ni déplieur (« 📲 Ouvrir la page d'installation »,
-  « 📲 Poser le raccourci — les gestes », « 📲 Garde-le / Garde-la sous
-  la main… »), plus aucune méta plein écran ni écoute d'annonce
-  d'installation — la plateforme ne propose plus rien à poser, d'aucun
-  côté. `injecter_icone_pwa` allégée : favicon 📿/🔑 de l'onglet, titre
-  court (guetteur v7.13.10), couleur du bandeau, mémoire du fidèle (une
-  icône déjà posée d'avant ouvre toujours « ton Espace, tout prêt ») et
-  passeur des rappels 🔔 (`?v=71311`) restent, eux. Les vieilles
-  adresses `?espace=1&installer=1` atterrissent simplement dans
-  l'Espace ; la phrase « astuce raccourci » du message WhatsApp des
-  liens personnels part aussi. Les rappels 🔔 et la Ronde (06h00 ·
-  12h00 · 18h00 · 21h00) continuent exactement comme avant.
-- **🗓️ « Programmer la publication » se saisit sans rechargement** :
-  date et heure vivent DANS UN FORMULAIRE — saisir la date puis
-  l'heure ne fait plus repartir la page au début (constat du terrain :
-  « la page se recharge et revient à la page primaire »). Au clic sur
-  « 🗓️ Programmer la publication », la programmation est enregistrée et
-  le résumé exact s'affiche. **Heure standard à 00h00** (au lieu de
-  08h00).
-- `_VERSION_APPLI = "v7.13.11"` ; fichiers statiques allégés (sw.js +
-  favicons 32 + icône des notifications + logo) ; aucun changement de
-  schéma ; aucun changement de données — la base vit chez l'hébergeur,
-  on n'y touche jamais.
-
-### 47. v7.13.12 — La mémoire unifiée : le téléphone et l'Espace se redonnent leurs journées
-
-- **🕊️ Le pont de la mémoire s'ouvre** (demande du fidèle : « ce qui est
-  saisi en hors-ligne se répercute dans le web et vice-versa sans
-  intervention extérieure »). À chaque ouverture de l'Espace membre, la
-  vue lit `?pont_jours=…` (les journées priées hors ligne que le
-  téléphone glisse dans l'adresse), les verse dans le journal par la
-  porte idempotente du livre (`importer_dizaines_hors_ligne` —
-  `UNIQUE(matloc, jour)`, jamais de recomptage), dit le mot doux
-  (« 🕊️ N journée(s) priée(s) hors ligne viennent de rejoindre ta chaîne »)
-  puis nettoie l'adresse. Et elle pose en retour, invisible dans la
-  page, la carte `#pont_memoire` portant `data-jours` (les 90 derniers
-  jours du membre, plus l'accusé de réception `data-recues`) : le
-  téléphone la lit dès que la page est peinte et sa « 📿 Mémoire de mes
-  dizaines » se met à jour — des deux côtés, sans intervention de
-  personne.
-- **📿 La porte de la récupération rouvre** (le mot demandé est venu) :
-  `_RECUP_HORS_LIGNE_ACTIVEE = True` et l'expander « Tu as prié hors
-  ligne ? Remets tes journées dans la chaîne » retrouve sa place en fin
-  de livre, à côté du pointage (l'appel s'était perdu depuis v7.13.1 —
-  il est reposé). Le fichier `ma_dizaine_fidelite.txt` du téléphone est
-  reçu comme prévu : chaque journée une seule fois, jamais recomptée.
-- **🧹 Le journal du README respire** : le double d'entrée v7.13.11
-  est retiré (une entrée, une fois).
-- `_VERSION_APPLI = "v7.13.12"` ; passeur des rappels en `?v=71312` ;
-  aucun changement de schéma ; aucun changement de données — la base
-  vit chez l'hébergeur, on n'y touche jamais.
-
-### 48. v7.13.13 — La porte du profil et la seconde berge : l'Espace rend sa fidélité au téléphone
-
-- **🕊️ La porte du profil (l'incursion demandée)** — quand l'adresse de
-  l'Espace membre porte `?pont=profil` (la toute première fois et chaque
-  changement de lien du Kit Union v7 se font « toujours sur le net »),
-  la vue pose une carte dorée « 🕊 Le pont vers l'application » avec un
-  bouton **« ✋ Reprendre dans l'application »** : la route
-  `madizaine://pont?…` porte en un seul voyage le profil complet (nom &
-  prénoms, Matloc, équipe, paroisse, WhatsApp, N° méd.), l'intention
-  portée (`intention_du_prochain_detail(matloc=…)` — lecture seule) et
-  la fidélité déjà cochée ici (90 derniers jours). Encodage
-  `%XX` (`quote_via=quote`) pour que le décodage du téléphone soit juste
-  (`Uri.getQueryParameter`), puis l'adresse s'allège (le paramètre part).
-- **📱 La seconde berge** — sous la carte « 📿 Mémoire de mes dizaines »,
-  un bouton HTML pur « 📱 N journée(s) de fidélité — reprendre dans
-  l'application » rend au téléphone la fidélité cochée sur le web ; le
-  téléphone la fond dans sa mémoire **en union** (`fusionnerJoursDuWeb`
-  du Kit v1.2 — ce qui y était reste, rien ne s'efface jamais, jamais
-  demain). La carte invisible `#pont_memoire` reste posée pour les
-  berges qui savent la lire.
-- **🔒 La confiance, inchangée** : la base n'est jamais touchée — la
-  réception des journées passe toujours par la porte du livre
-  (`importer_dizaines_hors_ligne`), le profil est lu, jamais écrit, et
-  seuls les jours véritables (ISO, jamais demain) voyagent.
-- `_VERSION_APPLI = "v7.13.13"` ; aucun changement de schéma ; aucun
-  changement de données — la base vit chez l'hébergeur, on n'y touche
-  jamais.
-
-### 49. v7.13.14 — Les boutons du pont à la maison, et la route qui sonne vraiment
-
-- **NOTE du pasteur** — plus de bouton doré improvisé sur l'Espace : les
-  deux boutons du pont (« ✋ Reprendre dans l'application » et
-  « 📱 N journée(s) de fidélité — reprendre dans l'application ») sont des
-  boutons de la maison — `st.link_button`, `type="primary"`,
-  `width="stretch"`, le même style que « 📿 Égrener la dizaine ». La carte
-  « 🕊 Le pont vers l'application » reste l'enseigne dorée du moment.
-- **La route qui sonne vraiment** — le lien nu `madizaine://…` laissait
-  certains Navigateurs sur une page muette (une nouvelle page s'ouvrait,
-  plus rien ne se passait, et au retour sur l'application rien n'était
-  rendu). Les routes partent maintenant emballées en
-  `intent://…#Intent;scheme=madizaine;package=com.example.madizaineapp;S.browser_fallback_url=…;end` :
-  le Navigateur sait QUI sonner, et s'il ne trouve pas l'application il
-  REVIENT à la page Espace du membre — jamais une page d'erreur. Chrome
-  reconstruit exactement `madizaine://pont?…` : le téléphone reçoit la
-  même route qu'avant, `recevoirPont` est intact.
-- **🔒 La confiance, inchangée** : lecture seule, la base n'est jamais
-  touchée ; l'UNION des journées, jamais d'effacement ; l'encodage `%XX`
-  reste celui que le téléphone décode.
-- `_VERSION_APPLI = "v7.13.14"` ; aucun changement de schéma ; aucun
-  changement de données.
-
-### 50. v7.13.15 — Le livret se feuillette, de la droite vers la gauche
-
-- **La demande** — « Transposer le modèle du livret — dans lequel les pages
-  se feuillettent de la droite vers la gauche — dans le web en lieu et
-  place de celui où l'on clique pour avoir une nouvelle page. »
-- **Le geste posé** — dans le livret du feuillet mensuel, chaque page entre
-  maintenant par la DROITE et se pose vers la GAUCHE (perspective douce,
-  le même mouvement que le livret de l'application « MA DIZAINE AU
-  QUOTIDIEN ») ; en revenant (« ◀ Précédent », « 📑 Sommaire »), la page
-  revient par la gauche. Le sommaire suit la même règle.
-- **La mécanique** — `_feuillement_livret` réutilise la mécanique « nonce »
-  de `_scroll_top` : le couple (page, sens) est injecté dans le style, donc
-  l'animation rejoue à chaque tour de page, et SEULEMENT à chaque tour (le
-  zoom A−/A+ et les interactions dans la page ne feuillettent pas).
-- **🔒 La confiance, inchangée** : lecture seule, la base n'est jamais
-  touchée ; aucun changement de schéma ; aucun changement de données.
-- `_VERSION_APPLI = "v7.13.15"`.
-
-### 51. v7.13.16 — Le livre de la dizaine se feuillette
-
-- **La demande** — « Côté web : je faisais allusion au livret de la dizaine
-  quand on clique sur “📿 Égrener la dizaine” du Fil de l'actualité. »
-- **Le geste posé** — le livre ouvert par « 📿 Égrener la dizaine » se
-  feuillette maintenant comme le livret du feuillet (v7.13.15) et comme le
-  téléphone : chaque page entre par la DROITE et se pose vers la GAUCHE —
-  à l'ouverture du livre, à chaque « Suivant ▶ », sur les pages
-  INTENTIONS, les dix « Je vous salue Marie », GLORIA PATRI et le
-  parchemin du pointage. Ici on ne recule jamais : chaque tour est un tour
-  en avant. La page du remerciement (interactive) garde son écran paisible.
-- **La mécanique** — la même aide `_feuillement_livret` (v7.13.15), la clé
-  portant la page du livre : l'animation rejoue à chaque tour, et
-  seulement à chaque tour.
-- **🔒 La confiance, inchangée** : lecture seule, la base n'est jamais
-  touchée ; aucun changement de schéma ; aucun changement de données.
-- `_VERSION_APPLI = "v7.13.16"`.
-
-### 52. v7.14.0 — La caisse de la cotisation et ses reçus numérotés (Phase 1 du paiement)
-
-- **La demande** — démarrage de la **Phase 1** du chantier « paiement des
-  abonnements / réabonnements / cotisations » : la caisse et les reçus,
-  **sans passerelle** — les montants et l'échéance étant posés par le
-  diocèse (adulte : abonnement 5 000 / réabonnement 5 000 FCFA ; jeune :
-  abonnement 3 500 / réabonnement 2 000 FCFA ; échéance de l'année
-  pastorale : **15 janvier 2027** ; en-tête des reçus : **Diocèse de
-  Grand-Bassam**).
-- **La migration douce** — la table `abonnements` (déjà chez elle) gagne
-  six colonnes de caisse posées idempotemment par `safe_migrate` :
-  `mode_paiement`, `numero_recu`, `origine`, `enregistre_par`,
-  `reference_ext`, `note`. Ni les membres, ni les intentions, ni aucun
-  écran existant ne bougent ; aucune valeur n'est écrite dans la base tant
-  que le diocèse n'a pas posé ses réglages.
-- **💼 Caisse de mon équipe** (rubrique « 📅 Abonnements » du responsable) —
-  les montants du diocèse affichés en tête, trois compteurs (cotisants,
-  total collecté, reste à régler), et pour chaque membre non à jour un
-  formulaire complet : nature (abonnement/réabonnement), montant
-  **pré-rempli selon le tarif de son équipe** (jeune/adulte), mode de
-  paiement (espèces, Wave, Orange Money, MTN MoMo, autre), note. Le clic
-  « Enregistrer le paiement + éditer le reçu » pose le paiement et ouvre
-  le **reçu numéroté** (COT-2026-00001, séquentiel par année pastorale) ;
-  le bouton 🧾 d'une ligne rouvre n'importe quel reçu.
-- **🧾 Le reçu PDF + QR** — une page A4 sobre : en-tête du porteur, numéro
-  en encadré, **QR de vérification publique**, fidèle, équipe, paroisse,
-  nature et année pastorale, montant, mode et date, situation à l'échéance,
-  signature du responsable. Le QR mène à l'écran public `?recu=N°` qui
-  confirme l'authenticité sans données sensibles — un reçu inventé ne
-  vérifie rien.
-- **🏛️ Caisse du diocèse** (rubrique « 📅 Abonnements » du diocèse) — les
-  réglages de la cotisation (montants, échéance, porteur), le total
-  collecté, l'**historique complet des reçus** (numéro, date, fidèle,
-  équipe, paroisse, nature, mode, signature), l'**export du trésorier
-  (Excel)** et le retéléchargement du PDF d'un reçu par son numéro.
-- **💳 Ma cotisation** (carte de l'accueil membre) — carte verte « à jour »
-  avec numéro de reçu et **reçu PDF téléchargeable**, ou carte ambrée « à
-  renouveler » avec les montants du diocèse (selon le tarif de l'équipe),
-  l'échéance et le chemin de la main propre ; l'écran annonce le Wave à
-  venir sans l'ouvrir encore (Phase 2).
-- **🔒 La confiance, inchangée** : une table existante augmentée par
-  migration douce ré-exécutable ; aucun écran existant ne change de sens ;
-  aucune donnée sensible dans l'écran public ; les montants, l'échéance et
-  le porteur ne s'écrivent en base QUE par le geste du diocèse.
-- `_VERSION_APPLI = "v7.14.0"`.
-
-### 53. v7.14.1 — « Abonnement - Réabonnement » : le titre rendu au module, l'échéance au 15 décembre 2026, la règle de la mention « NOUVEAU »
-
-- **Les observations du diocèse** — trois retouches demandées dès la mise
-  en service de la caisse : (1) le module porte son vrai titre
-  **« Abonnement - Réabonnement »** ; (2) l'échéance de l'année pastorale
-  est remise au **15 décembre 2026** ; (3) la règle des tarifs est
-  précisée sans ambiguïté.
-- **La règle de la maison (mention « NOUVEAU »)** — tout équipier déjà
-  dans la base se **RÉABONNE** : adulte (tout membre hors équipe Jeune)
-  à 5 000 FCFA, jeune (équipe Jeune) à 2 000 FCFA ; la mention
-  « NOUVEAU » seule ouvre l'**ABONNEMENT** : adulte à 5 000 FCFA,
-  nouveau Jeune à 3 500 FCFA.
-- **Les écrans qui suivent le titre** — la rubrique des deux caisses
-  s'appelle « 📅 Abonnement - Réabonnement », la carte de l'accueil
-  membre titre « 💳 Abonnement - Réabonnement — à jour / à renouveler »,
-  le reçu PDF s'intitule « REÇU D'ABONNEMENT » et l'écran public
-  « Vérification d'un reçu — Abonnement · Réabonnement » (avec l'échéance
-  au format français).
-- **Le formulaire de la caisse d'équipe** — la nature s'ouvre sur
-  **🔄 Réabonnement** (le cas courant, conformément à la règle) ; choisir
-  « 📝 Abonnement (mention NOUVEAU) » re-pré-remplit le montant selon le
-  tarif de l'équipe du membre, d'un clic. Le cadre de modification suit
-  les mêmes libellés.
-- **L'échéance repositionnée** — les défauts du code portent
-  **2026-12-15** (carte membre, réglages diocèse, reçu PDF) ; une
-  migration douce ne déplace en base QUE la valeur ANCIENNE
-  (2027-01-15) si elle s'y était posée d'un clic sur « Poser les
-  réglages » sans la changer — toute valeur posée volontairement reste
-  chez elle, et le diocèse peut reposer ses réglages à tout moment.
-- **🔒 La confiance, inchangée** : même table, mêmes six colonnes de
-  caisse ; la migration de l'échéance ne touche qu'une clé de réglage, et
-  seulement si elle porte exactement l'ancienne valeur par défaut.
-- `_VERSION_APPLI = "v7.14.1"`.
-
-### 54. v7.14.2 — La carte qui connaît son membre : « Rappel » / « Information », champ « Statut », deux échéances, la nuit violette
-
-- **La personnalisation demandée par le diocèse** — la carte d'accueil du
-  membre n'affiche plus les deux tarifs côte à côte : elle lit « 👤 Mon
-  profil » et dit SA situation, une seule ligne de tarif, avec les
-  libellés exacts :
-  - le membre hors équipe Jeune sans mention se lit adulte →
-    **« ⏳ Rappel - Réabonnement »** · Année pastorale 2026 - 2027 ·
-    🔄 Réabonnement 5 000 FCFA · 🗓️ À régler au plus tard le 15/12/2026
-    délai de rigueur · 💼 Paie auprès de ton responsable d'équipe — en
-    espèces ou en mobile money (Wave, Orange Money) : il note ton
-    paiement et t'édite ton reçu numéroté immédiatement ;
-  - l'équipe Jeune suit le même modèle à 2 000 FCFA (réabonnement) et
-    3 500 FCFA (nouveau Jeune) ;
-  - le membre portant la mention « Nouveau » reçoit
-    **« ⏳ Information - Abonnement »** · 📝 Abonnement (5 000 adulte /
-    3 500 Jeune) · 🗓️ À régler au plus tard le 31/12/2026 — la différence
-    entre les dates d'échéance est normale.
-- **Le champ « Statut »** — posé dans « ➕ Nouveau membre » (espace équipe),
-  « ✏️ Modification » de « 👤 Mes membres » et le formulaire d'ajout de
-  l'espace paroisse : options **Ancien / Nouveau**. Le membre porte la
-  mention « Nouveau » pour **une année pastorale** : deux colonnes posées
-  par migration douce (`mention_nouveau`, `mention_annee`), la mention
-  retombe d'elle-même quand l'année passe — aucun travail de nuit. La
-  liste des membres affiche « 🌱 Nouveau 2026-2027 » tant qu'elle porte ;
-  une mention retombée se rappelle au responsable dans le formulaire.
-- **Les deux échéances partout** — réabonnement : 15/12/2026 (délai de
-  rigueur) · abonnement des nouveaux : 31/12/2026. Carte du membre,
-  encadré de la caisse d'équipe, réglages du diocèse (deux cases de date),
-  reçu PDF (« Situation d'abonnement » suit la nature du reçu) et écran
-  public de vérification : chacun montre la date de SA nature.
-- **La caisse s'ouvre sur la bonne ligne** — le formulaire de paiement
-  d'un membre ouvre la nature que porte sa mention (Nouveau →
-  Abonnement, sinon Réabonnement) et son badge « 🌱 Nouveau » se voit
-  dans la liste des non enregistrés ; le reçu rouvert par 🧾 choisit son
-  échéance tout seul.
-- **La carte quitte le jaune** — fond **violet foncé du pied de page**
-  (dégradé #241042 → #3B1177 → #4A148C), liseré et titres dorés comme
-  « 📿 Mémoire de mes dizaines » : les boutons et textes dorés du web
-  gardent leur éclat sur cette nuit-là ; la carte verte « à jour » reste
-  verte — la réussite se voit d'un regard.
-- **🔒 La confiance, inchangée** : deux colonnes NULL sur `membres`, une
-  clé de réglage de plus ; AUCUNE ligne de membre modifiée par la
-  migration, tout le monde commence Ancien et le responsable pose ses
-  mentions en connaissance de cause.
-- `_VERSION_APPLI = "v7.14.2"`.
-
-### 55. v7.14.3 — La caisse lit le profil : nature plus jamais un choix, montant non modifiable, fini le « Reçu n° None », reçu PDF sobre
-
-- **La nature n'est plus un choix** — dans « 💼 Abonnement - Réabonnement
-  — Équipe », la radio « Nature (la mention « NOUVEAU » ouvre
-  l'abonnement) » a quitté la caisse : le champ « Statut » de « 👤 Mon
-  profil » décide seul (mention « Nouveau » → Abonnement, sinon
-  Réabonnement) et la ligne du membre porte sa nature d'un coup d'œil —
-  « – ❌ Non enregistré · 🔄 Réabonnement » ou « · 📝 Abonnement (mention
-  NOUVEAU) ». Les badges « 🧒 tarif jeune » / « 🧑 tarif adulte » ont
-  quitté la liste avec elle.
-- **Le montant se montre, ne se discute plus** — le champ « Montant
-  (FCFA) » est automatique et non modifiable : il suit le profil du
-  membre (5 000 adulte · 3 500 nouveau Jeune · 2 000 Jeune).
-  La ligne garde « Mode de paiement » et « Note (facultative) ».
-- **L'encadré de la caisse épuré** — l'encadré des montants et « 📌
-  Règle de la maison » ont quitté l'écran ; il reste « 🗓️
-  Échéances : • Abonnement (nouveaux) — 31/12/2026 · • Réabonnement —
-  15/12/2026 (délai de rigueur) », sous « Période : Sept 2026 – Août
-  2027 ».
-- **« Membres 09/09 »** — remplace « ✅ Cotisants 9/9 » (zéros devant).
-  Au passage le compteur compte enfin les payés : l'ancienne jointure
-  comptait tout le monde, payé ou non — d'où un « 9/9 » immuable.
-- **Fini le « Reçu n° None »** — le numéro de reçu est posé sur TOUTES
-  les routes de notation (caisse ET correction « ✏️ »), et une ligne
-  déjà « paye » sans numéro (nées avant la caisse) reçoit son numéro
-  séquentiel en douceur, la première fois que la caisse ou la carte du
-  membre la relit — une seule fois, jamais renumérotée. La carte verte
-  dit « 🧾 Reçu n° COT-2026-00001 » ; si un numéro se fait attendre,
-  elle dit « Reçu n° en cours d'attribution » au lieu de « None ».
-- **La carte verte au titre de la nature** — « ✅ Abonnement — à jour »
-  ou « ✅ Réabonnement — à jour » selon l'opération, la ligne se réduit à
-  « Abonnement · année pastorale 2026/2027 · 5 000 FCFA · payée le
-  07/11/2026 » (le mode de paiement reste sur le reçu), suivie du
-  « 🧾 Reçu n° … ».
-- **Le reçu PDF sobre** — « Nature de l'abonnement : Réabonnement » (la
-  phrase « — couvre l'année pastorale… » a quitté le bloc), « Situation
-  d'abonnement : À jour » (l'échéance et la règle des montants ne
-  voyagent plus sur le papier), la ligne de prière retirée, et
-  l'identifiant de la maison sur le papier : le bloc « Membre » porte
-  « MatLoc : GBA-OISOJ » (l'ancien champ « matricule » reste la roue de
-  secours). Le titre du
-  papier (« RÉABONNEMENT — Année pastorale Sept 2026 – Août 2027 ») et
-  le QR de vérification restent en place.
-- **🔒 La confiance, inchangée** : aucune migration, aucune colonne
-  nouvelle ; la seule écriture nouvelle est le numéro de reçu posé sur
-  des lignes DÉJÀ payées qui n'en portaient pas — séquentiel, unique,
-  idempotent.
-- `_VERSION_APPLI = "v7.14.3"`.
-
-### 56. v7.14.4 — La relance (lecture seule) : qui n'est pas à jour, SON échéance, le message prêt à copier pour WhatsApp, l'export du suivi
-
-- **« 📣 Relances » dans la caisse d'équipe** — sous les trois métriques,
-  l'expander liste les membres non à jour avec, pour chacun, la nature
-  posée par « 👤 Mon profil » (« 🔄 Réabonnement » / « 📝 Abonnement
-  (mention NOUVEAU) »), le montant attendu (réglages du diocèse selon la
-  catégorie adulte/jeune), SON échéance (réabonnement au délai de
-  rigueur du 15/12/2026, abonnement des nouveaux au 31/12/2026) et le
-  drapeau d'urgence (« dans 31 jour(s) », « aujourd'hui même », « ⚠️
-  dépassée depuis N jour(s) »). Aucune écriture : la relance RELIT la
-  base — elle n'est pas une caisse.
-- **Le message collectif prêt à copier** — le cadre noir porte le texte
-  WhatsApp entier : les deux échéances au mot du diocèse, les montants
-  par profil, le chemin du paiement (les mots de la carte : « Paie
-  auprès de ton responsable d'équipe — en espèces ou en mobile money
-  (Wave, Orange Money) : il note ton paiement et t'édite ton reçu
-  numéroté immédiatement »), la signature « Le responsable d'équipe ».
-  Le bouton de copie de `st.code` fait le geste.
-- **Le message pour UN membre** — un sélecteur parmi les en attente
-  produit son message individuel : sa nature, son montant, SON échéance
-  (réabonnement au délai de rigueur ; abonnement mention « Nouveau »
-  sans lui), l'appel au réveil si l'échéance est passée (« ⏰ … va voir
-  ton responsable dès aujourd'hui »).
-- **La paroisse relaie** — dans « 📅 Abonnements », chaque équipe en
-  attente ouvre « 📣 Message de relance (WhatsApp) » : le même message
-  collectif, prêt à porter au responsable d'équipe.
-- **Le diocèse tient le livre** — dans « 📅 Abonnement - Réabonnement »,
-  l'expander « 📣 Relances — N membre(s) en attente » dresse le tableau
-  de tous les en attente (Paroisse, Équipe, Nom, MatLoc, Nature, Montant
-  attendu, Échéance, Urgence) et pose « 📥 Export du suivi (Excel) » :
-  feuille « Suivi_AAAA » (tous les équipiers actifs avec leur situation
-  — à jour : nature, montant payé, date, N° reçu ; en attente : nature
-  attendue, montant attendu, échéance) + feuille « Relances » (les en
-  attente seuls). Le carnet du trésorier, prêt pour la fin de saison.
-- **Le moteur** — `database.cotis_relances_lignes(equipe_id=None,
-  paroisse_id=None, annee_debut=None)` : la lecture en bloc (une seule
-  requête, la nature lue sur les colonnes « mention » comme
-  `cotis_nature_membre`, la catégorie au nom de l'équipe) qui alimente
-  les trois écrans ; `components.cotis_reglages_aff` (échéances
-  formatées), `cotis_relance_ligne_urgence`, `cotis_relance_message_collectif`
-  et `cotis_relance_message_membre` (les textes).
-- **🔒 La confiance, inchangée** : aucune migration, aucune colonne
-  nouvelle, AUCUNE écriture — le geste entier est un SELECT ; les
-  réglages du diocèse restent où ils sont.
-- `_VERSION_APPLI = "v7.14.4"`.
-
-### 57. v7.14.5 — Le message de relance, retouché au mot du diocèse : plus de redondance, le nom du responsable signe
-
-MOT DU USER (le gabarit annoté du message de relance) : la salutation
-ne répète plus l'équipe (la signature la porte déjà) ; la parenthèse
-qui accompagnait « 💼 Montants » quitte TOUTE l'application ; le nom du
-responsable complète la signature ; la carte « 👤 Mon profil » est dite
-« dans ton Espace personnel ».
-
-- **Le message collectif, au mot près** — « 🙏 Chers équipiers, » (l'équipe
-  n'est plus dite deux fois) ; « 💼 Montants : » (la parenthèse qui
-  l'accompagnait est retirée de l'app entière : message de relance,
-  réglages du diocèse, README, commentaires) ; « Ta carte « 👤
-  Mon profil » dans ton Espace personnel te dit ta situation exacte. » ;
-  la signature devient le NOM du responsable (colonne « responsable » de
-  l'équipe — sinon le compte connecté) puis « Votre responsable —
-  {équipe} », séparés du corps par une ligne vide. Sans nom connu, la
-  signature garde « Votre responsable — {équipe} » seule.
-- **Le message pour UN membre signe pareil** — même signature (nom +
-  « Votre responsable — {équipe} »).
-- **Lecture seule, toujours** — aucun écrit de plus : on ne fait que
-  relire la colonne « responsable » qui existe déjà.
-- `_VERSION_APPLI = "v7.14.5"`.
-
-### 58. v7.15.0 — La relance mue en onglet, et le Samaritain reçoit sa carte : « 🛖 Mémoire de l'aubergiste : Luc 10,35 »
-
-MOT DU USER : « Je préconise que la section "📣 Relances — 09 en attente"
-soit déplacée et muée en onglet en remplacement de "💬 Messages WhatsApp -
-Équipe x / 📢 Rappels réabonnement". Penchons-nous sur « Mémoire de
-l'aubergiste ». »
-
-- **La relance déménage au menu (les trois espaces)** — la rubrique
-  « 💬 WhatsApp » devient « 📣 Relances », la page « 📣 Relances -
-  {équipe / paroisse / diocèse} » ; dans `afficher_whatsapp_tabs`, la
-  section « 📢 Rappels réabonnement » (l'ancêtre grossier : une liste et
-  un lien) cède sa place à l'onglet « 📣 Relances » qui porte le contenu
-  né en v7.14.4, déplacé de la caisse d'équipe (l'expander y est retiré —
-  déplacé, pas copié). Le libellé du radio reste STABLE (« 📣 Relances ») :
-  le compte changeant se dit dans la section (« 📣 Relances — NN en
-  attente »), jamais dans le libellé — un radio persistant ne survivrait
-  pas à un libellé vivant.
-- **Le meilleur des deux sections accueilli** — dans l'onglet, chaque en
-  attente reprend la ligne complète de la caisse (nature posée par
-  « 👤 Mon profil », montant, SON échéance, drapeau d'urgence) ET gagne le
-  lien « 📱 Rappeler {prénom} » de l'ancienne section quand le numéro
-  WhatsApp est connu (le message individuel signé voyage dans le lien).
-  Côté responsable d'équipe : une seule équipe, affichée à plat avec le
-  message collectif prêt à copier, signé du responsable (v7.14.5). Côté
-  paroisse et diocèse : les équipes en attente s'ouvrent en expanders
-  (« 📌 {équipe} — N en attente »), chacune avec son message collectif
-  signé de SON responsable. Lecture seule, comme toujours.
-- **Les quatre onglets respirent** — 🎂 Anniversaires, 📣 Relances,
-  📿 Dizaines du jour, 📿 Espace de prière : les trois autres gardent leur
-  place, ils n'ont pas déménagé.
-- **🛖 La carte de l'aubergiste** — dans l'Espace personnel, sous
-  « 📿 Mémoire de mes dizaines », sa sœur : « 🛖 Mémoire de l'aubergiste —
-  Luc 10,35 » (même nuit #121a45, même liseré d'or). Le Samaritain laissa
-  deux deniers à l'hôte : « Prends soin de cet homme. Et ce que tu
-  dépenseras en plus, je te le rendrai quand je reviendrai. » Dans la ⛓️
-  chaîne, chaque équipier est cet hôte : la carte dit le portage
-  d'aujourd'hui (la séance en vigueur, le N° méd. porté et SON
-  prochain), le dépôt posé à cet emplacement — la même voix que la ligne
-  de sa dizaine — ou la règle de la maison quand l'emplacement dort :
-  « La Paix dans le monde » veille jusqu'à la prochaine séance ; le
-  surplus des visiteurs (« ce que tu dépenseras en plus », v7.9.19) ;
-  l'héritage de l'absent (l'intention gardée jusqu'au retour, v7.13.0) ;
-  la fidélité du cahier (« Aucune dizaine notée n'est une prière absente »
-  — le ton est la promesse du Samaritain, jamais la vérification) ; et les
-  portages refermés, séance après séance (les dépôts tels que la base les
-  retient encore, les dizaines notées de chaque période), sous le sceau de
-  l'Écriture.
-- **Le moteur (lecture seule)** — `database.memoire_aubergiste(matloc,
-  limite=5)` relit le contexte ⛓️ (`contexte_chaine_membre`,
-  `historique_chaines_seance`), le dépôt en place
-  (`intention_reserve_pour_numero`, règle d'or v7.10.1 incluse), le
-  surplus (`intentions_reserve_surplus`), l'héritage (`prochain_attache`)
-  et le cahier (`dizaines_journal`) ; AUCUNE migration, AUCUNE écriture
-  nouvelle — les seuls réveils traversés (publication, purge) sont ceux
-  que la dizaine traverse déjà à chaque ouverture.
-- `_VERSION_APPLI = "v7.15.0"`.
-
-### 59. v7.15.1 — Le WhatsApp rétabli, l'aubergiste au mot près, et l'entête qui ne laisse plus de vide
-
-MOT DU USER : « 1 - La rubrique « 💬 WhatsApp » à rétablir. 2. 🛖 Mémoire
-de l'aubergiste — Luc 10,35 — la sœur de « 📿 Mémoire de mes dizaines »,
-de façon simplifiée, est la « 📿 Mémoire de mes dizaines » de celui qui me
-porte dans la chaîne de prière. […] La "🛖 Mémoire de l'aubergiste"
-présentera en réalité la « 📿 Mémoire de mes dizaines » de "N° 14 — AKESSÉ
-Bomo Bernadette". Tout simplement. Au cas où il n'a pas de séance alors
-les N° méd. entrent en action. La "🛖 Mémoire de l'aubergiste" doit être
-visible aussi dans l'application. 3. Il y'a toujours un vide dès que
-j'atterris sur la page web. Vois comment régler ce problème. »
-
-- **La rubrique « 💬 WhatsApp » rétablie (les trois espaces)** — le menu
-  reprend son nom d'origine et la page son titre « 💬 Messages WhatsApp -
-  {équipe / paroisse / diocèse} ». L'onglet « 📣 Relances » (déplacé de la
-  caisse, v7.15.0) reste à sa place dans la page, avec 🎂 Anniversaires,
-  📿 Dizaines du jour et 📿 Espace de prière : le meilleur des deux mondes.
-- **🛖 La carte de l'aubergiste redéfinie au mot près** — elle n'est plus
-  « mon portage » (v7.15.0) : elle est la « 📿 Mémoire de mes dizaines » de
-  CELUI / CELLE QUI ME PORTE dans la ⛓️ chaîne. La carte dit : SON maillon
-  au format de la séance (« ⛓️ Séance du 01/11/2026 — N° 14 — AKESSÉ Bomo
-  Bernadette prie pour MOTIAN TOFFÉ Ahua Innocent — N° méd. 10. »),
-  « 🕯️ Son intention (N° méd. 10) » — l'intention posée à MON N° méd.,
-  celle qu'il / elle veille pour moi (la règle d'or n'est PAS appliquée
-  ici, à dessein : c'est ma propre intention portée par mon aubergiste) —
-  puis SA fidélité des 14 derniers jours (« 📿 Sa mémoire de dizaines »),
-  simplifiée, avec le garde-fou de la maison (« Aucune dizaine notée
-  n'est une prière absente ») et le sceau de Luc 10,35. Les blocs surplus,
-  portages refermés et héritage de la v7.15.0 cèdent la place : la carte
-  est devenue « tout simplement » la mémoire de qui me porte.
-- **Les deux voies de l'aubergiste** — ① la séance en vigueur : dans
-  l'ordre des N° méd. enregistrés, mon aubergiste est le maillon QUI
-  PRÉCÈDE le mien (la chaîne se referme toute seule) ; ② sinon (aucune
-  séance enregistrée, ou hors de la chaîne du jour) LES N° MÉD. ENTRENT EN
-  ACTION : ordre croissant des N° méd. des membres actifs de l'équipe — le
-  N° méd. juste sous le mien me porte, et le plus petit N° est porté par
-  le plus grand. Sans intention posée à mon N° méd. : règle de la maison,
-  « La Paix dans le monde » veille jusqu'à la prochaine séance. La carte
-  se montre à coup sûr (elle ne se dérobe jamais — quand l'aubergiste
-  n'est pas encore identifiable, elle le dit). Moteur :
-  `database.aubergiste_du_membre(matloc)` — lecture seule, AUCUNE
-  migration, AUCUNE écriture ; la grille est partagée par
-  `_cases_memoire()` avec « 📿 Mémoire de mes dizaines ».
-- **LE VIDE D'ATERRISSAGE RÉGLÉ À LA RACINE** — le téléphone voyait un
-  grand vide sombre sous l'entête à chaque arrivée. La cause : l'entête
-  était « position: fixed » (hors flux) et le contenu poussé par un
-  padding-top de secours (330 à 380 px) que corrigeait un script qui
-  mesurait l'entête toutes les 400 ms — dès que ce script ne pouvait plus
-  joindre la page (montée de version Streamlit, iframe, navigateur), le
-  secours restait seul et le vide s'installait. Désormais : l'entête vit
-  DANS le flux (`.sticky-header` static), le contenu commence juste
-  dessous (padding-top: 0), et la colle au sommet est portée par SON
-  CONTENEUR Streamlit (« [data-testid="stElementContainer"]:has(
-  .sticky-header) { position: sticky; top: 0; } » — le parent
-  stVerticalBlock couvre toute la page, donc la colle tient de bout en
-  bout ; vérifié au navigateur, Streamlit 1.67, mobile 430 px). Plus
-  aucun script de mesure (`_mesure_entete` retiré), plus aucun padding de
-  secours, plus aucun vide possible — et si un vieux navigateur dort sur
-  :has(), l'entête reste simplement dans le flux, sans jamais laisser de
-  vide. En lecture (livre ouvert), l'entête s'efface en scrollant et la
-  barre du feuillet (.flt-barre) prend le relais, collée en haut.
-- `_VERSION_APPLI = "v7.15.1"`.
-
-### 60. v7.15.2 — La carte épurée, le sceau en gras, le pont sous l'entête, et l'aubergiste dans l'application
-
-MOT DU USER : « 1 - À retirer : "La 📿 mémoire de celui / celle qui me porte
-dans la ⛓️ chaîne" ; "Aucune dizaine notée n'est une prière absente : le
-cahier ne retient que ce qui se pointe — le Seigneur, lui, voit le cœur."
-2. Agrandir un peu et mettre en gras "Prends soin de cet homme. Et ce que
-tu dépenseras en plus, je te le rendrai quand je reviendrai." — Luc 10,35.
-3. 🛖 "Mémoire de l'aubergiste : Luc 10,35" pas visible dans l'application.
-4. Entête (voir captures d'écran). »
-
-- **🛖 La carte épurée** — le sous-titre « La 📿 mémoire de celui / celle
-  qui me porte dans la ⛓️ chaîne » et le garde-fou « Aucune dizaine notée
-  n'est une prière absente… » quittent la carte : le titre et le sceau
-  disent tout. La carte garde SON maillon (la voix même de la séance),
-  « 🕯️ Son intention (N° méd. …) », « 📿 Sa mémoire de dizaines » avec sa
-  grille, et ne se dérobe jamais (les deux « L'aubergiste attend »).
-- **Le sceau agrandi et en gras** — « Prends soin de cet homme. Et ce que
-  tu dépenseras en plus, je te le rendrai quand je reviendrai. » — Luc
-  10,35 : `font-size: 0.95rem` + `font-weight: bold` (il était en 0.75rem
-  fin), aux DEUX endroits — la carte pleine et la carte qui attend.
-- **LE PONT VIT SOUS L'ENTÊTE** — `_pont_memoire_hors_ligne` est appelé
-  APRÈS `_render_header` dans le flux membre : la carte « 🕊 Le pont vers
-  l'application », son bouton « ✋ Reprendre dans l'application » et le
-  flash des journées reçues ne poussent plus l'entête vers le bas (capture
-  1 du diocèse). Le flash naît en direct (`st.success`/`st.warning`) sous
-  l'entête — plus jamais posé en session au-dessus d'elle.
-- **LA MACHINERIE INVISIBLE NE LAISSE AUCUN VIDE** — le CSS du thème et le
-  div caché du pont (#pont_memoire) sont muets mais leurs conteneurs
-  Streamlit gardaient leur interligne de 16 px : quatre s'empilaient avant
-  l'entête à chaque atterrissage (66 à 150 px de vide sombre selon les
-  écrans, capture 2 du diocèse). Désormais ils remontent d'un interligne :
-  règle CSS `margin-top: -16px` sur `[data-testid="stElementContainer"]` qui
-  porte un `<style>` seul ou un `div[hidden]` ; le script des liens et le
-  mini-lecteur (flotter/escamoter) replient leur propre conteneur. Vérifié
-  au navigateur (Streamlit 1.67, mobile 430 px) : l'entête touche le haut
-  de l'écran sur le pont, l'accueil et la lecture ; la colle sticky reste
-  intacte ; le flash arrive sous l'entête.
-- **L'AUBERGISTE VOYAGE AVEC LE PROFIL (lecture pure)** — la route
-  `?pont=profil` porte en plus `aub` (SON N°), `aubnom` (SON nom),
-  `aubdate` (la séance en vigueur, s'il y en a une), `sitx` (« Son
-  intention » — l'intention posée à MON N° méd., la voix même de la carte
-  web) et `aubj` (SA fidélité des 14 derniers jours). La carte du pont dit
-  « N informations » de plus ; la base n'est jamais écrite.
-- **Dans l'APPLICATION (MA DIZAINE, kit v9)** — « 🛖 Mémoire de
-  l'aubergiste : Luc 10,35 » est posée sous « 📿 Mémoire de mes dizaines »
-  sur la page du membre : SON maillon (« ⛓️ Séance du 01/11/2026 — N° 14 —
-  … prie pour … — N° méd. 10. » ou « les N° méd. entrent en action »),
-  « 🕯️ Son intention », SA fidélité des 14 derniers jours (la même grille
-  2×7 que la mienne), puis le SCEAU agrandi et en gras. Quand
-  l'aubergiste n'est pas encore identifiable, la carte le dit — elle ne se
-  dérobe jamais. Le retour de l'Espace le dit : « 🛖 Mémoire de
-  l'aubergiste à jour ».
-- **La règle d'or du pont reste entière** — tout ce qui voyage est relu
-  (`aubergiste_du_membre`, `intention_reserve_pour_numero` en_place=True,
-  `serie_dizaines_membre`) : AUCUNE migration, AUCUNE écriture.
-- `_VERSION_APPLI = "v7.15.2"`.
-
-### 61. v7.15.3 — Le registre des cotisations : « 💰 État de mes cotisations » en face de « 👤 Mon profil »
-
-MOT DU USER : « Évoquant les abonnements et réabonnements, je voudrai rappeler qu'en dehors,
-il existe d'autres types de cotisations : mensuelles, spéciales, évènementielles et
-extraordinaires pour lesquelles je souhaiterai tenir un registre pour chaque membre. Il sera
-nommé "État des mes cotisations" et logé dans un expander comme "👤 Mon profil" et placé à son
-opposé sur la même ligne. » — Réponses du diocèse : la responsable d'équipe note ; chaque ligne
-porte le mode de paiement ; la mensuelle vit en grille des 12 mois ; quatre montants réglables
-par le diocèse (0 = libre) ; registre simple (pas de reçu) ; icône 💰.
-
-- **UNE TABLE NOUVELLE, POSÉE DOUCEMENT** — `cotisations_diverses`
-  (`CREATE TABLE IF NOT EXISTS`, ré-exécutable) : membre, année pastorale,
-  type (`mensuelle` / `speciale` / `evenementielle` / `extraordinaire`),
-  montant, date du versement, mode de paiement, signature de qui a noté,
-  origine. Rien d'existant ne bouge — ni les membres, ni les abonnements,
-  ni aucun écran.
-- **LES QUATRE MONTANTS DU DIOCÈSE** — dans « 📅 Abonnement - Réabonnement »
-  (diocèse), un nouvel expander « ⚙️ Réglages du registre des cotisations » :
-  mensuelle, spéciale, évènementielle, extraordinaire (0 = saisie libre).
-  Ils règlent les suggestions de la caisse d'équipe et le tarif affiché au
-  membre (le tarif de la mensuelle seulement — les trois autres restent des
-  montants notés au cas par cas).
-- **LA CAISSE D'ÉQUIPE NOTE** — section « 💰 Le registre des cotisations »
-  sous les onglets de la caisse annuelle : compteurs (lignes notées · total
-  du registre · tarif mensuel), puis membre par membre — les lignes
-  existantes (date · type · montant · mode · noté par), la GRILLE DES 12
-  MOIS de la mensuelle (sept. → août, cochée quand versée), la saisie (le
-  montant proposé suit le type choisi), la correction EN DEUX TEMPS
-  (🗑️ puis confirmation). Chaque ligne est signée du responsable
-  (`origine='caisse_equipe'`).
-- **LE MEMBRE RELIT, EN FACE DE SON PROFIL** — « 💰 État de mes
-  cotisations » campé sur la même ligne que « 👤 Mon profil »
-  (`st.columns(2)`, profil à gauche, registre à son opposé), même forme
-  (popover). LECTURE PURE : la grille des 12 mois de la mensuelle (mois
-  réglés · total · tarif posé), les lignes des trois autres types (date ·
-  montant · mode), le total de l'année. Le registre vide parle gentiment
-  (« 🕊️ Rien de noté pour l'instant… »). Pas de reçu numéroté ici : le
-  registre dit l'état, le reçu reste réservé à l'abonnement annuel.
-- **Banc d'épreuve** — `scripts/test_v7153.py` (42 vérifications : table,
-  réglages, écrire/lire/corriger, lecture pure de la vue, compile ×8) et
-  `scripts/test_v7153_vue.py` (AppTest, base NEUVE : le vrai geste de la
-  responsable jusqu'à l'œil du membre). Régressions repassées et
-  actualisées : v7.15.2 (27 ✅), v7.15.1 (29 ✅), v7.15.0 + vue, v7.14.5,
-  v7.14.3. La base de production n'est jamais touchée.
-- `_VERSION_APPLI = "v7.15.3"`.
-
-### 64. v7.16.1 — Les relances du registre : « ⏳ à régler » en vert, le versement noté au bon endroit
-
-MOT DU USER : « Une clarification concernant ces messages envoyés vers les
-équipiers : « 15/12/2026 · Évènementielle — Épiphanie · 3 000 FCFA · 💵 Espèces ·
-noté par famkoueq3 ». Ce sont en réalité des relances pour dire (notre exemple
-ici) qu'il y a une contribution de 3 000 F CFA pour la fête de l'épiphanie. Elle
-saurait être en vert tant que ce n'est pas encore réglé. Le mode de paiement ne
-devrait pas faire partie du formulaire par-conséquent. — Reste à le mettre en
-gras et en blanc [le verset]. Réduire la longueur du bouton « 💰 État de mes
-cotisations » pour qu'il ne soit pas hors marge (téléphone surtout). Faire le
-titre et le message sur 2 lignes. — 1. Tous les liens suivants [?espace=1,
-?espace=1&p=1, l'icône Streamlit] me redirigent vers mon lien personnel pc comme
-téléphone (même phénomène sur 2 autres téléphones). 2. Les encarts « 👤 Mon
-profil » et « 💰 État de mes cotisations » restent visibles UNIQUEMENT qu'en fil
-de l'actualité ; pas dans les autres rubriques. 3. Cliquer sur « 📖 Relire ce
-feuillet » doit nous renvoyer vers le sommaire. »
-
-- **LES RELANCES DU REGISTRE (v7.16.1)** — ce qui part de « 💰 Le registre des
-  cotisations » est une RELANCE : la ligne naît « ⏳ à régler » (colonne douce
-  `regle_le`, NULL = à régler) SANS mode de paiement — le champ « Mode de
-  paiement » a QUITTÉ le formulaire d'expédition (la « Date de la cotisation »
-  remplace « Date du versement »). La relance s'affiche EN VERT (st.success
-  côté caisse, pastille verte côté membre) tant que le versement n'est pas
-  noté ; le geste « ✅ Régler » (bouton sur chaque ligne à régler) ouvre le
-  formulaire du versement — le mode de paiement vit ICI désormais
-  (`cotis_div_regler` : mode + instant, une seule fois, refusé si déjà
-  réglé) — et la ligne passe réglée avec son mode ✅. Les lignes posées avant
-  cette version (qui portaient leur mode) sont réglées d'office par la
-  migration douce (UPDATE idempotent borné à la table).
-- **LA DETTE DIT TOUT** — `cotis_div_total_du` porte désormais `autres` :
-  les relances des catégories spéciale / évènementielle / extraordinaire
-  encore « ⏳ à régler » entrent dans le « 💰 Total dû à ce jour » (la
-  mensuelle vit toujours par les mois écoulés sans versement réglé — jamais
-  deux fois la même dette) ; la grille ne coche un mois qu'au versement
-  réglé ; « 🕊️ Déjà versé cette année pastorale » lit les lignes réglées
-  (`total_regle`) ; la caisse ajoute la 4ᵉ métrique « ⏳ À régler ».
-- **LE VERSET EN GRAS ET EN BLANC** — Luc 10,35 quitte le gris-violet pour
-  `color:#ffffff; font-weight:bold` (italique et trait doré gardés) dans les
-  DEUX cartes mémoire (membre et écho visiteur).
-- **LE BOUTON HORS MARGE SE REPLIE** — le libellé de « 💰 État de mes
-  cotisations » se déplie sur DEUX LIGNES (« 💰 État de mes cotisations » /
-  « — doit : X FCFA » ou « ✅ À jour ») : CSS `white-space: pre-line` +
-  hauteur auto ; sur téléphone (≤640 px), les deux encarts s'empilent l'un
-  sous l'autre (`:has()` sur le bloc à popover — dégradation gracieuse sans
-  `:has()`).
-- **CHAQUE LIEN MÈNE À SA DESTINATION** — la « mémoire du fidèle »
-  (localStorage `rosaire_matloc`, qui réécrivait toute adresse d'Espace sans
-  matloc vers le dernier lien personnel retenu) est RETIRÉE de
-  `components.py` : `?espace=1` ouvre l'Espace communautaire, `?espace=1&p=1`
-  l'espace de la paroisse, le lien personnel reste lui-même — PC comme
-  téléphone, quelle que soit l'icône posée d'avant. Version du passeur des
-  rappels rafraîchie (`sw.js?v=71611`).
-- **LES ENCARTS SUIVENT LE MEMBRE PARTOUT** — « 👤 Mon profil » et « 💰 État
-  de mes cotisations » campent juste sous l'entête AVANT le livre ouvert :
-  visibles sur toutes les rubriques (fil, Thème, Rosaire, Mes évènements,
-  Galerie, Archives) et même pendant la lecture du feuillet ou de la
-  dizaine.
-- **« RELIRE CE FEUILLET » ENVOIE AU SOMMAIRE** — le lien profond des
-  « 📚 Les feuillets précédents » ouvre le livret sur la couverture et son
-  sommaire (`flt_page = -1`, sens « avant »), comme « 📖 Ouvrir le livret ».
-- **Banc d'épreuve** — `scripts/test_v7161.py` (39 vérifications : migration
-  douce et lignes anciennes réglées d'office, expédition sans mode, le
-  geste « ✅ Régler » et son refus du double-règlement, la grille qui ne
-  coche qu'au versement réglé, la dette avec `autres` sans double compte,
-  le source — form sans mode, lignes vertes, label 2 lignes, verset gras
-  blanc, sommaire, encarts avant le livre, CSS, mémoire retirée, version,
-  compile ×12) et `scripts/test_v7161_vue.py` (AppTest, base NEUVE : le
-  form sans mode, les relances vertes, le règlement au vrai geste, les
-  encarts sur TOUTES les rubriques et le livre ouvert, le sommaire). 
-  Régressions repassées et actualisées : v7.16.0 (52 ✅) + sa vue,
-  v7.15.4 (37 ✅) + sa vue, v7.15.3 (42 ✅) + sa vue, v7.15.2 (27 ✅),
-  v7.15.1 (29 ✅), v7.15.0 + vue, v7.14.5, v7.14.3 — et la tournure
-  d'autorité qui s'était glissée dans l'entrée 63 de ce README est retirée.
-- `_VERSION_APPLI = "v7.16.1"`.
-
-### 63. v7.16.0 — Le « 💰 Total dû à ce jour », l'abonnement dans l'état, la précision libre et le verset
-
-MOT DU USER : « 1. Mettre "« Prends soin de cet homme. Et ce que tu dépenseras
-en plus, je te le rendrai quand je reviendrai. » — Luc 10 35" dans la grille de
-"📿 Mémoire de mes dizaines" juste en dessous et au dessus de "Ta fidélité du
-jour — les 14 derniers jours". 2. La caisse et "💰 État de mes cotisations" —
-a. l'état fait le point des cotisations pas encore réglé, comment cela est-il
-géré lorsqu'il s'acquitte de cette dette ? b. Remplacer "💰 Total de l'année"
-par "💰 Total dû à ce jour". c. Afficher le montant du total dû dans
-l'expander. d. Chaque sortie de champ réactualise le formulaire et rend
-laborieux les saisies. e. les types de cotisation (Mensuelle, Spéciale,
-Évènementielle et Extraordinaire) sont en fait des catégories — est-il
-possible de spécifier ladite cotisation par saisie ? f. Les abonnements et
-réabonnements doivent partir de "💰 État de mes cotisations" / "💰 Total dû à
-ce jour". »
-
-- **LE VERSET LUC 10,35** — posé dans « 📿 Mémoire de mes dizaines » juste
-  sous le titre et juste au-dessus de « Ta fidélité du jour — les 14 derniers
-  jours » : « Prends soin de cet homme. Et ce que tu dépenseras en plus, je
-  te le rendrai quand je reviendrai. » — Luc 10,35 (citation au trait doré,
-  en italique) — dans la carte du membre ET dans son écho visiteur.
-- **LE « 💰 TOTAL DÛ À CE JOUR »** — à la place du total de l'année, la
-  dette du membre : les mois ÉCOULÉS de l'année pastorale qu'aucun versement
-  mensuel ne couvre × le tarif mensuel réglé (0 = saisie libre → rien n'est
-  dû de ce chef) + l'abonnement non réglé (au montant réglé pour CE membre :
-  « NOUVEAU » → abonnement au 31/12, sinon réabonnement au délai de rigueur ;
-  adulte/jeune selon l'équipe). Rien de dû → la carte passe au vert « ✅ À
-  jour » ; le « 🕊️ Déjà versé cette année pastorale » le rappelle en dessous.
-  Le montant campe aussi dans le TITRE de l'encart (« 💰 État de mes
-  cotisations — dû : 6 000 FCFA »), visible sans ouvrir.
-- **L'ABONNEMENT DANS L'ÉTAT** — le « 📅 Abonnement / Réabonnement » fait
-  partie de « 💰 État de mes cotisations » : réglé → « ✅ réglé » avec le
-  montant, la date et le reçu numéroté ; à régler → « ⏳ à régler » avec le
-  montant attendu et l'échéance qui concerne le membre.
-- **QUAND LE MEMBRE S'ACQUITTE** — dès que la responsable note son versement
-  (expédition du registre, ou abonnement réglé dans sa caisse), la ligne
-  apparaît à l'instant, le mois passe en vert et le « Total dû à ce jour »
-  baisse d'autant — la grille et le total dû disent la même chose.
-- **LES QUATRE TYPES deviennent des catégories, NOMMABLES** — le champ
-  « Précision — nomme la cotisation (facultatif) » (texte libre, 80
-  caractères) voyage dans chaque ligne expédiée et se relit dans la caisse
-  (« 01/11 · Mensuelle — Cotisation des fêtes · 500 FCFA … ») comme dans
-  l'état du membre. Colonne douce `precision` posée en migration idempotente
-  sur `cotisations_diverses`.
-- **LES SAISIES deviennent tranquilles** — l'expédition vit dans UN SEUL
-  `st.form` : catégorie, montant, date, mode, précision et destinataires se
-  remplissent sans AUCUNE réactualisation ; rien ne part qu'au « 📮
-  Expédier ». Les tarifs réglés voyagent dans le libellé de chaque catégorie
-  (« Mensuelle — 500 FCFA (tarif réglé) », « Spéciale — saisie libre ») et
-  dans l'aide du montant.
-- **La règle d'or** — lecture pure côté membre, tournures d'autorité
-  toujours bannies, la base de production jamais montée (bancs sur copies
-  neuves, fixtures nettoyées).
-- **Banc d'épreuve** — `scripts/test_v7160.py` (52 vérifications : la
-  précision, la migration douce, le total dû — mensuelle écoulée non versée,
-  abonnement payé/à régler, nature NOUVEAU, tarif jeune, fenêtre pas ouverte
-  ou entière, tarif libre —, le form, les libellés, le verset aux deux
-  cartes, la version, la compile ×8) et `scripts/test_v7160_vue.py` (AppTest,
-  base NEUVE : le form d'expédition, la précision en base, le verset entre
-  le titre et la fidélité, l'abonnement à régler, la dette qui baisse à
-  chaque versement jusqu'à « ✅ À jour »). Régressions repassées et
-  actualisées : v7.15.4 (37 ✅) + sa vue, v7.15.3 (42 ✅) + sa vue,
-  v7.15.2 (27 ✅), v7.15.1 (29 ✅), v7.15.0 + vue, v7.14.5, v7.14.3.
-- `_VERSION_APPLI = "v7.16.0"`.
-
-### 62. v7.15.4 — La coquille corrigée et l'expédition du registre (« Tous ou certains »)
-
-MOT DU USER : « 💰 une coquille — "État de mes cotisations". Chez le responsable
-d'équipe, une section "Le registre des cotisations" dans sa caisse ✅ : il choisit
-le type, saisit le montant proposé, sélectionne ceux qui vont recevoir (Tous ou
-certains), "expédie" — le membre le voit à l'instant même. »
-
-- **LA COQUILLE CORRIGÉE** — « État des mes cotisations » devient « 💰 État de
-  mes cotisations » (le popover du membre, la caisse d'équipe, les
-  commentaires) : la grammaire reprend sa place, les deux registres restent
-  dos à dos sur la même ligne. Le MOT DU USER de l'entrée 61 garde son
-  orthographe d'alors, mot pour mot — c'est de l'archive.
-- **L'EXPÉDITION, UN SEUL GESTE** — dans « 💰 Le registre des cotisations »
-  de la caisse d'équipe, la saisie membre par membre s'efface : le type
-  d'abord, le montant proposé suit le type (réglé dans « 💼 Caisse du
-  diocèse », 0 = libre), la date et le mode de paiement, puis CEUX QUI
-  REÇOIVENT — « 👥 Toute l'équipe — chaque membre reçoit » d'une seule coche,
-  ou « 👥 Ceux qui reçoivent » (multiselect, certains seulement) — et
-  « 📮 Expédier ». Une ligne par membre choisi, signée à ton nom, posée d'un
-  bloc en base (`cotis_div_envoyer_groupe` : un verrou, un commit, doublons
-  fondus) ; sans destinataire choisi, le geste reste prudent (avertissement).
-- **LE MOT DE L'EXPÉDITION** — après le geste, le retour dit combien de
-  membres ont reçu (« ✅ Mensuelle de 500 FCFA du 01/11/2026 expédiée à
-  2 membres — chacun la voit aussitôt dans « 💰 État de mes cotisations » »).
-  Le membre relit à l'instant même (lecture pure inchangée) ; la correction
-  en deux temps (🗑️ puis confirmation) et la grille des 12 mois restent à
-  leur place.
-- **Banc d'épreuve** — `scripts/test_v7154.py` (37 vérifications :
-  l'expédition en base — doublons fondus, certains seulement, signatures —,
-  la coquille bannie des quatre fichiers, la section au source, la version,
-  la compile ×8) et `scripts/test_v7154_vue.py` (AppTest, base NEUVE : toute
-  l'équipe d'un geste, puis certains seulement, et l'œil de Jean et de
-  Marie). Régressions repassées et actualisées : v7.15.3 (42 ✅) + sa vue
-  (le geste relu en expédition), v7.15.2 (27 ✅), v7.15.1 (29 ✅), v7.15.0 +
-  vue, v7.14.5, v7.14.3. La base de production n'est jamais touchée.
-- `_VERSION_APPLI = "v7.15.4"`.
-
-## 🛠️ Maintenance
-
-- Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
-  par session sans risque (`safe_migrate` ignore les doublons).
-- « 🗑️ Réinitialiser » (diocèse) purge TOUTES les données opérationnelles —
-  confirmation par saisie du mot « SUPPRIMER ».
-- Sauvegarde : pour Turso utilisez `turso db export` ; en local copiez
-  `gestion_religieuse.db`.
+# ====================================================================
+# view_espace_membre.py — VERSION 7.8.11 (mise en page du feuillet)
+# v7.13.16 : LE LIVRE DE LA DIZAINE SE FEUILLETTE (demande n°7) — « 📿 Égrener
+#   la dizaine » du Fil de l'actualité ouvre un livre dont les pages tournent
+#   comme celles du livret du feuillet (v7.13.15) et comme le téléphone :
+#   chaque page entre par la DROITE et se pose vers la GAUCHE, à chaque
+#   « Suivant ▶ », à l'ouverture du livre comme aux pages INTENTIONS, grains,
+#   GLORIA et au parchemin du pointage. Ici on ne recule jamais — chaque tour
+#   est un tour en avant. Même mécanique « nonce » (_feuillement_livret,
+#   même aide) : l'animation rejoue à chaque tour, et seulement à chaque
+#   tour. La page du remerciement (interactive) garde son écran paisible.
+#   La base n'est jamais touchée.
+# v7.13.15 : LE LIVRET SE FEUILLETTE (le modèle du téléphone, transposé au
+#   web, demande n°6) — dans le livret du feuillet mensuel, les pages ne se
+#   « cliquent » plus sèchement : chaque page entre par la DROITE et se pose
+#   vers la GAUCHE (perspective douce, le même geste que le livret de
+#   l'application « MA DIZAINE AU QUOTIDIEN ») ; en revenant (« ◀ Précédent »,
+#   « 📑 Sommaire »), elle revient par la gauche. Même mécanique « nonce »
+#   que _scroll_top (_feuillement_livret) : l'animation rejoue à chaque tour
+#   de page, et SEULEMENT à chaque tour (le zoom A−/A+ et les interactions
+#   dans la page ne feuillettent pas). La base n'est jamais touchée.
+# v7.8.11 : ① MISE EN PAGE TYPOGRAPHIQUE des pages du livret (demande n°4) :
+#   marqueurs R./T./1./2./3+T. en gras, réponses « T. »/« 3+T. » en gras,
+#   section « À l'écoute de la Parole de Dieu » en gras (sauf le titre du
+#   passage, en italique), Salve Regina en gras, interligne entre marqueurs,
+#   légende des rôles et puce « Accueil » de « Célébrons en équipe », titres
+#   de rubrique en police manuscrite (Caveat, Google Fonts ; repli local
+#   Segoe Print / Comic Sans MS) ;
+# ② CADRE PHOTO sous chaque titre de section (image encadrée façon photo
+#   papier, ou emplacement pointillé si pas d'image) + POSITION de la photo
+#   au choix : haut / droite / gauche avec habillage du texte (demande n°3,
+#   nouvelle colonne feuillet_sections.pos_image) ;
+# ③ ALERTE feuillet : elle annonce le DERNIER MOIS PASTORAL publié (et non la
+#   dernière publication en date) — republier septembre après octobre ne
+#   renvoie plus l'alerte sur septembre (demande n°2) ; une publication à
+#   date illisible est annoncée sans mention de date (auto-réparation) ;
+# ④ Photos de Prière/Méditation du fil : préfixe [droite]/[gauche] du lien
+#   (choisi à la soumission) → image flottante dans la carte du jour.
+# (lecteur compagnon — musique en continu, v7.8.9)
+# v7.8.9 : ① le bouton 🎧 ouvre l'onglet d'écoute en FENÊTRE COMPAGNON nommée
+# sur PC (réutilisée à chaque clic) et dans le MÊME onglet sur téléphone ;
+# ② la page d'écoute porte une barre « ◀️ Revenir à l'appli » (sur téléphone,
+# un tap ramène à l'espace et la musique suit) ; ③ MINI-BARRE COMPAGNON
+# flottante sur toutes les pages de l'espace : reprise automatique de la
+# musique là où elle s'était arrêtée (sessionStorage) — on prie dans
+# « 📿 Rosaire » ou le livret pendant que la musique continue ; ④ contrôles
+# Media Session (écran verrouillé / notifications) + vignette flottante 📺
+# (Picture-in-Picture, si supporté).
+# v7.8.5 : ① la carte « 📝 Éditorial » est RETIRÉE de la vitrine — retour au
+# duo Sommaire + « Ouvrir le livret » ; les archives suivent donc
+# IMMÉDIATEMENT le bouton ; ② sommaire du livret en présentation UNIQUE
+# (les entrées cliquables « 📖 N — Titre » remplacent la liste statique
+# doublonnée et les boutons « ▶ » pris pour des expanders) ; ③ « ✕ Fermer
+# le livret » ramène à 🕯️ Thème → 🔭 Vue d'ensemble ; ④ l'emplacement des
+# archives est ANNONCÉ même sans feuillet précédent.
+# v7.8.4 : ③ le clic sur l'alerte « Nouveau feuillet » OUVRE DIRECTEMENT le
+# livret du feuillet annoncé via le lien profond ?flt=1&fa=ANNÉE&fm=MOIS
+# (même mécanisme que les liens d'archive), au lieu de mener à la vitrine.
+# v7.8.3 : ① vitrine du feuillet — la PREMIÈRE section (Éditorial) est lue
+# directement dans la vitrine de Vue d'ensemble, sous le Sommaire (demande h :
+# le clic de l'alerte mène à « Sommaire / Éditorial du feuillet ») ;
+# ② blindage alerte — aucune alerte si le feuillet annoncé n'a aucune
+# section saisie (sinon le clic mènerait à « pas encore publié »).
+# v7.8.2 : ① e — RETOUR EN HAUT DE PAGE à chaque tour de page du livret
+# (script scrollé avec nonce → ré-exécuté à chaque page, fini le scroll
+# manuel vers le titre) ; ② h — l'alerte « 📖 Nouveau feuillet » du fil
+# mène à 🕯️ Thème → 🔭 Vue d'ensemble (Sommaire du feuillet) ;
+# ③ i — archivage des feuillets précédents EN EXPANDERS avec liens dans
+# Vue d'ensemble (la sous-rubrique Archives → 📖 Feuillets est retirée).
+# Hérite de v7.8.1 : correctif navigation (sandbox sans allow-top-navigation).
+# Hérite de v7.8 : feuillets mensuels (vitrine, livret autonome, alerte fil).
+# Hérite de v7.6 : menu liens HTML purs + ruban hover + ☰ mobile,
+# navigation ?r=&s=, mesure autocorrigée, QR paroissial, lecteur complet.
+# Marqueurs : Ctrl+F → "VERSION 7.6", "_liens_meme_onglet", "_VERSION_APPLI".
+# ====================================================================
+import os
+import re
+import html
+import unicodedata
+import base64
+import urllib.parse
+import json
+import streamlit as st
+from datetime import date
+# v7.6.8 — Migration st.iframe : l'API st.components.v1.html est dépréciée
+# (suppression annoncée). On utilise st.iframe si disponible ; repli
+# automatique sur l'ancienne API sinon.
+# POUR REVENIR EN ARRIÈRE : remplacez tout ce bloc par la ligne commentée.
+# from streamlit.components.v1 import html as _comp_html
+# v7.8 — CORRECTIF : st.iframe (Streamlit 1.66+) REFUSE height=0
+# (StreamlitInvalidHeightError) et, les appels étant blindés par
+# try/except, TOUS les scripts (mesure entête, scroll top, liens même
+# onglet) mouraient en silence. On passe donc par st.iframe avec une
+# hauteur minimale de 1 px (les scripts y exécutent bien
+# window.parent.document) ; repli components.html sur les anciennes
+# versions de Streamlit dépourvues de st.iframe.
+# v7.8.16 — ce mécanisme est CENTRALISÉ dans stcompat.py (même code pour
+# app.py, components.py et cette vue) : les avertissements « Please replace
+# st.components.v1.html with st.iframe » disparaissent des journaux Cloud.
+from stcompat import comp_html as _comp_html
+from components import ligne_intercession  # v7.13.0 — lignes sans redondance
+from database import (c, commit_and_sync, verifier_reparer_intentions,
+                      intention_du_prochain, intention_du_prochain_detail,
+                      intentions_reserve_surplus,
+                      contact_en_priere, date_intention_en_priere,
+                      prise_en_charge_automatique, verser_intention_du_jour,
+                      pointer_dizaine, dizaine_deja_pointee, compteur_dizaines_mois,
+                      serie_dizaines_membre,
+                      # v7.13.4 — l'espace visiteur temporaire (21 jours)
+                      espace_visiteur_de_cle, espace_visiteur_jours_restants,
+                      serie_dizaines_visiteur, compteur_dizaines_mois_visiteur,
+                      marquer_carte_vue, carte_deja_vue, dizaine_visiteur_pointee,
+                      feuillet_questions_lister, feuillet_reponses_enregistrer,
+                      feuillet_reponses_de_cle, importer_dizaines_hors_ligne,
+                      # v7.12.0 — les rappels de la dizaine sur le téléphone
+                      push_abonnement_enregistrer, push_abonnement_de_cle,
+                      push_abonnement_note_jrnais,
+                      # v7.10.2 — le questionnaire SOUMIS au diocèse
+                      feuillet_questionnaire_publie,
+                      # v7.14.0 — la caisse de la cotisation
+                      cotis_parametres_lire, cotis_categorie_membre,
+                      cotis_membre_nouveau,
+                      # v7.14.3 — le numéro manquant se remplit tout seul
+                      cotis_recu_numero_attribuer,
+                      # v7.15.0 — le mémoire de l'aubergiste (Luc 10,35)
+                      memoire_aubergiste,
+                      # v7.15.1 — l'aubergiste qui me porte (Luc 10,35)
+                      aubergiste_du_membre,
+                      intention_reserve_pour_numero,
+                      # v7.15.3 — « 💰 État de mes cotisations » (lecture pure)
+                      cotis_div_etat, cotis_div_parametres_lire,
+                      COTIS_DIV_TYPES,
+                      # v7.16.0 — le « Total dû à ce jour » (dette mensuelle
+                      # + abonnement, lecture pure)
+                      cotis_div_total_du)
+from services import (safe_date, compter_visite, lien_whatsapp, urls_galerie,
+                      URL_ESPACE_SPIRITUEL, get_periode_pastorale)
+
+import logging
+logger = logging.getLogger(__name__)
+from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere, get_theme_actif, get_sous_theme_du_mois, get_lien_mystere
+
+# v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
+# encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
+# le pied de page lisent la MÊME constante, mise à jour à chaque version.
+_VERSION_APPLI = "v7.16.2"
+
+# v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
+# apparaît dans la barre de copyright du pied de page (même disposition que
+# le site du Mouvement) ; vide, elle reste discrètement absente.
+LIEN_FACEBOOK = ""
+
+# v7.9.17 — LA VIDÉO À LA DEMANDE : la vidéo YouTube de la chaîne
+# « Équipes du Rosaire Grand-Bassam » s'affiche JUSTE AVANT LE PIED DE PAGE
+# (v7.9.19 — elle a quitté la tête du fil d'actualité, à la demande :
+# « s'il doit s'ouvrir, c'est juste avant le pied de page » ; v7.9.20 —
+# la date du pèlerinage est passée, la carte porte son nom d'aujourd'hui :
+# la vidéo reste disponible à la demande), avec le lecteur incorporé et un
+# lien d'ouverture. Mettre "" dans la constante pour retirer la carte d'un
+# seul geste, sans toucher au reste.
+LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE = "https://www.youtube.com/watch?v=hYv04JVIALI&list=RDhYv04JVIALI&start_radio=1"
+
+# v7.9.19 — L'ADRESSE DE LA CHAÎNE YOUTUBE (demande : « le lien de la
+# chaîne youtube.com à ajouter comme adresse dans le pied de page ») :
+# elle apparaît dans la colonne centrale du pied, sous le contact du
+# responsable paroissial. Vide, elle reste discrètement absente.
+LIEN_YOUTUBE_CHAINE = "https://www.youtube.com/channel/UCK3pN76H1lTlIyjsIrYMTXw"
+
+
+# ====================================================================
+# NAVIGATION
+# ====================================================================
+RUBRIQUES_MEMBRE = ["🏠 Actualités", "🕯️ Thème", "📿 Rosaire", "📅 Mes évènements", "🖼️ Galerie +", "📖 Archives"]
+RUBRIQUES_PUBLIC = ["🏠 Actualités", "📿 Rosaire", "🕯️ Thème", "🖼️ Galerie +", "📖 Archives"]
+SOUS_RUBRIQUES = {
+    "🕯️ Thème": ["🔭 Vue d'ensemble", "🎓 Enseignements", "💬 Discussions"],
+    "📿 Rosaire": ["Le Rosaire chez les Équipiers", "Le Rosaire thématique"],
+    # v7.9.2 — « 🖼️ Galerie + » déplacée ENTRE « 📅 Mes évènements » et
+    # « 📖 Archives » (demande user). Le public garde son ordre d'origine.
+    # Les liens codés en dur ?r=1 (🕯️ Thème) restent valables : l'index
+    # de Thème ne bouge pas dans les deux listes.
+    "🖼️ Galerie +": ["Souvenirs", "Témoignages"],
+    "📖 Archives": ["🙏 Prières", "📖 Méditations", "🎵 Musiques"],
+}
+
+# v7.9.3 — FIL D'ACTUALITÉ ALLÉGÉ : l'Accueil ne garde qu'UNE section, celle
+# qui correspond à nos attentes — la prière/méditation DU JOUR (couronnée de
+# l'alerte feuillet). « 🙏 Vos intentions à une équipe » est REMONTÉE juste
+# avant « 🕯️ Un jour, une dizaine » (harmonisée avec cette dernière) et les
+# blocs 📣 Coin Affiche, 📰 Actualités de la Paroisse et 📰 Actualités du
+# diocèse quittent le fil. METTRE À False pour réafficher l'ancien fil
+# complet (tout le code d'origine est conservé, rien n'est supprimé).
+FIL_ALLEGEE = True
+
+def _lire_nav(rubriques):
+    """Rubrique/sous-rubrique lues dans l'URL (?r=..&s=..). Navigation par
+    LIENS HTML purs : aucun pont JS fragile."""
+    rub = rubriques[0]
+    try:
+        i = int(str(st.query_params.get("r", "")))
+        if 0 <= i < len(rubriques):
+            rub = rubriques[i]
+    except (ValueError, TypeError):
+        pass
+    sous = SOUS_RUBRIQUES.get(rub)
+    sub = None
+    if sous:
+        sub = sous[0]
+        try:
+            j = int(str(st.query_params.get("s", "")))
+            if 0 <= j < len(sous):
+                sub = sous[j]
+        except (ValueError, TypeError):
+            pass
+    return rub, sub
+
+# ====================================================================
+# HELPERS
+# ====================================================================
+# v7.9.15 — LE LOGO PARTOUT : le fichier images/logo.png est désormais LIVRÉ
+# dans le paquet (c'est le chapelet doré des Équipes du Rosaire). Il est
+# cherché à plusieurs adresses certaines : à côté du module (où que
+# l'application soit installée), puis depuis le dossier de lancement ; en
+# dernier recours, le chapelet livré dans static/ prend le relais. Pour
+# passer au logo officiel du Mouvement, il suffira de déposer la nouvelle
+# image sous le même nom — aucun code à modifier.
+_CHEMINS_LOGO = (
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir,
+                 "images", "logo.png"),
+    os.path.join("images", "logo.png"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir,
+                 "static", "logo_equipes_rosaire.png"),
+    os.path.join("static", "logo_equipes_rosaire.png"),
+)
+
+
+@st.cache_data
+def _logo_base64():
+    for _chemin in _CHEMINS_LOGO:
+        try:
+            with open(_chemin, "rb") as f:
+                return base64.b64encode(f.read()).decode()
+        except Exception:
+            continue
+    return None
+
+
+PDF_URL_RE = re.compile(r'href="(https://res\.cloudinary\.com/[^"]+\.pdf)"')
+DIV_PDF_RE = re.compile(r'<div[^>]*1px dashed #4527a0.*?</div>\s*', re.DOTALL)
+
+
+def _extraire_pdf_legacy(contenu):
+    if not contenu or ("cloudinary" not in contenu and "data:application/pdf" not in contenu):
+        return contenu, None
+    m = PDF_URL_RE.search(contenu)
+    url = m.group(1) if m else None
+    return DIV_PDF_RE.sub("", contenu).strip(), url
+
+
+def _scroll_top(cle):
+    """v7.8.2-e — RETOUR EN HAUT DE PAGE à chaque tour de page : à l'ouverture
+    d'une nouvelle page, la lecture reprend TOUJOURS en haut (là où se trouve
+    le titre), sans devoir scroller vers le haut.
+    Double correctif :
+    ① CONTENEUR : Streamlit 1.66 ne scrolle PAS la fenêtre (window.scrollTo
+      reste inopérant) mais la section <section class="main"> ; on remet à
+      zéro le scrollTop de TOUS les conteneurs possibles (main, appView,
+      documentElement, body, window) pour rester compatible.
+    ② NONCE : le `cle` (page affichée) est injecté dans le script → chaque
+      page produit un script DIFFÉRENT → Streamlit recharge l'iframe → le
+      scroll s'exécute (sans nonce, l'iframe identique était réutilisée).
+    Un 2e passage à 400 ms passe au-dessus de la restauration interne."""
+    nonce = re.sub(r"[^0-9A-Za-z_-]", "", str(cle) or "x")
+    _js = ("var d=window.parent.document;"
+           "var els=d.querySelectorAll('section.main,[data-testid=\"stMain\"],"
+           "[data-testid=\"stAppViewContainer\"]');"
+           "for(var i=0;i<els.length;i++){els[i].scrollTop=0;}"
+           "d.documentElement.scrollTop=0;d.body.scrollTop=0;"
+           "try{window.parent.scrollTo(0,0);}catch(e){};")
+    try:
+        _comp_html("<script>/*" + nonce + "*/"
+                   "try{" + _js + "}catch(e){}"
+                   "setTimeout(function(){try{" + _js + "}catch(e){}},400);"
+                   "</script>", height=0)
+    except Exception:
+        pass
+
+
+def _feuillement_livret(cle, sens="avant"):
+    """v7.13.15 — LE FEUILLETAGE DU LIVRET (le modèle du téléphone, transposé).
+    Les pages se tournent de la DROITE vers la GAUCHE : la nouvelle page
+    entre par le bord droit, comme un feuillet qu'on soulève ; en revenant
+    en arrière (« ◀ Précédent », « 📑 Sommaire »), elle revient par la gauche.
+    Même mécanique « nonce » que _scroll_top : le couple (page, sens) est
+    injecté dans le style → chaque tour produit un style DIFFÉRENT →
+    Streamlit recharge le bloc → l'animation rejoue à chaque tour, et
+    SEULEMENT à chaque tour (le zoom A−/A+ et les interactions dans la page
+    ne feuillettent pas — le contenu identique réutilise l'élément).
+    Retourne (style_html, classe) : la classe enveloppe la carte de la page."""
+    nonce = re.sub(r"[^0-9A-Za-z_-]", "", str(cle) or "x")
+    _a_gauche = (str(sens or "avant") != "arriere")
+    _nom = "flt_feuill_" + nonce
+    _keyframes = (
+        "@keyframes feuillette_dg{from{transform:perspective(1400px) "
+        "rotateY(-9deg) translateX(46%);opacity:.15;}"
+        "to{transform:perspective(1400px) rotateY(0deg) translateX(0);opacity:1;}}"
+        "@keyframes feuillette_gd{from{transform:perspective(1400px) "
+        "rotateY(9deg) translateX(-46%);opacity:.15;}"
+        "to{transform:perspective(1400px) rotateY(0deg) translateX(0);opacity:1;}}"
+    )
+    _anim = "feuillette_dg" if _a_gauche else "feuillette_gd"
+    _origine = "left" if _a_gauche else "right"
+    _style = (
+        "<style>" + _keyframes
+        + ".stApp{overflow-x:hidden;}"
+        + "." + _nom + "{animation:" + _anim + " .55s cubic-bezier(.22,.61,.36,1) both;"
+        + "transform-origin:" + _origine + " center;will-change:transform,opacity;}"
+        + "</style>"
+    )
+    return _style, _nom
+
+
+def _scroll_top_si_nouvelle_page(cle, rub, sub):
+    """v7.9.3 — LES PAGES REMONTENT À LEUR OUVERTURE (comme nous l'avons
+    fait pour les feuillets) : quand la rubrique/sous-rubrique affichée
+    CHANGE — c'est-à-dire à l'ouverture d'une page — la lecture repart DU
+    HAUT (même mécanisme « nonce » que _scroll_top). Les interactions DANS
+    la page (expander, bouton, formulaire) ne repositionnent PAS l'écran :
+    seul le changement de page déclenche le retour en haut."""
+    _cle_prec = "nav_page_prec_" + str(cle)
+    _actuel = (str(rub), str(sub or ""))
+    if st.session_state.get(_cle_prec) != _actuel:
+        st.session_state[_cle_prec] = _actuel
+        _scroll_top("nav" + str(cle) + re.sub(r"\W", "", str(rub))
+                    + re.sub(r"\W", "", str(sub or "")))
+
+
+def _liens_meme_onglet(cle):
+    """v7.6 — LES LIENS DU MENU NAVIGUENT DANS L'ONGLET COURANT.
+    Constat terrain : Streamlit force certains liens vers un nouvel onglet
+    (10 clics = 10 onglets). Parade : target="_self" écrit dans le HTML
+    des ancres + intercepteur qui reprend le clic et navigue le document
+    parent. Ré-attaché à chaque run (le DOM est recréé).
+    v7.8.1 — CORRECTIF MAJEUR : Streamlit 1.66 sandboxe ses iframes SANS
+    « allow-top-navigation » → `window.top.location.href=…` lève
+    SecurityError. L'ancien code appelait d'abord e.preventDefault() PUIS
+    tentait la nav JS : celle-ci échouait en silence et le clic ne faisait
+    PLUS RIEN (tous les liens du menu et des sous-rubriques morts).
+    Stratégie « essai sans risque » :
+      ① tenter la nav JS (top) ;
+      ② si elle RÉUSSIT → preventDefault() (évite le double chargement) ;
+      ③ si elle ÉCHOUE → ne RIEN annuler : le navigateur suit l'ancre
+        nativement (target="_self" garantit l'onglet courant)."""
+    script = (
+        "<script>(function(){var d=window.parent.document;var essais=0;"
+        "try{var p=window.frameElement.parentElement;"
+        "p.style.height='0px';p.style.overflow='hidden';"
+        "p.style.margin='-16px 0';p.style.padding='0';"
+        "p.style.background='transparent';}catch(e){}"
+        "var t=setInterval(function(){essais++;"
+        "var as=d.querySelectorAll('.menu-ligne a,.mob-panneau a,.pdr-v910 a');var n=0;"
+        "for(var i=0;i<as.length;i++){"
+        "if(!as[i].getAttribute('data-self76')){"
+        "as[i].setAttribute('data-self76','1');as[i].setAttribute('target','_self');"
+        "(function(a){a.addEventListener('click',function(e){"
+        "var nav=false;"
+        "try{window.top.location.href=a.href;nav=true;}catch(err){}"
+        "if(nav&&e&&e.preventDefault){e.preventDefault();}"
+        "});})(as[i]);}"
+        "n++;}"
+        "if(n>0&&essais>2){clearInterval(t);}"
+        "else if(essais>20){clearInterval(t);}"
+        "},300);})();</script>")
+    try:
+        _comp_html(script, height=0)
+    except Exception:
+        pass
+
+
+def _fixer_liens_ecoute():
+    """v7.8.9 — CORRECTIF SANITISEUR pour les liens du lecteur compagnon.
+    Constat (test navigateur) : Streamlit 1.66 injecte target="_blank" +
+    rel="noopener noreferrer" dans TOUTES les ancres de st.markdown → les
+    boutons 🎧 / ◀️ Revenir ouvraient un NOUVEL onglet au lieu de naviguer
+    dans l'onglet courant (la mémoire sessionStorage suivait l'ancien
+    onglet : musique perdue de vue). Parade (motif éprouvé _liens_meme_onglet,
+    v7.8.1) : après rendu, on réécrit `target` en JS sur le DOM vivant et on
+    attache un intercepteur « essai sans risque » :
+      ① tenter la nav JS du document parent (top) ;
+      ② si elle réussit → preventDefault() ;
+      ③ si SecurityError (sandbox) → ne RIEN annuler : l'ancre native suit
+        (target="_self" réécrit garantit l'onglet courant).
+    Cibles : « 🎧 Écouter en priant » (mobile, _self), « ◀️ Revenir à
+    l'appli » (_self). Le bouton PC n'est PAS intercepté : on lui rend
+    seulement son nom de fenêtre « rosaire_ecoute » (onglet réutilisé,
+    window.name sert à la détection compagnon côté page d'écoute).
+    `rel` est RETIRÉ sur les trois : le rel=noopener imposé empêche la
+    réutilisation d'un onglet nommé (2e clic = 2e onglet).
+    Boucle durable : le DOM est recréé à chaque rerun Streamlit."""
+    script = (
+        "<script>(function(){var d=window.parent.document;"
+        "var t=setInterval(function(){"
+        "var cibles=[['a.btn-eco.mob','_self',true],"
+        "['a.btn-rv','_self',true],"
+        "['a.btn-eco.pc','rosaire_ecoute',false]];"
+        "for(var j=0;j<cibles.length;j++){"
+        "var as=d.querySelectorAll(cibles[j][0]);"
+        "for(var i=0;i<as.length;i++){var a=as[i];"
+        "if(!a.getAttribute('data-eco89')){"
+        "a.setAttribute('data-eco89','1');"
+        "a.setAttribute('target',cibles[j][1]);"
+        "a.removeAttribute('rel');"
+        "if(cibles[j][2]){(function(an){"
+        "an.addEventListener('click',function(e){"
+        "var nav=false;"
+        "try{window.top.location.href=an.href;nav=true;}catch(err){}"
+        "if(nav&&e&&e.preventDefault){e.preventDefault();}"
+        "});})(a);}}"
+        "}}"
+        "},350);})();</script>")
+    try:
+        _comp_html(script, height=0)
+    except Exception:
+        pass
+
+
+def _compter_bandes(membre=False, pid=None):
+    """Compte les bandes RÉELLEMENT affichées. v7.6 : accès par INDEX
+    (jamais d'unpack) — blindé contre tout décalage de colonnes.
+    LOT C5 : compte selon le même filtre que l'affichage."""
+    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
+        else ("AND paroisse_cible IS NULL", [])
+    try:
+        bandes = c.execute(f"""SELECT contenu_texte, fichier_url FROM espace_spirituel
+                              WHERE type_contenu='annonce_defilante' {cond}
+                              ORDER BY date_publication DESC, id DESC LIMIT 3""", prm).fetchall()
+    except Exception:
+        return 0
+    # 🔎 Diagnostic (s'affiche avec &debug=1)
+    if st.query_params.get("debug") == "1":
+        st.caption(f"🔎 DEBUG bandes — pid={pid} | {len(bandes)} ligne(s) : "
+                   + " || ".join(f"«{(b[0] or '')[:25]}» cible_stockée={b[1]}" for b in bandes))
+    n = 0
+    for ligne in bandes:
+        if len(ligne) < 1:
+            continue
+        texte = ligne[0]
+        cible = ligne[1] if len(ligne) > 1 else None
+        if cible == "membre" and not membre:
+            continue
+        if not texte:
+            continue
+        n += 1
+    return n
+
+
+def _render_theme(compact=False):
+    """CSS de l'espace. CONCATÉNATION (jamais de f-string avec du CSS).
+    v7.15.1 — LE VIDE D'ATERRISSAGE RÉGLÉ À LA RACINE : l'entête quitte
+    « position: fixed » (hors flux) pour « position: sticky » (dans le
+    flux). Avant, le contenu était poussé par un padding-top de secours
+    (330 à 380 px) corrigé par un script qui mesurait l'entête toutes les
+    400 ms — dès que ce script ne pouvait plus joindre la page (montée de
+    version Streamlit, iframe, navigateur), le secours restait tout seul :
+    un grand vide sombre sous l'entête, à chaque atterrissage. Désormais
+    l'entête OCCUPE sa vraie place dans le document et le contenu commence
+    juste dessous : plus aucun padding de secours, plus aucune mesure, plus
+    aucun vide possible — sur aucun téléphone, aucune version de Streamlit.
+    Lecture (livre ouvert, compact=True) : l'entête redevient statique et
+    s'efface en scrollant ; la barre du feuillet (.flt-barre) prend le
+    relais, collée en haut — le même réglage à la racine.
+    LA COLLE AU SOMMET : chaque st.markdown est emballé dans un
+    stElementContainer dont le PARENT (stVerticalBlock) couvre toute la
+    page — c'est donc LUI (et non .sticky-header, dont le parent n'a que
+    la hauteur de l'entête) qui porte « position: sticky ». Vérifié au
+    navigateur (Streamlit 1.67, mobile 430px) : l'entête colle au sommet
+    pendant que le contenu passe dessous. Si un vieux navigateur dort sur
+    :has(), l'entête reste simplement dans le flux — sans jamais laisser
+    de vide."""
+    # v7.15.1 — la règle de colle (normal) ; compact : rien, l'entête défile.
+    regle_sticky = ("" if compact else
+        '[data-testid="stElementContainer"]:has(.sticky-header) '
+        '{ position: sticky; top: 0; z-index: 9999; }\n')
+    regle_contenu = (
+        ".block-container { padding-top: 0px !important;"
+        " padding-bottom: 4rem !important; max-width: 1050px !important; }"
+    )
+    # v7.15.2 — LA MACHINERIE INVISIBLE NE LAISSE AUCUN VIDE AU-DESSUS DE
+    # L'ENTÊTE : le CSS du thème et le div caché du pont (#pont_memoire)
+    # sont muets mais leurs conteneurs Streamlit gardaient leur interligne
+    # de 16 px — quatre d'entre eux s'empilent avant l'entête à chaque
+    # atterrissage (66 à 150 px de vide sombre selon les écrans, captures
+    # du diocèse). Ces porteurs remontent d'un interligne : l'entête
+    # touche le haut de l'écran, sur tout téléphone, sans aucun script.
+    regle_machinerie = (
+        '[data-testid="stElementContainer"]'
+        ':has([data-testid="stMarkdownContainer"] > style:first-child), '
+        '[data-testid="stElementContainer"]'
+        ':has([data-testid="stMarkdownContainer"] > div[hidden]) '
+        '{ margin-top: -16px !important; }\n'
+    )
+    st.markdown(
+        '<style>'
+        # v7.8.11 — police manuscrite des titres de section du livret
+        # (@import DOIT précéder toute règle CSS) ; repli local si hors-ligne.
+        + "@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&display=swap');\n"
+        + regle_contenu + "\n" + regle_machinerie + regle_sticky +
+        """
+    [data-testid="stHeader"] { display: none !important; }
+    .stApp, [data-testid="stAppViewContainer"] { background-color: #0a0f2c !important; }
+    .stApp .stMarkdown, .stApp .stMarkdown p, .stApp .stMarkdown li, .stApp .stMarkdown span,
+    .stApp .stMarkdown h1, .stApp .stMarkdown h2, .stApp .stMarkdown h3, .stApp .stMarkdown h4,
+    .stApp .stMarkdown strong, .stApp .stMarkdown em { color: #e8eaf6 !important; }
+    /* v7.13.4 — les liens ordinaires restent lilas, MAIS le bouton Telegram
+       (class btn-telegram-ro) porte SA couleur : plus jamais de texte lilas
+       écrasé par ce sélecteur sur le bouton. */
+    /* v7.13.7 — le bouton « ◀️ Revenir à l'Espace de Prière » porte SA
+       classe : il n'est plus repeint lilas par le sélecteur des liens. */
+    .stApp .stMarkdown a:not(.btn-telegram-ro) { color: #b39ddb !important; }
+    /* v7.13.4 — LE BOUTON LISIBLE POUR DE BON (leçon de la démo réelle) :
+       Streamlit retire les déclarations !important des styles EN LIGNE —
+       l'encre blanche du style inline ne partait jamais au rendu, et le
+       bleu-lien du thème gagnait (encre bleue sur bleu nuit : illisible,
+       c'est exactement ce que l'œil avisé avait vu). La règle vit donc ICI,
+       dans la feuille du module : classe au lieu de style inline — rien ne
+       la retire, et l'encre blanche gagne pour de bon, clair comme sombre. */
+    .stApp a.btn-telegram-ro, .stApp a.btn-telegram-ro span {
+        display: inline-block !important;
+        background: #1A237E !important;
+        color: #ffffff !important;
+        padding: 11px 24px !important;
+        border-radius: 30px !important;
+        border: 1px solid #FFD700 !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.28) !important;
+        font-weight: bold !important;
+        text-decoration: none !important; }
+    [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: #9fa6d8 !important; }
+    [data-testid="stExpander"] { background-color: #121a45 !important; border: 1px solid #27306b !important; border-radius: 12px !important; }
+    details, [data-testid="stExpanderDetails"] { background-color: transparent !important; }
+    [data-testid="stExpander"] summary,
+    [data-testid="stExpanderToggleVisible"],
+    [data-testid="stExpander"] > div { background-color: transparent !important; }
+    summary, [data-testid="stExpander"] p { color: #e8eaf6 !important; }
+    [data-baseweb="tab-list"] { border-bottom-color: #27306b !important; }
+    [data-baseweb="tab"] p { color: #e8eaf6 !important; font-weight: 600 !important; }
+    [data-baseweb="tab"][aria-selected="true"] p { color: #ffffff !important; }
+    [data-baseweb="tab-highlight"] { background-color: #7b1fa2 !important; }
+    .stButton > button { background-color: #1a2150 !important; color: #e8eaf6 !important; border: 1px solid #2a3160 !important; }
+    .stButton > button[kind="primary"] { background-color: #4527a0 !important; border-color: #5e35b1 !important; color: #ffffff !important; }
+    .stApp [data-testid="stDownloadButton"] > button { background-color: #1a2150 !important; color: #e8eaf6 !important; border: 1px solid #2a3160 !important; }
+    [data-testid="stAlert"] { background-color: #151b3d !important; }
+    [data-testid="stAlert"] p { color: #e8eaf6 !important; }
+    [data-testid="stPopover"] { width: fit-content !important; max-width: 260px !important; margin-left: 0 !important; }
+    [data-testid="stPopover"] button { background-color: #4527a0 !important; color: #ffffff !important; border: 1px solid #5e35b1 !important; border-radius: 20px !important; font-weight: 600 !important;
+        /* v7.16.1 — le libellé se déplie sur DEUX LIGNES (titre puis le dû) : le bouton grandit en hauteur au lieu de sortir de la marge (téléphone surtout). */
+        white-space: pre-line !important; height: auto !important; min-height: 38px !important; line-height: 1.35 !important; text-align: left !important; }
+    [data-testid="stPopover"] button p { white-space: pre-line !important; }
+    [data-testid="stPopover"] button:hover { background-color: #5e35b1 !important; }
+    [data-testid="stNumberInput"] { max-width: 220px !important; margin-left: auto !important; margin-right: auto !important; }
+    [data-testid="stNumberInputStepUp"], [data-testid="stNumberInputStepDown"] { display: none !important; }
+    .menu-ligne { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin:8px auto 0 auto; max-width:1200px; }
+    .menu-item { position:relative; }
+    .menu-lien { display:block; background-color:#1a2150; color:#e8eaf6; border:1px solid #2a3160; border-radius:20px; padding:6px 14px; font-weight:600; font-size:0.85rem; text-decoration:none; white-space:nowrap; cursor:pointer; }
+    .menu-item.actif .menu-lien { background-color:#4527a0; border-color:#5e35b1; color:#ffffff; }
+    .menu-item:hover .menu-lien { background-color:#5e35b1; color:#ffffff; }
+    .sous-ruban { display:none; position:absolute; top:100%; left:50%; transform:translateX(-50%); z-index:10001; background:#121a45; border:1px solid #27306b; border-radius:10px; padding:6px; min-width:210px; box-shadow:0 6px 18px rgba(0,0,0,0.5); }
+    .menu-item:hover .sous-ruban { display:flex; flex-direction:column; gap:4px; }
+    .menu-sub { display:block; background:#1a2150; color:#e8eaf6; border:1px solid #2a3160; border-radius:14px; padding:6px 12px; font-size:0.82rem; font-weight:600; text-decoration:none; white-space:nowrap; }
+    .menu-sub.actif { background:#4527a0; border-color:#5e35b1; color:#ffffff; }
+    .menu-sub:hover { background:#5e35b1; color:#ffffff; }
+    .menu-mobile { display:none; }
+    @media (max-width:640px) {
+        .menu-ligne { display:none; }
+        .menu-mobile { display:block; position:relative; margin:6px auto 0 auto; width:fit-content; }
+        .menu-mobile summary { list-style:none; background:#4527a0; color:#ffffff; border:1px solid #5e35b1; border-radius:20px; padding:6px 22px; font-size:1.1rem; font-weight:bold; cursor:pointer; }
+        .menu-mobile summary::-webkit-details-marker { display:none; }
+        .menu-mobile[open] summary { background:#5e35b1; }
+        .mob-panneau { position:absolute; top:calc(100% + 6px); left:50%; transform:translateX(-50%); width:250px; max-height:60vh; overflow-y:auto; background:#121a45; border:1px solid #27306b; border-radius:12px; padding:8px; z-index:10001; box-shadow:0 6px 18px rgba(0,0,0,0.5); display:flex; flex-direction:column; gap:4px; }
+        .mob-lien { display:block; background:#1a2150; color:#e8eaf6; border:1px solid #2a3160; border-radius:14px; padding:8px 12px; font-weight:600; font-size:0.9rem; text-decoration:none; }
+        .mob-lien.actif { background:#4527a0; border-color:#5e35b1; color:#ffffff; }
+        .mob-sous { display:block; color:#c7cdf5; padding:4px 10px 4px 22px; font-size:0.85rem; text-decoration:none; }
+        .mob-sous.actif { color:#ffd000; font-weight:700; }
+    }
+    .sticky-header { position: static; top: 0; left: 0; right: 0; z-index: 9999;
+        background-color: #0a0f2c; border-bottom: 1px solid #27306b; padding: 12px 16px 0 16px; }
+    .header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-start; }
+    /* v7.9.3 — entête un PEU plus compacte (pages remontées à l'affichage,
+    comme les feuillets) : logo réduit de 190 à 170 px. v7.15.1 — la
+    hauteur n'est plus mesurée : l'entête est dans le flux, le contenu
+    commence juste dessous, quelle que soit sa hauteur réelle. */
+    .logo-bloc { width: 170px; text-align: center; }
+    .logo-bloc img { width: 100%; height: auto; border-radius: 10px; display: block; margin: 0 auto; }
+    .logo-titre-svg { display: block; width: 100%; margin-top: 6px; }
+    .bande-defilante { overflow: hidden; white-space: nowrap;
+        background: linear-gradient(90deg, #1a2150, #27306b);
+        border-top: 1px solid #27306b; }
+    .bande-defilante-inner { display: inline-block; padding: 8px 0; white-space: nowrap;
+        color: #ffd000 !important; font-weight: 600; font-size: 0.9rem;
+        animation: defilement 30s linear infinite; }
+    .bande-defilante:hover .bande-defilante-inner { animation-play-state: paused; }
+    @keyframes defilement { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
+    @media (prefers-reduced-motion: reduce) {
+        .bande-defilante-inner { animation: none; padding: 8px 15px; }
+    }
+    @media (max-width: 640px) {
+        .logo-bloc { width: 136px; }
+        [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { min-width: 0 !important; }
+        /* v7.16.1 — LES DEUX ENCARTS s'empilent l'un sous l'autre sur téléphone
+           (une ligne chacun, pleine largeur) : le bouton « 💰 État de mes
+           cotisations » ne sort plus de la marge. :has() tient au bloc qui
+           CONTIENT un popover — aucun autre empilement n'est touché ; sans
+           :has(), les deux colonnes restent côte à côte avec le libellé
+           replié sur 2 lignes (dégradation gracieuse). */
+        .stApp [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
+            { flex-direction: column !important; gap: 8px !important; }
+        .stApp [data-testid="stHorizontalBlock"]:has([data-testid="stPopover"])
+            > [data-testid="stColumn"]
+            { width: 100% !important; min-width: 100% !important;
+              flex: 1 1 100% !important; }
+        [data-testid="stPopover"] { max-width: 100% !important; }
+    }
+    @media (max-width: 360px) {
+        .logo-bloc { width: 126px; }
+    }
+    /* === TITRES DORÉS/BLEUS GEORGIA — classes haute spécificité (battent le thème) === */
+    .stApp .stMarkdown .dpl-titre-g,
+    .stApp .stMarkdown .dpl-titre-g * {
+        font-family: Georgia, serif !important;
+        color: #FFD000 !important;
+        font-weight: bold !important;
+    }
+    .stApp .stMarkdown .dpl-txt-g,
+    .stApp .stMarkdown .dpl-txt-g * {
+        font-family: Georgia, serif !important;
+        color: #FFD000 !important;
+    }
+    .stApp .stMarkdown .dpl-titre-b,
+    .stApp .stMarkdown .dpl-titre-b * {
+        font-family: Georgia, serif !important;
+        color: #1A237E !important;
+        font-weight: bold !important;
+    }
+    .stApp .stMarkdown .dpl-p-blanc,
+    .stApp .stMarkdown .dpl-p-blanc * {
+        color: #ffffff !important;
+        font-weight: bold !important;
+    }
+    .stApp .stMarkdown .dpl-titre-or,
+    .stApp .stMarkdown .dpl-titre-or * {
+        font-family: Georgia, serif !important;
+        color: #B8860B !important;
+        font-weight: bold !important;
+    }
+    /* === STYLE RUBRIQUES (langage du dépliant) === */
+    .stApp .stMarkdown .rub-carte {
+        background: #121a45 !important;
+        border: 1px solid #27306b !important;
+        border-left: 5px solid #FFD700 !important;
+        border-radius: 12px !important;
+    }
+    .stApp .stMarkdown .rub-carte-titre,
+    .stApp .stMarkdown .rub-carte-titre * {
+        font-family: Georgia, serif !important;
+        color: #FFD000 !important;
+        font-weight: bold !important;
+    }
+    .stApp .stMarkdown .rub-carte-txt,
+    .stApp .stMarkdown .rub-carte-txt * {
+        color: #e8eaf6 !important;
+    }
+    /* Expander à liseré doré (Archives, Actualités, Rosaire) */
+    .stApp div[data-testid="stExpander"] {
+        border-left: 5px solid #FFD700 !important;
+        border-radius: 4px 12px 12px 4px !important;
+    }
+    /* Images des rubriques : style dépliant (cadre, hauteur fixe) */
+    .stApp .stMarkdown .rub-photo {
+        width:100%; max-width:860px; height:150px; object-fit:contain;
+        background:#0a0f2c; border-radius:8px; display:block; margin:10px auto;
+    }
+    @media (min-width:769px) {
+        .stApp .stMarkdown .rub-photo { height:230px; }
+    }
+    .stApp .stMarkdown h3 { color: #FFD000 !important; font-size: clamp(0.95rem, 4.2vw, 1.25rem) !important; }
+    /* === CARTES PRIÈRE v7.7.4 — verrouillage lisibilité (bat le thème sombre) === */
+    .stApp .stMarkdown .carte-priere { background:#FFF9C4 !important; border-radius:12px; padding:14px 16px; margin:8px 6px; }
+    .stApp .stMarkdown .carte-priere, .stApp .stMarkdown .carte-priere * { font-family:Georgia, serif !important; color:#1a1a1a !important; }
+    .stApp .stMarkdown .carte-priere .cp-para { font-size:0.95rem; text-align:left; line-height:1.7; margin:6px 0; }
+    .stApp .stMarkdown .carte-priere .cp-titre { color:#1A237E !important; font-weight:bold; font-size:1.02rem; border-bottom:1.5px solid #1A237E; padding-bottom:3px; margin:12px 0 8px 0; }
+    .stApp .stMarkdown .carte-priere .cp-rouge { color:#D32F2F !important; font-weight:bold; font-size:0.98rem; text-align:inherit; line-height:1.6; margin:16px 0 4px 0; }
+    .stApp .stMarkdown .carte-priere .cp-italique { font-style:italic !important; text-align:center; }
+    .stApp .stMarkdown .carte-priere .cp-trait { border:none; border-top:1px solid #1A237E; margin:14px auto; }
+    .stApp .stMarkdown .carte-priere .cp-bande { font-weight:bold; border-radius:8px; padding:8px 12px; text-align:center; margin:0 0 10px 0; font-family:sans-serif !important; }
+    .stApp .stMarkdown .carte-priere .cp-photo { width:100%; max-width:860px; height:150px; object-fit:contain; border-radius:8px; display:block; margin:0 auto 10px auto; }
+    .stApp .stMarkdown .carte-priere .cp-accent { color:var(--c) !important; font-weight:bold; font-size:0.98rem; margin:10px 0 2px 0; }
+    .stApp .stMarkdown .carte-priere .cp-accent-inline { color:var(--c) !important; font-weight:bold; }
+    .stApp .stMarkdown .carte-priere .cp-accent-bg { background:var(--c) !important; color:#ffffff !important; }
+    .stApp .stMarkdown .details-mystere { background:#121a45; border:1px solid #27306b; border-left:6px solid var(--c); border-radius:12px; margin:8px 6px; overflow:hidden; }
+    .stApp .stMarkdown .details-mystere summary { list-style:none; cursor:pointer; background:var(--c) !important; color:#ffffff !important; font-weight:bold; font-family:sans-serif !important; padding:10px 16px; font-size:1rem; }
+    .stApp .stMarkdown .details-mystere summary::-webkit-details-marker { display:none; }
+    @media (min-width:769px) { .stApp .stMarkdown .carte-priere .cp-photo { height:230px; } }
+    /* === v7.10.4 — TOUT LE RESTE LISIBLE AUSSI (bat le thème du navigateur) ===
+       L'Espace est peint bleu nuit : texte courant clair, notes bleu-gris
+       clair, alertes sur fond nuit, titres d'expanders clairs — quel que
+       soit le mode (clair/sombre) choisi par le téléphone du lecteur. Les
+       cartes jaunes gardent leur encre foncée (règle plus fine au-dessus). */
+    .stApp .stMarkdown { color:#e8eaf6 !important; }
+    .stApp label, .stApp label p, .stApp label div { color:#e8eaf6 !important; }
+    .stApp [data-testid="stWidgetLabel"] p { color:#e8eaf6 !important; }
+    .stApp [data-testid="stCaptionContainer"],
+    .stApp [data-testid="stCaptionContainer"] * { color:#9fa6d8 !important; }
+    .stApp [data-testid="stAlert"] .stMarkdown,
+    .stApp [data-testid="stAlert"] p,
+    .stApp [data-testid="stAlert"] div,
+    .stApp [data-testid="stAlert"] span,
+    .stApp [data-testid="stAlert"] li { color:#e8eaf6 !important; }
+    .stApp details summary, .stApp details summary p,
+    .stApp details summary div { color:#e8eaf6 !important; }
+    .stApp [data-testid="stPopoverBody"] { background:#121a45 !important;
+        border:1px solid #27306b !important; }
+    /* === v7.11.0 — LES LIBELLÉS, SOUS TOUTES LEURS FORMES ===
+       Le questionnaire se lit à la vitrine comme à la fin du livret : ses
+       libellés restent clairs sur bleu nuit quelle que soit la façon dont
+       la page dessine ses champs (toutes les formes connues), le formulaire
+       ne dessine plus de cadre clair, et ce qui s'écrit DANS un champ reste
+       foncé sur blanc — lisible dans les deux sens, quel que soit l'écran. */
+    .stApp label, .stApp label *,
+    .stApp [data-testid="stWidgetLabel"], .stApp [data-testid="stWidgetLabel"] *,
+    .stApp [data-testid="stForm"] label, .stApp [data-testid="stForm"] label *,
+    .stApp [data-testid="stTextInput"] label, .stApp [data-testid="stTextArea"] label,
+    .stApp [data-testid="stRadio"] label, .stApp [data-testid="stCheckbox"] label,
+    .stApp [data-testid="stSelectbox"] label,
+    .stApp [data-testid="stDateInput"] label { color:#e8eaf6 !important; }
+    .stApp [data-testid="stForm"] { background:transparent !important;
+        border-color:#27306b !important; }
+    .stApp .stTextInput input, .stApp .stTextArea textarea,
+    .stApp [data-baseweb="input"], .stApp [data-baseweb="textarea"] {
+        background-color:#ffffff !important; color:#12163a !important;
+        border:1px solid #3a4585 !important; }
+    .stApp .stTextInput input::placeholder,
+    .stApp .stTextArea textarea::placeholder { color:#5a6398 !important;
+        opacity:1 !important; }
+    /* === LIVRET MENSUEL EN AUTONOMIE v7.8 === */
+    /* v7.15.1 — la barre du feuillet collée EN HAUT (position: sticky) :
+    avec l'entête statique du livre ouvert, elle prend le relais au
+    scroll — plus de top calculé par script, plus de repli faux. */
+    .flt-barre { position: sticky; top: 0; left: 0; right: 0; z-index: 600;
+        background: #0a0f2c; border-bottom: 1px solid #27306b; padding: 8px 16px; }
+    .flt-barre-titre { color: #FFD000; font-weight: bold; text-align: center;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        font-family: Georgia, serif; font-size: 0.98rem; }
+    .flt-pagination { text-align: center; color: #9fa6d8; font-size: 0.9rem;
+        margin: 0 0 14px 0; font-family: sans-serif; }
+    /* === LIVRET v7.8.11 — MISE EN PAGE TYPOGRAPHIQUE DU FEUILLET === */
+    .flt-barre-titre { font-family:'Caveat','Segoe Print','Bradley Hand',cursive;
+        font-size:1.3rem; }
+    .stApp .stMarkdown .carte-priere .fe-titre-rubrique,
+    .stApp .stMarkdown .carte-priere .fe-titre-rubrique * {
+        font-family:'Caveat','Segoe Print','Bradley Hand','Comic Sans MS',cursive !important;
+        font-size:1.62rem !important; font-weight:700 !important; line-height:1.25 !important; }
+    .stApp .stMarkdown .carte-priere .fe-p { margin:0 0 12px 0; }
+    .stApp .stMarkdown .carte-priere .fe-gras,
+    .stApp .stMarkdown .carte-priere .fe-gras * { font-weight:bold !important; }
+    .stApp .stMarkdown .carte-priere .fe-marq { font-weight:bold !important; }
+    .stApp .stMarkdown .carte-priere .fe-accueil { color:#1A237E !important;
+        font-weight:bold !important; font-size:1.08rem !important;
+        text-decoration:underline !important; margin:4px 0 10px 0; }
+    .stApp .stMarkdown .carte-priere .fe-passage { font-style:italic !important;
+        text-align:center; font-weight:normal !important; }
+    .stApp .stMarkdown .carte-priere .fe-photo-cadre { background:#ffffff;
+        border:1px solid #C9A227; box-shadow:0 3px 10px rgba(0,0,0,.30);
+        border-radius:8px; padding:5px; display:inline-block; }
+    .stApp .stMarkdown .carte-priere .fe-photo-cadre .cp-photo { margin:0 auto; }
+    .stApp .stMarkdown .carte-priere .fe-photo-droite { float:right; width:47%;
+        max-width:320px; margin:4px 0 10px 16px; }
+    .stApp .stMarkdown .carte-priere .fe-photo-gauche { float:left; width:47%;
+        max-width:320px; margin:4px 16px 10px 0; }
+    .stApp .stMarkdown .carte-priere .fe-photo-droite .cp-photo,
+    .stApp .stMarkdown .carte-priere .fe-photo-gauche .cp-photo { width:100%;
+        height:150px; object-fit:cover; margin:0; }
+    @media (min-width:769px) {
+        .stApp .stMarkdown .carte-priere .fe-photo-droite .cp-photo,
+        .stApp .stMarkdown .carte-priere .fe-photo-gauche .cp-photo { height:170px; }
+    }
+    .stApp .stMarkdown .carte-priere .fe-cadre-vide { border:2px dashed #C9A227;
+        background:#FFFDE7; color:#8d6e08 !important; border-radius:10px;
+        padding:12px 10px; text-align:center; font-size:0.9rem;
+        margin:4px auto 14px auto; max-width:430px; }
+    @media (max-width:640px) {
+        .stApp .stMarkdown .carte-priere .fe-photo-droite,
+        .stApp .stMarkdown .carte-priere .fe-photo-gauche { float:none !important;
+            width:100% !important; max-width:100% !important; margin:4px 0 12px 0 !important; }
+    }
+    /* v7.8.11 — photos flottantes de la carte Prière/Méditation du fil */
+    .stApp .stMarkdown .rub-photo-fd { float:right; width:44%; max-width:300px;
+        height:auto; max-height:240px; object-fit:cover; border-radius:8px;
+        margin:4px 0 10px 14px; }
+    .stApp .stMarkdown .rub-photo-fg { float:left; width:44%; max-width:300px;
+        height:auto; max-height:240px; object-fit:cover; border-radius:8px;
+        margin:4px 14px 10px 0; }
+    @media (max-width:640px) {
+        .stApp .stMarkdown .rub-photo-fd, .stApp .stMarkdown .rub-photo-fg {
+            float:none; width:100%; max-width:100%; margin:0 0 10px 0; }
+    }
+    /* === LIVRET v7.8.14 — BANDE DU TITRE : titre sur les ¾ à gauche,
+       photo sur le quart à l'extrême droite (emplacement pointillé sinon) === */
+    .stApp .stMarkdown .carte-priere .fe-bande-titre { display:flex;
+        align-items:stretch; gap:10px; margin:2px 0 12px 0; }
+    .stApp .stMarkdown .carte-priere .fe-bande-titre-txt { flex:1 1 75%;
+        min-width:0; display:flex; align-items:center; }
+    .stApp .stMarkdown .carte-priere .fe-bande-titre-txt .cp-titre {
+        flex:1; border-bottom:1.5px solid #1A237E; margin:0; text-align:left; }
+    .stApp .stMarkdown .carte-priere .fe-bande-photo { flex:0 0 24%;
+        max-width:24%; min-width:70px; display:flex; align-items:center;
+        justify-content:center; }
+    .stApp .stMarkdown .carte-priere .fe-bande-photo img { width:100%;
+        height:auto; max-height:92px; object-fit:contain; border-radius:8px;
+        border:1px solid #C9A227; background:#ffffff; padding:2px;
+        box-shadow:0 2px 8px rgba(0,0,0,.25); display:block; }
+    .stApp .stMarkdown .carte-priere .fe-bande-vide { width:100%;
+        border:2px dashed #C9A227; background:#FFFDE7; color:#8d6e08 !important;
+        border-radius:8px; text-align:center; font-size:1.15rem; padding:12px 4px; }
+    /* === LIVRET v7.8.14 — PHOTOS DU CORPS aux 4 coins : ~¼ de page, texte
+       habillé, proportions d'origine (la position centrée disparaît) === */
+    .stApp .stMarkdown .carte-priere .fe-photo-hd { float:right; width:26%;
+        max-width:26%; margin:4px 0 10px 16px; }
+    .stApp .stMarkdown .carte-priere .fe-photo-hg { float:left; width:26%;
+        max-width:26%; margin:4px 16px 10px 0; }
+    .stApp .stMarkdown .carte-priere .fe-photo-bd { float:right; width:26%;
+        max-width:26%; margin:14px 0 6px 16px; }
+    .stApp .stMarkdown .carte-priere .fe-photo-bg { float:left; width:26%;
+        max-width:26%; margin:14px 16px 6px 0; }
+    .stApp .stMarkdown .carte-priere .fe-photo-hd .cp-photo,
+    .stApp .stMarkdown .carte-priere .fe-photo-hg .cp-photo,
+    .stApp .stMarkdown .carte-priere .fe-photo-bd .cp-photo,
+    .stApp .stMarkdown .carte-priere .fe-photo-bg .cp-photo { width:100%;
+        height:auto; object-fit:contain; margin:0; }
+    @media (max-width:640px) {
+        .stApp .stMarkdown .carte-priere .fe-photo-hd,
+        .stApp .stMarkdown .carte-priere .fe-photo-hg,
+        .stApp .stMarkdown .carte-priere .fe-photo-bd,
+        .stApp .stMarkdown .carte-priere .fe-photo-bg { float:none !important;
+            width:88% !important; max-width:88% !important;
+            margin:6px auto 12px auto !important; }
+        .stApp .stMarkdown .carte-priere .fe-bande-titre { flex-wrap:wrap; }
+        .stApp .stMarkdown .carte-priere .fe-bande-photo { flex:0 0 34%;
+            max-width:34%; }
+    }
+    /* v7.13.11 — LE RACCOURCI PREND SA RETRAITE : les classes de la page
+       d'installation partent avec elle — plus aucune page de la
+       maison ne les porte. */
+    </style>""", unsafe_allow_html=True)
+
+
+def _bandes_defilantes_html(membre=False, pid=None):
+    """HTML des bandes défilantes. v7.6 : accès par INDEX (blindé).
+    LOT C5 : filtre par contexte paroissial (bandes diocèse + paroisse du contexte)."""
+    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
+        else ("AND paroisse_cible IS NULL", [])
+    try:
+        bandes = c.execute(f"""SELECT contenu_texte, fichier_url FROM espace_spirituel
+                              WHERE type_contenu='annonce_defilante' {cond}
+                              ORDER BY date_publication DESC, id DESC LIMIT 3""", prm).fetchall()
+    except Exception:
+        return ""
+    # 🔎 Diagnostic (s'affiche avec &debug=1)
+    if st.query_params.get("debug") == "1":
+        _p_raw = st.query_params.get("p")
+        if isinstance(_p_raw, list):
+            _p_raw = _p_raw[0] if _p_raw else None
+        st.caption(f"🔎 DEBUG bandes — pid={pid} | URL p={_p_raw} | "
+                   f"session.paroisse_origine={st.session_state.get('paroisse_origine')} | "
+                   f"{len(bandes)} bande(s) vue(s) ici : "
+                   + " || ".join(f"«{(b[0] or '')[:25]}…» portée={b[1]}" for b in bandes))
+    morceaux = []
+    for ligne in bandes:
+        if len(ligne) < 1:
+            continue
+        texte = ligne[0]
+        cible = ligne[1] if len(ligne) > 1 else None
+        if cible == "membre" and not membre:
+            continue
+        if not texte:
+            continue
+        duree = max(15, min(60, len(texte) // 2))
+        texte_html = html.escape(texte)
+        morceaux.append(
+            f'<div class="bande-defilante"><div class="bande-defilante-inner" style="animation-duration:{duree}s;">'
+            f"📻 {texte_html} &nbsp;&nbsp;📻 {texte_html}</div></div>")
+    return "".join(morceaux)
+
+
+def _render_header(membre=None, matloc=None, masquer_bandes=False,
+                   rubriques=None, rub_act=None, sub_act=None, pid=None):
+    """Entête FIGÉE — v7.6 : menu en liens HTML avec target="_self"
+    (navigation DANS l'onglet courant ; l'intercepteur _liens_meme_onglet
+    tente la nav JS puis LAISSE la navigation native agir si le sandbox
+    la refuse — v7.8.1). PC : ruban au survol. Mobile : ☰ en <details>."""
+    logo_b64 = _logo_base64()
+    logo_html = (f'<img src="data:image/png;base64,{logo_b64}" alt="Logo">'
+                 if logo_b64 else '<div style="font-size:4rem;">📿</div>')
+
+    titre_svg = ('<svg class="logo-titre-svg" viewBox="0 0 190 22" width="100%" height="22" '
+                 'preserveAspectRatio="none" role="img" aria-label="Diocèse de Grand-Bassam">'
+                 '<text x="95" y="17" text-anchor="middle" textLength="188" lengthAdjust="spacingAndGlyphs" '
+                 'style="fill:#e8eaf6; font-weight:600; font-size:14px;">Diocèse de Grand-Bassam</text></svg>')
+
+    badge_txt = "Espace Membre" if (membre and matloc) else "Espace communautaire"
+    droite = ('<div style="padding-top:14px;">'
+              '<div style="background-color:#4527a0; color:#ffffff;'
+              ' padding:10px 18px; border-radius:30px; font-weight:bold;'
+              ' font-size:0.9rem; display:inline-block; white-space:nowrap;">'
+              + badge_txt + '</div></div>')
+
+    menu_html = ""
+    if rubriques:
+        base = "?espace=1"
+        if matloc:
+            base += "&matloc=" + str(matloc)
+        # LOT C5 : le contexte paroissiel voyage avec la navigation interne
+        # (chaque clic de menu recharge la page → session neuve → sans p=,
+        # paroisse_origine serait perdu)
+        if pid:
+            base += "&p=" + str(pid)
+        items = []
+        for i, r in enumerate(rubriques):
+            href_r = base + "&nav=1&r=" + str(i)
+            sous = SOUS_RUBRIQUES.get(r)
+            ruban = ""
+            if sous:
+                sitems = ""
+                for k, s in enumerate(sous):
+                    href_s = href_r + "&s=" + str(k)
+                    cls = "menu-sub" + (" actif" if (r == rub_act and s == sub_act) else "")
+                    sitems += '<a class="' + cls + '" href="' + href_s + '" target="_self">' + s + "</a>"
+                ruban = '<div class="sous-ruban">' + sitems + "</div>"
+            cls_item = "menu-item" + (" actif" if r == rub_act else "")
+            items.append('<div class="' + cls_item + '"><a class="menu-lien" href="' + href_r + '" target="_self">' + r + "</a>" + ruban + "</div>")
+        menu_html = '<div class="menu-ligne">' + "".join(items) + "</div>"
+        mitems = []
+        for i, r in enumerate(rubriques):
+            href_r = base + "&nav=1&r=" + str(i)
+            mitems.append('<a class="mob-lien' + (" actif" if r == rub_act else "") + '" href="' + href_r + '" target="_self">' + r + "</a>")
+            sous = SOUS_RUBRIQUES.get(r)
+            if sous:
+                for k, s in enumerate(sous):
+                    href_s = href_r + "&s=" + str(k)
+                    cls = "mob-sous" + (" actif" if (r == rub_act and s == sub_act) else "")
+                    mitems.append('<a class="' + cls + '" href="' + href_s + '" target="_self">· ' + s + "</a>")
+        menu_html += ('<details class="menu-mobile"><summary>☰</summary>'
+                      '<div class="mob-panneau">' + "".join(mitems) + "</div></details>")
+
+    bandes_html = "" if masquer_bandes else _bandes_defilantes_html(membre=bool(membre), pid=pid)
+
+    st.markdown(
+        '<div class="sticky-header"><div class="header-inner">'
+        '<div class="logo-bloc">' + logo_html + titre_svg + "</div>"
+        + droite + "</div>"
+        + menu_html + bandes_html + "</div>", unsafe_allow_html=True)
+
+
+# ====================================================================
+# MA DIZAINE AU QUOTIDIEN — portage web de l'application Android
+# © MOTIAN TOFFÉ Ahua Innocent — intégrée avec son autorisation
+# ====================================================================
+DIZ_INTRO1 = "Au Nom du Père, et du Fils et du Saint-Esprit! Amen!\n\nPRIÈRE D’ENTRÉE\n\nSeigneur Jésus, nous nous disposons à prier\nce Rosaire en communion avec la Vierge Marie.\nViens, Esprit Saint, remplis les cœurs de tes fidèles et allume en eux le feu de ton amour.\nDonne-nous la grâce de méditer profondément les mystères de ta vie, pour que, en les imitant, nous obtenions les promesses qu’ils renferment.\nPar le Christ, notre Seigneur. Amen.\n\nJE CROIS EN DIEU\n\nJe crois en Dieu, le Père Tout-Puissant, Créateur du ciel et de la terre.\nEt en Jésus-Christ, son Fils unique, Notre Seigneur, qui a été conçu du Saint-Esprit, est né de la Vierge Marie, a souffert sous Ponce Pilate, a été crucifié, est mort et a été enseveli, est descendu aux enfers, le troisième jour est ressuscité des morts, est monté aux cieux, est assis à la droite de Dieu le Père Tout-Puissant, d’où il viendra juger les vivants et les morts.\nJe crois en l’Esprit-Saint, à la Sainte Église catholique, à la communion des Saints, à la rémission des péchés, à la résurrection de la chair, à la vie éternelle.\nAmen."
+DIZ_INTRO2 = "NOTRE PÈRE\n\nNotre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\nque ta volonté soit faite\nsur la terre comme au ciel.\n\nDonne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, mais délivre-nous du Mal. Amen!\n\n3 JE VOUS SALUE MARIE\n\nJe vous salue Marie, pleine de grâce,\nle Seigneur est avec vous. Vous êtes bénie entre toutes les femmes, et Jésus, le fruit de vos entrailles, est béni.\n\nSainte Marie, Mère de Dieu, priez pour nous pauvres pécheurs, maintenant et à l’heure de notre mort. Amen!\n\nGLORIA PATRI\n\nGloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, et in saecula saeculorum. Amen!"
+DIZ_INTRO3 = "PRIÈRE À LA VIERGE DU PÈRE EYQUEM\n\n[R]Vers Toi je lève les yeux,\nSainte Mère de Dieu;[/R]\ncar je voudrais faire de ma maison,\nune maison où Jésus vienne, selon sa promesse,\nquand plusieurs se réunissent en son nom.\nTu as accueilli le message de l’ange comme\nun message venant de Dieu, et Tu as reçu,\nen raison de ta foi,\nl’incomparable grâce d’accueillir\nen Toi Dieu Lui-même.\nTu as ouvert aux bergers puis aux mages\nla porte de ta maison, sans que\nnul ne se sente gêné\npar sa pauvreté ou sa richesse.\n\n[R]Sois Celle qui chez moi reçoit.[/R]\nAfin que ceux qui ont besoin\nd’être réconfortés le soient;\nceux qui ont le désir de\nrendre grâce puissent le faire ;\nceux qui cherchent la paix la trouvent.\nEt que chacun reparte vers sa propre maison\navec la joie d’avoir rencontré Jésus lui-même,\nLui, le Chemin, la Vérité, la Vie.\nAmen!\n\n[I]Frère Joseph EYQUEM, o.p.,\nFondateur des Équipes du Rosaire[/I]"
+DIZ_OUTRO = "SALVE REGINA\n\nSalve Regina, Mater misericordiae;\nvita, dulcedo, et spes nostra salve.\nAd te clamamus, exsules filii Hevae.\nAd te suspiramus, gementes et flentes\nin hac lacrimarum valle.\nEia ergo, advocata nostra,\nillos tuos misericordes oculos ad nos converte;\nEt Iesum, benedictum fructum ventris tui,\nnobis, post hoc exsilium ostende.\nO Clemens, O pia, O dulcis, Virgo Maria.\n\nOra pro nobis, Sancta Dei Genitrix.\nUt digni efficiamur promissionibus Christi.\n\nPRIÈRE FINALE\n\nÔ Dieu, dont le Fils unique nous a acquis\npar sa vie, sa mort et sa résurrection\nles récompenses du salut éternel,\nnous vous supplions : faites que,\nméditant les mystères du très\nSaint Rosaire de\nla Bienheureuse Vierge Marie,\nnous imitions ce qu’ils contiennent\net obtenons ce qu’ils promettent.\nPar le Christ, notre Seigneur. Amen!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nÔ Marie, conçue sans péché!\nPriez pour nous qui avons recours à vous!\n\nAu Nom du Père, et du Fils et du Saint-Esprit! Amen!"
+
+
+def _diz_txt(texte, couleur="#333333", taille="0.95rem", gras=False, centre=False):
+    txt_html = html.escape(str(texte)).replace("\n", "<br>")
+    poids = "bold" if gras else "normal"
+    align = "center" if centre else "left"
+    return (f'<div style="color:{couleur}; font-size:{taille}; font-weight:{poids};'
+            f' text-align:{align}; line-height:1.7; margin:8px 0;">{txt_html}</div>')
+
+
+MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+           "août", "septembre", "octobre", "novembre", "décembre"]
+
+COULEURS_CLAIRES = {"joyeux": "#FF80AB", "lumineux": "#9FA8DA",
+                    "douloureux": "#F48FB1", "glorieux": "#A5D6A7"}
+
+
+def _rendre_intro_eyquem(titre_carte="INTRODUCTION", afficher_titres=True, trait_debut=False):
+    """v7.7.4 — carte de la prière du Père Eyquem, conforme au dépliant.
+    Refrains rouges SANS soulignement, alignés comme le texte ; trait de
+    début optionnel (page Rosaire) ; titres optionnels (livre de la dizaine)."""
+    texte = DIZ_INTRO3
+    _morceaux = texte.split("\n", 1)
+    titre_priere = _morceaux[0].strip()
+    reste = _morceaux[1].strip() if len(_morceaux) > 1 else ""
+    t_esc = html.escape(reste).replace("\n", "<br>")
+    t_esc = t_esc.replace("[R]", '</div><div class="cp-rouge">')
+    t_esc = t_esc.replace("[/R]", '</div><div class="cp-para">')
+    t_esc = t_esc.replace("[I]", '</div><div class="cp-italique">')
+    t_esc = t_esc.replace("[/I]", "</div>")
+    corps = '<div class="cp-para">' + t_esc
+    _entete = ""
+    if afficher_titres:
+        _entete = ('<div class="cp-titre">' + html.escape(titre_carte) + "</div>"
+                   '<div class="cp-titre" style="text-align:center;">' + html.escape(titre_priere) + "</div>")
+    _trait = '<div class="cp-trait" style="margin-top:4px;"></div>' if trait_debut else ""
+    return '<div class="carte-priere">' + _trait + _entete + corps + "</div>"
+
+def _texte_sur(couleur_hex):
+    """v7.7.6 — contraste automatique : renvoie un texte BLEU FONCÉ si le fond
+    est clair, BLANC sinon. Utilisé pour les textes posés sur la couleur d'un
+    chapelet (en-têtes des mystères, numéros des Ave)."""
+    try:
+        _h = str(couleur_hex).lstrip("#")
+        _r, _g, _b = int(_h[0:2], 16), int(_h[2:4], 16), int(_h[4:6], 16)
+        _lum = (0.299 * _r + 0.587 * _g + 0.114 * _b) / 255
+        return "#1A237E" if _lum > 0.6 else "#ffffff"
+    except Exception:
+        return "#ffffff"
+
+
+# ====================================================================
+# PAGES DES RUBRIQUES
+# ====================================================================
+def _render_page_livret_thematique():
+    """📿 Rosaire → Le Rosaire thématique : VITRINE du livret de méditation
+    du mois du Rosaire (protection commerciale pendant la vente en paroisse).
+    PUBLIER_LIVRET = True dans livret_thematique.py → contenu complet en ligne."""
+    try:
+        from views.livret_thematique import (
+            PUBLIER_LIVRET, AFFICHE_LIVRET, AUTEURS_LIVRET, DEROULEMENT,
+            ACTION_GRACE, CONFITEOR, PRIERE_ESPRIT_SAINT, PRIERE_VIERGE_MARIE,
+            INTENTION_GENERALE, CREDO, CHANT_REGARDE_ETOILE, SALVE_REGINA,
+            REGINA_COELI, ANGELUS, PRIERE_FINALE_LIVRET, LITANIE,
+            SOUS_TITRES_GROUPES, MYSTERES_THEMATIQUES,
+            OU_SE_PROCURER, CONTACT_LIVRET_WHATSAPP, PHOTOS_MYSTERES_THEMATIQUE)
+    except ImportError:
+        from views.livret_thematique import (
+            PUBLIER_LIVRET, AFFICHE_LIVRET, AUTEURS_LIVRET, DEROULEMENT,
+            ACTION_GRACE, CONFITEOR, PRIERE_ESPRIT_SAINT, PRIERE_VIERGE_MARIE,
+            INTENTION_GENERALE, CREDO, CHANT_REGARDE_ETOILE, SALVE_REGINA,
+            REGINA_COELI, ANGELUS, PRIERE_FINALE_LIVRET, LITANIE,
+            SOUS_TITRES_GROUPES, MYSTERES_THEMATIQUES,
+            OU_SE_PROCURER, CONTACT_LIVRET_WHATSAPP, PHOTOS_MYSTERES_THEMATIQUE)
+
+    st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+                ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
+                ' border:2px solid #FFD700;">'
+                '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold;">📿 Le Rosaire thématique</div>'
+                '<div style="color:#e8eaf6 !important; font-size:0.9rem; margin-top:6px;">Livret de méditation du mois du Rosaire · « Il posait des questions. Force de la foi ! »</div></div>',
+                unsafe_allow_html=True)
+
+    # ---------- VITRINE (toujours visible) ----------
+    if AFFICHE_LIVRET and str(AFFICHE_LIVRET).startswith("http"):
+        st.markdown('<img src="' + AFFICHE_LIVRET + '" alt="Affiche du livret" '
+                    'style="width:100%; max-width:480px; display:block; margin:10px auto; '
+                    'border-radius:12px; border:2px solid #FFD700;">', unsafe_allow_html=True)
+    st.markdown(_carte_priere(
+        '<div class="cp-para">Un livret conçu pour le <b>mois du Rosaire</b> par '
+        + html.escape(AUTEURS_LIVRET) + ' : prières, méditations et clausules '
+        'déclinant le thème pastoral de l\'année dans chacun des vingt mystères.</div>'),
+        unsafe_allow_html=True)
+    with st.expander("📋 Déroulement de la prière (aperçu)"):
+        st.markdown(_carte_priere(_trait_debut_page()
+                    + '<div class="cp-para">' + html.escape(DEROULEMENT).replace("\n", "<br>") + "</div>"),
+                    unsafe_allow_html=True)
+
+    _wa_btn = ""
+    if CONTACT_LIVRET_WHATSAPP:
+        _lien_wa = lien_whatsapp(CONTACT_LIVRET_WHATSAPP,
+                                 "Bonjour, je souhaite me procurer le livret de méditation du mois du Rosaire. 📿")
+        if _lien_wa:
+            _wa_btn = ('<div style="text-align:center; margin:10px 0;">'
+                       '<a href="' + _lien_wa + '" target="_blank" '
+                       'style="display:inline-block; background:#25D366; color:#ffffff;'
+                       ' padding:10px 22px; border-radius:30px; font-weight:bold; text-decoration:none;">'
+                       '📱 Commander / renseignements par WhatsApp</a></div>')
+    st.markdown(_carte_priere(
+        '<div class="cp-para">🛒 <b>Où se procurer le livret ?</b><br>'
+        + html.escape(OU_SE_PROCURER) + "</div>"), unsafe_allow_html=True)
+    st.markdown(_wa_btn, unsafe_allow_html=True)
+
+    if not PUBLIER_LIVRET:
+        st.info("📖 Le contenu intégral du livret (méditations et clausules des vingt "
+                "mystères) n'est pas encore mis en ligne : il reste disponible en "
+                "paroisse tout le mois du Rosaire.")
+        return
+
+    # ---------- CONTENU COMPLET (PUBLIER_LIVRET = True) ----------
+    st.markdown(_carte_etape("✝️ DÉBUT DE LA CÉLÉBRATION"), unsafe_allow_html=True)
+    _ouvertures = [
+        ("🙏 Action de grâce (remerciements)", ACTION_GRACE),
+        ("🙏 Confiteor (je confesse à Dieu tout puissant)", CONFITEOR),
+        ("🙏 Prière à l'Esprit-Saint", PRIERE_ESPRIT_SAINT),
+        ("🙏 Prière à la Vierge Marie", PRIERE_VIERGE_MARIE),
+        ("✝️ Credo (Symbole de Nicée)", CREDO),
+        ("🙏 Intention générale", INTENTION_GENERALE),
+    ]
+    for _lib, _txt in _ouvertures:
+        if not _txt:
+            continue
+        with st.expander(_lib):
+            st.markdown(_carte_priere(_trait_debut_page() + _rendre_texte_priere(_txt)), unsafe_allow_html=True)
+
+    for nom_type, debut, fin, resume in GROUPES_CHAPELETS:
+        couleur_forte = COULEURS_TYPES.get(nom_type.lower(), "#9E9E9E")
+        couleur_claire = COULEURS_CLAIRES.get(nom_type.lower(), "#e8eaf6")
+        _sous_titre = SOUS_TITRES_GROUPES.get(debut, "")
+        st.markdown(
+            '<div style="background:#121a45; border-radius:15px; margin:10px 10px 4px 10px; padding:14px 20px; border:1px solid #27306b; border-left:6px solid ' + couleur_forte + ';">'
+            '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:1.05rem;">✝️ Mystères ' + nom_type + "</div>"
+            '<div style="color:#c7cdf5 !important; font-size:0.85rem; margin-top:2px;">' + html.escape(_sous_titre) + "</div>"
+            "</div>", unsafe_allow_html=True)
+        for _mid in range(debut, fin + 1):
+            _mt = MYSTERES_THEMATIQUES.get(_mid)
+            if not _mt:
+                continue
+            _c_txt = _texte_sur(couleur_forte)
+            _summary = (str(_mid).zfill(2) + " — " + html.escape(_mt.get("titre", "").title())
+                        + " · " + html.escape(_mt.get("reference", "")))
+            # Carte 1 — photo du mystère, citation, méditation, intention
+            _photo_th = PHOTOS_MYSTERES_THEMATIQUE.get(_mid) or ""
+            _photo_th_html = ('<img class="cp-photo" src="' + _photo_th + '" alt="">'
+                              if _photo_th.startswith("http") else "")
+            _corps_1 = (_trait_debut_page() + _photo_th_html
+                        + '<div class="cp-para" style="font-style:italic;">« ' + html.escape(_mt.get("citation", "")) + ' »</div>'
+                        + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Méditation</div>'
+                        + '<div class="cp-para">' + html.escape(_mt.get("meditation", "")) + "</div>"
+                        + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Intention de prière</div>'
+                        + '<div class="cp-para">' + html.escape(_mt.get("intention", "")) + "</div>")
+            # Carte 2 — NOTRE PÈRE complet (récitation visible, comme en Équipe)
+            _corps_np = _rendre_texte_priere(_DIZ_NOTREPERE)
+            # Carte 3 — les DIX « Je vous salue Marie » avec la clausule du livret
+            _cla = _mt.get("clausules", [])
+            _grains = ""
+            for _g in range(1, 11):
+                _clausule = _cla[_g - 1] if _g <= len(_cla) else ""
+                _clausule = "" if _clausule is None else str(_clausule)
+                _grains += ('<div class="cp-para" style="text-align:center; margin:12px 0;">'
+                            '<span class="cp-accent-bg" style="--c:' + couleur_forte + '; color:' + _c_txt + ' !important; display:inline-block; width:22px; height:22px; border-radius:4px; font-size:0.72rem; line-height:22px;">' + str(_g) + "</span><br>"
+                            "Je vous salue Marie, pleine de grâce,<br>le Seigneur est avec vous.<br>Vous êtes bénie entre toutes les femmes,<br>"
+                            '<span class="cp-accent-inline" style="--c:' + couleur_forte + ';">et Jésus, ' + html.escape(_clausule) + "</span><br>"
+                            "le fruit de vos entrailles, est béni.<br>"
+                            "Sainte Marie, Mère de Dieu,<br>priez pour nous pauvres pécheurs,<br>maintenant et à l’heure de notre mort. Amen!</div>")
+            # Carte 4 — GLORIA complet
+            _corps_gl = _rendre_texte_priere(_DIZ_GLORIA)
+            _details = ('<details class="details-mystere" style="--c:' + couleur_forte + ';">'
+                        '<summary style="color:' + _c_txt + ' !important;">' + _summary + "</summary>"
+                        '<div style="padding:6px 8px 8px 8px;">'
+                        + _carte_priere(_corps_1, couleur_forte)
+                        + _carte_priere(_corps_np, couleur_forte)
+                        + _carte_priere(_grains, couleur_forte)
+                        + _carte_priere(_corps_gl, couleur_forte)
+                        + "</div></details>")
+            st.markdown(_details, unsafe_allow_html=True)
+
+    st.markdown(_carte_etape("🕯️ FIN DE LA CÉLÉBRATION"), unsafe_allow_html=True)
+    _fins = [
+        ("🕯️ Litanie de la Vierge Marie", LITANIE),
+        ("🕯️ Salve Regina", SALVE_REGINA),
+        ("🕯️ Regina Coeli (au temps pascal)", REGINA_COELI),
+        ("🕯️ L'Angelus", ANGELUS),
+        ("🙏 Prière finale", PRIERE_FINALE_LIVRET),
+        ("🎶 Chant : Regarde l'étoile", CHANT_REGARDE_ETOILE),        
+    ]
+    for _lib, _txt in _fins:
+        if not _txt:
+            continue
+        with st.expander(_lib):
+            st.markdown(_carte_priere(_trait_debut_page() + _rendre_texte_priere(_txt)), unsafe_allow_html=True)
+
+# Lecteurs du feuillet — CONSTANTE unique (jamais de libellé retapé dans
+# les comparaisons). Les marqueurs R./T./1./2./3. du TEXTE restent la
+# référence ligne par ligne pour le futur pupitre.
+LBL_LECTEURS_FEUILLET = {"T": "Tous ensemble", "R": "Responsable",
+                         "1": "1er lecteur", "2": "2e lecteur", "3": "Chantre",
+                         "tous": "Tous ensemble"}
+
+
+def _badges_lecteurs_feuillet(v):
+    """« R,1,T » → 'Responsable · 1er lecteur · Tous ensemble'."""
+    if not v:
+        return ""
+    _codes = [x.strip() for x in str(v).split(",") if x.strip()]
+    _libelles = [LBL_LECTEURS_FEUILLET.get(x, x) for x in _codes]
+    return " · ".join(html.escape(x) for x in _libelles)
+
+
+# ====================================================================
+# 📖 FEUILLET MENSUEL DE PRIÈRE — v7.8 (aménagement de la zone « Sous-thème »)
+# Le feuillet remplace le sous-thème du mois : VITRINE (badge N°, « Mois de… »,
+# Sommaire, bouton Ouvrir le livret) puis LIVRET EN AUTONOMIE comme la
+# dizaine du jour : entête réduite au logo + carte de l'espace (membre /
+# communautaire), sans bandes défilantes, sans le thème de l'année, titre de
+# page toujours visible en haut, pagination seule en pied de page.
+# ====================================================================
+MOIS_PASTORAL_NOMS = ["septembre", "octobre", "novembre", "décembre", "janvier",
+                      "février", "mars", "avril", "mai", "juin", "juillet", "août"]
+
+
+def _feuillet_sections(annee_debut, mois_pastoral):
+    """Sections du feuillet ayant un contenu, triées par ordre (blindé).
+    v7.8.14 — 9 colonnes (lignes complétées à 9 cases dans tous les replis) :
+      0 ordre · 1 titre · 2 contenu · 3 lecteur · 4 image_url · 5 pos_image ·
+      6 image_titre (photo de la BANDE du titre) · 7 image_url2 · 8 pos_image2.
+    Migration douce : le premier lecteur (public ou Communication) ajoute les
+    3 colonnes v7.8.14 au schéma, une seule fois par session."""
+    if "fe_mig_7814" not in st.session_state:
+        st.session_state["fe_mig_7814"] = True
+        for _alt in ("ALTER TABLE feuillet_sections ADD COLUMN image_titre TEXT",
+                     "ALTER TABLE feuillet_sections ADD COLUMN image_url2 TEXT",
+                     "ALTER TABLE feuillet_sections ADD COLUMN pos_image2 TEXT"):
+            try:
+                c.execute(_alt)
+                commit_and_sync()
+            except Exception:
+                pass
+    try:
+        rows = c.execute("""SELECT ordre, titre, contenu, lecteur, image_url, pos_image,
+                                   image_titre, image_url2, pos_image2
+                            FROM feuillet_sections
+                            WHERE annee_debut=? AND mois=? ORDER BY ordre""",
+                         (annee_debut, mois_pastoral)).fetchall()
+    except Exception:
+        try:
+            rows = [r + (None, None, None) for r in c.execute(
+                """SELECT ordre, titre, contenu, lecteur, image_url, pos_image
+                   FROM feuillet_sections
+                   WHERE annee_debut=? AND mois=? ORDER BY ordre""",
+                (annee_debut, mois_pastoral)).fetchall()]
+        except Exception:
+            try:
+                rows = [r + (None, None, None, None) for r in c.execute(
+                    """SELECT ordre, titre, contenu, lecteur, image_url
+                       FROM feuillet_sections
+                       WHERE annee_debut=? AND mois=? ORDER BY ordre""",
+                    (annee_debut, mois_pastoral)).fetchall()]
+            except Exception:
+                return []
+    return [s for s in rows if s[2]]
+
+
+def _annee_civile_feuillet(annee_debut, mois_pastoral):
+    """Mois pastoral → année civile (sept.→déc. = année de départ ; janv.→août = +1)."""
+    return annee_debut if mois_pastoral <= 4 else annee_debut + 1
+
+
+def _couverture_feuillet_html(annee_debut, mois_pastoral, compact=False,
+                              lien=None, titre_haut=None):
+    """🎨 Couverture du livret (v7.8.10) — carte visuelle du feuillet, du même
+    style que la couverture de la dizaine (bleu nuit + or). La couverture
+    accompagne : ① l'alerte « 📖 Nouveau feuillet » du fil d'actualité
+    (compact=True, mention via titre_haut, bouton-lien via `lien`) ; ② le
+    livret lui-même (au-dessus du sommaire). Si la cellule a saisi une image
+    de couverture (🎨 expander du feuillet, table feuillets_couvertures),
+    elle est montrée ; sinon la carte seule fait office de couverture.
+    RETOURNE le HTML — l'appelant l'affiche via st.markdown."""
+    _img = None
+    try:
+        _r = c.execute("""SELECT image_url FROM feuillets_couvertures
+                          WHERE annee_debut=? AND mois=?""",
+                       (annee_debut, mois_pastoral)).fetchone()
+        _img = (_r[0] or "").strip() if _r else None
+    except Exception:
+        _img = None
+    if _img and not str(_img).startswith("http"):
+        _img = None
+    _theme = None
+    try:
+        _t = c.execute("""SELECT texte_theme FROM themes_pastoraux
+                          WHERE annee_debut=? ORDER BY actif DESC LIMIT 1""",
+                       (annee_debut,)).fetchone()
+        _theme = (_t[0] or "").strip() if _t else None
+    except Exception:
+        _theme = None
+    _mois_civ = str(_annee_civile_feuillet(annee_debut, mois_pastoral))
+    _pad_haut, _pad_bas, _taille_num, _wimg = (
+        ("12px 14px 6px", "4px 14px 14px", "1.85rem", 36) if compact
+        else ("20px 18px 8px", "6px 18px 24px", "2.4rem", 46))
+    _img_html = ""
+    if _img:
+        # v7.8.14 — FIN DU ROGNAGE : l'image de couverture s'affiche TELLE
+        # QUELLE (proportions d'origine), bornée à 420 px de haut.
+        _img_html = (
+            '<img src="' + html.escape(str(_img)) + '" alt="" '
+            'style="width:auto; max-width:calc(100% - ' + str(_wimg) + 'px); '
+            'height:auto; max-height:420px; object-fit:contain; border-radius:10px; '
+            'border:1px solid rgba(255,215,0,.55); display:block; margin:12px auto 0; '
+            'box-shadow:0 4px 14px rgba(0,0,0,.35);">')
+    _haut_html = ""
+    if titre_haut:
+        _haut_html = ('<div style="color:#FFD000 !important; font-weight:bold; '
+                      'font-size:0.95rem; padding:14px 16px 0;">'
+                      + html.escape(str(titre_haut)) + '</div>')
+    _theme_html = ""
+    if _theme:
+        _theme_html = ('<div style="color:#c5cae9; font-size:0.8rem; font-style:italic; '
+                       'margin:10px 14px 0;">« ' + html.escape(_theme) + ' »</div>')
+    _lien_html = ""
+    if lien:
+        _lien_html = '<div style="padding:' + _pad_bas + ';">' + str(lien) + '</div>'
+    return (
+        '<div style="background:linear-gradient(160deg,#0d1440 0%,#1A237E 55%,#283593 100%); '
+        'border:2px solid #FFD700; border-radius:16px; overflow:hidden; text-align:center; '
+        'margin:15px 10px 6px 10px; box-shadow:0 6px 18px rgba(0,0,0,.30);">'
+        + _haut_html + _img_html
+        + '<div style="padding:' + _pad_haut + ';">'
+        '<div style="color:#FFD700; letter-spacing:2.5px; font-size:0.7rem; font-weight:bold;">'
+        '📿 ÉQUIPES DU ROSAIRE</div>'
+        '<div style="color:#ffffff; font-weight:bold; font-size:1.12rem; margin-top:8px;">'
+        '📖 Le feuillet mensuel de prière</div>'
+        '<div style="color:#FFD700; font-size:' + _taille_num + '; font-weight:bold; line-height:1.15;">'
+        'N° ' + str(mois_pastoral) + '</div>'
+        '<div style="color:#e8eaf6; font-size:0.95rem; text-transform:uppercase; '
+        'letter-spacing:1.5px; margin-top:4px;">'
+        + html.escape(MOIS_PASTORAL_NOMS[mois_pastoral - 1]) + " " + _mois_civ + '</div>'
+        + _theme_html
+        + '</div>' + _lien_html + '</div>')
+
+
+def _nettoyer_params_livret():
+    """Retire ?flt=1&fa=&fm= de l'URL : une fois ouvert, le livret vit dans la
+    session (sinon « Fermer » rouvrirait immédiatement le livret)."""
+    for _k in ("flt", "fa", "fm"):
+        try:
+            if _k in st.query_params:
+                del st.query_params[_k]
+        except Exception:
+            pass
+
+
+def _traiter_lien_profond_livret():
+    """v7.8-h · v7.8.2-i — Lien profond ?flt=1&fa=ANNÉE&fm=MOIS : ouvre
+    directement le livret en autonomie. Utilisé par les liens « 📖 Relire ce
+    feuillet » des expanders d'archivage (Vue d'ensemble) — l'alerte du fil,
+    elle, mène désormais à la vitrine de Vue d'ensemble. Sans fa/fm :
+    feuillet courant du thème actif."""
+    if st.query_params.get("flt") != "1":
+        return
+    _fa = _fm = None
+    try:
+        _fa = int(str(st.query_params.get("fa", "")))
+    except (ValueError, TypeError):
+        _fa = None
+    try:
+        _fm = int(str(st.query_params.get("fm", "")))
+    except (ValueError, TypeError):
+        _fm = None
+    if not (_fa and _fm and 1 <= _fm <= 12):
+        theme = get_theme_actif()
+        if theme:
+            _fa = theme[2]
+            _fm = ((date.today().month - 9) % 12) + 1
+        else:
+            st.session_state["flt_ouvert"] = False
+            _nettoyer_params_livret()
+            return
+    st.session_state["flt_cle"] = f"{_fa}-{_fm}"
+    # v7.16.1 — LA RELIRE ENVOIE AU SOMMAIRE (demande du diocèse) : le
+    # livret s'ouvre sur la couverture et son sommaire (page -1), comme le
+    # bouton « 📖 Ouvrir le livret » de la vitrine — et non plus sur la
+    # première section (page 0).
+    st.session_state["flt_page"] = -1
+    st.session_state["flt_sens"] = "avant"
+    st.session_state["flt_ouvert"] = True
+    st.session_state.pop("diz_ouvert", None)
+    _nettoyer_params_livret()
+    st.rerun()
+
+
+def _render_feuillet_vitrine(annee_debut, mois_pastoral):
+    """📖 VITRINE du feuillet (v7.8 — remplace la zone « Sous-thème du mois ») :
+    badge « LE FEUILLET MENSUEL DE PRIÈRE N° X », « Mois de … », Sommaire du
+    feuillet, bouton « Ouvrir le livret ». Rien ne s'affiche (qu'une info) si
+    aucune section n'est saisie."""
+    sections = _feuillet_sections(annee_debut, mois_pastoral)
+    if not sections:
+        st.info("📖 Le feuillet mensuel de prière de ce mois n'a pas encore été publié.")
+        return
+    st.markdown(_carte_etape("📖 LE FEUILLET MENSUEL DE PRIÈRE N° " + str(mois_pastoral)),
+                unsafe_allow_html=True)
+    # v7.8.12 — l'état de PUBLICATION est affiché : la vitrine montre aussi un
+    # feuillet simplement SAISI (aperçu, lien profond, sommaire) ; sans ce
+    # bandeau, la cellule croyait le mois « publié » alors que l'alerte 🔔 du
+    # fil annonce toujours le dernier mois PUBLIÉ par le diocèse (principe SAS :
+    # la cellule soumet, le diocèse seul publie).
+    try:
+        _pub_vit = c.execute("""SELECT 1 FROM feuillets_publications
+                                WHERE annee_debut=? AND mois=?""",
+                             (annee_debut, mois_pastoral)).fetchone()
+    except Exception:
+        _pub_vit = None
+    if not _pub_vit:
+        _dern = None
+        try:
+            _dern = c.execute("""SELECT annee_debut, mois FROM feuillets_publications
+                                 ORDER BY annee_debut DESC, mois DESC LIMIT 1""").fetchone()
+        except Exception:
+            _dern = None
+        _txt_dern = ""
+        if _dern:
+            _txt_dern = (" — l'alerte 🔔 du fil annonce toujours : N° " + str(_dern[1])
+                         + " · " + MOIS_PASTORAL_NOMS[_dern[1] - 1] + " "
+                         + str(_annee_civile_feuillet(_dern[0], _dern[1])) + ".")
+        st.warning("🟡 **Livret en préparation** — le diocèse n'a pas encore publié ce "
+                   "feuillet (circuit « 📨 Soumettre le feuillet au diocèse » → validation)"
+                   + _txt_dern + " Une fois validé, l'alerte passera automatiquement "
+                   "à ce mois, avec sa couverture.")
+    _pluriel = "page" if len(sections) == 1 else "pages"
+    _lignes = "".join(
+        '<div class="cp-para" style="margin:2px 0;">📖 <b>' + str(s[0]) + "</b> — "
+        + html.escape(s[1] or "") + "</div>" for s in sections)
+    st.markdown(_carte_priere(
+        _trait_debut_page()
+        + '<div class="cp-titre fe-titre-rubrique" style="text-align:center;">Mois de '
+        + html.escape(MOIS_PASTORAL_NOMS[mois_pastoral - 1]) + " "
+        + str(_annee_civile_feuillet(annee_debut, mois_pastoral)) + "</div>"
+        + '<div class="cp-accent" style="--c:#1A237E;">Sommaire du feuillet</div>'
+        + _lignes
+        + '<div class="cp-para" style="text-align:center; font-size:0.85rem;">'
+        + str(len(sections)) + " " + _pluriel
+        + " · ouvrez le livret pour feuilleter</div>"),
+        unsafe_allow_html=True)
+
+    if st.button("📖 Ouvrir le livret", key="flt_open", width="stretch", type="primary"):
+        st.session_state["flt_cle"] = f"{annee_debut}-{mois_pastoral}"
+        # v7.8.10 — ouverture À LA COUVERTURE (couverture → sommaire → pages),
+        # parcours naturel d'un livret papier.
+        st.session_state["flt_page"] = -1
+        # v7.13.15 — l'ouverture tourne la page en avant (droite → gauche).
+        st.session_state["flt_sens"] = "avant"
+        st.session_state["flt_ouvert"] = True
+        st.session_state.pop("diz_ouvert", None)
+        st.rerun()
+
+
+# ====================================================================
+# v7.10.0 — LE QUESTIONNAIRE DU FEUILLET (côté fidèles)
+# Sous le feuillet du mois (🕯️ Thème → Vue d'ensemble), ses questions et
+# exercices deviennent un questionnaire : les MEMBRES répondent sous leur
+# MatLoc (ils retrouvent leurs réponses et peuvent les corriger), les
+# VISITEURS signent du nom qu'ils choisissent. Répondre à nouveau
+# remplace SES réponses — jamais celles des autres.
+# ====================================================================
+def _qf_cle_visiteur(nom):
+    """Clé douce du visiteur signant ses réponses (« N:jean-kouassi »)."""
+    _n = unicodedata.normalize("NFKD", str(nom or "").strip().lower())
+    _n = "".join(ch for ch in _n if not unicodedata.combining(ch))
+    _n = re.sub(r"[^a-z0-9]+", "-", _n).strip("-")
+    return ("N:" + _n[:60]) if _n else None
+
+
+def _render_questionnaire_mensuel(annee_debut, mois_pastoral,
+                                  est_membre=False, matloc=None,
+                                  nom_membre=None, equipe_id=None,
+                                  paroisse_id=None):
+    # v7.10.2 — LE VOILE : le questionnaire ne paraît aux fidèles qu'APRÈS
+    # la validation du diocèse (comme le feuillet lui-même). Tant que la
+    # soumission du mois n'est pas passée à « publie » au SAS, rien ne se
+    # montre ici — préparé ne veut pas dire paraître.
+    if not feuillet_questionnaire_publie(annee_debut, mois_pastoral):
+        return
+    questions = feuillet_questions_lister(annee_debut, mois_pastoral, True)
+    if not questions:
+        return
+    _cle = None
+    _deja = {}
+    _nom_v = ""
+    if est_membre and matloc:
+        _cle = "M:" + str(matloc).upper().strip()
+        _deja = feuillet_reponses_de_cle(annee_debut, mois_pastoral, _cle)
+    else:
+        _cle = st.session_state.get("qf_cle_visiteur")
+        if _cle:
+            _deja = feuillet_reponses_de_cle(annee_debut, mois_pastoral, _cle)
+    _an_civ = annee_debut if mois_pastoral <= 4 else annee_debut + 1
+
+    st.markdown(_carte_etape("📝 LE QUESTIONNAIRE DU FEUILLET — N° "
+                             + str(mois_pastoral)), unsafe_allow_html=True)
+    st.markdown(_carte_priere(
+        '<div class="cp-para">Le feuillet de ce mois pose des questions et '
+        'propose des exercices — réponds ci-dessous, à ton rythme. Tes '
+        'réponses nourrissent la marche de tout le Mouvement.'
+        + ("</div><div class=\"cp-para\"><b>Tu as déjà répondu</b> : tes "
+           "réponses t'attendent en bas — tu peux les corriger et renvoyer."
+           if _deja else "")
+        + "</div>"), unsafe_allow_html=True)
+
+    _erreurs = []
+    with st.form("form_questionnaire_feuillet", clear_on_submit=False):
+        if not est_membre:
+            _nom_v = st.text_input(
+                "Ton nom et prénoms (pour signer tes réponses)",
+                value=st.session_state.get("qf_nom_visiteur", ""))
+        _valeurs = {}
+        for (_qid, _ord, _q_txt, _t, _ch, _ob, _ac) in questions:
+            _lbl = (f"Q{_ord}. {_q_txt}"
+                    + ("  *" if _ob else ""))
+            _rep0 = _deja.get(_qid, "")
+            if _t == "texte":
+                _valeurs[_qid] = st.text_area(_lbl, value=_rep0, height=70,
+                                              key=f"qf_w_{_qid}")
+            elif _t == "oui_non":
+                _opts = ["Oui", "Non"]
+                _idx = _opts.index(_rep0) if _rep0 in _opts else None
+                _valeurs[_qid] = st.radio(_lbl, _opts, index=_idx,
+                                          horizontal=True, key=f"qf_w_{_qid}")
+            else:  # choix
+                _opts = [x.strip() for x in (_ch or "").split(",")
+                         if x.strip()] or ["Oui", "Non"]
+                _idx = _opts.index(_rep0) if _rep0 in _opts else None
+                if len(_opts) <= 3:
+                    _valeurs[_qid] = st.radio(_lbl, _opts, index=_idx,
+                                              horizontal=True,
+                                              key=f"qf_w_{_qid}")
+                else:
+                    _valeurs[_qid] = st.selectbox(_lbl, ["—"] + _opts,
+                                                  index=None,
+                                                  format_func=(
+                                                      lambda x, _o=_opts:
+                                                      x if x != "—" else
+                                                      "Choisis…"),
+                                                  key=f"qf_w_{_qid}")
+                    if _rep0 in _opts:
+                        _valeurs[_qid] = _rep0
+        if st.form_submit_button("📨 Envoyer mes réponses", type="primary",
+                                 width="stretch"):
+            _manquantes = [f"Q{q[1]}" for q in questions
+                           if q[5] and not str(_valeurs.get(q[0]) or "").strip()
+                           and str(_valeurs.get(q[0]) or "—") not in ("Oui", "Non")]
+            if not est_membre and not (_nom_v or "").strip():
+                _erreurs.append("Écris d'abord ton nom et prénoms pour signer "
+                                "tes réponses.")
+            if _manquantes:
+                _erreurs.append("Réponse attendue pour : "
+                                + ", ".join(_manquantes) + ".")
+            if _erreurs:
+                for _e in _erreurs:
+                    st.error(_e)
+            else:
+                _cle_envoi = _cle or _qf_cle_visiteur(_nom_v)
+                _n = feuillet_reponses_enregistrer(
+                    annee_debut, mois_pastoral, _valeurs, _cle_envoi,
+                    qui_nom=(nom_membre if est_membre else _nom_v.strip()),
+                    qui_type=("membre" if est_membre else "visiteur"),
+                    equipe_id=equipe_id, paroisse_id=paroisse_id)
+                if _n:
+                    if not est_membre:
+                        st.session_state["qf_cle_visiteur"] = _cle_envoi
+                        st.session_state["qf_nom_visiteur"] = _nom_v.strip()
+                    st.session_state["flash_success"] = (
+                        "✅ Merci pour tes " + str(_n) + " réponse(s) ! Le "
+                        "Seigneur qui posait des questions écoute les tiennes "
+                        "— Que La Vierge Marie te garde. 🕊️")
+                    st.rerun()
+                else:
+                    st.error("Tes réponses n'ont pas pu être notées — "
+                             "réessaie.")
+
+
+def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt",
+                            lecteur=None):
+    """📖 Lecteur du livret — v7.8 : une section = une page.
+    autonome=True  : mode plein écran (barre de titre fixe, fermeture) ;
+    autonome=False : lecture encastrée (réservé à un usage interne).
+    v7.8-e : titre de la page toujours visible en haut (barre fixe, mode
+    autonome) · v7.8.2-e : retour en HAUT de page à chaque tour (_scroll_top
+    avec nonce) · v7.8-f : sans badge de lecteurs · v7.8-g : pagination seule
+    en pied de page sous un trait fin.
+    v7.10.4 : `lecteur` (dict est_membre/matloc/nom_membre/equipe_id/
+    paroisse_id) — à la FIN de la lecture, le questionnaire du feuillet
+    revient avec lui : celui qui n'avait pas répondu peut encore répondre,
+    où que soit le mois (feuillet du moment comme feuillets relus)."""
+    sections = _feuillet_sections(annee_debut, mois_pastoral)
+    if not sections:
+        st.info("📖 Ce feuillet n'est pas disponible.")
+        if autonome:
+            if st.button("✕ Fermer", key=pfx + "_vide_fermer", width="stretch"):
+                st.session_state["flt_ouvert"] = False
+                _nettoyer_params_livret()
+                st.rerun()
+        return
+    _cle = f"{annee_debut}-{mois_pastoral}"
+    _k_page, _k_cle = pfx + "_page", pfx + "_cle"
+    if st.session_state.get(_k_cle) != _cle:
+        st.session_state[_k_cle] = _cle
+        st.session_state[_k_page] = -1
+    if _k_page not in st.session_state:
+        st.session_state[_k_page] = -1
+    idx = st.session_state[_k_page]
+    if idx >= len(sections):
+        idx = -1
+        st.session_state[_k_page] = -1
+
+    # v7.13.15 — le SENS du feuilletage : « avant » (la page entre par la
+    # droite, comme le livret du téléphone) ou « arriere » (elle revient par
+    # la gauche). Chaque geste de tourne-page le pose avant le rerun.
+    _k_sens = pfx + "_sens"
+    sens = st.session_state.get(_k_sens, "avant")
+
+    _entete_livret = ("📖 Feuillet mensuel de prière N° " + str(mois_pastoral)
+                      + " · Mois de " + MOIS_PASTORAL_NOMS[mois_pastoral - 1] + " "
+                      + str(_annee_civile_feuillet(annee_debut, mois_pastoral)))
+
+    # ---------- v7.8.14 — ZOOM DU LIVRET : mini-boutons A− / A+ ----------
+    # (90 → 150 %, mémorisés pour la session — très petits, en haut du livret)
+    if autonome:
+        try:
+            _zoom = min(1.5, max(0.9, float(st.session_state.get("flt_zoom", 1.0))))
+        except (TypeError, ValueError):
+            _zoom = 1.0
+        st.session_state["flt_zoom"] = round(_zoom, 2)
+        _za, _zb, _zt = st.columns([0.065, 0.065, 0.87], gap="small",
+                                   vertical_alignment="center")
+        with _za:
+            if st.button("A−", key=f"{pfx}_zoom_moins", width="stretch",
+                         help="Réduire le texte du livret (jusqu'à 90 %)"):
+                st.session_state["flt_zoom"] = round(max(0.9, _zoom - 0.1), 2)
+                st.rerun()
+        with _zb:
+            if st.button("A+", key=f"{pfx}_zoom_plus", width="stretch",
+                         help="Agrandir le texte du livret (jusqu'à 150 %)"):
+                st.session_state["flt_zoom"] = round(min(1.5, _zoom + 0.1), 2)
+                st.rerun()
+        with _zt:
+            st.caption("🔍 Taille du texte : " + str(int(round(_zoom * 100)))
+                       + " % · A− / A+ en haut du livret")
+        if abs(_zoom - 1.0) > 0.001:
+            st.markdown('<style>.stApp .stMarkdown .carte-priere { zoom: '
+                        + str(_zoom) + '; }</style>', unsafe_allow_html=True)
+
+    # ---------- SOMMAIRE (page -1) ----------
+    if idx < 0:
+        # v7.8.10 — la COUVERTURE du livret ouvre la lecture, avant le
+        # sommaire (même parcours qu'un livret papier : couverture → sommaire).
+        st.markdown(_couverture_feuillet_html(annee_debut, mois_pastoral),
+                    unsafe_allow_html=True)
+        # v7.8.5-② — présentation UNIQUE : la liste statique doublonnée dans
+        # la carte est retirée ; chaque entrée cliquable « 📖 N — Titre »
+        # (sans « ▶ », confondu avec un expander) tient lieu de sommaire.
+        # v7.13.15 — le sommaire aussi se feuillette : il arrive par la
+        # gauche quand on revient à lui, par la droite à l'ouverture.
+        _style_feuil, _classe_feuil = _feuillement_livret(f"{pfx}som{idx}{sens}", sens)
+        st.markdown(_style_feuil, unsafe_allow_html=True)
+        st.markdown('<div class="' + _classe_feuil + '">' + _carte_priere(
+            _trait_debut_page()
+            + '<div class="cp-titre fe-titre-rubrique" style="text-align:center;">' + _entete_livret + "</div>"
+            + '<div class="cp-accent" style="--c:#1A237E;">Sommaire du feuillet</div>') + "</div>",
+            unsafe_allow_html=True)
+        for _i, _s in enumerate(sections):
+            if st.button("📖 " + str(_s[0]) + " — " + (_s[1] or "Section " + str(_s[0])),
+                         key=f"{pfx}_som_{_i}", width="stretch"):
+                st.session_state[_k_sens] = "avant"   # v7.13.15 — ouvrir une page tourne en avant
+                st.session_state[_k_page] = _i
+                st.rerun()
+        if autonome:
+            if st.button("✕ Fermer le livret", key=pfx + "_som_fermer", width="stretch"):
+                st.session_state["flt_ouvert"] = False
+                _nettoyer_params_livret()
+                st.rerun()
+        return
+
+    # ---------- UNE PAGE = UNE SECTION ----------
+    # v7.8.14 — 9 colonnes : …4 image_url · 5 pos_image · 6 image_titre ·
+    # 7 image_url2 · 8 pos_image2 (lignes anciennes complétées à None).
+    _ligne = list(sections[idx]) + [None] * 9
+    ordre, titre, contenu = _ligne[0], _ligne[1], _ligne[2]
+    _img_url1 = str(_ligne[4]).strip() if _ligne[4] else ""
+    _pos1_raw = _ligne[5] if len(_ligne) > 5 else None
+    _img_titre = str(_ligne[6]).strip() if len(_ligne) > 6 and _ligne[6] else ""
+    _img_url2 = str(_ligne[7]).strip() if len(_ligne) > 7 and _ligne[7] else ""
+    _pos2_raw = _ligne[8] if len(_ligne) > 8 else None
+    _titre_page = titre or ("Section " + str(ordre))
+
+    if autonome:
+        # v7.8-e — le titre de la page en lecture reste TOUJOURS visible en haut
+        st.markdown('<div class="flt-barre"><div class="flt-barre-titre">📖 '
+                    + html.escape(_titre_page) + "</div></div>", unsafe_allow_html=True)
+
+    # ---------- v7.8.14 — BANDE DU TITRE (nouvelle spécification) ----------
+    # La page ouvre sur une BANDE : le titre occupe les ¾ à gauche, la photo
+    # le quart restant à l'EXTRÊME DROITE ; sans photo, emplacement pointillé 📷.
+    _img_titre_ok = bool(_img_titre and _img_titre.startswith("http"))
+    if _img_titre_ok:
+        _cellule_photo = ('<div class="fe-bande-photo"><img src="'
+                          + html.escape(_img_titre) + '" alt=""></div>')
+    else:
+        _cellule_photo = '<div class="fe-bande-photo"><div class="fe-bande-vide">📷</div></div>'
+    _page_html = ('<div class="fe-bande-titre">'
+                  '<div class="fe-bande-titre-txt">'
+                  '<div class="cp-titre fe-titre-rubrique">'
+                  + html.escape(_titre_page) + "</div></div>"
+                  + _cellule_photo + "</div>")
+
+    # ---------- v7.8.14 — PHOTOS DU CORPS (2 max, 4 coins, texte habillé) ----------
+    # Chaque photo (~¼ de page) se place en haut gauche/droite ou bas
+    # gauche/droite, le texte habille, proportions d'origine. Les anciennes
+    # valeurs « haut / droite / gauche » sont converties (le centré disparaît).
+    _POS_COINS_FE = ("haut_droite", "haut_gauche", "bas_droite", "bas_gauche")
+    _POS_LEGACY_FE = {"haut": "haut_gauche", "droite": "haut_droite",
+                      "gauche": "haut_gauche"}
+
+    def _coin_fe(_v):
+        _s = str(_v).strip() if _v else ""
+        return _s if _s in _POS_COINS_FE else _POS_LEGACY_FE.get(_s, "haut_droite")
+
+    _pp1, _u1 = _parser_pos_photo(_img_url1)   # ancien préfixe [droite]/[gauche]
+    _pos1_fe = _pos1_raw or _pp1
+    _photos_haut, _photos_bas = [], []
+    for _u, _p in ((_u1, _pos1_fe), (_img_url2, _pos2_raw)):
+        if _u and _u.startswith("http"):
+            _pc = _coin_fe(_p)
+            (_photos_haut if _pc.startswith("haut") else _photos_bas).append((_u, _pc))
+
+    def _cadre_coin(_u, _pc):
+        return ('<div class="fe-photo-cadre fe-photo-' + _pc + '">'
+                + '<img src="' + html.escape(_u) + '" alt="" class="cp-photo"></div>')
+
+    _corps_fe = _mise_en_page_feuillet(titre, contenu)
+    if _photos_haut or _photos_bas:
+        _page_html += ('<div class="fe-corps">'
+                       + "".join(_cadre_coin(*_p) for _p in _photos_haut)
+                       + _corps_fe
+                       + "".join(_cadre_coin(*_p) for _p in _photos_bas)
+                       + '<div style="clear:both;"></div></div>')
+    else:
+        _page_html += _corps_fe
+    # v7.13.15 — LE FEUILLETAGE : la page entre par la DROITE et se pose
+    # vers la GAUCHE (le même geste que le livret du téléphone) ; en revenant
+    # en arrière, elle revient par la gauche. Le couple (page, sens) est
+    # injecté dans le style (même mécanique « nonce » que _scroll_top) :
+    # l'animation rejoue à chaque tour, et seulement à chaque tour.
+    _style_feuil, _classe_feuil = _feuillement_livret(f"{pfx}{idx}{sens}", sens)
+    st.markdown(_style_feuil, unsafe_allow_html=True)
+    st.markdown('<div class="' + _classe_feuil + '">'
+                + _carte_priere(_trait_debut_page() + _page_html) + "</div>",
+                unsafe_allow_html=True)
+    _scroll_top(f"{pfx}{idx}")
+
+    # ---------- NAVIGATION (comme le livre de la dizaine) ----------
+    c_prev, c_next = st.columns(2)
+    with c_prev:
+        if idx > 0:
+            if st.button("◀ Précédent", key=f"{pfx}_prev_{idx}", width="stretch"):
+                st.session_state[_k_sens] = "arriere"   # v7.13.15 — revenir : la page revient par la gauche
+                st.session_state[_k_page] = idx - 1
+                st.rerun()
+        else:
+            if st.button("📑 Sommaire", key=f"{pfx}_home_{idx}", width="stretch"):
+                st.session_state[_k_sens] = "arriere"   # v7.13.15 — revenir au sommaire
+                st.session_state[_k_page] = -1
+                st.rerun()
+    with c_next:
+        if idx < len(sections) - 1:
+            if st.button("Suivant ▶", key=f"{pfx}_next_{idx}", width="stretch", type="primary"):
+                st.session_state[_k_sens] = "avant"   # v7.13.15 — avancer : la page entre par la droite
+                st.session_state[_k_page] = idx + 1
+                st.rerun()
+        else:
+            if st.button("✕ Fermer le livret", key=f"{pfx}_end_{idx}", width="stretch"):
+                if autonome:
+                    st.session_state["flt_ouvert"] = False
+                    _nettoyer_params_livret()
+                st.session_state[_k_page] = -1
+                st.rerun()
+
+    # ---------- PIED DE PAGE : pagination seule sous un trait fin (v7.8-g) ----------
+    st.markdown('<div style="border:none; border-top:1px solid #4527a0; '
+                'margin:16px auto 6px auto;"></div>'
+                '<div class="flt-pagination">Page ' + str(idx + 1) + " / "
+                + str(len(sections)) + "</div>", unsafe_allow_html=True)
+
+    # ---------- v7.10.4 — LE QUESTIONNAIRE REVIENT AVEC SON FEUILLET ----------
+    # À la DERNIÈRE page, le questionnaire du mois attend à la fin de la
+    # lecture, comme les exercices au dos d'un livret papier. Le voile reste
+    # la règle : rien ne se montre tant que le diocèse n'a pas validé (le
+    # contrôle est dans _render_questionnaire_mensuel). Celui qui répond ici
+    # nourrit le même mois que la vitrine — mêmes réponses, mêmes corrections.
+    if idx == len(sections) - 1:
+        _rd = lecteur or {}
+        _render_questionnaire_mensuel(
+            annee_debut, mois_pastoral,
+            est_membre=bool(_rd.get("est_membre")),
+            matloc=_rd.get("matloc"), nom_membre=_rd.get("nom_membre"),
+            equipe_id=_rd.get("equipe_id"), paroisse_id=_rd.get("paroisse_id"))
+
+
+def _render_feuillet_autonome(lecteur=None):
+    """📖 Livret ouvert EN AUTONOMIE (comme la dizaine du jour) : l'entête se
+    réduit au logo + à la carte de l'espace (membre / communautaire), sans
+    bandes défilantes, sans le thème de l'année.
+    v7.10.4 — `lecteur` voyage : le questionnaire du feuillet attend à la fin
+    de la lecture, feuillet du moment comme feuillets relus."""
+    _cle = st.session_state.get("flt_cle", "")
+    try:
+        _annee, _mois = (int(x) for x in str(_cle).split("-"))
+    except (ValueError, AttributeError):
+        st.session_state["flt_ouvert"] = False
+        st.rerun()
+        return
+    _render_feuillet_livret(_annee, _mois, autonome=True, pfx="flt",
+                            lecteur=lecteur)
+
+
+def _render_feuillets_archives_expanders(annee_theme, mois_courant):
+    """📚 v7.8.2-i — ARCHIVAGE des feuillets précédents, directement dans
+    🕯️ Thème → 🔭 Vue d'ensemble : un expander par feuillet déjà paru (hors
+    celui affiché dans la vitrine du mois), chaque expander portant un lien
+    « 📖 Relire ce feuillet » qui rouvre le livret EN AUTONOMIE via le lien
+    profond ?flt=1&fa=ANNÉE&fm=MOIS (même lecteur que le livret du mois)."""
+    try:
+        pubs = c.execute("""SELECT annee_debut, mois, numero, date_publication
+                            FROM feuillets_publications
+                            ORDER BY annee_debut DESC, mois DESC""").fetchall()
+    except Exception:
+        return
+    _prec = [p for p in pubs
+             if not (p[0] == annee_theme and p[1] == mois_courant)]
+    # v7.8.5-④ — l'emplacement est ANNONCÉ même sans feuillet précédent :
+    # l'archivage reste visible « juste après le bouton Ouvrir ».
+    st.markdown('<div class="cp-accent" style="--c:#1A237E; margin-top:22px;">'
+                "📚 Les feuillets précédents</div>", unsafe_allow_html=True)
+    if not _prec:
+        st.caption("Les feuillets des mois passés s'archiveront ici, dès la "
+                   "publication du prochain feuillet mensuel.")
+        return
+    # Base du lien profond : l'espace courant voyage (membre : matloc — QR : p=)
+    base = "?espace=1"
+    _mat = st.query_params.get("matloc")
+    if isinstance(_mat, list):
+        _mat = _mat[0] if _mat else None
+    if _mat:
+        base += "&matloc=" + str(_mat)
+    _pp = st.query_params.get("p")
+    if isinstance(_pp, list):
+        _pp = _pp[0] if _pp else None
+    if _pp:
+        base += "&p=" + str(_pp)
+    _r_theme = 1 if _mat else 2   # index de 🕯️ Thème (membre / public)
+    for (a, m, num, dp) in _prec:
+        _titre = ("📖 Feuillet N° " + str(num or m) + " — Mois de "
+                  + MOIS_PASTORAL_NOMS[m - 1] + " " + str(_annee_civile_feuillet(a, m)))
+        with st.expander(_titre):
+            _meta = "Feuillet mensuel de prière archivé"
+            _d = safe_date(dp) if dp else None
+            if _d:
+                _meta += " · publié le " + _d.strftime("%d/%m/%Y")
+            st.caption(_meta)
+            _href = (base + "&nav=1&r=" + str(_r_theme) + "&s=0"
+                     + "&flt=1&fa=" + str(a) + "&fm=" + str(m))
+            st.markdown('<a href="' + _href + '" target="_self" '
+                        'style="display:inline-block; background:#4527a0; color:#ffffff; '
+                        'padding:9px 22px; border-radius:30px; font-weight:bold; '
+                        'font-size:0.9rem; text-decoration:none; margin-top:6px;">'
+                        "📖 Relire ce feuillet</a>", unsafe_allow_html=True)
+
+
+def _render_page_theme_ensemble(est_membre=False, matloc=None,
+                                nom_membre=None, equipe_id=None,
+                                paroisse_id=None):
+    """🕯️ Thème → Vue d'ensemble — v7.7.7 : langage du dépliant (bannière
+    bleu-or, badge d'étape, carte jaune verrouillée, trait fin).
+    v7.10.0 — le questionnaire du feuillet répond sous la vitrine (membres
+    ET visiteurs) ; la signature s'est élargie pour connaître qui répond."""
+    theme = get_theme_actif()
+    if not theme:
+        st.info("🕯️ Aucun thème pastoral n'est actuellement actif. "
+                "Il sera publié par le diocèse.")
+        return
+    texte_theme, mystere_principal, annee_debut = theme
+    # Affiche du thème (optionnelle)
+    try:
+        _row_aff = c.execute("SELECT affiche_url FROM themes_pastoraux WHERE annee_debut=?",
+                             (annee_debut,)).fetchone()
+        affiche_theme = _row_aff[0] if _row_aff else None
+    except Exception:
+        affiche_theme = None
+    ligne_mystere = ""
+    try:
+        mm = get_mystere(int(mystere_principal)) if mystere_principal else None
+    except (ValueError, TypeError):
+        mm = None
+    if mm:
+        ligne_mystere = ('<div style="color:#e8eaf6 !important; font-size:0.92rem; margin-top:10px;">'
+                         "📿 Mystère principal : N°" + str(mm.get("id", "?")) + " — "
+                         + html.escape((mm.get("titre") or "").title()) + " ("
+                         + html.escape(mm.get("reference") or "") + ")</div>")
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+        ' padding:24px; border-radius:15px; text-align:center; margin:10px;'
+        ' border:2px solid #FFD700;">'
+        '<div style="color:#FFD000 !important; font-size:0.85rem; letter-spacing:1px;">🕯️ THÈME PASTORAL '
+        + str(annee_debut) + " - " + str(annee_debut + 1) + " · v7.7</div>"
+        '<div style="font-family:Georgia, serif !important; color:#FFD700 !important; font-size:1.25rem; font-weight:bold; margin-top:8px; line-height:1.5;">« '
+        + html.escape(texte_theme or "") + ' »</div>'
+        + ligne_mystere + "</div>", unsafe_allow_html=True)
+    if affiche_theme and str(affiche_theme).startswith("http"):
+        st.markdown('<img src="' + str(affiche_theme) + '" alt="Affiche du thème" '
+                    'style="width:100%; max-width:720px; display:block; margin:10px auto; '
+                    'border-radius:12px; border:2px solid #FFD700;">', unsafe_allow_html=True)
+    elif affiche_theme:
+        try:
+            st.image(affiche_theme, width="stretch")
+        except Exception:
+            pass
+
+    # Mois PASTORAL (Sept=1 … Août=12) — v7.8 : la zone « 📅 LE SOUS-THÈME DU
+    # MOIS » est supprimée ; sa place est occupée par le feuillet mensuel de
+    # prière (badge N°, Mois de, Sommaire, Ouvrir le livret).
+    _mois_pastoral = ((date.today().month - 9) % 12) + 1
+
+    # ---------- 📖 LE FEUILLET MENSUEL DE PRIÈRE (v7.8) ----------
+    _render_feuillet_vitrine(annee_debut, _mois_pastoral)
+
+    # ---------- 📝 LE QUESTIONNAIRE DU FEUILLET (v7.10.0) ----------
+    # juste sous la vitrine : les questions et exercices du mois, ouverts
+    # aux membres comme aux visiteurs.
+    _render_questionnaire_mensuel(annee_debut, _mois_pastoral,
+                                  est_membre=est_membre, matloc=matloc,
+                                  nom_membre=nom_membre, equipe_id=equipe_id,
+                                  paroisse_id=paroisse_id)
+
+    # ---------- 📚 FEUILLETS PRÉCÉDENTS (v7.8.2-i) : archivage en expanders ----------
+    _render_feuillets_archives_expanders(annee_debut, _mois_pastoral)
+
+
+def _render_page_en_preparation(emoji, titre, description):
+    """Page « en préparation » élégante."""
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+        ' padding:28px; border-radius:15px; text-align:center; margin:10px;'
+        ' border:2px solid #FFD700;">'
+        '<div style="font-size:2.2rem;">🚧</div>'
+        '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold; margin-top:8px;">'
+        + emoji + " " + html.escape(titre) + "</div>"
+        '<div style="color:#e8eaf6 !important; font-size:0.95rem; margin-top:10px; line-height:1.7;">'
+        + html.escape(description) + "</div></div>", unsafe_allow_html=True)
+
+
+GROUPES_CHAPELETS = [
+    ("Joyeux", 1, 5, "Annoncé, né, présenté, retrouvé — la vie cachée et la lumière de l’enfance"),
+    ("Lumineux", 6, 10, "Le Baptême, Cana, l’annonce du Royaume, la Transfiguration, l’Eucharistie"),
+    ("Douloureux", 11, 15, "L’agonie, la flagellation, le couronnement d’épines, le portement de croix, la mort sur la croix"),
+    ("Glorieux", 16, 20, "La Résurrection, l’Ascension, la Pentecôte, l’Assomption, le Couronnement de Marie"),
+]
+
+
+# ================= ROSAIRE COMPLET EN ÉQUIPE — v7.7.3 =================
+# Interrupteur : True = titres de sections visibles (style livre) ;
+# False = chaque titre devient un simple trait fin bleu (flux continu).
+AFFICHER_TITRES_SECTIONS = False
+
+# 🖼️ PHOTOS DES MYSTÈRES — collez ici vos liens imgbb (Direct link) :
+PHOTOS_MYSTERES = {
+    1: "https://i.ibb.co/fdsv8yVd/mysteres-1.webp", 2: "https://i.ibb.co/dJL5GpXz/mysteres-2.webp", 3: "https://i.ibb.co/spXgWNQG/mysteres-3.webp", 4: "https://i.ibb.co/35HmgkLB/mysteres-4.webp", 5: "https://i.ibb.co/9kFZDf3X/mysteres-5.webp",
+    6: "https://i.ibb.co/GBcT1JJ/mysteres-6.webp", 7: "https://i.ibb.co/0yqC0kMj/mysteres-7.webp", 8: "https://i.ibb.co/xKdZnJGg/mysteres-8.webp", 9: "https://i.ibb.co/JWcN0FfL/mysteres-9.webp", 10: "https://i.ibb.co/20bHZjfr/mysteres-10.webp",
+    11: "https://i.ibb.co/s9MNpJSZ/mysteres-11.webp", 12: "https://i.ibb.co/pBfD7qpV/mysteres-12.webp", 13: "https://i.ibb.co/23FyJvNY/mysteres-13.webp", 14: "https://i.ibb.co/M5c9m7hj/mysteres-14.webp", 15: "https://i.ibb.co/LzxLrd5G/mysteres-15.webp",
+    16: "https://i.ibb.co/HL89nG7K/mysteres-16.webp", 17: "https://i.ibb.co/CsnpR8JV/mysteres-17.webp", 18: "https://i.ibb.co/8ncVZgcy/mysteres-18.webp", 19: "https://i.ibb.co/5gnfKCrs/mysteres-19.webp", 20: "https://i.ibb.co/vvMdjknN/mysteres-20.webp",
+}
+
+_DIZ_NOTREPERE = ("Notre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\n"
+                  "que ta volonté soit faite\nsur la terre comme au ciel.\n\n"
+                  "Donne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, "
+                  "comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas "
+                  "entrer en tentation, mais délivre-nous du Mal. Amen!")
+
+_DIZ_GLORIA = ("Gloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, "
+               "et semper, et in saecula saeculorum. Amen!\n\nÔ mon Jésus, pardonne-nous nos péchés; "
+               "préserve-nous du feu de l’Enfer, attire au Ciel toutes les âmes, principalement "
+               "celles qui ont le plus besoin de ta miséricorde. Amen!\n\n"
+               "Notre Dame du très Saint Rosaire!\nPriez pour nous!")
+
+_DIZ_INTRO2_ESPACE = (
+    "NOTRE PÈRE\n\n"
+    "Notre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\n"
+    "que ta volonté soit faite\nsur la terre comme au ciel.\n\n"
+    "Donne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous "
+    "pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, "
+    "mais délivre-nous du Mal. Amen!\n\n"
+    "3 JE VOUS SALUE MARIE\n\n\n"
+    "Je vous salue Marie, pleine de grâce,\nle Seigneur est avec vous. Vous êtes bénie entre "
+    "toutes les femmes, et Jésus, le fruit de vos entrailles, est béni.\n\n"
+    "Sainte Marie, Mère de Dieu, priez pour nous pauvres pécheurs, maintenant et à l’heure de "
+    "notre mort. Amen!\n\n\n"
+    "Je vous salue Marie, pleine de grâce,\nle Seigneur est avec vous. Vous êtes bénie entre "
+    "toutes les femmes, et Jésus, le fruit de vos entrailles, est béni.\n\n"
+    "Sainte Marie, Mère de Dieu, priez pour nous pauvres pécheurs, maintenant et à l’heure de "
+    "notre mort. Amen!\n\n\n"
+    "Je vous salue Marie, pleine de grâce,\nle Seigneur est avec vous. Vous êtes bénie entre "
+    "toutes les femmes, et Jésus, le fruit de vos entrailles, est béni.\n\n"
+    "Sainte Marie, Mère de Dieu, priez pour nous pauvres pécheurs, maintenant et à l’heure de "
+    "notre mort. Amen!\n\n"
+    "GLORIA PATRI\n\n"
+    "Gloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, "
+    "et in saecula saeculorum. Amen!")
+
+
+def _rendre_texte_priere(texte):
+    """v7.7.4 — rendu d'un texte de prière. Ligne TOUT MAJUSCULES : trait fin
+    (ou titre bleu si AFFICHER_TITRES_SECTIONS). Ligne « ===TRAIT=== » :
+    trait de séparation inséré manuellement."""
+    _sortie = ""
+    _paragraphe = []
+    for _ligne in str(texte).split("\n"):
+        _l = _ligne.strip()
+        if _l == "===TRAIT===":
+            if _paragraphe:
+                _sortie += '<div class="cp-para">' + "<br>".join(_paragraphe) + "</div>"
+                _paragraphe = []
+            _sortie += '<div class="cp-trait"></div>'
+            continue
+        _est_titre = (len(_l) >= 3 and _l == _l.upper() and any(ch.isalpha() for ch in _l))
+        if _est_titre:
+            if _paragraphe:
+                _sortie += '<div class="cp-para">' + "<br>".join(_paragraphe) + "</div>"
+                _paragraphe = []
+            if AFFICHER_TITRES_SECTIONS:
+                _sortie += '<div class="cp-titre">' + html.escape(_l) + "</div>"
+            else:
+                _sortie += '<div class="cp-trait"></div>'
+        elif not _l:
+            if _paragraphe:
+                _sortie += '<div class="cp-para">' + "<br>".join(_paragraphe) + "</div>"
+                _paragraphe = []
+        else:
+            _paragraphe.append(html.escape(_l))
+    if _paragraphe:
+        _sortie += '<div class="cp-para">' + "<br>".join(_paragraphe) + "</div>"
+    return _sortie
+
+
+# ================= MISE EN PAGE DU FEUILLET — v7.8.11 =================
+# Marqueur de rubrique : R. / T. / 1. / 2. / 3. / 3+T. (suivis de . : — – -).
+_RE_MARQ_FE = re.compile(r"^\s*(R|T|1|2|3)(\s*\+\s*T)?\s*[.:=—–-]\s*")
+# Titre du passage biblique (section « À l'écoute de la Parole de Dieu ») :
+# reste en style normal (italique) quand toute la section passe en gras.
+_RE_PASSAGE_FE = re.compile(
+    r"^(au livre|évangile\b|lecture (de|du|des|d')|première lecture|deuxième lecture"
+    r"|livre (de|du|des)|lettre (de|du|des))", re.I)
+
+
+def _sans_accents_fe(t):
+    """Minuscules sans accents (comparaison robuste des titres)."""
+    return unicodedata.normalize("NFD", str(t or "").lower()).encode("ascii", "ignore").decode("utf-8")
+
+
+def _parser_pos_photo(url):
+    """v7.8.11 — un lien d'image peut porter un préfixe « [droite] » ou
+    « [gauche] » (position choisie à la soumission). Retourne le couple
+    (position, url_propre) — position = None si pas de préfixe."""
+    if not url:
+        return None, url
+    _u = str(url).strip()
+    _low = _u.lower()
+    if _low.startswith("[droite]"):
+        return "droite", _u[8:].strip()
+    if _low.startswith("[gauche]"):
+        return "gauche", _u[8:].strip()
+    return None, _u
+
+
+def _mise_en_page_feuillet(titre, contenu):
+    """v7.8.11 — mise en page typographique du texte d'une section du livret
+    (demande n°4), d'après le livret papier :
+      a. les marqueurs R. / T. / 1. / 2. / 3+T. sont EN GRAS (seul le marqueur) ;
+      b. le texte des réponses « T. » et « 3+T. » est ENTIEREMENT en gras
+         (y compris les vers qui suivent, jusqu'à la ligne vide) ;
+      c. section « À l'écoute de la Parole de Dieu » : TOUT en gras sauf le
+         titre du passage (Évangile… / Au Livre…, rendu en italique centré) ;
+      d. section « Salve Regina » : TOUT en gras ;
+      e. interligne plus généreux entre deux marqueurs (classe fe-p) ;
+      h. « Célébrons en équipe » : la légende des rôles (R — Responsable… /
+         1 — 1er lecteur · 2 — 2e lecteur · 3 — Chantre · T — Tous ensemble)
+         est en gras, et la ligne « Accueil » devient une puce soulignée de
+         taille sous-titre.
+    Le comportement de _rendre_texte_priere est conservé pour le reste
+    (===TRAIT=== → trait, lignes tout-majuscules → trait fin)."""
+    _t = _sans_accents_fe(titre)
+    _est_sec7 = "ecoute de la parole" in _t
+    _est_salve = "salve regina" in _t
+    _est_sec4 = "celebrons en equipe" in _t
+
+    _blocs = []
+    _para = []          # [(html_ligne, en_gras)] — paragraphe en cours
+    _bloc_tous = False  # v7.8.11 — True tant que court un bloc « T. »/« 3+T. »
+
+    def _flush():
+        if not _para:
+            return
+        if all(g for _h, g in _para):
+            _blocs.append('<div class="cp-para fe-p fe-gras">'
+                          + "<br>".join(h for h, _g in _para) + "</div>")
+        elif not any(g for _h, g in _para):
+            _blocs.append('<div class="cp-para fe-p">'
+                          + "<br>".join(h for h, _g in _para) + "</div>")
+        else:
+            _blocs.append('<div class="cp-para fe-p">'
+                          + "<br>".join(("<b>" + h + "</b>") if g else h
+                                        for h, g in _para) + "</div>")
+        _para.clear()
+
+    for _brut in str(contenu or "").split("\n"):
+        _l = _brut.strip()
+        if _l == "===TRAIT===":
+            _flush()
+            _bloc_tous = False
+            _blocs.append('<div class="cp-trait"></div>')
+            continue
+        if not _l:
+            _flush()
+            _bloc_tous = False
+            continue
+        # (c) titre du passage — jamais en gras, en italique centré
+        if _est_sec7 and len(_l) <= 95 and _RE_PASSAGE_FE.match(_l):
+            _flush()
+            _bloc_tous = False
+            _blocs.append('<div class="cp-para fe-p fe-passage">'
+                          + html.escape(_l) + "</div>")
+            continue
+        # Titre tout-majuscules → trait fin (comportement conservé)
+        if len(_l) >= 3 and _l == _l.upper() and any(ch.isalpha() for ch in _l):
+            _flush()
+            _bloc_tous = False
+            _blocs.append('<div class="cp-trait"></div>')
+            continue
+        # (h) puce « Accueil » — sous-titre souligné, Célébrons en équipe
+        if _est_sec4 and _l.rstrip(":.").strip().lower() == "accueil":
+            _flush()
+            _bloc_tous = False
+            _blocs.append('<div class="cp-para fe-p fe-accueil">•&nbsp;Accueil</div>')
+            continue
+        _m = _RE_MARQ_FE.match(_l)
+        if _m:
+            _token = _l[:_m.end()].strip()
+            _reste = _l[_m.end():]
+            _est_tous = (_m.group(1) == "T") or ("+" in (_m.group(2) or ""))
+            _legende = (_est_sec4 and any(w in _l.lower() for w in
+                        ("responsable", "lecteur", "chantre", "tous ensemble")))
+            _flush()
+            if _est_salve or _est_sec7 or _legende:
+                # (c)(d)(h) tout en gras
+                _para.append((html.escape(_l), True))
+                _bloc_tous = False
+                _flush()
+            elif _est_tous:
+                # (b) réponse « Tous » : marqueur + texte en gras, le bloc
+                # continue tant que des vers suivent (ligne vide = fin)
+                _para.append((html.escape(_l), True))
+                _bloc_tous = True
+            else:
+                # (a) seul le marqueur est en gras
+                _para.append(("<b>" + html.escape(_token) + "</b> "
+                              + html.escape(_reste), False))
+                _bloc_tous = False
+            continue
+        if _est_salve or _est_sec7:
+            # (c)(d) tout en gras
+            _para.append((html.escape(_l), True))
+        else:
+            _para.append((html.escape(_l), bool(_bloc_tous)))
+    _flush()
+    return "".join(_blocs)
+
+
+def _carte_priere(corps_html, couleur=None):
+    """v7.7.3 — carte jaune SANS en-tête ; liseré gauche coloré (option)."""
+    _b = ' style="border-left:6px solid ' + couleur + ';"' if couleur else ""
+    return '<div class="carte-priere"' + _b + ">" + corps_html + "</div>"
+
+
+def _trait_debut_page():
+    """Trait fin bleu en début de page (demande 2)."""
+    return '<div class="cp-trait"></div>'
+
+
+def _carte_etape(libelle):
+    """Badge d'étape : bleu foncé, texte doré."""
+    return ('<div style="background:#1A237E; border-radius:10px; padding:10px 18px; text-align:center; margin:12px 6px 8px 6px;">'
+            '<div style="color:#FFD000 !important; font-weight:bold; font-size:1.05rem;">' + libelle + "</div></div>")
+
+
+def _est_intention_chaine(ligne):
+    """v7.9.0 — reconnaît la ligne « Intention du prochain dans la chaine de
+    prière » placée en fin des intentions de chaque mystère (mysteres.py) :
+    c'est elle qui devient DYNAMIQUE (chaîne de prière universelle)."""
+    l = (ligne or "").strip().lstrip("*").strip().lower()
+    return "intention du prochain" in l
+
+
+def _ligne_chaine(jour_visiteur=None, matloc=None):
+    """v7.9.1 — la ligne dynamique du livret, au MODÈLE demandé :
+      « 🕯️ Vierge Marie, mère de Dieu, intercède pour {Prénom - Nom du
+        visiteur} : {son intention} » ;
+      « … intercède pour cet anonyme : {intention} » (intention anonyme) ;
+      « … intercède : {intention universelle} » (3ᵉ choix de la chaîne).
+    Le tirage dépend du N° méd. du lecteur (jour de naissance) et reste
+    stable au sein d'une fenêtre de 20 jours (intention_du_prochain_detail) :
+    les visiteurs du jour reçoivent les intentions de leurs prochains selon
+    leurs N° méd. et méditent avec, sur 20 jours.
+    v7.9.4 — le membre transmet son MatLoc : son intention lui est
+    ATTACHÉE sur sa période désignée (membre), comme sur 20 jours pour
+    le visiteur.
+    v7.9.19 — LE SURPLUS : « Si un N° méd. contient plus d'une intention,
+    le membre comme le visiteur qui médite ce N° méd. verra ses intentions
+    augmentées selon le surplus. » Chaque intention en plus du N° méd. du
+    lecteur s'ajoute à la ligne, l'une sous l'autre."""
+    _txt, _qui = intention_du_prochain_detail(jour_visiteur=jour_visiteur,
+                                              matloc=matloc)
+    # v7.13.0 — LIGNES SANS REDONDANCE : quand l'intention nomme déjà sa
+    # bénéficiaire (« pour Innocent Ahua … afin que… »), la ligne ne répète
+    # plus son nom — fini le « pour AKA Jeanne : pour Jeanne A. … ».
+    _lignes = [ligne_intercession(_qui, _txt)]
+    try:
+        _surplus = intentions_reserve_surplus(jour_visiteur=jour_visiteur,
+                                              matloc=matloc, texte_exclu=_txt)
+        for (_s_txt, _s_qui) in _surplus:
+            _lignes.append(ligne_intercession(_s_qui, _s_txt, aussi=True))
+    except Exception:
+        pass
+    return "\n".join(_lignes)
+
+
+def _render_page_rosaire_eyquem():
+    """📿 Rosaire → Le Rosaire complet en Équipe (v7.7.4).
+    v7.9.0 — la dernière intention de chaque mystère (« Intention du prochain
+    dans la chaine de prière ») devient DYNAMIQUE : elle porte l'intention du
+    prochain tirée dans la chaîne de prière universelle (choix de la paroisse
+    dans « 🙏 Coins des Intentions »). Le jour de naissance connu en session
+    écarte les intentions du lecteur lui-même — personne ne prie la sienne."""
+    st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+                ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
+                ' border:2px solid #FFD700;">'
+                '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold;">📿 Le Rosaire chez les Équipiers</div>'
+                '<div style="color:#e8eaf6 !important; font-size:0.9rem; margin-top:6px;">Vingt mystères médités en chaîne universelle · v7.7</div></div>',
+                unsafe_allow_html=True)
+
+    # ---------- A. DÉBUT ----------
+    st.markdown(_carte_etape("✝️ DÉBUT DU ROSAIRE COMPLET"), unsafe_allow_html=True)
+    with st.expander("🚩 Débutons notre méditation"):
+        st.markdown(_carte_priere(_trait_debut_page() + _rendre_texte_priere(DIZ_INTRO1)), unsafe_allow_html=True)
+    with st.expander("📿 Introduction de la prière"):
+        st.markdown(_carte_priere(_rendre_texte_priere(_DIZ_INTRO2_ESPACE)), unsafe_allow_html=True)
+    with st.expander("🙏 Prière à la Vierge du Père Eyquem"):
+        st.markdown(_rendre_intro_eyquem("INTRODUCTION", afficher_titres=False, trait_debut=True), unsafe_allow_html=True)
+
+    # ---------- B-E. LES 20 MYSTÈRES ----------
+    # v7.9.0/7.9.1 — l'intention du prochain est tirée UNE fois pour tout le
+    # livret (le lecteur ne prie jamais sa propre intention) ; la ligne
+    # suit le modèle « intercède pour {qui} : {intention} ».
+    _chaine = _ligne_chaine(st.session_state.get("diz_jrnais"))
+    for nom_type, debut, fin, resume in GROUPES_CHAPELETS:
+        couleur_forte = COULEURS_TYPES.get(nom_type.lower(), "#9E9E9E")
+        couleur_claire = COULEURS_CLAIRES.get(nom_type.lower(), "#e8eaf6")
+        st.markdown(
+            '<div style="background:#121a45; border-radius:15px; margin:10px 10px 4px 10px; padding:14px 20px; border:1px solid #27306b; border-left:6px solid ' + couleur_forte + ';">'
+            '<div style="color:' + couleur_claire + ' !important; font-weight:bold; font-size:1.05rem;">✝️ Mystères ' + nom_type + "</div>"
+            '<div style="color:#c7cdf5 !important; font-size:0.85rem; margin-top:2px;">' + html.escape(resume) + "</div>"
+            "</div>", unsafe_allow_html=True)
+        for m in MYSTERES:
+            if not (debut <= m.get("id", 0) <= fin):
+                continue
+            _mid = m.get("id", 0)
+            _photo = PHOTOS_MYSTERES.get(_mid) or ""
+            _photo_html = '<img class="cp-photo" src="' + _photo + '" alt="">' if _photo.startswith("http") else ""
+            _corps_1 = (_trait_debut_page() + _photo_html
+                        + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Passage</div>'
+                        + '<div class="cp-para">' + html.escape(m.get("passage") or "").replace("\n", "<br>") + "</div>"
+                        + '<div class="cp-accent" style="--c:' + couleur_forte + ';">Méditation</div>'
+                        + '<div class="cp-para">' + html.escape(m.get("meditation") or "").replace("\n", "<br>") + "</div>")
+            _t_actif = get_theme_actif()
+            if _t_actif:
+                _lien_txt = get_lien_mystere(_t_actif[2], _mid)
+                if _lien_txt:
+                    _corps_1 += ('<div class="cp-accent" style="--c:' + couleur_forte + ';">🔗 Lien thématique — '
+                                 + html.escape(_t_actif[0] or "") + "</div>"
+                                 '<div class="cp-para">' + html.escape(_lien_txt).replace("\n", "<br>") + "</div>")
+            _intentions = ('<div class="cp-accent" style="--c:' + couleur_forte + ';">Intentions</div>'
+                           + "".join(
+                               _diz_txt(_chaine if _est_intention_chaine(_l)
+                                        else "🕯️ Vierge Marie, mère de Dieu, intercède : "
+                                             + _l.strip().lstrip("*").strip(),
+                                        "#1a1a1a", gras=_est_intention_chaine(_l))
+                               for _l in (m.get("intentions") or "").split("\n") if _l.strip()))
+            _fruits = ('<div class="cp-accent" style="--c:' + couleur_forte + ';">Fruits du mystère</div>'
+                       + "".join(
+                           _diz_txt("✨ " + _l.strip(), "#1a1a1a")
+                           for _l in (m.get("fruits") or "").split("\n") if _l.strip()))
+            _cla = m.get("clausules") or []
+            _grains = ""
+            for _g in range(1, 11):
+                _clausule = _cla[_g - 1] if _g <= len(_cla) else ""
+                _clausule = "" if _clausule is None else str(_clausule)
+                _grains += ('<div class="cp-para" style="text-align:center; margin:12px 0;">'
+                            '<span class="cp-accent-bg" style="--c:' + couleur_forte + '; display:inline-block; width:22px; height:22px; border-radius:4px; font-size:0.72rem; line-height:22px;">' + str(_g) + "</span><br>"
+                            "Je vous salue Marie, pleine de grâce,<br>le Seigneur est avec vous.<br>Vous êtes bénie entre toutes les femmes,<br>"
+                            '<span class="cp-accent-inline" style="--c:' + couleur_forte + ';">et Jésus, ' + html.escape(_clausule) + "</span><br>"
+                            "le fruit de vos entrailles, est béni.<br>"
+                            "Sainte Marie, Mère de Dieu,<br>priez pour nous pauvres pécheurs,<br>maintenant et à l’heure de notre mort. Amen!</div>")
+            _details = ('<details class="details-mystere" style="--c:' + couleur_forte + ';">'
+                        "<summary>" + str(_mid).zfill(2) + " — " + html.escape((m.get("titre") or "").title())
+                        + " · " + html.escape(m.get("reference") or "") + "</summary>"
+                        '<div style="padding:6px 8px 8px 8px;">'
+                        + _carte_priere(_corps_1, couleur_forte)
+                        + _carte_priere(_intentions + _fruits, couleur_forte)
+                        + _carte_priere(_rendre_texte_priere(_DIZ_NOTREPERE), couleur_forte)
+                        + _carte_priere(_grains, couleur_forte)
+                        + _carte_priere(_rendre_texte_priere(_DIZ_GLORIA), couleur_forte)
+                        + "</div></details>")
+            st.markdown(_details, unsafe_allow_html=True)
+
+    # ---------- F. FIN ----------
+    st.markdown(_carte_etape("🕯️ FIN DU ROSAIRE"), unsafe_allow_html=True)
+    with st.expander("Prière finale"):
+        _txt_fin = DIZ_OUTRO.replace("Ô Marie, conçue sans péché!", "===TRAIT===\nÔ Marie, conçue sans péché!", 1)
+        st.markdown(_carte_priere(_rendre_texte_priere(_txt_fin)), unsafe_allow_html=True)
+
+    st.info("📿 La dizaine du jour vous attend sur l'Accueil (🏠 Actualités) — "
+            "chaque membre fait avancer la chaîne selon son numéro.")
+
+
+def _render_page_rosaire_theme():
+    """📿 Rosaire → Le thème de l'année : les 20 mystères avec leur lien."""
+    theme = get_theme_actif()
+    if not theme:
+        st.info("🕯️ Aucun thème pastoral n'est actuellement actif.")
+        return
+    texte_theme, mystere_principal, annee_debut = theme
+    st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+                ' padding:20px; border-radius:15px; text-align:center; margin:10px;'
+                ' border:2px solid #FFD700;">'
+                '<div style="color:#9fa6d8 !important; font-size:0.85rem;">📿 LE ROSAIRE SELON LE THÈME DE L’ANNÉE · ' + _VERSION_APPLI + '</div>'
+                '<div style="color:#FFD700 !important; font-size:1.1rem; font-weight:bold; margin-top:6px;">« '
+                + html.escape(texte_theme or "") + " »</div></div>", unsafe_allow_html=True)
+    manquants = 0
+    for m in MYSTERES:
+        lien = get_lien_mystere(annee_debut, m.get("id", 0))
+        couleur = COULEURS_CLAIRES.get((m.get("type") or "").lower(), "#e8eaf6")
+        if lien:
+            corps_lien = ('<div style="background:#ffffff; border:2px solid #FFD700; border-radius:10px; padding:10px 14px; margin-top:8px;">'
+                          '<div style="color:#1A237E !important; font-weight:bold; font-size:0.85rem;">🔗 Lien thématique</div>'
+                          '<div style="color:#1a1a1a !important; font-size:0.9rem; line-height:1.7; margin-top:4px;">'
+                          + html.escape(lien).replace("\n", "<br>") + "</div></div>")
+        else:
+            manquants += 1
+            corps_lien = ('<div style="color:#c7cdf5 !important; font-size:0.85rem; font-style:italic; margin-top:8px;">'
+                          "— lien thématique à préciser par le diocèse —</div>")
+        st.markdown(
+            '<div style="background:#121a45; border-radius:15px; margin:10px; padding:16px; border-left:6px solid ' + couleur + ';">'
+            '<div style="color:' + couleur + ' !important; font-weight:bold; font-size:1rem;">' + str(m.get("id", 0)).zfill(2) + " — "
+            + html.escape((m.get("titre") or "").title()) + "</div>"
+            '<div style="color:#c7cdf5 !important; font-size:0.82rem;">📖 ' + html.escape(m.get("reference") or "") + "</div>"
+            + corps_lien + "</div>", unsafe_allow_html=True)
+    if manquants:
+        st.caption(f"🔗 {manquants} lien(s) thématique(s) restent à saisir dans l'interface diocèse.")
+
+
+def _pid_contexte(membre_paroisse_id=None):
+    """Contexte paroissial du visiteur (LOT C5) :
+    - membre connecté → paroisse de son équipe ;
+    - visiteur via QR signé → paroisse du QR ;
+    - sinon None (diocèse uniquement)."""
+    if membre_paroisse_id:
+        return membre_paroisse_id
+    return st.session_state.get("paroisse_origine")
+
+
+def _render_page_archives_textes(type_contenu, message_vide, pid=None):
+    """Archives Prières / Méditations. Photo en WIDGET NATIF st.image.
+    LOT C5 : ne montre que le diocèse (paroisse_cible NULL) + la paroisse du contexte."""
+    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
+        else ("AND paroisse_cible IS NULL", [])
+    lignes = c.execute(f"""SELECT titre, contenu_texte, image_url, fichier_url FROM espace_spirituel
+                          WHERE type_contenu=? {cond} ORDER BY date_publication DESC, id DESC""",
+                       [type_contenu] + prm).fetchall()
+    if not lignes:
+        st.info(message_vide)
+        return
+    for p in lignes:
+        with st.expander(f"📖 {p[0]}"):
+            texte, url_pdf = (p[1] or ""), p[3]
+            if not url_pdf:
+                texte, url_pdf = _extraire_pdf_legacy(texte)
+            _pu, _purl = _parser_pos_photo(p[2])
+            if _purl and _purl.startswith("http"):
+                st.markdown(f'<img src="{_purl}" alt="" class="rub-photo">', unsafe_allow_html=True)
+            if texte:
+                st.markdown(texte, unsafe_allow_html=True)
+            if url_pdf:
+                _render_pdf_inline(url_pdf)
+
+
+def _pistes_du_contexte(pid=None):
+    """v7.8.9 — pistes MP3 + vidéos YouTube du contexte paroissial.
+    FACTORISÉ : sert la page d'écoute 🎧 ET la mini-barre compagnon."""
+    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
+        else ("AND paroisse_cible IS NULL", [])
+    audios = c.execute(f"""SELECT titre, fichier_url FROM espace_spirituel
+                          WHERE type_contenu='audio' {cond} ORDER BY date_publication DESC, id DESC""",
+                       prm).fetchall()
+    pistes, videos_yt = [], []
+    for a in audios:
+        u = str(a[1]) if a[1] is not None else ""
+        if not u.startswith("http"):
+            continue
+        # Titre blindé : jamais None, jamais de HTML/JS injecté dans le lecteur
+        titre_sur = str(a[0]) if a[0] is not None else "(sans titre)"
+        if ("youtube.com/" in u) or ("youtu.be/" in u):
+            videos_yt.append({"title": titre_sur, "url": u})
+        else:
+            pistes.append({"title": html.escape(titre_sur), "url": u})
+    return pistes, videos_yt
+
+
+def _render_page_archives_audios(pid=None):
+    """Archives Musiques — LECTEUR COMPLET (playlist, ⏮️⏭️, 🔀, 🔁, sélection).
+    Les MP3 en lien direct alimentent la playlist ; les liens YouTube
+    s'affichent séparément. LOT C5 : filtre par contexte paroissial.
+    v7.8.9 — LECTEUR COMPAGNON : ① bouton d'ouverture intelligent (popup
+    nommé sur PC / même onglet sur téléphone) ; ② barre « ◀️ Revenir à
+    l'appli » sur la page d'écoute ; ③ la position de lecture est mémorisée
+    (sessionStorage) pour la mini-barre compagnon ; ④ Media Session + 📺."""
+    pistes, videos_yt = _pistes_du_contexte(pid)
+    if not pistes and not videos_yt:
+        st.info("Aucun fichier audio.")
+        return
+
+    # v7.8.9 — bouton d'ouverture intelligent, masqué sur la page d'écoute
+    # elle-même (sinon il réapparaissait dans l'onglet d'écoute, ce qui est
+    # inutile). Téléphone (≤ 820 px) : MÊME onglet — la barre « ◀️ Revenir »
+    # puis la mini-barre compagnon prennent le relais, la musique suit le
+    # visiteur page après page. PC : fenêtre compagnon nommée
+    # « rosaire_ecoute » (réutilisée à chaque clic, jamais dupliquée).
+    if st.query_params.get("musique") != "1":
+        _lien_ecoute = "?espace=1&musique=1" + (f"&p={pid}" if pid else "")
+        # v7.8.9 — st.markdown SANITISE le HTML (onclick supprimé, rel=noopener
+        # ajouté) : la bascule téléphone/PC se fait donc en CSS PUR (@media) —
+        # deux boutons, un seul visible selon la largeur d'écran.
+        # Téléphone (≤ 820 px) : lien MÊME onglet « 🎧 Écouter en priant » —
+        # la barre « ◀️ Revenir » puis la mini-barre compagnon prennent le
+        # relais, la musique suit le visiteur page après page.
+        # PC : fenêtre/onglet compagnon nommé « rosaire_ecoute » (réutilisé à
+        # chaque clic, jamais dupliqué — le nom sert aussi à la détecter).
+        st.markdown(
+            '<style>'
+            '.btn-eco { display:inline-block; background:#4527a0; color:#ffffff;'
+            ' padding:10px 22px; border-radius:30px; font-weight:bold; text-decoration:none;'
+            ' margin:0 4px; }'
+            '.btn-eco.mob { display:none; }'
+            '@media (max-width: 820px) { .btn-eco.mob { display:inline-block; }'
+            ' .btn-eco.pc { display:none; } }'
+            '</style>'
+            '<div style="text-align:center; margin:0 0 6px 0;">'
+            '<a class="btn-eco pc" href="' + _lien_ecoute + '" target="rosaire_ecoute">'
+            '🎧 Ouvrir l’onglet d’écoute dédié</a>'
+            '<a class="btn-eco mob" href="' + _lien_ecoute + '">'
+            '🎧 Écouter en priant</a></div>'
+            '<div style="text-align:center; color:#9fa6d8 !important; font-size:0.8rem;'
+            ' margin:0 0 14px 0;">📱 La musique vous suit ensuite de page en page —'
+            ' tapez « ◀️ Revenir à l’appli » pour continuer à prier. 🎶</div>',
+            unsafe_allow_html=True)
+        _fixer_liens_ecoute()
+
+    # v7.8.9 — barre « ◀️ Revenir à l'appli » (page d'écoute uniquement).
+    # Même onglet (téléphone) : un tap ramène à l'Espace de Prière et la
+    # mini-barre compagnon reprend la musique. Fenêtre compagnon (PC) :
+    # le lecteur masque le bouton et affiche l'astuce « réduisez la fenêtre ».
+    if st.query_params.get("musique") == "1" and pistes:
+        _lien_retour = "?espace=1" + (f"&p={pid}" if pid else "")
+        st.markdown(
+            '<style>'
+            '.block-container { padding-bottom: 130px !important; }'
+            '#bar-revenir { position:fixed; bottom:0; left:0; right:0; z-index:999999;'
+            ' background:linear-gradient(135deg,#1A237E 0%,#4527a0 100%);'
+            ' border-top:2px solid #FFD700; text-align:center;'
+            ' padding:12px 12px calc(12px + env(safe-area-inset-bottom));'
+            ' box-shadow:0 -6px 22px rgba(0,0,0,0.45); }'
+            '#bar-revenir a.btn-rv { display:inline-block; background:#FFD700; color:#1A237E;'
+            ' font-weight:bold; text-decoration:none; padding:12px 38px; border-radius:30px;'
+            ' font-size:1.05rem; }'
+            '#bar-revenir .hint-rv { display:none; color:#e8eaf6 !important; font-size:0.85rem;'
+            ' line-height:1.5; }'
+            '</style>'
+            '<div id="bar-revenir">'
+            '<a class="btn-rv" id="btn-rv-meme" href="' + _lien_retour + '">'
+            '◀️ Revenir à l’appli</a>'
+            '<div class="hint-rv" id="hint-rv-popup">🖥️ Fenêtre compagnon : réduisez-la,'
+            ' la musique continue pendant que vous priez dans la fenêtre principale. 🎶</div>'
+            '</div>',
+            unsafe_allow_html=True)
+        _fixer_liens_ecoute()
+
+    if pistes:
+        player_html = """
+        <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 15px; border: 1px solid #27306b; border-radius: 15px; background: #121a45;">
+            <h3 style="text-align:center; color:#ffe082; margin-top:0;">🎵 Lecteur Spirituel</h3>
+            <div id="now-playing" style="text-align:center; font-weight:bold; font-size:1.1rem; margin-bottom:15px; min-height: 30px; color:#e8eaf6;">
+                Cliquez sur une piste
+            </div>
+            <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                <button id="btn-prev" style="background:none; border:none; font-size:20px; cursor:pointer; padding:5px;">⏮️</button>
+                <button id="btn-shuffle" style="background:none; border:none; font-size:20px; cursor:pointer; opacity:0.5; padding:5px;">🔀</button>
+                <button id="btn-loop" style="background:none; border:none; font-size:20px; cursor:pointer; opacity:0.5; padding:5px;">🔁</button>
+                <button id="btn-next" style="background:none; border:none; font-size:20px; cursor:pointer; padding:5px;">⏭️</button>
+                <button id="btn-pip" style="background:none; border:none; font-size:20px; cursor:pointer; padding:5px; display:none;" title="Vignette flottante">📺</button>
+                <button id="btn-play-selection" style="background:#4527a0; color:white; border:none; font-size:14px; cursor:pointer; opacity:0.5; padding:5px 10px; border-radius:15px;">▶️ Sélection</button>
+            </div>
+            <video id="audio-player" controls controlsList="nodownload" style="width: 100%; outline:none; max-height: 150px; background:black; border-radius:8px;"></video>
+            <ul id="playlist" style="list-style: none; padding: 0; margin-top: 15px; max-height: 350px; overflow-y: auto; border-top: 1px solid #27306b; padding-top: 10px;"></ul>
+        </div>
+        <script>
+            const tracks = TRACKS_DATA;
+            let currentTrackIndex = 0;
+            let isShuffled = false;
+            let loopMode = 0;
+            let playbackOrder = tracks.map((_, i) => i);
+            let selectedTracks = new Set();
+            const audio = document.getElementById('audio-player');
+            const nowPlaying = document.getElementById('now-playing');
+            const playlistEl = document.getElementById('playlist');
+            const btnShuffle = document.getElementById('btn-shuffle');
+            const btnLoop = document.getElementById('btn-loop');
+            const btnPlaySel = document.getElementById('btn-play-selection');
+            function renderPlaylist() {
+                playlistEl.innerHTML = '';
+                playbackOrder.forEach((origIndex) => {
+                    const li = document.createElement('li');
+                    li.style.padding = '8px';
+                    li.style.margin = '4px 0';
+                    li.style.background = origIndex === currentTrackIndex ? '#4527a0' : '#1a2150';
+                    li.style.borderRadius = '8px';
+                    li.style.cursor = 'pointer';
+                    li.style.borderLeft = origIndex === currentTrackIndex ? '5px solid #FFD700' : '5px solid transparent';
+                    li.style.color = '#e8eaf6';
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = selectedTracks.has(origIndex);
+                    checkbox.style.marginRight = '10px';
+                    checkbox.style.transform = 'scale(1.3)';
+                    checkbox.style.cursor = 'pointer';
+                    checkbox.onclick = (e) => {
+                        e.stopPropagation();
+                        if (selectedTracks.has(origIndex)) selectedTracks.delete(origIndex);
+                        else selectedTracks.add(origIndex);
+                        updateSelectionButton();
+                    };
+                    li.prepend(checkbox);
+                    const textSpan = document.createElement('span');
+                    textSpan.innerHTML = '<span style="color:#FFD700">🎵</span> ' + tracks[origIndex].title;
+                    li.appendChild(textSpan);
+                    li.onclick = () => playTrack(origIndex);
+                    playlistEl.appendChild(li);
+                });
+                updateSelectionButton();
+            }
+            function updateSelectionButton() {
+                if (selectedTracks.size > 0) {
+                    btnPlaySel.style.opacity = '1';
+                    btnPlaySel.innerText = '▶️ Lecture (' + selectedTracks.size + ')';
+                } else {
+                    btnPlaySel.style.opacity = '0.5';
+                    btnPlaySel.innerText = '▶️ Sélection';
+                }
+            }
+            function playSelection() {
+                if (selectedTracks.size === 0) return;
+                playbackOrder = Array.from(selectedTracks);
+                playTrack(playbackOrder[0]);
+            }
+            function playTrack(index) {
+                currentTrackIndex = index;
+                audio.src = tracks[index].url;
+                nowPlaying.innerText = tracks[index].title;
+                audio.play().catch(e => console.error("Erreur de lecture:", e));
+                renderPlaylist();
+            }
+            function nextTrack() {
+                let currentDisplayIndex = playbackOrder.indexOf(currentTrackIndex);
+                if (currentDisplayIndex < playbackOrder.length - 1) {
+                    playTrack(playbackOrder[currentDisplayIndex + 1]);
+                } else if (loopMode === 1) {
+                    playTrack(playbackOrder[0]);
+                }
+            }
+            function prevTrack() {
+                if (audio.currentTime > 3) {
+                    audio.currentTime = 0;
+                } else {
+                    let currentDisplayIndex = playbackOrder.indexOf(currentTrackIndex);
+                    if (currentDisplayIndex > 0) {
+                        playTrack(playbackOrder[currentDisplayIndex - 1]);
+                    } else if (loopMode === 1) {
+                        playTrack(playbackOrder[playbackOrder.length - 1]);
+                    }
+                }
+            }
+            function toggleShuffle() {
+                isShuffled = !isShuffled;
+                btnShuffle.style.opacity = isShuffled ? '1' : '0.5';
+                if (isShuffled) {
+                    for (let i = playbackOrder.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [playbackOrder[i], playbackOrder[j]] = [playbackOrder[j], playbackOrder[i]];
+                    }
+                } else {
+                    playbackOrder = tracks.map((_, i) => i);
+                }
+                renderPlaylist();
+            }
+            function toggleLoop() {
+                loopMode = (loopMode + 1) % 3;
+                if (loopMode === 0) {
+                    audio.loop = false;
+                    btnLoop.style.opacity = '0.5';
+                    btnLoop.innerText = '🔁';
+                }
+                else if (loopMode === 1) {
+                    audio.loop = false;
+                    btnLoop.style.opacity = '1';
+                    btnLoop.innerText = '🔁';
+                }
+                else {
+                    audio.loop = true;
+                    btnLoop.style.opacity = '1';
+                    btnLoop.innerText = '🔂';
+                }
+            }
+            audio.addEventListener('ended', () => {
+                if (!audio.loop) {
+                    nextTrack();
+                }
+            });
+            document.getElementById('btn-prev').addEventListener('click', prevTrack);
+            document.getElementById('btn-next').addEventListener('click', nextTrack);
+            document.getElementById('btn-shuffle').addEventListener('click', toggleShuffle);
+            document.getElementById('btn-loop').addEventListener('click', toggleLoop);
+            document.getElementById('btn-play-selection').addEventListener('click', playSelection);
+
+            // ================= v7.8.9 — LECTEUR COMPAGNON =================
+            var CLE_ETAT = 'rosaire_lecteur_etat_v1';
+            function sauverEtat(enLecture) {
+                try {
+                    var p = tracks[currentTrackIndex];
+                    if (!p) return;
+                    sessionStorage.setItem(CLE_ETAT, JSON.stringify({
+                        u: p.url, titre: p.title, t: audio.currentTime || 0,
+                        playing: !!enLecture, ts: Date.now()
+                    }));
+                } catch (e) {}
+            }
+            function majMetaMedia() {
+                if (!('mediaSession' in navigator)) return;
+                try {
+                    var p = tracks[currentTrackIndex];
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: p ? p.title : 'Lecteur Spirituel',
+                        artist: 'Équipes du Rosaire',
+                        album: 'Chapelet en musique'
+                    });
+                } catch (e) {}
+            }
+            audio.addEventListener('play', function () {
+                sauverEtat(true); majMetaMedia();
+                if ('mediaSession' in navigator) {
+                    try { navigator.mediaSession.playbackState = 'playing'; } catch (e) {}
+                }
+            });
+            audio.addEventListener('pause', function () {
+                sauverEtat(false);
+                if ('mediaSession' in navigator) {
+                    try { navigator.mediaSession.playbackState = 'paused'; } catch (e) {}
+                }
+            });
+            audio.addEventListener('timeupdate', function () { if (!audio.paused) sauverEtat(true); });
+            if ('mediaSession' in navigator) {
+                try { navigator.mediaSession.setActionHandler('play', function () { audio.play(); }); } catch (e) {}
+                try { navigator.mediaSession.setActionHandler('pause', function () { audio.pause(); }); } catch (e) {}
+                try { navigator.mediaSession.setActionHandler('previoustrack', prevTrack); } catch (e) {}
+                try { navigator.mediaSession.setActionHandler('nexttrack', nextTrack); } catch (e) {}
+            }
+            // — vignette flottante 📺 (Picture-in-Picture, si le navigateur le permet) —
+            (function () {
+                var pipOk = false;
+                try { pipOk = document.pictureInPictureEnabled && !!audio.requestPictureInPicture; } catch (e) {}
+                var pipIOS = !!(audio.webkitSupportsPresentationMode && typeof audio.webkitSetPresentationMode === 'function');
+                if (!pipOk && !pipIOS) return;
+                var b = document.getElementById('btn-pip');
+                b.style.display = 'inline-block';
+                try {
+                    audio.poster = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+                        '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180">'
+                        + '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+                        + '<stop offset="0" stop-color="#1A237E"/><stop offset="1" stop-color="#4527a0"/>'
+                        + '</linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/>'
+                        + '<text x="160" y="84" font-size="52" text-anchor="middle">🎵</text>'
+                        + '<text x="160" y="132" font-size="17" fill="#FFD700" text-anchor="middle" '
+                        + 'font-family="sans-serif" font-weight="bold">Équipes du Rosaire</text></svg>');
+                } catch (e) {}
+                b.addEventListener('click', function () {
+                    try {
+                        if (document.pictureInPictureElement) { document.exitPictureInPicture(); return; }
+                        if (pipOk) {
+                            audio.requestPictureInPicture().catch(function () { b.style.opacity = '0.35'; });
+                            return;
+                        }
+                        if (pipIOS) {
+                            audio.webkitSetPresentationMode(
+                                audio.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+                        }
+                    } catch (e) { b.style.opacity = '0.35'; }
+                });
+            })();
+            // — reprise automatique là où la musique s'était arrêtée —
+            (function () {
+                var brut = null;
+                try { brut = sessionStorage.getItem(CLE_ETAT); } catch (e) {}
+                if (!brut) return;
+                var etat = null;
+                try { etat = JSON.parse(brut); } catch (e) {}
+                if (!etat || !etat.u || Date.now() - (etat.ts || 0) > 7200000) return;
+                var idx = -1;
+                for (var i = 0; i < tracks.length; i++) { if (tracks[i].url === etat.u) { idx = i; break; } }
+                if (idx < 0) return;
+                currentTrackIndex = idx;
+                audio.src = tracks[idx].url;
+                nowPlaying.innerText = tracks[idx].title;
+                renderPlaylist();
+                var reprendreA = (etat.t && isFinite(etat.t)) ? etat.t : 0;
+                if (reprendreA > 0) {
+                    audio.addEventListener('loadedmetadata', function () {
+                        try { audio.currentTime = reprendreA; } catch (e) {}
+                    }, { once: true });
+                }
+                if (etat.playing) {
+                    audio.play().catch(function () {
+                        console.log('Reprise automatique bloquée par le navigateur : appuyez sur ▶️');
+                    });
+                }
+            })();
+            // — adaptation de la barre « Revenir » selon le mode d'ouverture —
+            // Fenêtre compagnon (PC, ouverte par window.open) : masquer le bouton
+            // « ◀️ Revenir » et afficher l'astuce ; même onglet (téléphone) : le
+            // bouton reste visible (par défaut) et ramène à l'Espace de Prière.
+            (function () {
+                try {
+                    var w = window.parent.window;
+                    // rel=noopener (ajouté par Streamlit) coupe window.opener :
+                    // on identifie la fenêtre/onglet compagnon par son NOM
+                    // « rosaire_ecoute » (posé par target=), opener en secours.
+                    var estFenetreCompagnon = (w.name === 'rosaire_ecoute') || !!w.opener;
+                    var doc = window.parent.document;
+                    var bm = doc.getElementById('btn-rv-meme');
+                    var bh = doc.getElementById('hint-rv-popup');
+                    if (bm && bh && estFenetreCompagnon) {
+                        bm.style.display = 'none';
+                        bh.style.display = 'inline-block';
+                    }
+                } catch (e) {}
+            })();
+            renderPlaylist();
+        </script>
+        """.replace("TRACKS_DATA", json.dumps(pistes).replace("</", "<\\/"))
+
+        _comp_html(player_html, height=750)
+
+    if videos_yt:
+        # v7.7 — PLAYLIST CONTINUE : les vidéos s'enchaînent seules grâce au
+        # paramètre natif « playlist » du lecteur YouTube intégré. Elle est
+        # aussi présente dans l'onglet d'écoute 🎧 (musique ET vidéos en continu).
+        st.markdown("### 🎬 Playlist continue")
+        st.caption("Appuyez ▶️ une seule fois : les vidéos s'enchaînent toutes seules. "
+                   "Le bouton ⏭️ du lecteur passe à la suivante.")
+        _ids_yt = []
+        for v in videos_yt:
+            _m = re.search(r"(?:youtu\.be/|v=|shorts/|embed/)([A-Za-z0-9_-]{6,})", str(v["url"]))
+            if _m:
+                _ids_yt.append(_m.group(1))
+        if len(_ids_yt) >= 2:
+            _src_pl = ("https://www.youtube.com/embed/" + _ids_yt[0]
+                       + "?playlist=" + ",".join(_ids_yt[1:]) + "&rel=0")
+        elif len(_ids_yt) == 1:
+            _src_pl = "https://www.youtube.com/embed/" + _ids_yt[0] + "?rel=0"
+        else:
+            _src_pl = None
+        if _src_pl:
+            st.markdown(
+                '<div style="border-radius:12px; overflow:hidden; border:1px solid #27306b; margin:0 10px 15px 10px;">'
+                '<iframe src="' + _src_pl + '" width="100%" height="360" style="border:none;" '
+                'title="Playlist" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>',
+                unsafe_allow_html=True)
+        st.markdown("### 🎬 Morceaux en vidéo")
+
+        for v in videos_yt:
+            with st.expander("🎵 " + (v["title"] or "(sans titre)")):
+                try:
+                    st.video(v["url"])
+                except Exception:
+                    st.markdown(f"🎬 [Écouter la vidéo]({v['url']})")
+
+# ====================================================================
+# v7.8.9 — MINI-BARRE COMPAGNON (musique en continu, page après page)
+# ====================================================================
+def _render_mini_lecteur(pid=None):
+    """MINI-BARRE COMPAGNON — barre flottante en bas de l'écran, présente sur
+    TOUTES les pages de l'Espace de Prière (sauf la page d'écoute 🎧 elle-même).
+    Dès qu'une musique a été lancée (page d'écoute ou mini-barre), elle se
+    REPREND automatiquement là où elle s'était arrêtée : on prie dans
+    « 📿 Rosaire chez les Équipiers », le livret ou les archives pendant que
+    le chapelet musical continue. Mémoire : sessionStorage (un onglet).
+    ⚠️ L'iframe se repositionne LUI-MÊME en position fixe dans la page
+    parente via window.frameElement (même origine).
+    Ne rend RIEN (iframe escamotée) sans lecture récente."""
+    # v7.8.16 — barre décorative : une micro-coupure vers la base (Turso,
+    # « connection closed », http error…) escamote simplement la barre au lieu
+    # de faire planter toute la page de l'Espace de Prière.
+    try:
+        pistes, _yt = _pistes_du_contexte(pid)
+    except Exception:
+        return
+    if not pistes:
+        return
+    pistes_json = json.dumps(pistes).replace("</", "<\\/")
+    mini_html = """
+<style>
+  html, body { margin:0; padding:0; overflow:hidden; background:transparent; }
+  #mini { display:none; align-items:center; gap:8px; height:54px; padding:0 10px;
+          box-sizing:border-box; font-family:sans-serif;
+          background:linear-gradient(135deg,#1A237E 0%,#4527a0 100%); }
+  #mini button { background:rgba(255,255,255,0.12); border:1px solid #FFD700; color:#FFD700;
+                 font-size:16px; border-radius:50%; width:38px; height:38px; min-width:38px;
+                 cursor:pointer; padding:0; line-height:1; }
+  #m-titre { flex:1; color:#e8eaf6; font-size:0.85rem; font-weight:bold;
+             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:left; }
+</style>
+<div id="mini">
+  <button id="m-play" title="Lecture / pause">▶️</button>
+  <div id="m-titre"></div>
+  <button id="m-next" title="Piste suivante">⏭️</button>
+  <button id="m-pip" title="Vignette flottante" style="display:none;">📺</button>
+</div>
+<audio id="m-audio" playsinline preload="none"></audio>
+<script>
+(function () {
+    var CLE = 'rosaire_lecteur_etat_v1';
+    var pistes = PISTES_DATA;
+    var audio = document.getElementById('m-audio');
+    var box = document.getElementById('mini');
+    var btnP = document.getElementById('m-play');
+    var titreEl = document.getElementById('m-titre');
+    var urlCourante = null, titreCourant = '', idxCourant = -1;
+
+    function escamoter() {
+        try {
+            var f = window.frameElement;
+            if (f) { f.style.display = 'none'; }
+            // v7.15.2 — le conteneur Streamlit de l'iframe se replie aussi
+            // (hauteur nulle + interligne mangé) : jamais de vide au-dessus
+            // de l'entête, même escamoté.
+            var p = f ? f.parentElement : null;
+            if (p) { p.style.height = '0px'; p.style.overflow = 'hidden';
+                     p.style.margin = '-16px 0'; p.style.padding = '0';
+                     p.style.background = 'transparent'; }
+        } catch (e) {}
+    }
+    function flotter() {
+        try {
+            var f = window.frameElement;
+            if (!f) return;
+            f.style.display = 'block';
+            f.style.position = 'fixed'; f.style.bottom = '12px'; f.style.left = '50%';
+            f.style.transform = 'translateX(-50%)';
+            f.style.width = 'min(360px, 94vw)'; f.style.height = '56px';
+            f.style.minHeight = '56px'; f.style.maxHeight = '56px';
+            f.style.zIndex = '999999'; f.style.border = '1px solid #FFD700';
+            f.style.borderRadius = '30px'; f.style.boxShadow = '0 8px 26px rgba(0,0,0,0.5)';
+            f.style.background = 'transparent';
+            try {
+                var p = f.parentElement;
+                if (p) { p.style.height = '0px'; p.style.overflow = 'hidden';
+                         p.style.margin = '-16px 0'; p.style.padding = '0';
+                         p.style.background = 'transparent'; }
+            } catch (e) {}
+            var doc = f.ownerDocument;
+            var bc = doc.querySelector('.block-container');
+            if (bc) bc.style.setProperty('padding-bottom', '96px', 'important');
+        } catch (e) {}
+    }
+
+    var etat = null;
+    try { etat = JSON.parse(sessionStorage.getItem(CLE) || 'null'); } catch (e) {}
+    if (!etat || !etat.u || Date.now() - (etat.ts || 0) > 7200000) { escamoter(); return; }
+
+    for (var i = 0; i < pistes.length; i++) { if (pistes[i].url === etat.u) { idxCourant = i; break; } }
+    urlCourante = etat.u;
+    titreCourant = etat.titre || (idxCourant >= 0 ? pistes[idxCourant].title : 'Musique');
+    titreEl.innerText = '🎵 ' + titreCourant;
+    audio.src = urlCourante;
+    box.style.display = 'flex';
+    flotter();
+
+    function sauver(enLecture) {
+        try {
+            sessionStorage.setItem(CLE, JSON.stringify({
+                u: urlCourante, titre: titreCourant, t: audio.currentTime || 0,
+                playing: !!enLecture, ts: Date.now()
+            }));
+        } catch (e) {}
+    }
+    function majMeta() {
+        if (!('mediaSession' in navigator)) return;
+        try {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: titreCourant, artist: 'Équipes du Rosaire', album: 'Chapelet en musique'
+            });
+        } catch (e) {}
+    }
+    function lancer() {
+        audio.play().then(function () { btnP.innerText = '⏸️'; sauver(true); majMeta(); })
+                    .catch(function () {
+                        btnP.innerText = '▶️';
+                        titreEl.innerText = '▶️ Tapez pour reprendre — ' + titreCourant;
+                    });
+    }
+    function changerPiste(p) {
+        if (!p) return;
+        urlCourante = p.url; titreCourant = p.title;
+        idxCourant = pistes.indexOf(p);
+        titreEl.innerText = '🎵 ' + titreCourant;
+        audio.src = urlCourante;
+        lancer();
+    }
+    btnP.addEventListener('click', function () {
+        if (audio.paused) { if (audio.src) lancer(); }
+        else { audio.pause(); btnP.innerText = '▶️'; sauver(false); }
+    });
+    var nxt = document.getElementById('m-next');
+    if (pistes.length > 1) {
+        nxt.addEventListener('click', function () {
+            changerPiste(pistes[(idxCourant + 1) % pistes.length]);
+        });
+    } else { nxt.style.display = 'none'; }
+    audio.addEventListener('play', function () { btnP.innerText = '⏸️'; sauver(true); majMeta(); });
+    audio.addEventListener('pause', function () { btnP.innerText = '▶️'; sauver(false); });
+    audio.addEventListener('timeupdate', function () { if (!audio.paused) sauver(true); });
+    audio.addEventListener('ended', function () {
+        if (pistes.length > 1) changerPiste(pistes[(idxCourant + 1) % pistes.length]);
+    });
+    if ('mediaSession' in navigator) {
+        try { navigator.mediaSession.setActionHandler('play', function () { lancer(); }); } catch (e) {}
+        try { navigator.mediaSession.setActionHandler('pause', function () { audio.pause(); }); } catch (e) {}
+        try { navigator.mediaSession.setActionHandler('nexttrack', function () {
+            if (pistes.length > 1) changerPiste(pistes[(idxCourant + 1) % pistes.length]);
+        }); } catch (e) {}
+    }
+    var reprendreA = (etat.t && isFinite(etat.t)) ? etat.t : 0;
+    if (reprendreA > 0) {
+        audio.addEventListener('loadedmetadata', function () {
+            try { if (Math.abs(audio.currentTime - reprendreA) > 1) audio.currentTime = reprendreA; } catch (e) {}
+        }, { once: true });
+    }
+    if (etat.playing) lancer(); else btnP.innerText = '▶️';
+
+    // — vignette flottante 📺 (si le navigateur le permet) —
+    var pipOk = false;
+    try { pipOk = document.pictureInPictureEnabled && !!audio.requestPictureInPicture; } catch (e) {}
+    var pipIOS = !!(audio.webkitSupportsPresentationMode && typeof audio.webkitSetPresentationMode === 'function');
+    if (pipOk || pipIOS) {
+        var bp = document.getElementById('m-pip');
+        bp.style.display = 'inline-block';
+        try {
+            audio.poster = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180">'
+                + '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+                + '<stop offset="0" stop-color="#1A237E"/><stop offset="1" stop-color="#4527a0"/>'
+                + '</linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/>'
+                + '<text x="160" y="84" font-size="52" text-anchor="middle">🎵</text>'
+                + '<text x="160" y="132" font-size="17" fill="#FFD700" text-anchor="middle" '
+                + 'font-family="sans-serif" font-weight="bold">Équipes du Rosaire</text></svg>');
+        } catch (e) {}
+        bp.addEventListener('click', function () {
+            try {
+                if (document.pictureInPictureElement) { document.exitPictureInPicture(); return; }
+                if (pipOk) {
+                    audio.requestPictureInPicture().catch(function () { bp.style.opacity = '0.35'; });
+                    return;
+                }
+                if (pipIOS) audio.webkitSetPresentationMode(
+                    audio.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+            } catch (e) { bp.style.opacity = '0.35'; }
+        });
+    }
+})();
+</script>
+""".replace("PISTES_DATA", pistes_json)
+    try:
+        _comp_html(mini_html, height=56)
+    except Exception:
+        pass
+
+
+def _pointage_incognito(est_membre=False, matloc=None, nom_membre=None,
+                        equipe_id=None, paroisse_id=None, jrnais=None):
+    """v7.9.3 — LE POINTAGE INCOGNITO DU BOUTON « ✕ TERMINER » : chaque
+    mystère du livre a sa fin (la page GLORIA PATRI) ; le bouton « ✕
+    Terminer » qui y figure — « utile à notre cause incognito : en cliquant
+    dessus, il est pointé » — note la dizaine SANS demander qui prie. Le
+    membre est pointé par son MatLoc (1 fois/jour), le visiteur compte un
+    passage anonyme (1 par session/jour). Une seule tentative, aucune
+    erreur affichée : le livre se ferme dans tous les cas — le pointage
+    explicite « ✅ J'ai égrené ma dizaine aujourd'hui » reste en fin de
+    livre avec ses compteurs (flamme, mois)."""
+    try:
+        if est_membre:
+            if matloc and not dizaine_deja_pointee(matloc):
+                pointer_dizaine(matloc=matloc, nom=nom_membre,
+                                equipe_id=equipe_id, paroisse_id=paroisse_id,
+                                est_membre=True)
+        elif jrnais:
+            _cle_j = "diz_pointee_visiteur_" + date.today().isoformat()
+            # v7.9.20 — le passage du visiteur est retrouvé en base : un
+            # rechargement ne compte plus deux fois, et la présence du jour
+            # redevient visible après le rechargement.
+            if not st.session_state.get(_cle_j) and not dizaine_visiteur_pointee(jrnais):
+                pointer_dizaine(jrnais=jrnais, paroisse_id=paroisse_id,
+                                est_membre=False)
+            st.session_state[_cle_j] = True
+    except Exception:
+        pass  # cause incognito : jamais de plantage pour un pointage
+
+
+def _msg_dizaine_capitale(est_membre=False, matloc=None):
+    """v7.9.4 — le remerciement qui suit la dizaine du jour : « Ta dizaine
+    est capitale pour la chaîne — Merci pour ta fidélité! — X dizaine(s)
+    ce mois — À demain! 🕊️ » (le compteur du mois est montré au membre ;
+    le visiteur, lui, prie en toute simplicité)."""
+    _txt = "📿 Ta dizaine est capitale pour la chaîne — Merci pour ta fidélité!"
+    if est_membre and matloc:
+        try:
+            _mois, _fl = compteur_dizaines_mois(matloc)
+            _txt += " — " + str(_mois) + " dizaine(s) ce mois"
+        except Exception:
+            pass
+    return _txt + " — À demain! 🕊️"
+
+
+# --- v7.10.0 — LA RÉCUPÉRATION DES DIZAINES PRIÉES HORS LIGNE --------------
+# L'application de méditation du quotidien vit SANS internet : quand son
+# fidèle la quitte, elle lui prépare un petit fichier de ses journées
+# priées. Le livre « 🕯️ Un jour, une dizaine » le reçoit ici, à la même
+# place que « ✕ Terminer » — et chaque journée retrouvée rejoint la
+# chaîne, une seule fois, sans jamais recompter ce qui était déjà là.
+_MOIS_FR_HL = {"janvier": 1, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5,
+               "juin": 6, "juillet": 7, "aout": 8, "septembre": 9,
+               "octobre": 10, "novembre": 11, "decembre": 12}
+
+
+def _jour_valide_hl(_a, _m, _j):
+    try:
+        return date(int(_a), int(_m), int(_j)).isoformat()
+    except (ValueError, TypeError):
+        return None
+
+
+def _jours_dans_texte_hl(_t):
+    """Tire les journées (ISO) d'un texte : 2026-10-28 · 28/10/2026 ·
+    28-10-2026 · « 28 octobre 2026 ». Rien qui ressemble à demain."""
+    _t = unicodedata.normalize("NFKD", _t)
+    _t = "".join(ch for ch in _t if not unicodedata.combining(ch))
+    _trouvees = set()
+    # ISO d'abord (2026-10-28, avec ou sans heure)
+    for _m in re.finditer(r"\b(20[2-4]\d)-(\d{1,2})-(\d{1,2})\b", _t):
+        _j = _jour_valide_hl(_m.group(1), _m.group(2), _m.group(3))
+        if _j:
+            _trouvees.add(_j)
+    # JJ/MM/AAAA (ou JJ-MM-AAAA, JJ.MM.AAAA) — jour d'abord ; si le 2ᵉ
+    # nombre dépasse 12, les deux étaient inversés
+    for _m in re.finditer(r"\b(\d{1,2})[/.\-](\d{1,2})[/.\-](20[2-4]\d)\b", _t):
+        _j1, _j2 = int(_m.group(1)), int(_m.group(2))
+        if _j2 > 12 and _j1 <= 12:
+            _j1, _j2 = _j2, _j1
+        _j = _jour_valide_hl(_m.group(3), _j2, _j1)
+        if _j:
+            _trouvees.add(_j)
+    # « 28 octobre 2026 » (et 1er mai 2026)
+    for _m in re.finditer(r"\b(\d{1,2})(?:er)?\s+([a-zûé]+)\s+(20[2-4]\d)\b",
+                          _t, re.IGNORECASE):
+        _mois = _MOIS_FR_HL.get(_m.group(2).lower())
+        _j = _jour_valide_hl(_m.group(3), _mois, _m.group(1)) if _mois else None
+        if _j:
+            _trouvees.add(_j)
+    return _trouvees
+
+
+def _lire_jours_dans_fichier(brut):
+    """Le fichier de l'application hors ligne → liste de journées ISO,
+    triées, sans doublon. JSON (liste de dates ou d'objets avec un champ
+    date/jour) comme texte simple (une journée par ligne, séparateurs
+    ; , ou tabulation). Tolérant : seules les vraies journées entrent."""
+    if not brut:
+        return []
+    try:
+        _t = brut.decode("utf-8", errors="ignore")
+    except Exception:
+        return []
+    if not _t.strip():
+        return []
+    _extraits = []
+    try:
+        _j = json.loads(_t)
+        if isinstance(_j, dict):
+            _liste = None
+            for _k, _v in _j.items():
+                if isinstance(_v, list):
+                    _kl = _k.lower()
+                    if _liste is None or any(x in _kl for x in (
+                            "date", "jour", "dizaine", "medit", "priere",
+                            "histo", "liste", "data")):
+                        _liste = _v
+                        if any(x in _kl for x in ("date", "jour", "dizaine")):
+                            break
+            _j = _liste or []
+        if isinstance(_j, list):
+            for _el in _j:
+                if isinstance(_el, str):
+                    _extraits.append(_el)
+                elif isinstance(_el, dict):
+                    _v = None
+                    for _k in ("date", "jour", "date_priere", "le", "when",
+                               "day", "date_meditation", "timestamp"):
+                        if _k in _el and _el.get(_k):
+                            _v = str(_el[_k])
+                            break
+                    if _v:
+                        _extraits.append(_v)
+    except Exception:
+        _extraits = _t.splitlines()
+    _jours = set()
+    for _el in _extraits:
+        _jours |= _jours_dans_texte_hl(str(_el))
+    _auj = date.today().isoformat()
+    return sorted(j for j in _jours if j <= _auj)
+
+
+_RECUP_HORS_LIGNE_ACTIVEE = True   # v7.13.12 — la porte rouvre (le mot du fidèle)
+
+
+def _recuperer_dizaines_hors_ligne(est_membre=False, matloc=None,
+                                   nom_membre=None, equipe_id=None,
+                                   paroisse_id=None, jrnais=None):
+    """📥 La porte de la récupération — ouverte en fin de livre, à côté du
+    pointage du jour, pour le membre comme pour le visiteur. La
+    récupération ne recompte jamais une journée déjà dans la chaîne.
+    v7.13.0 — l'expander passe en VEILLEUSE pour l'instant (demande) :
+    repasser _RECUP_HORS_LIGNE_ACTIVEE à True pour le rouvrir."""
+    if not _RECUP_HORS_LIGNE_ACTIVEE:
+        return
+    with st.expander("📿 Tu as prié hors ligne ? Remets tes journées dans la chaîne"):
+        st.caption("Choisis le fichier que ton application de méditation t'a "
+                   "préparé (bouton Partager / Exporter). Chaque journée "
+                   "retrouvée rejoint ta chaîne — une seule fois, même si tu "
+                   "repasses le même fichier.")
+        _fichier = st.file_uploader("Fichier de ton application",
+                                    type=None,
+                                    key="pdr_hl_fichier")
+        if _fichier is None:
+            return
+        _jours = _lire_jours_dans_fichier(_fichier.getvalue())
+        if not _jours:
+            st.warning("Aucune journée reconnaissable dans ce fichier — "
+                       "vérifie qu'il vient bien de ton application de "
+                       "méditation, ou demande le fichier d'un autre jour.")
+            return
+        _derniers = ", ".join(_jours[-10:])
+        st.info("🕯️ **" + str(len(_jours)) + "** journée(s) priée(s) retrouvée(s)"
+                + (" — les dernières : " + _derniers if len(_jours) <= 10
+                   else " — les 10 dernières : " + _derniers))
+        if st.button("✅ Les remettre dans ma chaîne", key="pdr_hl_ok",
+                     type="primary", width="stretch"):
+            _aj, _dj, _ig = importer_dizaines_hors_ligne(
+                matloc=matloc, nom=nom_membre, jrnais=jrnais,
+                equipe_id=equipe_id, paroisse_id=paroisse_id,
+                est_membre=est_membre, jours=_jours)
+            _msgs = []
+            if _aj:
+                _msgs.append("📿 " + str(_aj) + " journée(s) rejointe(s) ta "
+                             "chaîne de prière — Merci Sainte Mère pour ta "
+                             "fidélité ! 🕊️")
+            if _dj:
+                _msgs.append("🌿 " + str(_dj) + " journée(s) y figuraient "
+                             "déjà — rien n'a été recompté.")
+            if _ig:
+                _msgs.append("🧹 " + str(_ig) + " ligne(s) laissée(s) de côté "
+                             "(dates à venir ou non reconnues).")
+            if _aj:
+                st.success("  ".join(_msgs))
+            else:
+                st.info(" ".join(_msgs) or "Rien à ajouter pour le moment.")
+
+
+def _rendre_page_pointage(est_membre=False, matloc=None, nom_membre=None,
+                          equipe_id=None, paroisse_id=None, jrnais=None,
+                          idx_merci=None):
+    """v7.13.1 — LA DERNIÈRE PAGE DE CONTENU DU LIVRE, au mot près de la
+    demande (sous le parchemin jaune du Gloria) :
+    « 📿 La chaîne compte sur Toi » seulement — la présence du jour et la
+    gratitude envers La Vierge Marie pour l'écoute, avec le bouton
+    « ✅ Merci Sainte Mère pour ton aide de ce jour ! ». Le clic (comme
+    « ✕ Terminer ») ouvre la NOUVELLE dernière page, celle du remerciement.
+    (Héritière du pointage v7.9.2/7.9.4 : membre pointé par MatLoc, visiteur
+    en passant discret, jamais deux fois par jour.)"""
+    st.markdown('<div style="margin:14px 6px 0 6px; background:linear-gradient(135deg,#E8EAF6 0%,#F3E5F5 100%);'
+                ' border:1px solid #C5CAE9; border-radius:12px; padding:14px 16px;">'
+                '<div style="color:#1A237E; font-weight:bold; font-size:1rem;">📿 La chaîne compte sur Toi</div>'
+                '<div style="color:#3949AB; font-size:0.88rem; margin-top:4px;">'
+                'Marque ta présence du jour et ta gratitude envers La Vierge Marie '
+                'pour l\'écoute</div></div>',
+                unsafe_allow_html=True)
+    if est_membre:
+        if dizaine_deja_pointee(matloc):
+            st.info("✅ Ta présence du jour est déjà marquée — À demain! 🕊️")
+            if st.button("✕ Terminer", key="diz_pointage_m_fermer",
+                         width="stretch"):
+                st.session_state["flash_success"] = "📿 À demain! 🕊️"
+                st.session_state["diz_ouvert"] = False
+                st.session_state["diz_page"] = 0
+                st.rerun()
+        else:
+            # v7.13.3 — LE BOUTON EST UN VRAI BOUTON : la consigne dit ce
+            # qu'il fait — marquer la présence du jour et ouvrir la page
+            # du remerciement. Fini la double perception.
+            st.markdown('<div style="text-align:center; color:#e8eaf6;'
+                        ' font-size:0.85rem; margin:0 4px 6px 4px;">'
+                        '👆 Touche ce bouton pour marquer ta présence du'
+                        ' jour — la page du remerciement s\u2019ouvrira'
+                        ' ensuite.</div>', unsafe_allow_html=True)
+            if st.button("✅ Merci Sainte Mère de Dieu pour ton aide de ce jour !",
+                         key="diz_pointage_m", width="stretch", type="primary"):
+                _st, _msg = pointer_dizaine(matloc=matloc, nom=nom_membre,
+                                            equipe_id=equipe_id, paroisse_id=paroisse_id,
+                                            est_membre=True)
+                if _st == "ok" and idx_merci is not None:
+                    st.session_state["diz_page"] = idx_merci
+                    st.rerun()
+                st.warning(_msg)
+    else:
+        _cle_j = "diz_pointee_visiteur_" + date.today().isoformat()
+        # v7.9.20 — la présence du visiteur est retrouvée en base (par son
+        # jour de naissance) : après un rechargement, le remerciement
+        # revient au lieu de re-proposer le bouton (et de compter deux fois).
+        _deja_v = bool(st.session_state.get(_cle_j))
+        if not _deja_v and jrnais:
+            _deja_v = bool(dizaine_visiteur_pointee(jrnais))
+        if _deja_v:
+            st.info("✅ Ta présence du jour est déjà marquée — À demain! 🕊️")
+            if st.button("✕ Terminer", key="diz_pointage_v_fermer",
+                         width="stretch"):
+                st.session_state["flash_success"] = "📿 À demain! 🕊️"
+                st.session_state["diz_ouvert"] = False
+                st.session_state["diz_page"] = 0
+                st.rerun()
+        else:
+            st.markdown('<div style="text-align:center; color:#e8eaf6;'
+                        ' font-size:0.85rem; margin:0 4px 6px 4px;">'
+                        '👆 Touche ce bouton pour marquer ta présence du'
+                        ' jour — la page du remerciement s\u2019ouvrira'
+                        ' ensuite.</div>', unsafe_allow_html=True)
+            if st.button("✅ Merci Sainte Mère de Dieu pour ton aide de ce jour !",
+                         key="diz_pointage_v", width="stretch", type="primary"):
+                _st, _msg = pointer_dizaine(jrnais=jrnais, paroisse_id=paroisse_id,
+                                            est_membre=False)
+                if _st != "erreur":
+                    st.session_state[_cle_j] = True
+                    if idx_merci is not None:
+                        st.session_state["diz_page"] = idx_merci
+                    st.rerun()
+                st.warning(_msg)
+
+    # v7.13.12 — la porte de la récupération rouvre (le mot demandé) :
+    # ICI, à côté du pointage du jour, comme à la v7.13.0 — le fichier de
+    # fidélité de MA DIZAINE rejoint la chaîne, chaque journée une seule
+    # fois, jamais recomptée.
+    _recuperer_dizaines_hors_ligne(est_membre=est_membre, matloc=matloc,
+                                   nom_membre=nom_membre, equipe_id=equipe_id,
+                                   paroisse_id=paroisse_id, jrnais=jrnais)
+
+
+def _rendre_page_merci(est_membre=False, matloc=None):
+    """v7.13.0 — LA NOUVELLE DERNIÈRE PAGE DU LIVRE : elle s'affiche quand
+    le bouton « ✅ Merci Sainte Mère pour ton aide de ce jour ! » a été
+    touché (comme « ✕ Terminer »). Elle porte tout ce qui suit :
+    « 📿 Ta dizaine est capitale pour la chaîne — Merci pour ta fidélité! —
+    N dizaine(s) ce mois — À demain! 🕊️ » — sauf les textes de la prière ;
+    l'expander de la récupération passe en veilleuse pour l'instant."""
+    _msg = _msg_dizaine_capitale(est_membre=est_membre, matloc=matloc)
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+        ' border:2px solid #FFD700; border-radius:15px; padding:30px 20px;'
+        ' text-align:center; margin:14px 6px;">'
+        '<div style="font-size:2.4rem; line-height:1;">📿</div>'
+        '<div style="color:#FFD700; font-size:1.12rem; font-weight:bold;'
+        ' margin-top:12px; line-height:1.65;">' + html.escape(_msg) + '</div>'
+        '</div>',
+        unsafe_allow_html=True)
+
+
+def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=None,
+                            nom_membre=None, equipe_id=None, paroisse_id=None):
+    """La dizaine du jour — UNIQUEMENT sur l'Accueil. Livre = page autonome."""
+    # v7.9.6 — « J'ai honoré mon engagement de ce jour » REFERME LA CARTE
+    # ENTIÈRE, comme « 📌 Marquer comme lue » referme la sienne : bannière
+    # « 📿 Ta dizaine du jour », bouton « 📿 Égrener la dizaine » et le
+    # bouton lui-même s'effacent jusqu'à demain. Le livre déjà ouvert
+    # reste prioritaire (on ne ferme pas une lecture en cours).
+    # v7.9.17 — le masquage SURVIT AU RECHARGEMENT : le clic pose aussi un
+    # cookie d'un jour dans le navigateur (« engagement honoré aujourd'hui »)
+    # — la session seule est vidée à chaque F5/actualisation. La pose se fait
+    # ICI, à chaque passage tant que la session le porte (idempotent) ; le
+    # cookie est lu avant tout affichage. Si le navigateur refuse les
+    # cookies, le comportement redevient celui d'avant (carte revenue au
+    # rechargement) : aucun blocage, aucun message.
+    # v7.9.20 — la mémoire tient DÉSORMAIS EN BASE (clé du lecteur) : elle
+    # survit au rechargement même quand le navigateur refuse les cookies
+    # (consultation depuis une page extérieure) — même tenue, même promesse.
+    _jour_eng = date.today().isoformat()
+    _cle_lecteur = _cle_lecteur_pdr()
+    _eng_session = bool(st.session_state.get("engagement_honore_" + _jour_eng))
+    if _eng_session:
+        _poser_cookie_pdr("pdr_engagement", _jour_eng)
+        marquer_carte_vue(_cle_lecteur, "dizaine_engagement")
+    if (not st.session_state.get("diz_ouvert")
+            and (_eng_session or _lire_cookie_pdr("pdr_engagement") == _jour_eng
+                 or carte_deja_vue(_cle_lecteur, "dizaine_engagement"))):
+        return
+
+    st.markdown("---")
+
+    st.session_state.pop("nettoyage_diz", None)
+    st.session_state.pop("diz_saisie", None)
+
+    num = None
+    if est_membre:
+        try:
+            num = int(numero_meditation) if numero_meditation else None
+        except (ValueError, TypeError):
+            num = None
+        if not num or not (1 <= num <= 20):
+            st.info("📿 Votre numéro de méditation (1-20) n’est pas encore renseigné. "
+                    "Demandez-le à votre responsable d’équipe pour recevoir votre dizaine du jour.")
+            return
+    else:
+        if st.session_state.get("diz_ouvert"):
+            jrnais = st.session_state.get("diz_jrnais", 0)
+            if not jrnais:
+                st.session_state["diz_ouvert"] = False
+                return
+            num = jrnais - 20 if jrnais > 20 else jrnais
+        else:
+            st.markdown('<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+                        ' padding:16px; border-radius:15px; text-align:center; margin:0 10px 6px 10px;'
+                        ' border:2px solid #FFD700;">'
+                        '<div class="dpl-titre-g" style="font-size:clamp(1.05rem, 4.5vw, 1.2rem);">'
+                        '🕯️ Un jour, une dizaine</div>'
+                        '<div style="color:#ffffff; font-size:0.85rem; margin-top:4px;">'
+                        'Entrez dans la zone en blanc ci-bas votre jour de naissance (1 - 31), Cliquez ✅, puis sur  "📿 Égrener la dizaine"  et rejoignez la chaîne de prière universelle</div></div>',
+                        unsafe_allow_html=True)
+
+            _, c_saisie, c_btn, _ = st.columns([0.07, 4.5, 1.2, 0.07],
+                                               gap="small", vertical_alignment="bottom")
+            with c_saisie:
+                saisie = st.number_input("Jour de naissance",
+                                         min_value=1, max_value=31, value=None, step=1,
+                                         label_visibility="collapsed", key="diz_jour")
+            with c_btn:
+                if st.button("✅", key="diz_valider", width="stretch", type="primary",
+                             help="Valider votre jour de naissance"):
+                    if saisie is not None and 1 <= int(saisie) <= 31:
+                        st.session_state["diz_jrnais"] = int(saisie)
+                        st.session_state.pop("diz_erreur", None)
+                    else:
+                        st.session_state["diz_erreur"] = "Entrez d'abord votre jour de naissance (chiffre entre 1 et 31)."
+            if st.session_state.get("diz_erreur"):
+                st.warning(st.session_state.pop("diz_erreur"))
+
+            if "diz_jrnais" not in st.session_state:
+                return
+            jrnais = st.session_state["diz_jrnais"]
+            # v7.12.0 — le jour de naissance dévoilé alimente l'abonnement
+            # push de CE téléphone : les rondes sauront s'il a déjà prié.
+            try:
+                push_abonnement_note_jrnais(_cle_lecteur_pdr(), jrnais)
+            except Exception:
+                pass
+            num = jrnais - 20 if jrnais > 20 else jrnais
+
+    mysteres_jour = get_mysteres_du_jour(num)
+    if not mysteres_jour:
+        return
+
+    # v7.9.0/7.9.1 — l'intention du prochain (chaîne de prière universelle) est
+    # tirée UNE fois pour tout le livre ; pour le visiteur, son jour de
+    # naissance écarte ses PROPRES intentions du tirage (personne ne prie
+    # la sienne) et son N° méd. désigne l'intention de SON prochain, stable
+    # sur la fenêtre de 20 jours. v7.10.1 — RÈGLE D'OR POUR LE MEMBRE AUSSI :
+    # sa fiche (jour de naissance ET nom) écarte ses propres intentions du
+    # tirage comme du surplus — une intention notée à son nom dans la
+    # chaîne de séance ne lui revient plus. La ligne suit le modèle
+    # « intercède pour {qui} : … ».
+    _chaine = _ligne_chaine(
+        st.session_state.get("diz_jrnais") if not est_membre else None,
+        matloc=matloc if est_membre else None)
+
+    if st.session_state.get("diz_num") != num:
+        st.session_state["diz_num"] = num
+        st.session_state["diz_ouvert"] = False
+        st.session_state["diz_page"] = 0
+
+    # ---------- COUVERTURE ----------
+    if not st.session_state.get("diz_ouvert"):
+        pastilles = "".join(
+            f'<div style="width:52px; height:52px; border-radius:50%; background:#FFD700;'
+            f' color:#1A237E; font-weight:bold; font-size:1.2rem; display:flex;'
+            f' align-items:center; justify-content:center;">{m["id"]:02d}</div>'
+            for m in mysteres_jour)
+        titres = " • ".join((m.get("titre") or "").title() for m in mysteres_jour)
+        _bann_chaine = (
+            '<div style="display:inline-block; margin-top:12px; background:rgba(255,215,0,0.14);'
+            ' border:1px solid #FFD700; border-radius:20px; padding:5px 16px; max-width:94%;'
+            ' color:#FFD000; font-size:0.8rem; line-height:1.6;">🕯️ Au cœur de votre dizaine :'
+            ' l\u2019intention du prochain, à porter pendant 20 jours (20 mystères)'
+            ' — LA CHAÎNE DE PRIÈRE UNIVERSELLE</div>')
+        st.markdown(
+            f'<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+            f' padding:24px; border-radius:15px; text-align:center; margin:10px;'
+            f' border:2px solid #FFD700;">'
+            f'<div style="color:#FFD700; font-size:1.3rem; font-weight:bold;">📿 Ta dizaine du jour</div>'
+            f'<div style="display:flex; justify-content:center; gap:10px; margin:18px 0;">{pastilles}</div>'
+            f'<div style="color:#ffffff; font-size:1rem;">{html.escape(titres)}</div>'
+            f'{_bann_chaine}'
+            f'<div style="color:#9fa6d8; font-size:0.85rem; margin-top:8px;">'
+            f'N° méd. {num} — {date.today().strftime("%d/%m/%Y")} · {_VERSION_APPLI}</div>'
+            f'</div>', unsafe_allow_html=True)
+        _scroll_top("cov")
+        if st.button("📿 Égrener la dizaine", key="diz_commencer", width="stretch", type="primary"):
+            st.session_state["diz_ouvert"] = True
+            st.session_state["diz_page"] = 0
+            st.session_state.pop("flt_ouvert", None)  # v7.8 : un seul livre ouvert à la fois
+            st.rerun()
+        # v7.9.4 — AU RETOUR DE LA MÉDITATION : « J'ai honoré mon engagement
+        # de ce jour » s'affiche juste après « 📿 Égrener la dizaine ».
+        # v7.9.6 — un clic REFERME LA CARTE ENTIÈRE (bannière + « 📿 Égrener
+        # la dizaine » + le bouton) jusqu'à demain, exactement comme
+        # « 📌 Marquer comme lue » — la garde en tête de fonction s'en charge
+        # au rendu suivant (aucun commentaire affiché).
+        # v7.9.20 — le bouton REVIENT AUSSI APRÈS UN RECHARGEMENT pour le
+        # visiteur : sa présence du jour est retrouvée en base (par son jour
+        # de naissance), au lieu de vivre dans la seule session — et un
+        # passage ne compte plus deux fois.
+        _cle_eng = "engagement_honore_" + date.today().isoformat()
+        if not st.session_state.get(_cle_eng):
+            _fait_auj = False
+            if est_membre:
+                _fait_auj = bool(dizaine_deja_pointee(matloc))
+            else:
+                _fait_auj = bool(st.session_state.get(
+                    "diz_pointee_visiteur_" + date.today().isoformat()))
+                if not _fait_auj and st.session_state.get("diz_jrnais"):
+                    _fait_auj = bool(dizaine_visiteur_pointee(
+                        st.session_state.get("diz_jrnais")))
+            if _fait_auj:
+                if st.button("J'ai honoré mon engagement de ce jour",
+                             key="diz_engagement", width="stretch"):
+                    st.session_state[_cle_eng] = True
+                    marquer_carte_vue(_cle_lecteur, "dizaine_engagement")
+                    st.rerun()
+        return
+
+    # ---------- LE LIVRE ----------
+    pages = []
+    for m in mysteres_jour:
+        if m["id"] == 1:
+            pages.append({"t": "intro1"})
+            pages.append({"t": "intro2"})
+            pages.append({"t": "intro3"})
+        pages.append({"t": "contenu", "m": m})
+        pages.append({"t": "intentions", "m": m})
+        pages.append({"t": "notrepere", "m": m})
+        for g in range(1, 11):
+            pages.append({"t": "grain", "m": m, "g": g})
+        pages.append({"t": "gloria", "m": m})
+        if m["id"] == 20:
+            pages.append({"t": "outro"})
+    # v7.13.1 — LA DERNIÈRE PAGE AJOUTÉE : le remerciement. Le pointage,
+    # lui, vit désormais SUR la dernière page de contenu — le parchemin
+    # jaune du Gloria (ou de la Salve Regina le jour du N° 20) — juste
+    # sous « 📿 La chaîne compte sur Toi ».
+    pages.append({"t": "merci"})
+
+    if "diz_page" not in st.session_state or st.session_state["diz_page"] >= len(pages):
+        st.session_state["diz_page"] = 0
+    idx = st.session_state["diz_page"]
+    page = pages[idx]
+
+    m = page.get("m")
+    couleur = COULEURS_TYPES.get((m.get("type") or "").lower(), "#9E9E9E") if m else "#1A237E"
+
+    if page["t"] in ("intro1", "intro2", "intro3"):
+        texte = {"intro1": DIZ_INTRO1, "intro2": DIZ_INTRO2, "intro3": DIZ_INTRO3}[page["t"]]
+        if "[R]" in texte:
+            html_page = _rendre_intro_eyquem("INTRODUCTION")
+        else:
+            html_page = (
+                f'<div style="background:#FFF9C4; border-radius:12px; padding:18px; margin:6px;">'
+                f'<div style="color:#1A237E; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">INTRODUCTION</div>'
+                f'{_diz_txt(texte, "#1a1a1a")}</div>')
+
+    elif page["t"] == "outro":
+        html_page = (
+            f'<div style="background:#FFF9C4; border-radius:12px; padding:18px; margin:6px;">'
+            f'<div style="color:#1A237E; font-weight:bold; font-size:1.05rem; border-bottom:2px solid #1A237E; padding-bottom:6px; margin-bottom:10px;">FIN DU ROSAIRE</div>'
+            f'{_diz_txt(DIZ_OUTRO, "#1a1a1a")}</div>')
+
+    elif page["t"] == "merci":
+        html_page = ""  # v7.13.1 — rendu interactif juste après la page
+
+    else:
+        tete = (
+            f'<div style="background:{couleur}; border-radius:12px 12px 0 0; padding:12px 16px; margin:6px 6px 0 6px;">'
+            f'<div style="color:#ffffff; font-weight:bold; font-size:1.05rem;">{m.get("id", "?")} — {html.escape(m.get("titre") or "")}</div>'
+            f'<div style="color:#ffffff; font-size:0.85rem;">📖 {html.escape(m.get("reference") or "")}</div></div>'
+            f'<div style="background:#FFF9C4; border-radius:0 0 12px 12px; padding:18px; margin:0 6px 6px 6px;">')
+
+        if page["t"] == "contenu":
+            corps = (_diz_txt("PASSAGE", couleur, "1rem", gras=True)
+                     + _diz_txt(m.get("passage") or "", "#1a1a1a")
+                     + _diz_txt("MÉDITATION", couleur, "1rem", gras=True)
+                     + _diz_txt(m.get("meditation") or "", "#1a1a1a"))
+            t_actif = get_theme_actif()
+            if t_actif:
+                lien_txt = get_lien_mystere(t_actif[2], m.get("id", 0))
+                if lien_txt:
+                    corps += ('<div class="cp-accent" style="--c:' + couleur + ';">🔗 Lien thématique — '
+                              + html.escape(t_actif[0] or "") + "</div>"
+                              '<div class="cp-para">' + html.escape(lien_txt).replace("\n", "<br>") + "</div>")
+
+        elif page["t"] == "intentions":
+            intentions_html = ""
+            for ligne in (m.get("intentions") or "").split("\n"):
+                l = ligne.strip().lstrip("*").strip()
+                if not l:
+                    continue
+                # v7.9.0/7.9.1 — la ligne « Intention du prochain dans la chaine de
+                # prière » devient DYNAMIQUE au modèle demandé (intercède pour
+                # {Prénom Nom} / cet anonyme), mise en gras pour se distinguer
+                # des intentions fixes.
+                if _est_intention_chaine(l):
+                    intentions_html += _diz_txt(_chaine, "#1a1a1a", gras=True)
+                else:
+                    intentions_html += _diz_txt("🕯️ Vierge Marie, mère de Dieu, intercède : " + l, "#1a1a1a")
+            fruits_html = "".join(
+                _diz_txt("✨ " + ligne.strip(), "#1a1a1a")
+                for ligne in (m.get("fruits") or "").split("\n") if ligne.strip())
+            corps = (_diz_txt("INTENTIONS", couleur, "1rem", gras=True)
+                     + intentions_html
+                     + _diz_txt("FRUITS DU MYSTÈRE", couleur, "1rem", gras=True)
+                     + fruits_html)
+
+        elif page["t"] == "notrepere":
+            corps = (_diz_txt("NOTRE PÈRE", couleur, "1rem", gras=True)
+                     + _diz_txt("Notre Père, qui es aux cieux,\nque ton nom soit sanctifié,\nque ton règne vienne,\nque ta volonté soit faite\nsur la terre comme au ciel.\n\nDonne-nous aujourd’hui notre pain de ce jour. Pardonne-nous nos offenses, comme nous pardonnons aussi à ceux qui nous ont offensés. Et ne nous laisse pas entrer en tentation, mais délivre-nous du Mal. Amen!", "#1a1a1a"))
+
+        elif page["t"] == "grain":
+            g = page["g"]
+            _cla = m.get("clausules") or []
+            clausule = _cla[g - 1] if g <= len(_cla) else ""
+            clausule = "" if clausule is None else str(clausule)
+            carrés = "".join(
+                f'<div style="width:22px; height:22px; border-radius:4px; display:flex; align-items:center;'
+                f' justify-content:center; font-size:0.7rem; font-weight:bold;'
+                f' background:{"#1A237E" if i <= g else "#cccccc"}; color:{"#ffffff" if i == g else "#888888"};">{i}</div>'
+                for i in range(1, 11))
+            corps = (
+                f'<div style="display:flex; gap:5px; margin:6px 0;">{carrés}</div>'
+                + _diz_txt("Je vous salue Marie, pleine de grâce,\nle Seigneur est avec vous.\nVous êtes bénie entre toutes les femmes,", "#1a1a1a")
+                + _diz_txt("et Jésus, " + clausule, couleur, "1.1rem", gras=True)
+                + _diz_txt("le fruit de vos entrailles, est béni.", "#1a1a1a")
+                + _diz_txt("Sainte Marie, Mère de Dieu,\npriez pour nous pauvres pécheurs,\nmaintenant et à l’heure de notre mort.\nAmen!", "#1a1a1a"))
+
+        else:  # gloria
+            corps = (_diz_txt("GLORIA PATRI", couleur, "1rem", gras=True)
+                     + _diz_txt("Gloria patri, et Filio, et Spiritui Sancto.\nSicut erat in principio, et nunc, et semper, et in saecula saeculorum. Amen!\n\nÔ mon Jésus, pardonne-nous nos péchés; préserve-nous du feu de l’Enfer, attire au Ciel toutes les âmes, principalement celles qui ont le plus besoin de ta miséricorde. Amen!\n\nNotre Dame du très Saint Rosaire!\nPriez pour nous!", "#1a1a1a"))
+
+        html_page = tete + corps + '</div>'
+
+    if page["t"] == "merci":
+        # v7.13.1 — la page du remerciement (interactive — pas de feuilletage).
+        _rendre_page_merci(est_membre=est_membre, matloc=matloc)
+    else:
+        # v7.13.16 — LE LIVRE DE LA DIZAINE SE FEUILLETTE : chaque page entre
+        # par la DROITE et se pose vers la GAUCHE, exactement le geste du
+        # téléphone et celui du livret du feuillet (v7.13.15). Ici on ne
+        # recule jamais — chaque tour est un tour en avant ; la clé porte la
+        # page (mécanique « nonce ») : l'animation rejoue à chaque tour, et
+        # seulement à chaque tour.
+        _style_feuil, _classe_feuil = _feuillement_livret("diz" + str(idx), "avant")
+        st.markdown(_style_feuil, unsafe_allow_html=True)
+        st.markdown('<div class="' + _classe_feuil + '">' + html_page + '</div>',
+                    unsafe_allow_html=True)
+    _scroll_top(f"p{idx}")
+
+    # v7.13.1 — LE POINTAGE SUR LE PARCHEMIN JAUNE : la DERNIÈRE page de
+    # contenu porte elle-même « 📿 La chaîne compte sur Toi » et le bouton
+    # « ✅ Merci Sainte Mère de Dieu pour ton aide de ce jour ! » — sans
+    # Suivant, sans ✕ Terminer, sans expander (en veilleuse). Le clic
+    # ouvre la page du remerciement.
+    if page["t"] != "merci" and idx == len(pages) - 2:
+        _rendre_page_pointage(est_membre=est_membre, matloc=matloc,
+                              nom_membre=nom_membre, equipe_id=equipe_id,
+                              paroisse_id=paroisse_id,
+                              jrnais=st.session_state.get("diz_jrnais"),
+                              idx_merci=idx + 1)
+
+    # --- Navigation : ON NE RECULE PAS quand on égrène une dizaine ☺️ ---
+    # v7.9.3 — CHAQUE MYSTÈRE A SA FIN (la page GLORIA PATRI, « dernière
+    # page » du mystère) : un bouton « ✕ Terminer » y figure désormais À
+    # CÔTÉ de « Suivant ▶ ». Le cliquer note la dizaine en toute discrétion
+    # (cause incognito — « en cliquant dessus, il est pointé ») et referme
+    # le livre : celui qui s'arrête après un seul mystère est compté aussi.
+    if page["t"] == "merci":
+        # v7.13.1 — « ✕ Terminer » referme le livre et ramène au fil de
+        # l'actualité.
+        if st.button("✕ Terminer", key=f"diz_end_{idx}", width="stretch",
+                     type="primary"):
+            st.session_state["flash_success"] = "📿 À demain! 🕊️"
+            st.session_state["diz_ouvert"] = False
+            st.session_state["diz_page"] = 0
+            st.rerun()
+    elif idx < len(pages) - 2:
+        # v7.13.1 — PAS de bouton sur la dernière page de contenu (elle
+        # porte le pointage) ni sur la page du merci : seul le bouton ✅
+        # (puis « ✕ Terminer ») commande la suite.
+        c_av, c_term = st.columns(2)
+        with c_av:
+            if st.button("Suivant ▶", key=f"diz_next_{idx}", width="stretch",
+                         type="primary"):
+                st.session_state["diz_page"] = idx + 1
+                st.rerun()
+        with c_term:
+            if page["t"] == "gloria" and idx < len(pages) - 2:
+                if st.button("✕ Terminer", key=f"diz_fin_{idx}", width="stretch"):
+                    _pointage_incognito(est_membre=est_membre, matloc=matloc,
+                                        nom_membre=nom_membre, equipe_id=equipe_id,
+                                        paroisse_id=paroisse_id,
+                                        jrnais=st.session_state.get("diz_jrnais"))
+                    # v7.9.6 — discrétion identique à la sortie de fin de livre.
+                    st.session_state["flash_success"] = "📿 À demain! 🕊️"
+                    st.session_state["diz_ouvert"] = False
+                    st.session_state["diz_page"] = 0
+                    st.rerun()
+
+
+def _render_pdf_inline(url_pdf):
+    """PDF — v7.6.6 : l'iframe embarque directement le VISUALISEUR GOOGLE.
+    Pourquoi : GitHub Raw (comme certains CDN) envoie des en-têtes qui
+    INTERDISENT l'affichage dans une iframe ; le lecteur Google les contourne,
+    fiable sur tous les navigateurs. Sous le cadre : ouverture directe."""
+    try:
+        _src = ("https://docs.google.com/viewer?url="
+                + urllib.parse.quote(url_pdf, safe="") + "&embedded=true")
+    except Exception:
+        _src = url_pdf
+    st.markdown(
+        f'<div style="margin:12px 10px 18px 10px; border-radius:12px; overflow:hidden; border:1px solid #27306b;">'
+        f'<iframe src="{_src}" width="100%" height="700" style="border:none;" title="Document"></iframe>'
+        f'<div style="text-align:center; padding:8px; background:#121a45;">'
+        f'<a href="{url_pdf}" target="_blank" style="color:#b39ddb; font-size:0.85rem;">📄 Ouvrir le document ici</a>'
+        f'</div></div>', unsafe_allow_html=True)
+
+
+def _render_coin_affiche(pid=None):
+    """v7.8.6 — le Coin Affiche respecte le périmètre paroissial :
+    un évènement créé par une ÉQUIPE n'y apparaît que dans le contexte de
+    SA paroisse (QR paroissial ou membre de la paroisse). Sans contexte
+    paroissial, seuls les évènements diocèse/paroisse sont visibles."""
+    _filtre_eq, _prm_eq = ("(equipe_id IS NULL OR equipe_id IN "
+                           "(SELECT id FROM equipes WHERE paroisse_id=?))", [pid]) if pid \
+        else ("equipe_id IS NULL", [])
+    lignes = []
+    erreur_sql = None
+    try:
+        lignes = c.execute(f"""SELECT type_evenement, date_evenement, lieu, affiche_url, video_url FROM evenements
+                              WHERE (affiche_url IS NOT NULL OR video_url IS NOT NULL) AND date_evenement >= ?
+                              AND {_filtre_eq}
+                              ORDER BY date_evenement ASC LIMIT 5""",
+                          [date.today().isoformat()] + _prm_eq).fetchall()
+    except Exception as e:
+        erreur_sql = str(e)
+        lignes = []
+
+    if st.query_params.get("debug") == "1":
+        with st.expander("🔎 DEBUG Coin Affiche"):
+            st.write("Aujourd'hui :", date.today().isoformat())
+            if erreur_sql:
+                st.error(f"REQUÊTE PRINCIPALE EN ÉCHEC : {erreur_sql}")
+            try:
+                st.write("Évènements avec visuel (tous) :",
+                         c.execute("SELECT id, type_evenement, date_evenement, affiche_url, video_url FROM evenements WHERE affiche_url IS NOT NULL OR video_url IS NOT NULL").fetchall())
+            except Exception as e:
+                st.write("ERREUR SQL :", e)
+
+    visuel = None
+    for a in lignes:
+        if len(a) >= 5 and safe_date(a[1]):
+            visuel = a
+            break
+
+    if visuel:
+        d_v = safe_date(visuel[1])
+        date_txt = d_v.strftime("%d/%m/%Y") if d_v else "Date à définir"
+        img_part = (f'<img src="{visuel[3]}" alt="Affiche" style="width:100%; height:auto; display:block; border-bottom:3px solid #7b1fa2;">'
+                    if visuel[3] else "")
+        st.markdown(
+            f'<div style="background:#121a45; border-radius:15px; overflow:hidden; border:1px solid #27306b; margin:0 10px 15px 10px; box-shadow:0 2px 8px rgba(0,0,0,0.4);">'
+            f'{img_part}'
+            f'<div style="padding:15px; text-align:center;">'
+            f'<h4 style="margin:0 0 5px 0; color:#e8eaf6; font-size:1.1rem;">📣 {html.escape(visuel[0] or "")}</h4>'
+            f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(visuel[2] or "Lieu à définir")}</p>'
+            f'</div></div>', unsafe_allow_html=True)
+        if visuel[4]:
+            try:
+                st.video(visuel[4])
+            except Exception:
+                st.markdown(f"🎬 [Voir la vidéo]({visuel[4]})")
+    else:
+        try:
+            prochain = c.execute(f"""SELECT type_evenement, date_evenement, lieu FROM evenements
+                                    WHERE date_evenement >= ? AND {_filtre_eq}
+                                    ORDER BY date_evenement ASC LIMIT 1""",
+                                 [date.today().isoformat()] + _prm_eq).fetchone()
+        except Exception:
+            prochain = None
+        if prochain and len(prochain) >= 3:
+            d = safe_date(prochain[1])
+            date_txt = d.strftime("%d/%m/%Y") if d else "Date à définir"
+            icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
+                     "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(prochain[0], "📅")
+            st.markdown(
+                f'<div style="background:linear-gradient(135deg,#1a2150 0%,#121a45 100%); border-radius:15px; margin:0 10px 15px 10px; border:1px solid #27306b;">'
+                f'<div style="padding:15px; text-align:center;">'
+                f'<h4 style="margin:0 0 5px 0; color:#e8eaf6; font-size:1.1rem;">{icone} {html.escape(prochain[0] or "")}</h4>'
+                f'<p style="margin:0; color:#9fa6d8; font-size:0.9rem;">{date_txt} - {html.escape(prochain[2] or "Lieu à définir")}</p>'
+                f'</div></div>', unsafe_allow_html=True)
+
+# 📿 Rentrée pastorale : le dépliant s'affiche DÉPLIÉ. Repassez à False
+# (et redémarrez l'application) quand la période de présentation sera finie.
+DEPLIANT_OUVERT = True
+def _depliant_mouvement(paroisse_id=None):
+    """📿 Dépliant « vivant » du Mouvement — Espace COMMUNAUTAIRE uniquement.
+    Toutes les images se configurent dans le bloc PHOTOS ci-dessous."""
+    # ============ 📷 IMAGES DU DÉPLIANT — collez vos URLs ici ============
+    PHOTO_BANDEAU    = "https://i.ibb.co/wZxs04Pn/Ekip0.jpg"   # grande photo sous le bandeau https://i.ibb.co/LdM54KB3/Ekip1.jpg(facultatif)
+    PHOTO_QUI        = "https://i.ibb.co/PZPF16qV/Ekip2.jpg"   # section 📜 Qui sommes-nous ?
+    PHOTO_COMMENT    = "https://i.ibb.co/tw62DQC8/Ekip4.jpg"   # section ⛪ Comment ça marche ?
+    PHOTO_PRIERES    = "https://i.ibb.co/1fdZKksR/Ekip5.jpg"   # section 🙏 Deux temps de prière
+    PHOTO_MISSION    = "https://i.ibb.co/0R1JQKTD/Ekip3.jpg"   # section ❤️ Notre mission
+    PHOTO_RESSOURCES = "https://i.ibb.co/y2SvKp5/Ekip6.jpg"   # section 📖 Ressources
+    # =====================================================================
+
+    _resp, _wa, _etiquette = None, None, "responsable diocésain"
+    if paroisse_id:
+        _etiquette = "responsable paroissial"
+        try:
+            _r = c.execute("SELECT responsable, whatsapp_responsable FROM paroisses WHERE id=?", (paroisse_id,)).fetchone()
+            if _r and _r[0]:
+                _resp = _r[0]
+            if _r and len(_r) > 1 and _r[1]:
+                _wa = _r[1]
+        except Exception:
+            pass
+    else:
+        try:
+            _d = c.execute("SELECT responsable, whatsapp_responsable FROM diocese WHERE id=?", (1,)).fetchone()
+            if _d and _d[0]:
+                _resp = _d[0]
+            if _d and len(_d) > 1 and _d[1]:
+                _wa = _d[1]
+        except Exception:
+            pass
+
+    _logo_b64 = _logo_base64()
+    _logo_html = (f'<img src="data:image/png;base64,{_logo_b64}" alt="Logo" '
+                  'style="width:56px; border-radius:10px; border:2px solid #FFD700; display:block;">'
+                  if _logo_b64 else '<div style="font-size:2.4rem; line-height:1;">📿</div>')
+
+    def _img(url, classe="dpl-photo"):
+        return f'<img src="{url}" alt="" class="{classe}">' if url else ""
+
+    _perles = "".join('<div style="width:12px; height:12px; border-radius:50%; background:#FFD700; '
+                      'box-shadow:0 0 5px rgba(255,215,0,0.8);"></div>' for _ in range(10))
+    _chapelet = ('<div style="display:flex; align-items:center; justify-content:center; gap:6px; margin-top:10px;">'
+                 + _perles + '<div style="font-size:1.3rem; margin-left:6px;">✝️</div></div>')
+
+    def _section(emoji, titre, corps, photo=None):
+        return ('<div style="background:#1a2150 !important; border:1px solid #27306b; '
+                'border-left:5px solid #FFD700; border-radius:10px; padding:12px 14px; margin:10px 0;">'
+                + _img(photo) +
+                '<div class="dpl-titre-g" style="font-size:clamp(0.95rem, 4vw, 1.02rem); margin-bottom:6px;">' + emoji + ' ' + titre + '</div>'
+                '<div style="color:#e8eaf6 !important; font-size:0.92rem; line-height:1.75;">' + corps + '</div></div>')
+
+    _bouton = ""
+    if _wa:
+        _msg = ("Bonjour, je souhaite rejoindre une Équipe du Rosaire. " if not paroisse_id
+                else "Bonjour, je souhaite rejoindre une Équipe du Rosaire dans notre paroisse. ")
+        _lien = lien_whatsapp(_wa, _msg + "Merci de me renseigner. 📿")
+        if _lien:
+            _bouton = ('<div style="text-align:center; margin-top:12px;">'
+                       '<a href="' + _lien + '" target="_blank" '
+                       'style="display:inline-block; background:#25D366 !important; color:#ffffff !important; '
+                       'padding:11px 24px; border-radius:30px; font-weight:bold; text-decoration:none; '
+                       'font-size:0.95rem;">📱 Écrire au ' + _etiquette + '</a></div>')
+
+    _bandeau = (
+        '<div style="background:linear-gradient(135deg,#1A237E,#4527a0); border-radius:12px; padding:14px 12px 12px 12px; text-align:center;">'
+        '<div style="display:flex; justify-content:flex-start; margin-bottom:4px;">' + _logo_html + '</div>'
+        '<div class="dpl-titre-g" style="font-size:clamp(1.0rem, 5.2vw, 1.45rem); '
+        'white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:0.5px;">'
+        'LES ÉQUIPES DU ROSAIRE</div>'
+        '<div class="dpl-txt-g" style="font-size:clamp(0.7rem, 3.1vw, 0.88rem); margin-top:7px; line-height:1.7;">'
+        '• Un Mouvement d’Église &nbsp;• Une École de Prière &nbsp;• Un Esprit Missionnaire<br>— depuis 1955 —</div>'
+        + _chapelet + '</div>')
+    
+    _blocs = ['<div style="padding:12px;">', _bandeau]
+    if PHOTO_BANDEAU:
+        _blocs.append(_img(PHOTO_BANDEAU, "dpl-photo-bandeau"))
+    _blocs.append(_section("📜", "Qui sommes-nous ?",
+        "Fondé en 1955 par <b><font color='#FFD700'>le Révérend Père Joseph Eyquem (1917-1990)</font></b>, Prêtre dominicain, les \"Équipes du Rosaire\" est un mouvement catholique de prière et d’apostolat des laïcs, reconnu par l’Église "
+        "et par l’Ordre des Prêcheurs (Dominicains) en 1972. En Côte d’Ivoire, "
+        "<b><font color='#FFD700'>Dominique YOVAN</font></b> introduit le Mouvement en octobre 1980 — "
+        "première équipe à l’Église Sainte Famille de la Riviera à Cocody — et en devient le 1er Responsable "
+        "National, jusqu’à son rappel à Dieu le 10 juillet 2015 à Abidjan.", PHOTO_QUI))
+    _blocs.append(_section("⛪", "Comment ça marche ?",
+        "Une équipe est le regroupement de 3 à 12 personnes, ancrée dans un quartier, une rue, un immeuble "
+        "ou un village autour de la Vierge Marie, Mère de Notre Seigneur Jésus-Christ, afin de méditer \"Son Rosaire\" et d'avoir une vie de fraternité. Chaque membre reçoit <b><font color='#FFD000'> un numéro de méditation compris entre 01 et 20 (Numéro dans l'équipe) </font></b> "
+        "qui lui permet de méditer \"sa dizaine quotidienne\" dans l'Esprit du Frère fondateur; — ainsi ensemble, sans se voir, les 20 mystères du Rosaire "
+        "sont couverts chaque jour. C’est la chaîne de prière universelle. Les équipes et paroisses sont coordonnées "
+        "par des responsables d'équipe, paroissiaux, diocésains, nationaux. Les équipiers sont encadrés par des aumôniers sectoriels, diocésains et nationaux pour le suivi spirituel.",
+        PHOTO_COMMENT))
+    _blocs.append(_section("🙏", "Deux temps de prière",
+        "<b class='dpl-p-blanc'>• La prière personnelle quotidienne</b> : méditer un mystère du Rosaire, l’Évangile, "
+        " dans l'Esprit du <b><i><font color='#FFD700'>Père Joseph EYQUEM</font></i></b>, en communion avec toute la chaîne de prière.<br>"
+        "<b class='dpl-p-blanc'>• La rencontre mensuelle</b> : prière commune chez un membre, méditation "
+        "de la Parole de Dieu, partage d’intentions et de la vie quotidienne, guidée par le feuillet mensuel "
+        "« Le Rosaire en Équipe ».", PHOTO_PRIERES))
+    _blocs.append(_section("❤️", "Notre mission",
+        "Animés par la passion de l’Évangile et le salut des hommes, nous avons un objectif missionnaire local : "
+        "aider amis et voisins à vivre l’Évangile avec Marie, même ceux qui n’ont pas l’habitude d’aller à l’église. "
+        "Les équipes favorisent un climat fraternel, convivial et accessible à tous.", PHOTO_MISSION))
+    _blocs.append(_section("📖", "Ressources",
+        "Chaque année, un thème. Chaque mois, un sous-thème : contenu dans un feuillet \"Le Rosaire en Équipe\" propose la prière du mois, des enseignements "
+        "théologiques accessibles et des réflexions pour la vie quotidienne — des outils qui structurent la prière "
+        "et renforcent la cohésion de l’équipe.", PHOTO_RESSOURCES))
+    _blocs.append(
+        '<div style="background:#FFF9C4 !important; border:2px solid #FFD700; border-radius:12px; padding:14px; '
+        'margin-top:12px; text-align:center;">'
+        '<div class="dpl-titre-g" style="font-size:clamp(1.0rem, 4.2vw, 1.15rem);">'
+        'Voulez-vous rejoindre une équipe ?</div>'
+        '<div style="color:#4527a0 !important; font-size:0.92rem; line-height:1.6; margin-top:6px;">Adressez-vous au '
+        + _etiquette + ' <b style="color:#1A237E !important;">' + html.escape((str(_resp).strip() if _resp else "") or "du Mouvement")
+        + '</b>.<br>Juste en dessous : confiez votre intention à une équipe '
+        '(« 🙏 Vos intentions à une équipe »), puis entrez votre jour de naissance '
+        'dans « 🕯️ Un jour, une dizaine » et priez avec nous. 🕊️</div>' + _bouton + '</div>')
+    _blocs.append('</div>')
+    _corps = "".join(_blocs)
+
+    st.markdown('<style>'
+                '.depliant-eq76 summary::-webkit-details-marker{display:none;}'
+                '.depliant-eq76 summary{list-style:none;}'
+                '.dpl-photo { width:100%; max-width:860px; height:150px; object-fit:contain; '
+                'background:#0a0f2c; border-radius:8px; display:block; margin:0 auto 10px auto; }'
+                '.dpl-photo-bandeau { width:100%; border-radius:12px; display:block; margin-top:12px; }'
+                '@media (min-width:769px) { .dpl-photo { height:230px; } }'
+                '</style>', unsafe_allow_html=True)
+
+    _attr_ouvert = " open" if DEPLIANT_OUVERT else ""
+    # v7.13.0 — la consigne VIT avec le dépliant : « cliquez pour replier ▴ »
+    # quand il est déplié, « cliquez pour déplier ▾ » quand il est plié.
+    _consigne = "cliquez pour replier ▴" if DEPLIANT_OUVERT else "cliquez pour déplier ▾"
+    st.markdown(
+        '<details class="depliant-eq76"' + _attr_ouvert + ' style="background:#121a45 !important; border:1px solid #FFD700; '
+        'border-radius:15px; margin:12px 10px; overflow:hidden;">'
+        '<summary style="cursor:pointer; padding:12px 14px; background:linear-gradient(135deg,#1A237E,#4527a0); text-align:center;">'
+        '<div class="dpl-titre-g" style="font-size:clamp(0.95rem, 4.3vw, 1.25rem); '
+        'white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">'
+        '📿 Découvrez les Équipes du Rosaire !</div>'
+        '<div id="dpl-dec-consigne" style="color:#e8eaf6 !important; font-size:clamp(0.7rem, 3vw, 0.82rem); font-weight:normal; margin-top:2px;">'
+        + _consigne + '</div></summary>' + _corps + '</details>', unsafe_allow_html=True)
+    try:
+        _comp_html(
+            "<script>(function(){"
+            "var d=window.parent.document;"
+            "var dt=d.querySelector('details.depliant-eq76'); if(!dt) return;"
+            "var c=d.getElementById('dpl-dec-consigne'); if(!c) return;"
+            "var maj=function(){c.textContent= dt.hasAttribute('open') ?"
+            " 'cliquez pour replier ▴' : 'cliquez pour déplier ▾';};"
+            "maj(); dt.addEventListener('toggle', maj);})();</script>", height=0)
+    except Exception:
+        pass
+
+#     st.markdown(
+#         '<details class="depliant-eq76" style="background:#121a45 !important; border:1px solid #FFD700; '
+#         'border-radius:15px; margin:12px 10px; overflow:hidden;">'
+#         '<summary style="cursor:pointer; padding:12px 14px; background:linear-gradient(135deg,#1A237E,#4527a0); text-align:center;">'
+#         '<div class="dpl-titre-g" style="font-size:clamp(0.95rem, 4.3vw, 1.25rem); '
+#         'white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">'
+#         '📿 Découvrez les Équipes du Rosaire !</div>'
+#         '<div style="color:#e8eaf6 !important; font-size:clamp(0.7rem, 3vw, 0.82rem); font-weight:normal; margin-top:2px;">'
+#         'cliquez pour déplier ▾</div></summary>' + _corps + '</details>', unsafe_allow_html=True)
+
+def _render_actualites(pid=None):
+    """📰 Actualités (publications « actualite » du Service Communication :
+    affiche +/ou BA, enseignements, salves…). 5 dernières, les plus récentes
+    d'abord. LOT C5 : ne montre que le diocèse (cible NULL) + la paroisse du
+    contexte. v7.9.18 — titre simplifié (« Actualités » : les publications
+    ciblées sur une paroisse y figurent aussi) et appel DANS le fil
+    d'actualité (_render_fil_actualites), où elles avaient disparu."""
+    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
+        else ("AND paroisse_cible IS NULL", [])
+    try:
+        lignes = c.execute(f"""SELECT titre, contenu_texte, image_url, fichier_url, date_publication
+                              FROM espace_spirituel
+                              WHERE type_contenu='actualite' {cond}
+                              ORDER BY date_publication DESC, id DESC LIMIT 5""", prm).fetchall()
+    except Exception:
+        return
+    if not lignes:
+        return
+    st.markdown('<h3 style="font-family:Georgia, serif;">📰 Actualités</h3>', unsafe_allow_html=True)
+    for a in lignes:
+        with st.expander("📰 " + (a[0] or "(sans titre)")):
+            st.caption(f"Publié le {a[4] or '—'}")
+            _au, _aurl = _parser_pos_photo(a[2])
+            if _aurl and _aurl.startswith("http"):
+                st.markdown(f'<img src="{_aurl}" alt="" class="rub-photo">', unsafe_allow_html=True)
+            if a[1]:
+                st.markdown(a[1].replace("\n", "  \n"), unsafe_allow_html=True)
+            if a[3] and str(a[3]).startswith("http"):
+                try:
+                    st.video(a[3], width="stretch")
+                except Exception:
+                    st.markdown(f"🎬 [Voir la vidéo]({a[3]})")
+
+
+# ──────────────────────────────────────────────────────────────────────
+# v7.9.17 — LA MÉMOIRE D'UN JOUR : « 📌 Marquer l'alerte comme lue » et
+# « J'ai honoré mon engagement de ce jour » masquaient leur carte jusqu'au
+# rechargement seulement (l'état vivait dans la session, vidée à chaque
+# F5/actualisation). Un petit cookie d'un jour posé dans le navigateur
+# porte désormais le « déjà traité aujourd'hui » : la carte reste masquée
+# au rechargement et revient le lendemain (affichage 1 fois par jour, par
+# navigateur). Le cookie est posé par un script invisible ; s'il ne peut
+# pas l'être (réglages stricts), tout se comporte exactement comme avant.
+# ──────────────────────────────────────────────────────────────────────
+def _lire_cookie_pdr(nom):
+    """Valeur du cookie `nom` posé par l'application côté navigateur, ou
+    '' si absent / indisponible (tests, cookies bloqués)."""
+    try:
+        _entetes = getattr(st, "context", None)
+        if _entetes is None:
+            return ""
+        _brut = ""
+        try:
+            for _k, _v in (_entetes.headers or {}).items():
+                if str(_k).lower() == "cookie":
+                    _brut = str(_v or "")
+                    break
+        except Exception:
+            _brut = ""
+        if not _brut:
+            return ""
+        for _partie in _brut.split(";"):
+            _k, _sep, _v = _partie.strip().partition("=")
+            if _sep and _k == nom:
+                return _v.strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _poser_cookie_pdr(nom, valeur):
+    """Pose (côté navigateur) le cookie `nom=valeur` pour une journée
+    (max-age 86400). Silencieux en cas d'échec : aucun message, aucun
+    blocage — la carte se comporte alors comme avant la v7.9.17."""
+    try:
+        _comp_html(
+            "<script>(function(){try{document.cookie='" + str(nom) + "="
+            + str(valeur) + "; path=/; max-age=86400; SameSite=Lax';}"
+            "catch(e){}})();</script>", height=0)
+    except Exception:
+        pass
+
+
+# ──────────────────────────────────────────────────────────────────────
+# v7.9.20 — LA CLÉ DU LECTEUR : la mémoire d'un jour tient DÉSORMAIS EN
+# BASE (voir marquer_carte_vue / carte_deja_vue dans database.py) — le
+# cookie, lui, ne suffit plus : la session est vidée à chaque rechargement
+# et, quand l'Espace est vu depuis une page extérieure (le site), le
+# navigateur refuse les cookies dits « tierce partie » — la carte
+# réapparaissait donc au rechargement. La clé identifie le lecteur SANS
+# cookie ni session : le membre par son MatLoc (dans l'adresse), le
+# visiteur par l'empreinte de sa consultation (navigateur + adresse
+# réseau, hachée — aucune donnée personnelle n'est gardée). Elle est
+# stable au rechargement comme à la navigation.
+# ──────────────────────────────────────────────────────────────────────
+def _cle_lecteur_pdr():
+    """La clé du lecteur pour la mémoire d'un jour (v7.9.20) : « M:… » pour
+    un membre reconnu (MatLoc porté par l'adresse), « N:… » pour un visiteur
+    (empreinte hachée de sa consultation). Stable au rechargement."""
+    try:
+        _mat = st.query_params.get("matloc")
+        if _mat:
+            return "M:" + str(_mat).upper().strip()
+    except Exception:
+        pass
+    _ua, _ip = "", ""
+    try:
+        _entetes = getattr(st, "context", None)
+        if _entetes is not None:
+            for _k, _v in (_entetes.headers or {}).items():
+                _kl = str(_k).lower()
+                if _kl == "user-agent":
+                    _ua = str(_v or "")
+                elif _kl == "x-forwarded-for":
+                    _ip = str(_v or "").split(",")[0].strip()
+    except Exception:
+        pass
+    import hashlib as _hl
+    return "N:" + _hl.sha256((_ua + "|" + _ip).encode(
+        "utf-8", "ignore")).hexdigest()[:24]
+
+
+# ====================================================================
+# v7.12.0 — LES RAPPELS DE LA DIZAINE SUR LE TÉLÉPHONE
+# ====================================================================
+# « Peut-on alerter directement une personne sur son téléphone pour faire
+# sa dizaine ? » — la suite de la route : le rappel CALENDRIER (.ics, le
+# téléphone sonne tout seul chaque jour) et la NOTIFICATION de l'appli
+# (le téléphone qui a dit oui reçoit le rappel aux 4 rondes : 06h00,
+# 12h00, 18h00, 21h00). Une seule carte, membres et visiteurs.
+# ====================================================================
+def abonnement_depuis_url(donnees_b64, cle_lecteur, matloc=None):
+    """Le téléphone qui vient de dire « oui » revient avec son abonnement
+    posé dans l'adresse (?push_abo=…, base64url de {endpoint, keys}) : on
+    le décode et on le note. Retourne True si l'abonnement est écrit."""
+    try:
+        _s = str(donnees_b64).replace("-", "+").replace("_", "/")
+        _s += "=" * (-len(_s) % 4)
+        _d = json.loads(base64.b64decode(_s).decode("utf-8"))
+        _endpoint = str(_d.get("endpoint") or "").strip()
+        _keys = _d.get("keys") or {}
+        _p256dh = str(_keys.get("p256dh") or "").strip()
+        _auth = str(_keys.get("auth") or "").strip()
+        if not (_endpoint and _p256dh and _auth):
+            return False
+        return push_abonnement_enregistrer(cle_lecteur, _endpoint, _p256dh,
+                                           _auth, matloc=matloc)
+    except Exception as _e:
+        logger.warning(f"abonnement_depuis_url : {_e!r}")
+        return False
+
+
+def _fichier_rappel_ics(heure="18:00"):
+    """Le rendez-vous récurrent « Ma dizaine du jour » (.ics) : ajouté
+    UNE fois au calendrier du téléphone, il sonne CHAQUE JOUR à l'heure
+    choisie — même sans internet, même sans ouvrir l'appli."""
+    try:
+        _h, _m = str(heure).split(":")[:2]
+    except Exception:
+        _h, _m = "18", "00"
+    _auj = date.today()
+    _txt_desc = ("L'intention du prochain t'attend dans la CHAÎNE DE PRIÈRE "
+                 "UNIVERSELLE — ouvre ton Espace de Prière : "
+                 + URL_ESPACE_SPIRITUEL + "/?espace=1")
+    _txt_desc = _txt_desc.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,")
+    _lignes = [
+        "BEGIN:VCALENDAR", "VERSION:2.0",
+        "PRODID:-//Equipes du Rosaire//Rappel dizaine//FR", "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH", "BEGIN:VEVENT",
+        f"UID:dizaine-{_h}{_m}-{_auj.strftime('%Y%m%d')}@equipesrosaire",
+        f"DTSTAMP:{_auj.strftime('%Y%m%d')}T000000Z",
+        f"DTSTART:{_auj.strftime('%Y%m%d')}T{_h}{_m}00",
+        "DURATION:PT15M", "RRULE:FREQ=DAILY",
+        "SUMMARY:📿 Ma dizaine du jour",
+        f"DESCRIPTION:{_txt_desc}",
+        "BEGIN:VALARM", "TRIGGER:-PT0M", "ACTION:DISPLAY",
+        "DESCRIPTION:📿 Ma dizaine du jour", "END:VALARM",
+        "END:VEVENT", "END:VCALENDAR",
+    ]
+    return "\r\n".join(_lignes) + "\r\n"
+
+
+def _carte_rappels_dizaine(est_membre=False, matloc=None, ouvert=False):
+    """🔔 LA CARTE DES RAPPELS (v7.12.0) — sur l'accueil de l'Espace :
+    ① le rendez-vous calendrier (.ics à ajouter une fois) ; ② la
+    notification de l'appli (le téléphone dit oui une fois, les rondes de
+    06h00/12h00/18h00/21h00 le réveillent tant qu'il n'a pas prié).
+    Membres et visiteurs ont la même carte."""
+    _cle = _cle_lecteur_pdr()
+    _deja = 0
+    try:
+        _deja = push_abonnement_de_cle(_cle)
+    except Exception:
+        pass
+    with st.expander("🔔 Me rappeler ma dizaine sur mon téléphone",
+                     expanded=bool(ouvert)):
+        st.caption("La chaîne fait sa ronde 4 fois par jour : **06h00 · "
+                   "12h00 · 18h00 · 21h00**. Choisis comment ton téléphone "
+                   "te réveille — les deux canaux peuvent vivre ensemble.")
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            st.markdown("**📅 Le rendez-vous du calendrier**")
+            _heure = st.radio("Heure du rappel", ["06:00", "12:00", "18:00",
+                                                  "21:00"],
+                              index=2, horizontal=True,
+                              key="rappel_ics_heure",
+                              label_visibility="collapsed")
+            st.download_button(
+                "📅 Poser le rappel (fichier calendrier)",
+                data=_fichier_rappel_ics(_heure).encode("utf-8"),
+                file_name=f"rappel_dizaine_{_heure.replace(':', 'h')}.ics",
+                mime="text/calendar", width="stretch",
+                key="dl_rappel_ics")
+            st.caption("Ajoute-le une seule fois : ton téléphone sonnera "
+                       "chaque jour, même sans internet.")
+        with _c2:
+            st.markdown("**🔔 La notification de l'application**")
+            if _deja:
+                st.success("✅ Ce téléphone a dit oui — il recevra le rappel "
+                           "aux 4 rondes tant que ta dizaine attend.")
+            else:
+                try:
+                    from services import vapid_cles
+                    _cle_pub = (vapid_cles()[1] or "")
+                except Exception:
+                    _cle_pub = ""
+                if _cle_pub:
+                    _mat_js = urllib.parse.quote(str(matloc)) if matloc else ""
+                    _js = """
+<div style="text-align:center;"><button id="btn_push_ro" onclick="activer_push_ro()"
+ style="background:#1A237E; color:#fff; border:1px solid #FFD700;
+ border-radius:24px; padding:9px 18px; font-weight:bold; font-size:0.9rem;
+ cursor:pointer;">🔔 Dire oui aux rappels</button></div>
+<div id="etat_push_ro" style="color:#9fa6d8; font-size:0.78rem; text-align:center;
+ margin-top:6px;"></div>
+<script>
+function _b64u_en_octets_ro(s){ s=s.replace(/-/g,'+').replace(/_/g,'/');
+ while(s.length%4) s+='='; var brut=atob(s); var t=new Uint8Array(brut.length);
+ for(var i=0;i<brut.length;i++) t[i]=brut.charCodeAt(i); return t; }
+async function activer_push_ro(){
+  var etat=document.getElementById('etat_push_ro');
+  try {
+    if(!('serviceWorker' in navigator)||!('PushManager' in window)){
+      etat.textContent='Ce navigateur ne connaît pas encore les rappels — le rendez-vous du calendrier reste là pour toi.'; return; }
+    var perm = await Notification.requestPermission();
+    if(perm!=='granted'){ etat.textContent='Les notifications restent silencieuses — tu pourras dire oui plus tard.'; return; }
+    etat.textContent='Un instant…';
+    var reg = await navigator.serviceWorker.register('/app/static/sw.js?v=71312');
+    await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.getSubscription();
+    if(!sub){ sub = await reg.pushManager.subscribe({userVisibleOnly:true,
+      applicationServerKey:_b64u_en_octets_ro('%CLE%')}); }
+    var j = sub.toJSON();
+    var charge = btoa(unescape(encodeURIComponent(JSON.stringify({endpoint:j.endpoint, keys:j.keys}))))
+      .replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');
+    var u = new URL(window.parent.location.href);
+    u.searchParams.set('push_abo', charge);%MATLOC%
+    window.parent.location.href = u.href;
+  } catch(e) { etat.textContent='Le oui n\'a pas pu être noté — réessaie dans un instant.'; }
+}
+</script>"""
+                    _js = _js.replace("%CLE%", _cle_pub)
+                    _js = (_js.replace("%MATLOC%",
+                                       f"\n    u.searchParams.set('matloc', '{_mat_js}');"
+                                       ) if _mat_js else _js.replace(
+                                           "%MATLOC%", ""))
+                    _comp_html(_js, height=96)
+                else:
+                    st.caption("Les notifications ne sont pas encore "
+                               "disponibles — le rendez-vous du calendrier "
+                               "reste là pour toi.")
+                st.caption("Sur iPhone : ajoute d'abord cette page à "
+                           "l'écran d'accueil (bouton Partager ⬆️ → "
+                           "« Sur l'écran d'accueil »), puis dis oui "
+                           "(iOS 16.4 ou plus).")
+        # v7.13.3 — ✈️ LA TROISIÈME VOIE : LE RAPPEL PAR TELEGRAM (membres).
+        # Un lien, « Démarrer », et c'est en marche pour de bon : le rappel
+        # part tout seul aux 4 rondes tant que la dizaine attend — et la
+        # boîte ne reçoit QUE lui, jamais les publications (elles restent
+        # au chat des responsables).
+        st.markdown("---")
+        st.markdown("**✈️ Ou par Telegram**")
+        try:
+            from services import telegram_bot_nom as _tg_nom
+            _bot_tg = (_tg_nom() or "").strip()
+        except Exception:
+            _bot_tg = ""
+        if est_membre and matloc:
+            _lie_tg = False
+            try:
+                from database import telegram_liaison_de_matloc as _tg_de
+                _lie_tg = bool(_tg_de(matloc))
+            except Exception:
+                _lie_tg = False
+            if _lie_tg:
+                st.success("✅ Ton Telegram est à l\u2019écoute — le rappel "
+                           "partira tout seul aux 4 rondes tant que ta "
+                           "dizaine attend. Ta boîte ne recevra que lui, "
+                           "jamais les publications.")
+            elif _bot_tg:
+                _lien_tg = ("https://t.me/" + _bot_tg + "?start="
+                            + urllib.parse.quote(
+                                str(matloc).upper().strip()))
+                # v7.13.4 — LE BOUTON LISIBLE POUR DE BON : bleu nuit maison,
+                # encre blanche portée en !important (le sélecteur global des
+                # liens ne peut plus l'écraser), liseré or. Lisible dans les
+                # deux modes, clair comme sombre.
+                st.markdown(
+                    '<a href="' + html.escape(_lien_tg) + '" target="_blank" '
+                    'class="btn-telegram-ro" '
+                    'style="display:inline-block; background:#1A237E;'
+                    ' color:#ffffff !important; padding:11px 24px;'
+                    ' border-radius:30px; border:1px solid #FFD700;'
+                    ' box-shadow:0 2px 8px rgba(0,0,0,0.28);'
+                    ' font-weight:bold; text-decoration:none; margin-top:4px;">'
+                    '<span style="color:#ffffff !important;">'
+                    '✈️ Recevoir le rappel par Telegram</span></a>',
+                    unsafe_allow_html=True)
+                st.caption("Un tap : Telegram s\u2019ouvre, tu appuies sur "
+                           "« Démarrer » — le message y est déjà écrit, "
+                           "c\u2019est tout. Le rappel partira tout seul aux "
+                           "4 rondes tant que ta dizaine attend.")
+            else:
+                st.caption("✈️ Le rappel Telegram arrive dans un instant — "
+                           "reviens un peu plus tard, ou garde le "
+                           "rendez-vous du calendrier : il fait déjà le "
+                           "travail.")
+        else:
+            st.caption("✈️ Le rappel Telegram est offert aux membres de la "
+                       "chaîne ; les visiteurs gardent le rendez-vous du "
+                       "calendrier et la notification de l\u2019appli.")
+
+
+def _alerte_feuillet_fil(lien_theme=None):
+    """v7.8-h · v7.8.2-h — Alerte « nouveau feuillet » en tête du fil d'actualité.
+    v7.11.1 — visible UNE SEMAINE à partir de la PREMIÈRE diffusion du
+    feuillet (colonne `premiere_diffusion`, posée une seule fois : une
+    républication d'une version corrigée ne rallonge ni ne rouvre rien) ;
+    pendant cette semaine, elle revient chaque jour tant qu'elle n'est pas
+    marquée lue ce jour-là. Le clic OUVRE DIRECTEMENT le livret du feuillet
+    annoncé (lien profond ?flt=1&fa=ANNÉE&fm=MOIS — v7.8.4, même mécanisme
+    que les liens d'archive) ; « 📌 Marquer comme lue » la masque pour la
+    session en cours. Blindage v7.8.3 : pas d'alerte si le feuillet annoncé
+    n'a aucune section saisie."""
+    try:
+        _pubs = c.execute("""SELECT annee_debut, mois, numero, date_publication,
+                                    premiere_diffusion
+                             FROM feuillets_publications
+                             ORDER BY annee_debut DESC, mois DESC""").fetchall()
+    except Exception:
+        return
+    if not _pubs:
+        return
+    # v7.8.11 — l'alerte annonce le DERNIER MOIS PASTORAL paru récemment (et
+    # non la dernière publication en date) : republier le feuillet de
+    # septembre après celui d'octobre ne renvoie plus l'alerte sur septembre.
+    # Une publication dont la date est illisible est considérée comme « à
+    # annoncer » (sans mention de date) : auto-réparation des lignes à date
+    # mal formatée. v7.11.1 — la semaine se compte depuis la PREMIÈRE
+    # diffusion (repli : date_publication) ; hors délai de 7 jours : pas
+    # d'alerte.
+    pub, _dpub = None, None
+    for _p in _pubs:
+        _d = safe_date((_p[4] or "") or _p[3])
+        if _d is None or (date.today() - _d).days <= 7:
+            pub, _dpub = _p, _d
+            break
+    if not pub:
+        return
+    # v7.8.3 — pas d'alerte pour une publication sans contenu (sinon le clic
+    # mènerait à une vitrine « pas encore publié »).
+    if not _feuillet_sections(pub[0], pub[1]):
+        return
+    # v7.9.17 — le masquage SURVIT AU RECHARGEMENT : le clic pose aussi un
+    # cookie d'un jour (clé du feuillet + date du jour) ; la carte revient
+    # le lendemain, ou dès qu'une NOUVELLE publication remplace la clé.
+    # v7.9.20 — la mémoire tient DÉSORMAIS EN BASE (clé du lecteur) : elle
+    # survit au rechargement même quand le navigateur refuse les cookies
+    # (consultation depuis une page extérieure) — même tenue, même promesse.
+    _cle = f"{pub[0]}-{pub[1]}"
+    _jour_al = date.today().isoformat()
+    _val_cookie = _cle + "|" + _jour_al
+    _cle_lecteur = _cle_lecteur_pdr()
+    _carte_jour = "feuillet:" + _cle
+    _lue_session = st.session_state.get("alerte_feuillet_lue") == _cle
+    if _lue_session:
+        _poser_cookie_pdr("pdr_alerte_feuillet", _val_cookie)
+        marquer_carte_vue(_cle_lecteur, _carte_jour)
+    if (_lue_session
+            or _lire_cookie_pdr("pdr_alerte_feuillet") == _val_cookie
+            or carte_deja_vue(_cle_lecteur, _carte_jour)):
+        return
+    _lien = ""
+    if lien_theme:
+        # v7.8.4 — RETOUR au comportement initial : le clic ouvre DIRECTEMENT
+        # le livret du feuillet annoncé (lien profond ?flt=1&fa=&fm=, même
+        # mécanisme que les liens « 📖 Relire ce feuillet » des archives) ;
+        # fa/fm pointent la publication annoncée, quel que soit le mois lu.
+        _lien = ('<a href="' + lien_theme + "&flt=1&fa=" + str(pub[0])
+                 + "&fm=" + str(pub[1])
+                 + '" target="_self" style="display:inline-block; background:#4527a0; '
+                 'color:#ffffff; padding:10px 24px; border-radius:30px; font-weight:bold; '
+                 'text-decoration:none; margin-top:6px;">📖 Ouvrir le livret du feuillet</a>')
+    # v7.8.10 — la couverture du livret ACCOMPAGNE l'alerte : carte visuelle
+    # (bleu nuit + or, image personnalisée si saisie par la cellule) portant
+    # N°, mois, thème de l'année et le bouton d'ouverture.
+    _mention = "🔔 Nouveau : le feuillet mensuel de prière est disponible !"
+    if _dpub:
+        # v7.11.1 — la mention porte la PREMIÈRE diffusion (celle qui ouvre
+        # la semaine d'affichage) : une républication ne change pas l'horloge.
+        _mention += " · en diffusion depuis le " + _dpub.strftime("%d/%m/%Y")
+    st.markdown(_couverture_feuillet_html(
+        pub[0], pub[1], compact=True, lien=_lien, titre_haut=_mention),
+        unsafe_allow_html=True)
+    if st.button("📌 Marquer l'alerte comme lue", key="alerte_feuillet_lu_btn"):
+        st.session_state["alerte_feuillet_lue"] = _cle
+        marquer_carte_vue(_cle_lecteur, _carte_jour)
+        st.rerun()
+
+
+def _render_page_galerie(sub):
+    """🖼️ GALERIE + (v7.9.1) — nouvelle rubrique de l'Espace de Prière avec
+    2 sous-rubriques :
+      • « Souvenirs » — les photos de notre marche ensemble (pèlerinages,
+        prières mensuelles, moments d'équipe) ;
+      • « Témoignages » — les grâces reçues, racontées par ceux qui les vivent.
+    Le diocèse publie et retire (menu « 🖼️ Galerie + » du portail gestionnaire) ;
+    ici la communauté lit. 🤫 Le principe « être une tombe » des intentions
+    n'est pas touché : un témoignage n'entre ici qu'avec l'accord de celui
+    qui le vit."""
+    _rub = "souvenirs" if sub == "Souvenirs" else "temoignages"
+    if _rub == "souvenirs":
+        _titre, _sous = ("🏞️ Souvenirs",
+                         "Les photos de notre marche ensemble — pèlerinages, prières "
+                         "mensuelles, moments d’équipe.")
+        _vide = ("🏞️ Aucun souvenir publié pour l’instant. Les photos des évènements "
+                 "paraîtront ici dès leur publication par le diocèse.")
+    else:
+        _titre, _sous = ("💬 Témoignages",
+                         "« Rendez grâce en toute occasion » — les grâces reçues, "
+                         "racontées par ceux qui les vivent.")
+        _vide = ("💬 Aucun témoignage publié pour l’instant. Les grâces reçues "
+                 "racontées paraîtront ici, avec l’accord de ceux qui les vivent.")
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+        ' padding:16px; border-radius:15px; text-align:center; margin:10px;'
+        ' border:1px solid #FFD700;">'
+        '<div style="color:#FFD700 !important; font-size:1.15rem; font-weight:bold;">'
+        '🖼️ Galerie + — ' + html.escape(_titre) + '</div>'
+        '<div style="color:#e8eaf6 !important; font-size:0.85rem; margin-top:5px;">'
+        + html.escape(_sous) + '</div></div>', unsafe_allow_html=True)
+    try:
+        items = c.execute(
+            """SELECT titre, texte, image_url, date_event, lieu, auteur_nom, date_publication
+               FROM galerie_plus WHERE rubrique=?
+               ORDER BY COALESCE(date_event, date_publication) DESC, id DESC""",
+            (_rub,)).fetchall()
+    except Exception:
+        items = []
+    if not items:
+        st.info(_vide)
+        return
+    for (titre, texte, img, devt, lieu, auteur, dpub) in items:
+        _meta = []
+        _d = safe_date(devt or dpub)
+        if _d:
+            _meta.append("📅 " + _d.strftime("%d/%m/%Y"))
+        if (lieu or "").strip():
+            _meta.append("📍 " + str(lieu).strip())
+        if (auteur or "").strip():
+            _meta.append("✍️ " + str(auteur).strip())
+        _corps = ""
+        # v7.9.18 — PLUSIEURS PHOTOS par entrée (téléversement en un seul
+        # envoi côté diocèse) : toutes les URLs sont affichées l'une après
+        # l'autre, même style ; une entrée d'avant la v7.9.18 (une seule
+        # URL) se rend exactement comme avant.
+        for _u_gal in urls_galerie(img):
+            # v7.9.19 — les photos rangées dans l'application (secours local
+            # sans hébergeur) portent une adresse /app/static/… : elles
+            # s'affichent exactement comme les photos hébergées.
+            if (_u_gal.startswith("http") or _u_gal.startswith("/app/static/")
+                    or _u_gal.startswith("app/static/")):
+                _corps += ('<img src="' + html.escape(_u_gal) + '" alt="" '
+                           'style="width:100%; max-width:560px; border-radius:10px; '
+                           'display:block; margin:0 auto 10px auto; border:1px solid #C9A227;">')
+        if (texte or "").strip():
+            _corps += ('<div style="line-height:1.7; color:#1a1a1a; white-space:pre-wrap;">'
+                       + html.escape(str(texte)) + '</div>')
+        st.markdown(
+            '<div style="background:#FFF9C4; border-radius:12px; padding:14px 16px;'
+            ' margin:10px 6px; border-left:6px solid #C9A227;">'
+            '<div style="color:#1A237E; font-weight:bold; font-size:1.02rem;">'
+            + html.escape(titre or "…") + '</div>'
+            + ('<div style="color:#4527a0; font-size:0.8rem; margin:2px 0 8px 0;">'
+               + html.escape(" · ".join(_meta)) + '</div>' if _meta else "")
+            + _corps + '</div>', unsafe_allow_html=True)
+        st.markdown("", unsafe_allow_html=True)
+
+
+def _assurer_table_intentions():
+    """v7.8.14 — table des intentions confiées aux équipes (création douce).
+    statut : 'recue' → 'en_priere' → 'archivee' (côté responsable d'équipe).
+    v7.8.15 — colonne auteur_contact (WhatsApp / adresse mail du fidèle).
+    v7.8.17 — pont vers la RÉPARATION CENTRALISÉE (database.verifier_reparer_
+    intentions) : sonde de lecture + ALTER doux de CHAQUE colonne attendue +
+    reconnexion si le cache de statements est périmé. Les bases distantes
+    créées par un brouillon antérieur peuvent manquer de n'importe quelle
+    colonne — plus seulement anonyme/auteur_contact."""
+    verifier_reparer_intentions()
+
+
+def _render_intentions_equipes(pid=None, equipe_membre_id=None, auteur_nom=None):
+    """🙏 VOS INTENTIONS À UNE ÉQUIPE (v7.8.15) — présenté COMME LE DÉPLIANT :
+    UN SEUL CADRE DORÉ (fond bleu nuit #121a45, liseré or #FFD700) englobant
+    la bannière, les badges, l'expanseur « Choix de l'équipe » et tous les
+    champs (les champs ont un liséré doré). Champs : Nom et Prénom*, Contact
+    WhatsApp / Adresse mail*, Jour de naissance (1-31)*, Intention de
+    prière* ; case d'acceptation (anti-spam) obligatoire.
+    v7.9.0 — LA CHAÎNE DE PRIÈRE UNIVERSELLE : plus de case d'anonymat (le
+    fidèle signe son intention) ; le JOUR DE NAISSANCE devient la clé
+    discrète de la chaîne (il garantit que le fidèle ne priera jamais SA
+    propre intention dans « 🕯️ Un jour, une dizaine ») ; après l'envoi, un
+    appel « 📿 Prier ma dizaine maintenant » ouvre directement le livret pour
+    porter l'intention du prochain. L'intention arrive DIRECTEMENT au
+    responsable de l'équipe (onglet « 🙏 » de « 📌 Suivi et Agenda »), sans
+    passer par le fil public ni par le diocèse.
+    v7.9.3 — REMONTÉE + HARMONISATION : la rubrique quitte le fil
+    d'actualité et se place JUSTE AVANT « 🕯️ Un jour, une dizaine » ; sa
+    bannière reprend EXACTEMENT le langage visuel de cette dernière
+    (dégradé #1A237E→#283593, liseré or 2 px, mêmes marges) pour un Accueil
+    homogène."""
+    if not pid:
+        return
+    _assurer_table_intentions()
+    try:
+        equipes = c.execute("""SELECT id, nom_equipe, paroisse_id FROM equipes
+                               WHERE paroisse_id=? ORDER BY nom_equipe""",
+                            (pid,)).fetchall()
+    except Exception:
+        equipes = []
+    if not equipes:
+        return
+    # ── CSS du CADRE DORÉ (v7.8.15) : le container bordé (st.container
+    # border=True) reçoit la classe .int-cadre-or par un mini-script (même
+    # mécanisme que injecter_icone_pwa) — le CSS ne touche donc QUE ce cadre :
+    # fond bleu nuit, expanseurs à liseré or, champs à liséré or.
+    st.markdown('<style>'
+        '.int-cadre-or [data-testid="stExpander"] { border:1.5px solid #C9A227'
+        ' !important; border-radius:10px !important; background:rgba(255,215,0,0.07)'
+        ' !important; }'
+        '.int-cadre-or [data-testid="stExpander"] summary { color:#FFD000'
+        ' !important; font-weight:600 !important; }'
+        '.int-cadre-or input, .int-cadre-or textarea { border:1.5px solid #C9A227'
+        ' !important; border-radius:8px !important; background:#0d1338 !important;'
+        ' color:#ffffff !important; }'
+        '.int-cadre-or input::placeholder, .int-cadre-or textarea::placeholder'
+        ' { color:#8a93c9 !important; }'
+        '.int-cadre-or div[data-baseweb="select"] > div { border:1.5px solid'
+        ' #C9A227 !important; border-radius:8px !important; background:#0d1338'
+        ' !important; color:#ffffff !important; }'
+        '.int-cadre-or label, .int-cadre-or label p { color:#e8eaf6 !important; }'
+        '.int-cadre-or [data-testid="stCaptionContainer"] p { color:#b8c0e8'
+        ' !important; }'
+        '.int-depliant-or summary { background:linear-gradient(135deg,#1A237E,'
+        ' #4527a0) !important; text-align:center; border-radius:0 !important;'
+        ' display:block !important; }'
+        '.int-depliant-or summary p, .int-depliant-or summary div {'
+        ' color:#FFD000 !important; font-weight:600 !important; }'
+        '.int-depliant-or details { background:transparent !important; }'
+        '/* v7.13.1 — le visage doré dès le premier rendu, même si le script'
+        '   tarde : le cadre et le titre sont dorés par CSS (:has), et le'
+        '   script hisse ensuite la carte complète en titre du dépliant. */'
+        'div[data-testid="stExpander"]:has(#int-or-marker) { border:2px solid #FFD700'
+        ' !important; border-radius:15px !important; background:#121a45 !important;'
+        ' overflow:hidden; }'
+        'div[data-testid="stExpander"]:has(#int-or-marker) summary {'
+        ' background:linear-gradient(135deg,#1A237E,#4527a0) !important; }'
+        'div[data-testid="stExpander"]:has(#int-or-marker) summary p {'
+        ' color:#FFD000 !important; font-weight:600 !important; }'
+        '/* v7.13.2 — une fois hissée dans le résumé, la bannière ne se trouve'
+        '   plus sous .stMarkdown : sa règle dorée perdait face à la règle'
+        '   blanche des summaries (plus spécifique). Or posé PAR IDENTIFIANT,'
+        '   plus fort que tout, dès le premier rendu. */'
+        '#int-bann-carte .dpl-titre-g { color:#FFD000 !important;'
+        ' font-family:Georgia,serif !important; font-weight:bold !important; }'
+        '</style>', unsafe_allow_html=True)
+    # v7.9.17 — DEMANDE UTILISATRICE : la rubrique est CONTENUE DANS UN
+    # DÉPLIANT, comme « 📿 Découvrez les Équipes du Rosaire ! ». L'expander
+    # porte le titre ; le mini-script ci-dessous (marker int-or-marker)
+    # habille l'EXPANDER lui-même (bordure + fond + summary dégradé).
+    # v7.9.19 — DEMANDE UTILISATRICE : « est dans un expander pas dans un
+    # dépliant, comme « 📿 Découvrez les Équipes du Rosaire ! », sous la
+    # forme de carte lorsqu'elle est repliée » — la rubrique reste un
+    # expander (pas le bloc details du dépliant de découverte), habillé
+    # EXACTEMENT comme la carte du dépliant (même dégradé, même liseré or,
+    # mêmes coins arrondis), et elle se présente REPLIÉE À L'ARRIVÉE : une
+    # carte, qui s'ouvre d'un clic. La mini-ligne « cliquez pour déplier ▾ »
+    # du dépliant de découverte est reprise (posée par le mini-script, qui
+    # la retourne au clic) ; un formulaire soumis (messages de reprise
+    # visibles) ou le CTA « 📿 Prier ma dizaine maintenant » la maintient
+    # ouverte.
+    _depl_int_ouvert = (bool(st.session_state.get("form_intention_equipe"))
+                        or (st.session_state.get("int_derniere") is not None))
+    with st.expander("🙏 Vos intentions à une équipe",
+                     expanded=_depl_int_ouvert):
+            st.markdown('<div id="int-or-marker"></div>', unsafe_allow_html=True)
+            # ── BANNIÈRE (v7.9.3 — harmonisée avec « 🕯️ Un jour, une dizaine » :
+            # même dégradé #1A237E→#283593, même liseré or de 2 px, même titre
+            # dpl-titre-g) — tout est DANS le cadre doré
+            st.markdown(
+                '<div id="int-bann-carte" style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+                ' border:2px solid #FFD700; border-radius:15px; padding:16px;'
+                ' text-align:center; margin:2px 4px 10px 4px;">'
+                '<div class="dpl-titre-g" style="color:#FFD000 !important;'
+                ' font-family:Georgia,serif !important; font-weight:bold !important;'
+                ' font-size:clamp(1.05rem, 4.5vw, 1.25rem);">'
+                '🙏 Vos intentions à une équipe</div>'
+                '<div style="color:#ffffff; font-size:clamp(0.85rem, 3.6vw, 1rem);'
+                ' margin-top:6px; line-height:1.6;">'
+                'Confie à Notre Dame du Rosaire ton intention de prière<br>'
+                'par le canal d\u2019une équipe</div>'
+                '<div style="display:inline-block; margin-top:9px; background:rgba(255,215,0,0.14);'
+                ' border:1px solid #FFD700; border-radius:20px; padding:6px 16px; max-width:94%;'
+                ' color:#FFD000; font-size:0.78rem; line-height:1.65;">🤫 « Tu es le prochain'
+                ' de l\u2019équipe qui prie pour toi. En retour, va dans « 🕯️ Un jour, une dizaine »'
+                ' et confie ton prochain à la Vierge Marie : c\u2019est LA CHAÎNE DE PRIÈRE'
+                ' UNIVERSELLE »</div></div>',
+                unsafe_allow_html=True)
+            _idx_def = 0
+            if equipe_membre_id:
+                for _i, _e in enumerate(equipes):
+                    if _e[0] == equipe_membre_id:
+                        _idx_def = _i
+                        break
+            # ── CHOIX DE L'ÉQUIPE : expanseur HORS formulaire — chaque clic met
+            # à jour le TITRE de l'expanseur (« — nom de l'équipe ») et le choix
+            # est mémorisé en session ; les champs restent dans le formulaire.
+            _idx_choisi = st.session_state.get("int_eq_choix")
+            if not isinstance(_idx_choisi, int) or _idx_choisi < 0 or _idx_choisi >= len(equipes):
+                st.session_state.pop("int_eq_choix", None)  # index obsolète
+                _idx_choisi = _idx_def
+            _titre_ex = "👥 Choix de l’équipe"
+            if "int_eq_choix" in st.session_state:
+                _titre_ex += " — " + str(equipes[_idx_choisi][1])
+            with st.expander(_titre_ex):
+                st.radio("À quelle équipe confier votre intention ?",
+                         list(range(len(equipes))), index=_idx_choisi,
+                         format_func=lambda i: equipes[i][1],
+                         key="int_eq_choix", label_visibility="collapsed")
+            # ── v7.9.0 — CTA « à vous de prier » : après un envoi réussi, le
+            # fidèle est invité à égrener SA dizaine immédiatement (la chaîne de
+            # prière universelle) ; le clic ouvre directement le livret.
+            if st.session_state.get("int_derniere") is not None:
+                _jn_cta = st.session_state["int_derniere"]
+                st.markdown('<div style="background:rgba(255,215,0,0.10); border:1px dashed #FFD700;'
+                            ' border-radius:10px; padding:10px 12px; margin:0 4px 10px 4px;'
+                            ' text-align:center;">'
+                            '<div style="color:#FFD000; font-weight:600;">🙏 Votre intention est'
+                            ' partie — à vous de prier maintenant !</div>'
+                            '<div style="color:#e8eaf6; font-size:0.85rem; margin-top:4px;">'
+                            'Égrenez votre dizaine et portez l’intention du prochain dans'
+                            ' la chaîne de prière universelle.</div></div>',
+                            unsafe_allow_html=True)
+                # v7.13.4 — L'ESPACE PERSONNEL DU VISITEUR : sa clé est née
+                # à l'envoi ; le lien est là, sous l'invitation à prier. Il
+                # ouvre sa page à lui : intention relue, mémoire de ses
+                # dizaines, livret du jour positionné — 21 jours.
+                _cle_vis_n = st.session_state.get("vis_cle_nouvelle")
+                if _cle_vis_n:
+                    _lien_vis = ("?espace=1&vis="
+                                 + urllib.parse.quote(str(_cle_vis_n)))
+                    st.markdown(
+                        '<div style="background:#121a45; border:2px solid #FFD700;'
+                        ' border-radius:12px; padding:12px 14px; margin:0 4px 10px 4px;'
+                        ' text-align:center;">'
+                        '<div style="color:#FFD000; font-weight:bold; font-size:1rem;">'
+                        '🕊️ Ton espace personnel est prêt</div>'
+                        '<div style="color:#e8eaf6; font-size:0.85rem; margin-top:5px;'
+                        ' line-height:1.6;">Ton intention y est relue, ta « 📿 Mémoire de'
+                        ' mes dizaines » y tiendra ta fidélité, et le livret du jour y'
+                        ' t’attend — ouvert pour toi pendant <b>21 jours</b>.</div>'
+                        '<a href="' + _lien_vis + '" target="_self"'
+                        ' style="display:inline-block; background:#1A237E; color:#ffffff'
+                        ' !important; padding:10px 24px; border-radius:30px;'
+                        ' border:1px solid #FFD700; font-weight:bold;'
+                        ' text-decoration:none; margin-top:10px;">'
+                        '<span style="color:#ffffff !important;">🕊️ Ouvrir mon espace'
+                        ' personnel</span></a>'
+                        '<div style="color:#8a93c9; font-size:0.74rem; margin-top:8px;">'
+                        'Garde la page sous la main : menu ⋮ du navigateur →'
+                        ' « Ajouter à l’écran d’accueil » (ou en favori).</div></div>',
+                        unsafe_allow_html=True)
+                if st.button("📿 Prier ma dizaine maintenant", key="int_cta_dizaine",
+                             type="primary", width="stretch"):
+                    st.session_state["diz_jrnais"] = int(_jn_cta)
+                    st.session_state["diz_ouvert"] = True
+                    st.session_state["diz_page"] = 0
+                    st.session_state.pop("int_derniere", None)
+                    st.session_state.pop("flt_ouvert", None)  # un seul livre ouvert à la fois
+                    st.rerun()
+            with st.form("form_intention_equipe", clear_on_submit=False):
+                # ── CHAMPS (liséré doré via CSS ci-dessus)
+                st.markdown('<div style="color:#FFD000; font-size:0.85rem;'
+                            ' margin:2px 2px 6px 2px;">« * » indique les champs'
+                            ' obligatoires</div>', unsafe_allow_html=True)
+                # Clés PAR GÉNÉRATION (v7.8.15) : les widgets d'un st.form ne se
+                # resynchronisent pas au rerun → au succès, int_gen s'incrémente
+                # et les champs renaissent NEUFS (vides), sans perdre la saisie
+                # en cas de validation refusée (clear_on_submit reste False).
+                _gen = st.session_state.get("int_gen", 0)
+                _k = lambda b: b + "_" + str(_gen)
+                if _k("int_nom") not in st.session_state and (auteur_nom or "").strip():
+                    st.session_state[_k("int_nom")] = auteur_nom
+                _nom = st.text_input("Nom et Prénom *", key=_k("int_nom"), max_chars=80,
+                                     placeholder="Ex : N’guess KONÉ")
+                _contact = st.text_input("Contact WhatsApp / Adresse mail *",
+                                         key=_k("int_contact"), max_chars=120,
+                                         placeholder="Ex : +225 07 00 00 00 00 ou nguekon@exemple.com")
+                # v7.9.0 — JOUR DE NAISSANCE : clé discrète de la chaîne de prière.
+                # Pré-rempli si le visiteur a déjà validé son jour au livret.
+                _jn_pre = st.session_state.get("diz_jrnais")
+                _jn_pre = _jn_pre if isinstance(_jn_pre, int) and 1 <= _jn_pre <= 31 else None
+                _jour = st.number_input("Jour de naissance (1 - 31) *", min_value=1,
+                                        max_value=31, value=_jn_pre, step=1,
+                                        key=_k("int_jour"),
+                                        help="Votre jour de naissance devient votre clé discrète "
+                                             "dans la chaîne de prière universelle : c’est lui qui "
+                                             "garantit que vous ne prierez jamais votre propre "
+                                             "intention dans « 🕯️ Un jour, une dizaine ».")
+                _txt = st.text_area("Intention de prière *", key=_k("int_txt"), height=110,
+                                    max_chars=600,
+                                    placeholder="Pour la santé de…, pour ma famille…, "
+                                                "pour les vocations…")
+                # v7.9.1 — retour de la case d'anonymat (demande user) : l'auteur
+                # non signé reste inconnu du responsable (« Anonyme »), mais son
+                # contact est quand même enregistré — c'est lui qui porte la règle
+                # d'unicité (un numéro = une seule intention prise en charge).
+                _anon = st.checkbox(
+                    "🕊️ Rester anonyme (le responsable verra « Anonyme »)",
+                    key=_k("int_anon"))
+                _rgpd = st.checkbox(
+                    "En envoyant cette intention, j’accepte que certaines données techniques "
+                    "soient utilisées à des fins de sécurité et de lutte contre les envois "
+                    "automatisés (spam) — voir la politique de confidentialité, en pied "
+                    "de page.",
+                    key=_k("int_rgpd"))
+                if st.form_submit_button("📨 Confier cette intention", type="primary",
+                                         width="stretch"):
+                    _manque = []
+                    if not (_nom or "").strip() and not _anon:
+                        _manque.append("votre nom et prénom (ou cochez « 🕊️ Rester anonyme »)")
+                    if not (_contact or "").strip():
+                        _manque.append("un contact (WhatsApp ou adresse mail)")
+                    if _jour is None:
+                        _manque.append("votre jour de naissance (chiffre entre 1 et 31)")
+                    if not (_txt or "").strip():
+                        _manque.append("votre intention de prière")
+                    if not _rgpd:
+                        _manque.append("l’acceptation (case ☑) de la politique de confidentialité")
+                    if _manque:
+                        st.warning("Il manque : " + " ; ".join(_manque) + ".")
+                    # v7.9.1 — UNICITÉ PAR NUMÉRO : un même numéro de téléphone ne
+                    # peut pas porter 2 intentions prises en charge en même temps.
+                    # v7.9.4 — le message parle au cœur (date + Matthieu 7.12) :
+                    # ni leçon, ni mécanisme — la chaîne ne se brise pas.
+                    elif contact_en_priere(_contact):
+                        _d_emit = date_intention_en_priere(_contact)
+                        _depuis = _d_emit.strftime("%d/%m/%Y") if _d_emit else ""
+                        st.warning("📿 Tu es déjà porté(e) en prière"
+                                   + (f" depuis le {_depuis}" if _depuis else "")
+                                   + ". Ne brise pas la CHAÎNE DE PRIÈRE. Continue de méditer "
+                                   "ta dizaine à CAUSE DE TON PROCHAIN.\n\n"
+                                   "Matthieu 7.12 : « Faites pour les autres tout ce que vous "
+                                   "voudriez qu’ils fassent pour vous, car c’est là tout "
+                                   "l’enseignement de la Loi et des prophètes.»")
+                    else:
+                        _i = st.session_state.get("int_eq_choix")
+                        if not isinstance(_i, int) or not (0 <= _i < len(equipes)):
+                            _i = 0
+                        _eq = equipes[_i]
+                        _auteur = ("Anonyme" if _anon
+                                   else (_nom or "").strip() or "Visiteur de l’Espace de Prière")
+                        # v7.8.16 — envoi blindé : une micro-coupure vers la base
+                        # (Turso) affiche un message doux et CONSERVE la saisie au
+                        # lieu de faire planter toute la page ; le fidèle peut
+                        # réessayer d'un clic sans rien retaper.
+                        _err_envoi = False
+                        try:
+                            c.execute("""INSERT INTO intentions_equipes
+                                         (equipe_id, texte, auteur_nom, auteur_contact, anonyme,
+                                          jour_naissance, statut, date_soumission)
+                                         VALUES (?, ?, ?, ?, ?, ?, 'recue', ?)""",
+                                      (_eq[0], _txt.strip(), None if _anon else _auteur,
+                                       (_contact or "").strip(),
+                                       1 if _anon else 0, int(_jour), date.today().isoformat()))
+                            # v7.13.4 — l'id de l'intention (pour l'espace visiteur)
+                            _id_intention = None
+                            try:
+                                _r_id = c.execute("""SELECT id FROM intentions_equipes
+                                                     WHERE auteur_contact=?
+                                                     ORDER BY id DESC LIMIT 1""",
+                                                  ((_contact or "").strip(),)).fetchone()
+                                _id_intention = _r_id[0] if _r_id else None
+                            except Exception:
+                                _id_intention = None
+                            commit_and_sync()
+                            # v7.9.4 — LA ZONE DU JOUR : l'intention confiée aujourd'hui
+                            # y est recueillie ; v7.9.10 — le SAS : la paroisse est notée
+                            # sur la ligne (le sas paroissial la reconnaît d'emblée).
+                            verser_intention_du_jour(_txt.strip(), auteur_nom=None if _anon else _auteur,
+                                                     auteur_contact=(_contact or "").strip(),
+                                                     anonyme=_anon, jour_naissance=int(_jour),
+                                                     equipe_id=_eq[0],
+                                                     paroisse_id=(_eq[2] if len(_eq) > 2 else None))
+                        except Exception:
+                            _err_envoi = True
+                            st.error("⚠️ L’envoi n’a pas pu aboutir (connexion instable "
+                                     "vers la base de données). Merci de réessayer dans "
+                                     "quelques instants — votre saisie est conservée.")
+                        if not _err_envoi:
+                            st.session_state["int_gen"] = _gen + 1  # champs renaissent vides
+                            for _b in ("int_nom", "int_contact", "int_txt", "int_jour", "int_rgpd"):
+                                st.session_state.pop(_b + "_" + str(_gen), None)
+                            # v7.9.0 — le jour de naissance devient l'identité de
+                            # chaîne du fidèle (il ne priera jamais sa propre
+                            # intention) et le CTA « prier ma dizaine » s'affiche.
+                            st.session_state["diz_jrnais"] = int(_jour)
+                            # v7.12.0 — l'abonnement push de CE téléphone connaît
+                            # désormais son jour de naissance (les rondes sauront).
+                            try:
+                                push_abonnement_note_jrnais(_cle_lecteur_pdr(), int(_jour))
+                            except Exception:
+                                pass
+                            # v7.13.4 — L'ESPACE PERSONNEL DU VISITEUR (21 jours) :
+                            # sa clé naît à l'envoi ; le lien apparaîtra sous la
+                            # carte dorée. Si l'ouverture n'a pas pu être notée,
+                            # rien ne bloque : l'intention est déjà en sécurité.
+                            try:
+                                from database import espace_visiteur_creer as _evc
+                                _cle_vis = _evc(nom=None if _anon else _auteur,
+                                                contact=(_contact or "").strip(),
+                                                jrnais=int(_jour),
+                                                intention_id=_id_intention,
+                                                equipe_id=_eq[0],
+                                                paroisse_id=(_eq[2] if len(_eq) > 2 else None))
+                            except Exception:
+                                _cle_vis = None
+                            if _cle_vis:
+                                st.session_state["vis_cle_nouvelle"] = _cle_vis
+                            st.session_state["int_derniere"] = int(_jour)
+                            st.session_state["flash_success"] = (
+                                "🙏 Votre intention a été confiée à " + str(_eq[1])
+                                + ". Elle arrive directement au responsable — elle sera portée "
+                                "en prière, en toute confidentialité. 📿 À vous maintenant : "
+                                "égrenez une dizaine et porter en prière votre prochain — c’est LA "
+                                "CHAÎNE DE PRIÈRE UNIVERSELLE.")
+                            st.rerun()
+            # ── Mini-script (dernier élément du dépliant, remonte au bloc puis à
+            # l'EXPANDER) : l'habillage doré (bordure, fond, ombre) se pose sur
+            # l'expander lui-même (classe .int-depliant-or → summary dégradé via
+            # le CSS ci-dessus) et le bloc interne garde la classe
+            # .int-cadre-or (champs à liséré or). Comme injecter_icone_pwa :
+            # tourne à chaque rerun, iframe invisible.
+            # v7.9.19 — le mini-script ajoute AUSSI la mini-ligne du dépliant
+            # de découverte (« cliquez pour déplier ▾ » / « cliquez pour
+            # replier ▴ ») sous le titre, retournée à chaque clic.
+            # v7.13.1 — le script est PATIENT : il réessaie jusqu'à 10 s
+            # (le DOM de l'expander monte de façon asynchrone) et le CSS
+            # :has ci-dessus garantit déjà le visage doré entre-temps.
+            # v7.8.16 — via stcompat (st.iframe) : height=0 est borné à 1 px.
+            try:
+                _comp_html(
+                    "<script>(function(){"
+                    "var d=window.parent.document;"
+                    "var essais=0;"
+                    "function poser(){"
+                    "essais++;"
+                    "var m=d.getElementById('int-or-marker');"
+                    "if(!m){ if(essais<50){ setTimeout(poser, 200); } return; }"
+                    "var w=m.closest('div[data-testid=\"stVerticalBlock\"]'); if(!w) return;"
+                    "w.classList.add('int-cadre-or');"
+                    "var e=m.closest('div[data-testid=\"stExpander\"]')"
+                    "||m.closest('details[data-testid=\"stExpander\"]')||w;"
+                    "e.style.border='2px solid #FFD700';"
+                    "e.style.borderRadius='15px';"
+                    "e.style.overflow='hidden';"
+                    "e.style.background='#121a45';"
+                    "e.style.boxShadow='0 4px 14px rgba(0,0,0,0.35)';"
+                    "e.classList.add('int-depliant-or');"
+                    "w.style.padding='10px 6px';"
+                    "var dt=e.querySelector('details')||e;"
+                    "var s=e.querySelector('summary');"
+                    "if(s){"
+                    "var b=d.getElementById('int-bann-carte');"
+                    "if(!b){ if(essais<50){ setTimeout(poser, 200); } return; }"
+                    "if(b && b.parentElement!==s){"
+                    "b.style.border='none';"
+                    "b.style.borderBottom='2px solid #FFD700';"
+                    "b.style.borderRadius='0';"
+                    "b.style.margin='0';"
+                    "s.appendChild(b);}"
+                    "var p=s.querySelector('p');"
+                    "if(p){p.style.display='none';}"
+                    "var cons=s.querySelector('.int-consigne');"
+                    "if(!cons){"
+                    "cons=d.createElement('div');"
+                    "cons.className='int-consigne';"
+                    "cons.style.cssText='width:100%; color:#e8eaf6 !important;"
+                    " font-size:0.78rem; font-weight:normal !important;"
+                    " text-align:center; padding:4px 0 12px 0;';"
+                    "s.appendChild(cons);"
+                    "s.style.display='block';}"
+                    "var maj=function(){"
+                    "var ouvert=dt.hasAttribute('open');"
+                    "cons.textContent= ouvert ? 'cliquez pour replier ▴' :"
+                    " 'cliquez pour déplier ▾';};"
+                    "maj();"
+                    "s.addEventListener('click', function(){ setTimeout(maj, 60); });"
+                    "}else{ if(essais<50){ setTimeout(poser, 200); } }"
+                    "}"
+                    "poser();})();</script>", height=0)
+            except Exception:
+                pass
+
+
+def _carte_vidéo_a_la_demande():
+    """🛕 VIDÉO À LA DEMANDE (v7.9.17 ; nom d'aujourd'hui v7.9.20) — la vidéo
+    YouTube de la chaîne « Équipes du Rosaire Grand-Bassam », ouverte juste
+    avant le pied de page tant que LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE (en tête
+    de module) est renseigné.
+    Lecteur incorporé responsive (16:9, même mécanique que la playlist du
+    contexte paroissial) + lien d'ouverture directe sur YouTube."""
+    _url = str(LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE or "").strip()
+    if not _url:
+        return
+    _m = re.search(r"(?:youtu\.be/|v=|shorts/|embed/)([A-Za-z0-9_-]{6,})", _url)
+    if not _m:
+        return
+    _src = "https://www.youtube.com/embed/" + _m.group(1) + "?rel=0"
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+        ' border:2px solid #FFD700; border-radius:15px; padding:16px;'
+        ' text-align:center; margin:10px;">'
+        '<div class="dpl-titre-g" style="font-size:clamp(1.05rem, 4.5vw, 1.25rem);">'
+        '🛕 Vidéo à la demande</div>'
+        '<div style="color:#ffffff; font-size:clamp(0.85rem, 3.6vw, 1rem);'
+        ' margin-top:6px; line-height:1.6;">'
+        'Regardez la vidéo à la demande sur la chaîne des Équipes du Rosaire —'
+        ' Diocèse de Grand-Bassam</div>'
+        '<div style="position:relative; width:100%; padding-top:56.25%;'
+        ' border-radius:12px; overflow:hidden; border:1px solid #FFD700;'
+        ' margin:12px 0 0 0;">'
+        '<iframe src="' + _src + '" title="Vidéo à la demande"'
+        # v7.10.1 — CHARGEMENT PARESSEUX : le lecteur ne se réveille que
+        # quand le fidèle descend le voir — l'arrivée dans l'Espace et la
+        # navigation ne l'attendent plus (la lenteur ressentie à l'ouverture).
+        ' loading="lazy"'
+        ' style="position:absolute; top:0; left:0; width:100%; height:100%;'
+        ' border:none;" allow="encrypted-media; picture-in-picture"'
+        ' allowfullscreen></iframe></div>'
+        '<a href="' + html.escape(_url) + '" target="_blank" rel="noopener"'
+        ' style="display:inline-block; margin-top:10px; background:rgba(255,215,0,0.14);'
+        ' border:1px solid #FFD700; border-radius:20px; padding:6px 16px;'
+        ' color:#FFD000; text-decoration:none; font-size:0.8rem;'
+        ' max-width:94%;">🎬 Ouvrir la vidéo sur YouTube</a></div>',
+        unsafe_allow_html=True)
+
+
+def _carte_cotisation_membre(membre):
+    """v7.14.2 — « Abonnement - Réabonnement » : LA CARTE QUI CONNAÎT SON
+    MEMBRE, posée sur l'accueil entre la mémoire des dizaines et la berge.
+    La personnalisation demandée par le diocèse : l'équipe dit adulte/jeune
+    (hors équipe Jeune / équipe Jeune), la mention « NOUVEAU » du champ
+    « Statut » dit abonnement/réabonnement — et chaque situation a SON
+    titre (« ⏳ Rappel - Réabonnement » pour celui qui se réabonne,
+    « ⏳ Information - Abonnement » pour le nouveau), SON montant, SON
+    échéance (délai de rigueur du 15/12/2026 pour les réabonnements,
+    31/12/2026 pour les nouveaux) et le même chemin de paiement chez le
+    responsable d'équipe. À jour : carte verte, numéro de reçu, reçu PDF
+    téléchargeable — l'échéance suit alors la nature du reçu posé. Ici, on
+    ne PAIE pas, on SAIT où on en est. Le membre tuple porte :
+    id, nom, prenom, matloc, whatsapp, adhesion, photo, n° méditation,
+    équipe, paroisse, equipe_id, paroisse_id."""
+    from components import recu_cotisation_pdf, COTIS_MODES
+    if not membre:
+        return
+    _mid = membre[0]
+    _annee = get_periode_pastorale()[0]
+    _reglages = cotis_parametres_lire()
+    try:
+        _recu = c.execute("""SELECT numero_recu, montant, type_abonnement,
+                                    date_paiement, mode_paiement, origine, enregistre_par
+                             FROM abonnements
+                             WHERE membre_id=? AND annee_debut=? AND statut='paye'""",
+                          (_mid, _annee)).fetchone()
+    except Exception:
+        _recu = None
+
+    # v7.14.2 — l'échéance qui S'AFFICHE suit la nature de l'abonnement :
+    # réabonnement (délai de rigueur) ou abonnement des nouveaux.
+    _ech_cle = ("cotis_echeance_abo"
+                if (_recu and (_recu[2] or "") == "abonnement")
+                else "cotis_echeance")
+    _echeance_aff = str(_reglages.get(_ech_cle, "2026-12-15"))
+    try:
+        _d_ech = date.fromisoformat(_echeance_aff)
+        _echeance_aff = _d_ech.strftime("%d/%m/%Y")
+        _ech_passee = date.today() > _d_ech
+    except Exception:
+        _ech_passee = False
+
+    if _recu:
+        # v7.14.3 — le numéro manquant se remplit tout seul : un paiement
+        # posé « payé » sans reçu numéroté (lignes d'avant la caisse,
+        # chemin « ✏️ ») reçoit son numéro la première fois où la carte le
+        # relit — une seule fois, jamais renuméroté après.
+        if not _recu[0]:
+            cotis_recu_numero_attribuer(_mid, _annee)
+            _recu = c.execute("""SELECT numero_recu, montant, type_abonnement,
+                                        date_paiement, mode_paiement, origine, enregistre_par
+                                 FROM abonnements
+                                 WHERE membre_id=? AND annee_debut=? AND statut='paye'""",
+                              (_mid, _annee)).fetchone() or _recu
+        # v7.14.3 — la carte dit LA NATURE DE L'OPÉRATION (« ✅ Abonnement —
+        # à jour » / « ✅ Réabonnement — à jour »), la ligne ne montre que
+        # ce que le diocèse a demandé : nature · année · montant · date.
+        _nature = "Abonnement" if _recu[2] == "abonnement" else "Réabonnement"
+        _mont_txt = f"{int(_recu[1] or 0):,}".replace(",", " ")
+        _d_p = safe_date(_recu[3])
+        _d_aff = _d_p.strftime("%d/%m/%Y") if _d_p else (_recu[3] or "")
+        _ligne_recu = (f'🧾 Reçu n° <b>{_recu[0]}</b>' if _recu[0]
+                       else '🧾 Reçu n° en cours d\'attribution — repasse dans un instant')
+        _recu_pdf = (recu_cotisation_pdf(
+            {"numero_recu": _recu[0], "montant": _recu[1],
+             "type_abonnement": _recu[2], "date_paiement": _recu[3],
+             "annee_debut": _annee, "mode_paiement": _recu[4],
+             "nom": membre[1], "prenom": membre[2], "matloc": membre[3],
+             "equipe": membre[8], "paroisse": membre[9],
+             "enregistre_par": _recu[6], "origine": _recu[5]},
+            porteur=_reglages.get("cotis_porteur"),
+            echeance_iso=str(_reglages.get(_ech_cle)))
+            if _recu[0] else None)
+        st.markdown(
+            '<div style="background:linear-gradient(135deg,#e8f5e9 0%,#c8e6c9 100%);'
+            ' border:1.5px solid #66bb6a; border-radius:15px; padding:16px;'
+            ' margin:10px;">'
+            f'<div style="color:#1b5e20; font-size:1.08rem; font-weight:bold;">✅ {_nature} — à jour</div>'
+            '<div style="color:#2e7d32; font-size:0.9rem; margin-top:6px; line-height:1.65;">'
+            f'{_nature} · année pastorale {get_periode_pastorale()[0]}/{get_periode_pastorale()[0] + 1}'
+            f' · {_mont_txt} FCFA · payée le {_d_aff}<br>'
+            f'{_ligne_recu}</div>'
+            '</div>', unsafe_allow_html=True)
+        if _recu_pdf:
+            st.download_button("🧾 Mon reçu numéroté (PDF)",
+                               data=_recu_pdf,
+                               file_name=f"recu_{_recu[0]}.pdf",
+                               mime="application/pdf",
+                               key=f"cotis_recu_pdf_{_annee}")
+        st.caption("🧾 Scanne le QR du reçu (ou ouvre son lien) : l'écran public "
+                   "confirme son authenticité — un reçu inventé ne vérifie rien.")
+    else:
+        # v7.14.2 — LA PERSONNALISATION : une seule ligne de tarif par
+        # carte, celle du membre qui la lit ; les deux échéances de
+        # l'année pastorale (la différence est normale — le diocèse le dit
+        # lui-même) ; le fond quitte le jaune pour le violet foncé du pied
+        # de page, liseré et titres dorés — les boutons dorés du web
+        # gardent leur éclat sur cette nuit-là.
+        _cat = cotis_categorie_membre(_mid)
+        _nouveau = cotis_membre_nouveau(_mid)
+        _m_nat = int(_reglages.get("cotis_montant_" + _cat
+                                   + ("_abo" if _nouveau else "_reab"), 5000))
+        _m_txt = f"{_m_nat:,}".replace(",", " ")
+        # v7.14.2 — l'échéance se recalcule pour LA NATURE DU MEMBRE (sans
+        # reçu posé, la clé globale ci-dessus sert au seul reçu) : les
+        # nouveaux regardent le 31/12, les anciens le délai de rigueur.
+        _echeance_aff = str(_reglages.get(
+            "cotis_echeance_abo" if _nouveau else "cotis_echeance", "2026-12-15"))
+        try:
+            _d_ech = date.fromisoformat(_echeance_aff)
+            _echeance_aff = _d_ech.strftime("%d/%m/%Y")
+            _ech_passee = date.today() > _d_ech
+        except Exception:
+            _ech_passee = False
+        if _nouveau:
+            _titre = "⏳ Information - Abonnement"
+            _ligne_mont = f'📝 Abonnement <b>{_m_txt}</b> FCFA'
+            _ligne_ech = ('⏰ Le ' + _echeance_aff + ' est passé — va voir ton responsable dès aujourd&#39;hui.'
+                          if _ech_passee else
+                          '🗓️ À régler au plus tard le <b>' + _echeance_aff + '</b>')
+            _badge_mention = ('<div style="display:inline-block; background:rgba(255,215,0,0.14);'
+                              ' border:1px solid #FFD700; border-radius:9px; padding:3px 10px;'
+                              ' margin-top:9px; color:#FFD000; font-size:0.8rem;">'
+                              '🌱 Mention « Nouveau » — première année dans la base</div>')
+        else:
+            _titre = "⏳ Rappel - Réabonnement"
+            _ligne_mont = f'🔄 Réabonnement <b>{_m_txt}</b> FCFA'
+            _ligne_ech = ('⏰ Le délai de rigueur du ' + _echeance_aff + ' est passé — va voir ton responsable dès aujourd&#39;hui.'
+                          if _ech_passee else
+                          '🗓️ À régler au plus tard le <b>' + _echeance_aff + '</b> délai de rigueur')
+            _badge_mention = ""
+        st.markdown(
+            '<div style="background:linear-gradient(165deg,#241042 0%,#3B1177 55%,#4A148C 100%);'
+            ' border:2px solid #FFD700; border-radius:15px; padding:16px; margin:10px;">'
+            '<div style="color:#FFD000; font-size:1.08rem; font-weight:bold;">' + _titre + '</div>'
+            '<div style="color:#e6dcf7; font-size:0.92rem; margin-top:6px; line-height:1.75;">'
+            f'Année pastorale {_annee} - {_annee + 1}<br>'
+            + _ligne_mont + '<br>'
+            + _ligne_ech + '<br>'
+            '💼 Paie auprès de ton responsable d&#39;équipe — en espèces ou en mobile '
+            'money (Wave, Orange Money) : il note ton paiement et t&#39;édite ton '
+            'reçu numéroté immédiatement.<br>'
+            + _badge_mention + '</div></div>',
+            unsafe_allow_html=True)
+        st.caption("💳 Le paiement direct par Wave s'ouvrira bientôt ici — "
+                   "en attendant, la caisse de ton équipe te reçoit.")
+
+
+def _etat_cotisations_membre(membre, _du=None):
+    """v7.16.0 — « 💰 État de mes cotisations » : LE REGISTRE DU MEMBRE,
+    posé en face de « 👤 Mon profil » sur la même ligne. LECTURE PURE —
+    ici, on ne note rien : la responsable d'équipe tient le registre dans
+    sa caisse (« 💼 Abonnement - Réabonnement », section registre) ; ce
+    que tu vois, elle vient de l'écrire, et tu le vois aussitôt — et dès
+    qu'elle note ton versement (expédition du registre ou abonnement
+    réglé), le « Total dû à ce jour » baisse d'autant.
+    — MENSUELLE : la grille des 12 mois de l'année pastorale (septembre →
+    août), cochée quand le versement est noté (réglé), avec le tarif réglé
+    dans « 💼 Caisse du diocèse » s'il en a posé un (0 = libre, rien n'est
+    affiché) ;
+    — SPÉCIALE, ÉVÈNEMENTIELLE, EXTRAORDINAIRE : leurs lignes (date ·
+    précision · montant) et leur total — la précision est le nom libre que
+    la responsable a donné à la cotisation (v7.16.0). v7.16.1 : la ligne
+    en attente de son versement s'affiche EN VERT « ⏳ à régler » — la
+    relance (« il y a une contribution de 3 000 FCFA pour l'Épiphanie ») ;
+    réglée, elle porte son mode de paiement ✅ ;
+    — L'ABONNEMENT (ou le réabonnement) fait partie de l'état : réglé →
+    sa ligne (montant · date · reçu) ; à régler → le montant attendu et
+    son échéance (v7.16.0, demande du diocèse) ;
+    — LE « 💰 TOTAL DÛ À CE JOUR » remplace le total de l'année : les mois
+    écoulés de mensuelle non versés (au tarif réglé) + l'abonnement non
+    réglé + les lignes des autres catégories encore « ⏳ à régler »
+    (v7.16.1) — 0 FCFA = à jour, carte verte ; le déjà versé (les lignes
+    réglées) le rappelle en dessous.
+    Pas de reçu numéroté ici pour le registre : le reçu reste réservé à
+    l'abonnement annuel."""
+    if not membre:
+        return
+    _mid = membre[0]
+    _annee = get_periode_pastorale()[0]
+    _etat = cotis_div_etat(_mid, _annee)
+    _reglages_div = cotis_div_parametres_lire()
+    if _du is None:
+        _du = cotis_div_total_du(_mid, _annee)
+    _mois_lbls = {1: "Janv.", 2: "Févr.", 3: "Mars", 4: "Avr.", 5: "Mai",
+                  6: "Juin", 7: "Juil.", 8: "Août", 9: "Sept.", 10: "Oct.",
+                  11: "Nov.", 12: "Déc."}
+    _modes_lbls = {"especes": "💵 Espèces", "wave": "🌊 Wave",
+                   "orange_money": "📱 Orange Money", "mtn_momo": "🟡 MTN MoMo",
+                   "autre": "💳 Autre"}
+
+    def _fr(_n):
+        return f"{int(_n):,}".replace(",", " ")
+
+    def _fr_liste(_lst):
+        if not _lst:
+            return ""
+        if len(_lst) == 1:
+            return _lst[0]
+        return ", ".join(_lst[:-1]) + " et " + _lst[-1]
+
+    st.caption(f"Année pastorale {_annee} - {_annee + 1} — noté par ta "
+               "responsable d'équipe")
+    if not _etat["lignes"]:
+        st.info("🕊️ Rien de noté pour l'instant — ta responsable d'équipe "
+                "ouvrira ton registre dès ta première cotisation (mensuelle, "
+                "spéciale, évènementielle ou extraordinaire).")
+        if int(_du["total"]) <= 0 and _du["abonnement_paye"]:
+            return
+
+    # LA MENSUELLE EN GRILLE : l'année pastorale mois par mois, de
+    # septembre à août — le mois payé porte son total, les autres
+    # gardent leur trait discret.
+    _tarif_mens = int(_reglages_div.get("cotis_div_montant_mensuelle", 0))
+    _mois_payes = len(_etat["mois"])
+    st.markdown(f"**🧮 Mensuelle — {_mois_payes} mois sur 12 · "
+                f"{_fr(_etat['totaux']['mensuelle'])} FCFA**"
+                + (f" *(tarif réglé : {_fr(_tarif_mens)} FCFA/mois)*"
+                   if _tarif_mens > 0 else ""))
+    _cell = ('<div style="border:1px solid {bord}; border-radius:8px;'
+             ' padding:3px 2px; margin:2px 0; font-size:0.72rem;'
+             ' text-align:center; background:{fond}; color:{encre};">'
+             '{mois}<br><b>{val}</b></div>')
+    for _rang in (0, 1, 2):
+        _cols = st.columns(4)
+        for _j, _mois in enumerate((9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8)[_rang * 4:_rang * 4 + 4]):
+            _val = int(_etat["mois"].get(_mois, 0))
+            with _cols[_j]:
+                st.markdown(_cell.format(
+                    bord=("#66bb6a" if _val > 0 else "#b0a8c8"),
+                    fond=("#e8f5e9" if _val > 0 else "#f5f2fa"),
+                    encre=("#1b5e20" if _val > 0 else "#7a7292"),
+                    mois=_mois_lbls[_mois],
+                    val=((_fr(_val) + " F") if _val > 0 else "—")),
+                    unsafe_allow_html=True)
+
+    # LES TROIS AUTRES CATÉGORIES : leurs lignes (date · précision ·
+    # montant · mode) et leur total ; rien de noté, une seule ligne
+    # discrète le dit. La précision est le nom libre de la cotisation
+    # (v7.16.0) — portée entre la date et le montant quand elle existe.
+    for _code, _lbl in COTIS_DIV_TYPES:
+        if _code == "mensuelle":
+            continue
+        _lignes_t = [_l for _l in _etat["lignes"] if _l[1] == _code]
+        if _lignes_t:
+            st.markdown(f"**✨ {_lbl} — {_fr(_etat['totaux'][_code])} FCFA**")
+            for _l in _lignes_t[:6]:
+                _d_l = safe_date(_l[3])
+                _d_txt = _d_l.strftime("%d/%m/%Y") if _d_l else (_l[3] or "—")
+                _prec = str(_l[7] or "").strip() if len(_l) > 7 else ""
+                _seg_prec = f" · {_prec}" if _prec else ""
+                # v7.16.1 — LA RELANCE EN VERT : la ligne qui attend son
+                # versement s'affiche « ⏳ à régler » sur fond vert ; réglée,
+                # elle porte son mode de paiement et le petit ✅.
+                if not (_l[8] if len(_l) > 8 else False):
+                    st.markdown(
+                        "<span style='font-size:0.8rem; color:#1b5e20;"
+                        " background:#e8f5e9; border:1px solid #a5d6a7;"
+                        " border-radius:8px; padding:2px 8px; display:"
+                        "inline-block; margin:1px 0;'>⏳ à régler · "
+                        f"{_d_txt}{_seg_prec} · {_fr(_l[2])} FCFA</span>",
+                        unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
+                                f"{_d_txt}{_seg_prec} · {_fr(_l[2])} FCFA · "
+                                f"{_modes_lbls.get(_l[4] or '', _l[4] or '—')} ✅</span>",
+                                unsafe_allow_html=True)
+            if len(_lignes_t) > 6:
+                st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
+                            f"… et {len(_lignes_t) - 6} autre(s) versement(s)</span>",
+                            unsafe_allow_html=True)
+        else:
+            st.markdown(f"<span style='font-size:0.8rem; color:#8a82a2;'>"
+                        f"✨ {_lbl} — rien de noté</span>",
+                        unsafe_allow_html=True)
+
+    # v7.16.0 — L'ABONNEMENT FAIT PARTIE DE L'ÉTAT (demande du diocèse) :
+    # réglé → la ligne du reçu (montant · date · numéro) ; à régler → le
+    # montant attendu pour CE membre et l'échéance qui le concerne.
+    _nat_lbl = ("Abonnement" if _du["abonnement_nature"] == "abonnement"
+                else "Réabonnement")
+    if _du["abonnement_paye"] and _du["abonnement_recu"]:
+        _r_ab = _du["abonnement_recu"]
+        _d_p = safe_date(_r_ab["date"])
+        _d_ab = _d_p.strftime("%d/%m/%Y") if _d_p else (_r_ab["date"] or "—")
+        st.markdown(f"**📅 {_nat_lbl} {_annee} - {_annee + 1} — ✅ réglé**")
+        st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
+                    f"{_d_ab} · {_fr(_r_ab['montant'])} FCFA"
+                    + (f" · reçu {_r_ab['numero']}" if _r_ab["numero"] else "")
+                    + "</span>", unsafe_allow_html=True)
+    else:
+        _ech_aff = str(_du["abonnement_echeance"] or "")
+        try:
+            _d_e = date.fromisoformat(_ech_aff)
+            _ech_aff = _d_e.strftime("%d/%m/%Y")
+        except Exception:
+            pass
+        st.markdown(f"**📅 {_nat_lbl} {_annee} - {_annee + 1} — ⏳ à régler**")
+        st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
+                    f"{_fr(_du['abonnement_attendu'])} FCFA"
+                    + (f" · échéance le {_ech_aff}" if _ech_aff else "")
+                    + " · chez ta responsable d'équipe</span>",
+                    unsafe_allow_html=True)
+
+    # LA MENSUELLE ENCORE DÛE : les mois écoulés que rien ne couvre, au
+    # tarif réglé — la dette se lit aussi mois par mois.
+    if _du["mensuelle"] > 0:
+        st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
+                    f"🧮 Mensuelle — {_fr_liste(_du['mois_dus'])} à régler "
+                    f"· {_fr(_du['mensuelle'])} FCFA</span>",
+                    unsafe_allow_html=True)
+
+    # LE TOTAL DÛ À CE JOUR (v7.16.0, à la place du total de l'année) :
+    # les mois de mensuelle écoulés non versés + l'abonnement non réglé.
+    # Rien de dû → la carte passe au vert, « À jour ». Le déjà versé le
+    # rappelle juste en dessous.
+    _du_tot = int(_du["total"])
+    if _du_tot <= 0:
+        st.markdown(
+            '<div style="background:linear-gradient(135deg,#e8f5e9 0%,#f1f8e9 100%);'
+            ' border:1px solid #a5d6a7; border-radius:10px; padding:8px 12px;'
+            ' margin-top:6px; text-align:center; color:#1b5e20;'
+            ' font-weight:bold;">💰 Total dû à ce jour : 0 FCFA — ✅ À jour</div>',
+            unsafe_allow_html=True)
+    else:
+        st.markdown(
+            '<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%);'
+            ' border:1px solid #d1c4e9; border-radius:10px; padding:8px 12px;'
+            ' margin-top:6px; text-align:center; color:#4A148C;'
+            ' font-weight:bold;">💰 Total dû à ce jour : '
+            + _fr(_du_tot) + ' FCFA</div>', unsafe_allow_html=True)
+    st.caption(f"🕊️ Déjà versé cette année pastorale : "
+               f"{_fr(_etat.get('total_regle', _etat['total']))} FCFA")
+
+
+def _cases_memoire(matloc, nb=14):
+    """v7.15.1 — LA GRILLE DES DERNIERS JOURS, posée hors carte pour servir
+    deux fois : « 📿 Mémoire de mes dizaines » (la mienne) et « 🛖 Mémoire
+    de l'aubergiste » (celle de qui me porte). Retourne le HTML des cases
+    (le jour récent d'abord, ✨ pour aujourd'hui) ou None si la lecture
+    dort — jamais d'exception."""
+    if not matloc:
+        return None
+    try:
+        _serie = serie_dizaines_membre(matloc, nb)
+    except Exception:
+        return None
+    _cases = ""
+    for (_j, _fait) in reversed(_serie):  # le jour récent d'abord
+        try:
+            _lib = date.fromisoformat(_j).strftime("%d/%m")
+        except Exception:
+            _lib = _j[5:]
+        _auj = "✨" if _j == date.today().isoformat() else ""
+        _cases += ('<div style="min-width:42px; flex:1 0 42px; background:'
+                   + ("#1b2a5e" if _fait else "#121a45")
+                   + '; border:1px solid ' + ("#FFD700" if _fait else "#27306b")
+                   + '; border-radius:8px; padding:5px 2px; text-align:center;">'
+                     '<div style="color:' + ("#FFD000" if _fait else "#5a6398")
+                   + '; font-weight:bold; font-size:0.82rem;">'
+                   + ("✅" if _fait else "·") + '</div>'
+                     '<div style="color:#8a93c9; font-size:0.62rem;">' + _auj
+                   + _lib + '</div></div>')
+    return _cases
+
+
+def _carte_memoire_membre(matloc=None):
+    """v7.13.1 — « 📿 Mémoire de mes dizaines », cadre bien doré posé entre
+    la carte de bienvenue et « 📿 Ta dizaine du jour » : les 14 derniers
+    jours (le plus récent d'abord, ✨03/11 → 02/11 → …), le compteur du
+    mois et la flamme des jours de suite. La fidélité se voit — sans jamais
+    surveiller. v7.15.1 — la grille vient de _cases_memoire, la même qui
+    nourrit la carte de l'aubergiste."""
+    if not matloc:
+        return
+    _cases = _cases_memoire(matloc, 14)
+    if _cases is None:
+        return
+    try:
+        _mois, _flamme = compteur_dizaines_mois(matloc)
+        _serie = serie_dizaines_membre(matloc, 14)
+    except Exception:
+        return
+    _total = sum(1 for (_j, _f) in _serie if _f)
+    st.markdown(
+        '<div style="background:#121a45; border:2px solid #FFD700; border-radius:15px;'
+        ' padding:14px 16px; margin:10px;">'
+        '<div style="color:#FFD000; font-weight:bold; font-size:1rem;">'
+        '📿 Mémoire de mes dizaines</div>'
+        '<div style="border-left:2px solid #FFD700; padding-left:8px;'
+        ' margin-top:7px; color:#ffffff; font-weight:bold; font-size:0.72rem;'
+        ' font-style:italic; line-height:1.5;">« Prends soin de cet homme. '
+        'Et ce que tu dépenseras en plus, je te le rendrai quand je '
+        'reviendrai. » — Luc 10,35</div>'
+        '<div style="color:#8a93c9; font-size:0.78rem; margin-top:4px;">'
+        'Ta fidélité du jour — les 14 derniers jours</div>'
+        '<div style="display:flex; flex-wrap:wrap; gap:5px; margin:10px 0 6px 0;">'
+        + _cases + '</div>'
+        '<div style="color:#e8eaf6; font-size:0.85rem; margin-top:6px;">📿 '
+        + str(_total) + ' dizaine(s) sur 14 jours · ' + str(_mois) + ' ce mois'
+        + (" · 🔥 " + str(_flamme) + " jour(s) de suite" if _flamme else "")
+        + '</div></div>', unsafe_allow_html=True)
+
+
+def _carte_aubergiste(matloc=None):
+    """v7.15.1 — « 🛖 Mémoire de l'aubergiste : Luc 10,35 », au mot près de
+    la définition du diocèse : la « 📿 Mémoire de mes dizaines » de celui /
+    celle qui ME porte dans la ⛓️ chaîne de prière — « Tout simplement ».
+    La carte montre : SON maillon (« N° 14 — X prie pour Y — N° méd. 10. »,
+    la voix même de la séance), « 🕯️ Son intention (N° méd. 10) » —
+    l'intention posée à MON N° méd., celle qu'il/elle veille pour moi —,
+    puis SA fidélité des 14 derniers jours, simplifiée. Sans séance
+    enregistrée (ou hors de la chaîne du jour), les N° méd. entrent en
+    action : ordre croissant, le N° méd. juste sous le mien me porte, la
+    chaîne se referme toute seule. Sans intention posée à mon N° méd. :
+    règle de la maison — « La Paix dans le monde » veille jusqu'à la
+    prochaine séance. Lecture seule. v7.15.2 — à la demande du diocèse :
+    le sous-titre « La 📿 mémoire de celui / celle qui me porte » et le
+    garde-fou « Aucune dizaine notée… » quittent la carte (le titre et le
+    sceau disent tout) ; le sceau de Luc 10,35 s'agrandit et passe en
+    gras. La carte se montre à coup sûr (elle ne se dérobe jamais : quand
+    l'aubergiste n'est pas encore identifiable, elle le dit)."""
+    if not matloc:
+        return
+
+    def _esc(_t):
+        return html.escape(str(_t or ""))
+
+    def _d_fr(_iso):
+        _d = safe_date(_iso)
+        return _d.strftime("%d/%m/%Y") if _d else str(_iso or "")
+
+    _or, _nuit, _doux = "#FFD700", "#121a45", "#8a93c9"
+    _titres, _corps = "#FFD000", "#e8eaf6"
+    _blocs = []
+
+    # ---- l'en-tête ----
+    _blocs.append('<div style="color:' + _titres + '; font-weight:bold; font-size:1rem;">'
+                  '🛖 Mémoire de l’aubergiste — Luc 10,35</div>')
+
+    # ---- qui me porte ? (la séance d'abord, les N° méd. ensuite) ----
+    try:
+        _aub = aubergiste_du_membre(matloc)
+    except Exception as e:
+        logger.warning(f"_carte_aubergiste (aubergiste) : {e!r}")
+        _aub = None
+    _mon_nom = None
+    try:
+        _r_moi = c.execute("SELECT nom, prenom FROM membres WHERE matloc=? LIMIT 1",
+                           (str(matloc or "").upper().strip(),)).fetchone()
+        if _r_moi:
+            _mon_nom = (str(_r_moi[0] or "") + " " + str(_r_moi[1] or "")).strip() or None
+    except Exception as e:
+        logger.warning(f"_carte_aubergiste (mon nom) : {e!r}")
+
+    if not _aub or not _aub.get("aub_matloc"):
+        # L'aubergiste attend — la carte reste visible, elle explique.
+        if not (_aub and _aub.get("equipe_id")):
+            _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:8px;">'
+                          '🛖 L’aubergiste attend : dès que ton équipe sera reliée à la '
+                          '⛓️ chaîne (prière mensuelle enregistrée), celui / celle qui te '
+                          'porte montrera sa fidélité ici.</div>')
+        else:
+            _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:8px;">'
+                          '🛖 L’aubergiste attend : dès que les N° méd. de ton équipe '
+                          'seront posés (1 à 20, dans « 👤 Mes membres »), la chaîne se '
+                          'refermera toute seule et sa fidélité viendra ici.</div>')
+        # v7.15.2 — le sceau agrandi et en gras (demande du diocèse).
+        _blocs.append('<div style="border-top:1px solid ' + _or + '; margin-top:10px; padding-top:7px; '
+                      'color:' + _doux + '; font-size:0.95rem; font-weight:bold; font-style:italic;">'
+                      '« Prends soin de cet homme. Et ce que tu dépenseras en plus, je te le rendrai '
+                      'quand je reviendrai. » — Luc 10,35</div>')
+        st.markdown('<div style="background:' + _nuit + '; border:2px solid ' + _or
+                    + '; border-radius:15px; padding:14px 16px; margin:10px;">'
+                    + "".join(_blocs) + '</div>', unsafe_allow_html=True)
+        return
+
+    # ---- SON maillon (la voix même de la séance) ----
+    _ml_moi = (f"{_esc(_mon_nom) if _mon_nom else 'moi'}"
+               f" — N° méd. {int(_aub['mon_num']):02d}"
+               if _aub.get("mon_num") is not None else "moi")
+    if _aub.get("via") == "seance":
+        _blocs.append('<div style="color:' + _corps + '; font-size:0.88rem; margin-top:8px;">'
+                      '⛓️ Séance du <b>' + _d_fr(_aub.get("seance_date")) + '</b> — '
+                      'N° ' + str(int(_aub["aub_num"])).zfill(2) + ' — <b>'
+                      + _esc(_aub["aub_nom"]) + '</b> prie pour <b>' + _ml_moi + '</b>.</div>')
+    else:
+        _blocs.append('<div style="color:' + _corps + '; font-size:0.88rem; margin-top:8px;">'
+                      '⛓️ Pas de séance enregistrée — les N° méd. entrent en action '
+                      '(ordre croissant, la chaîne se referme toute seule) : '
+                      'N° ' + str(int(_aub["aub_num"])).zfill(2) + ' — <b>'
+                      + _esc(_aub["aub_nom"]) + '</b> prie pour <b>' + _ml_moi + '</b>.</div>')
+
+    # ---- SON intention — l'intention posée à MON N° méd. ----
+    # (pas de règle d'or ici, à dessein : c'est MA propre intention qu'il /
+    # elle porte pour moi — la demande du diocèse, « Son intention (N° 10) ».)
+    _depot = None
+    if _aub.get("mon_num") is not None:
+        try:
+            _depot = intention_reserve_pour_numero(
+                int(_aub["mon_num"]), equipe_id=int(_aub["equipe_id"]),
+                en_place=True)
+        except Exception as e:
+            logger.warning(f"_carte_aubergiste (dépôt) : {e!r}")
+            _depot = None
+    if _depot and str(_depot[0] or "").strip():
+        _blocs.append('<div style="background:#1b2a5e; border:1px solid ' + _or
+                      + '; border-radius:10px; padding:8px 10px; margin:8px 0 4px 0;">'
+                      '<div style="color:' + _titres + '; font-size:0.8rem;">🕯️ Son intention '
+                      '(N° méd. ' + str(int(_aub["mon_num"])).zfill(2) + ')</div>'
+                      '<div style="color:' + _corps + '; font-size:0.86rem; font-style:italic; margin-top:3px;">« '
+                      + _esc(str(_depot[0]).strip()) + ' »</div></div>')
+    else:
+        _blocs.append('<div style="color:' + _corps + '; font-size:0.85rem; margin-top:6px;">'
+                      '🕊️ Aucune intention posée à ton N° méd. '
+                      + (str(int(_aub["mon_num"])).zfill(2) if _aub.get("mon_num") is not None else "—")
+                      + ' : règle de la maison — ensemble, elle veille avec moi sur '
+                      '<b>« La Paix dans le monde »</b> jusqu’à la prochaine séance.</div>')
+
+    # ---- SA mémoire — la « 📿 Mémoire de mes dizaines » de qui me porte ----
+    _cases = _cases_memoire(_aub["aub_matloc"], 14)
+    if _cases is not None:
+        _tot_a = 0
+        _mois_a, _fl_a = 0, 0
+        try:
+            _serie_a = serie_dizaines_membre(_aub["aub_matloc"], 14)
+            _tot_a = sum(1 for (_j, _f) in _serie_a if _f)
+            _mois_a, _fl_a = compteur_dizaines_mois(_aub["aub_matloc"])
+        except Exception as e:
+            logger.warning(f"_carte_aubergiste (sa mémoire) : {e!r}")
+        _blocs.append('<div style="color:' + _titres + '; font-size:0.85rem; font-weight:bold; margin-top:10px;">'
+                      '📿 Sa mémoire de dizaines — les 14 derniers jours</div>'
+                      '<div style="display:flex; flex-wrap:wrap; gap:5px; margin:8px 0 4px 0;">'
+                      + _cases + '</div>'
+                      '<div style="color:' + _corps + '; font-size:0.85rem;">📿 '
+                      + str(_tot_a) + ' dizaine(s) sur 14 jours · ' + str(_mois_a) + ' ce mois'
+                      + (" · 🔥 " + str(_fl_a) + " jour(s) de suite" if _fl_a else "")
+                      + '</div>')
+
+    # ---- le sceau de l'Écriture ----
+    # v7.15.2 — le sceau agrandi et en gras (demande du diocèse).
+    _blocs.append('<div style="border-top:1px solid ' + _or + '; margin-top:10px; padding-top:7px; '
+                  'color:' + _doux + '; font-size:0.95rem; font-weight:bold; font-style:italic;">'
+                  '« Prends soin de cet homme. Et ce que tu dépenseras en plus, je te le rendrai '
+                  'quand je reviendrai. » — Luc 10,35</div>')
+
+    st.markdown('<div style="background:' + _nuit + '; border:2px solid ' + _or
+                + '; border-radius:15px; padding:14px 16px; margin:10px;">'
+                + "".join(_blocs) + '</div>', unsafe_allow_html=True)
+
+
+def _route_vers_application(route, matloc=None):
+    """v7.13.14 — la route du téléphone, emballée pour les Navigateurs.
+
+    Le lien nu « madizaine://… » laissait le Navigateur sur une page
+    muette quand la porte du manifeste n'était pas trouvée : une nouvelle
+    page s'ouvrait, plus rien ne se passait. L'emballage
+    intent://…#Intent;scheme=…;package=…;S.browser_fallback_url=…;end dit
+    AUSSI qui sonner (le paquet de MA DIZAINE), et s'il ne trouve
+    l'application il REVIENT à la page Espace du membre — jamais une page
+    d'erreur. Chrome reconstruit exactement « madizaine://pont?… » : le
+    téléphone reçoit la même route qu'avant, recevoirPont est intact."""
+    _secours = URL_ESPACE_SPIRITUEL + "/?espace=1"
+    if matloc:
+        _secours += "&matloc=" + urllib.parse.quote(str(matloc).strip().upper())
+    return ("intent://" + route
+            + "#Intent;scheme=madizaine"
+            + ";package=com.example.madizaineapp"
+            + ";S.browser_fallback_url=" + urllib.parse.quote(_secours, safe="")
+            + ";end")
+
+
+def _pont_memoire_hors_ligne(membre):
+    """v7.13.13 — LE PONT DE LA MÉMOIRE ET DU PROFIL (hors-ligne ↔ Espace), l'unité
+    demandée : « ce qui est saisi en hors-ligne se répercute dans le web et
+    vice-versa sans intervention extérieure ».
+    · REÇOIT — ?pont_jours=2026-11-08,2026-11-09 : les journées priées hors
+      ligne que le téléphone glisse dans l'adresse quand le réseau revient.
+      Elles sautent dans le journal par la MÊME porte que le livre
+      (importer_dizaines_hors_ligne : UNIQUE(matloc, jour) — une journée ne
+      se compte jamais deux fois), un mot doux le dit, puis l'adresse
+      s'allège (le paramètre part, comme ?push_abo avant lui).
+    · LA PORTE DU PROFIL (v7.13.13) — ?pont=profil : l'incursion demandée —
+      la toute première fois et chaque changement de lien se font sur le
+      net. L'Espace pose une carte dorée et UN bouton de la maison
+      (« ✋ Reprendre dans l'application » — v7.13.14 : plus de bouton
+      doré improvisé, la NOTE du pasteur) : la route madizaine://
+      emballée en intent:// porte le profil complet (nom, équipe,
+      paroisse, WhatsApp, N° méd.), l'intention portée et la fidélité du
+      web. Lecture seule — la base ne se touche jamais.
+    · DONNE — <div id="pont_memoire" hidden data-jours="…"> : la fidélité
+      du membre (90 derniers jours), posée invisible dans la page ; le
+      téléphone la lit dès que la page est peinte et sa carte « 📿 Mémoire
+      de mes dizaines » se met à jour des deux côtés.
+    La base n'est jamais touchée directement : tout passe par la porte
+    existante, et seuls les jours véritables (ISO, jamais demain) entrent."""
+    _mat = str(membre[3] or "").strip().upper()
+    if not _mat:
+        return
+    _nom = ((membre[1] or "") + " " + (membre[2] or "")).strip()
+
+    # ---- 1) REÇOIR : les journées annoncées par le téléphone ----
+    _pj = st.query_params.get("pont_jours")
+    if isinstance(_pj, list):
+        _pj = _pj[0] if _pj else None
+    if _pj:
+        _jours = []
+        for _b in str(_pj).split(","):
+            _b = _b.strip()
+            try:
+                if date.fromisoformat(_b) <= date.today():
+                    _jours.append(_b)
+            except ValueError:
+                continue
+        if _jours:
+            try:
+                _aj, _dj, _ig = importer_dizaines_hors_ligne(
+                    matloc=_mat, nom=_nom or None, equipe_id=membre[10],
+                    paroisse_id=membre[11], est_membre=True, jours=_jours)
+                st.session_state["pont_recues"] = int(_aj) + int(_dj)
+                # v7.15.2 — le mot doux naît ICI (sous l'entête, depuis que
+                # le pont vit après elle) et plus jamais au-dessus.
+                if _aj:
+                    st.success(
+                        "🕊️ " + str(_aj)
+                        + (" journée" if _aj == 1 else " journées")
+                        + " priée(s) hors ligne "
+                        + ("vient de rejoindre" if _aj == 1 else "viennent de rejoindre")
+                        + " ta chaîne de prière — Merci Sainte Mère pour ta fidélité ! 📿")
+                elif _dj:
+                    _phr = ("Ta journée priée hors ligne était déjà dans la chaîne"
+                            if _dj == 1 else
+                            "Tes " + str(_dj) + " journées priées hors ligne étaient "
+                            "déjà dans la chaîne")
+                    st.warning(_phr + " — rien n'a été recompté. 🕊️")
+            except Exception:
+                logger.warning("_pont_memoire_hors_ligne : réception manquée")
+        # l'adresse s'allège — le paramètre a vécu
+        try:
+            del st.query_params["pont_jours"]
+        except Exception:
+            pass
+
+    # ---- 2) DONNER : la fidélité du web, lisible par les deux berges ----
+    try:
+        _serie = serie_dizaines_membre(_mat, 90)
+        _mes_jours = ",".join(str(_j) for (_j, _f) in _serie if _f)
+    except Exception:
+        _mes_jours = ""
+
+    # ---- 3) LA PORTE DU PROFIL (v7.13.13) — l'incursion du téléphone :
+    # ?pont=profil arrive de la première page (« Ton lien personnel ») ou
+    # de « 🔄 Actualiser depuis l'Espace ». La carte ci-dessous porte TOUT
+    # ce que le téléphone vient chercher, en UN bouton : le profil complet,
+    # l'intention portée, et la fidélité déjà cochée ici (la seconde berge
+    # fait le reste en continu, sous la carte mémoire).
+    _pp = st.query_params.get("pont")
+    if isinstance(_pp, list):
+        _pp = _pp[0] if _pp else None
+    if _pp and str(_pp).strip().lower() == "profil":
+        _params = {"p": "1", "matloc": _mat}
+        if str(membre[2] or "").strip():
+            _params["prenom"] = str(membre[2]).strip()
+        if str(membre[1] or "").strip():
+            _params["nom"] = str(membre[1]).strip()
+        if _nom:
+            _params["ncomplet"] = _nom
+        if str(membre[8] or "").strip():
+            _params["equipe"] = str(membre[8]).strip()
+        if str(membre[9] or "").strip():
+            _params["paroisse"] = str(membre[9]).strip()
+        if str(membre[4] or "").strip():
+            _params["whatsapp"] = str(membre[4]).strip()
+        if str(membre[7] or "").strip():
+            _params["med"] = str(membre[7]).strip()
+        try:
+            _itx, _iqui = intention_du_prochain_detail(matloc=_mat)
+            if _itx and str(_itx).strip():
+                _params["intention"] = str(_itx).strip()
+                if _iqui and str(_iqui).strip():
+                    _params["qui"] = str(_iqui).strip()
+        except Exception:
+            logger.warning("pont profil : intention indisponible")
+        # v7.15.2 — L'AUBERGISTE VOYAGE AVEC LE PROFIL : la carte « 🛖
+        # Mémoire de l'aubergiste : Luc 10,35 » de l'application (MA DIZAINE)
+        # dira la même chose que la carte de l'Espace, au mot près — SON N°,
+        # SON nom, la séance en vigueur (ou rien), « Son intention » (celle
+        # posée à MON N° méd., la voix même de la carte web) et SA fidélité
+        # des 14 derniers jours. Lecture pure — la base n'est pas touchée.
+        try:
+            _aub_p = aubergiste_du_membre(_mat)
+            if _aub_p and _aub_p.get("aub_matloc"):
+                _params["aub"] = str(int(_aub_p["aub_num"]))
+                _params["aubnom"] = str(_aub_p["aub_nom"]).strip()
+                if _aub_p.get("via") == "seance" and _aub_p.get("seance_date"):
+                    _params["aubdate"] = str(_aub_p["seance_date"])
+                if _aub_p.get("mon_num") is not None:
+                    try:
+                        _sitx, _squ = intention_reserve_pour_numero(
+                            int(_aub_p["mon_num"]),
+                            equipe_id=int(_aub_p["equipe_id"]), en_place=True) \
+                            or (None, None)
+                        if _sitx and str(_sitx).strip():
+                            _params["sitx"] = str(_sitx).strip()
+                    except Exception:
+                        logger.warning(
+                            "pont profil : intention de l'aubergiste indisponible")
+                try:
+                    _sja = serie_dizaines_membre(
+                        str(_aub_p["aub_matloc"]).strip().upper(), 14)
+                    _aubj = ",".join(_j for (_j, _f) in _sja if _f)
+                    if _aubj:
+                        _params["aubj"] = _aubj
+                except Exception:
+                    pass
+        except Exception:
+            logger.warning("pont profil : aubergiste indisponible")
+        if _mes_jours:
+            _params["jours"] = _mes_jours
+        _qs = urllib.parse.urlencode(_params, quote_via=urllib.parse.quote)
+        _lien_espace = "?espace=1&matloc=" + urllib.parse.quote(_mat)
+        _nb_jours = _mes_jours.count(",") + 1 if _mes_jours else 0
+        _nb_infos = len(_params) - 2 - (1 if _nb_jours else 0)
+        _resum = (str(_nb_infos) + " informations de ton profil"
+                  if _nb_infos > 0 else "ton profil")
+        if _nb_jours:
+            _resum += (" · " + str(_nb_jours)
+                       + (" journée" if _nb_jours == 1 else " journées")
+                       + " de fidélité")
+        _lien_app = _route_vers_application("pont?" + _qs, _mat)
+        st.markdown(
+            '<div style="background:#121a45; border:2px solid #FFD700; '
+            'border-radius:15px; padding:16px 18px; margin:10px 10px 6px 10px; '
+            'text-align:center;">'
+            '<div style="color:#FFD000; font-weight:bold; font-size:1.1rem;">'
+            '🕊 Le pont vers l\'application</div>'
+            '<div style="color:#e8eaf6; font-size:0.92rem; margin:8px 0 4px 0;">'
+            'Ton téléphone vient chercher ' + _resum + '.</div>'
+            '<div style="color:#8a93c9; font-size:0.82rem;">'
+            'Touche le bouton : tout voyage en une seule fois, sans rien retaper.</div>'
+            '</div>',
+            unsafe_allow_html=True)
+        # v7.13.14 — le bouton de la maison (NOTE : pas de bouton doré
+        # improvisé ; le même style que « 📿 Égrener la dizaine »).
+        st.link_button("✋ Reprendre dans l'application", _lien_app,
+                       type="primary", width="stretch")
+        st.markdown(
+            '<div style="text-align:center; margin:0 10px 10px 10px;">'
+            '<a href="' + html.escape(_lien_espace, quote=True) + '" '
+            'style="color:#9fa6d8; font-size:0.82rem; text-decoration:underline;">'
+            'Continuer vers l\'Espace →</a></div>',
+            unsafe_allow_html=True)
+        # la porte s'est ouverte : l'adresse s'allège (le paramètre a vécu)
+        try:
+            del st.query_params["pont"]
+        except Exception:
+            pass
+
+    # ---- 4) LA FIDÉLITÉ INVISIBLE (les berges qui savent la lisent) ----
+    _recues = st.session_state.pop("pont_recues", None)
+    _html = ('<div id="pont_memoire" hidden data-jours="'
+             + html.escape(_mes_jours) + '"')
+    if _recues is not None:
+        _html += ' data-recues="' + str(_recues) + '"'
+    _html += '></div>'
+    st.markdown(_html, unsafe_allow_html=True)
+
+
+def _bouton_retour_application(matloc=None):
+    """v7.13.13 — LA SECONDE BERGE, le « retour dans l'application » posé par
+    l'Espace : un bouton sous la carte mémoire. La route madizaine:// porte
+    les journées cochées ici (90 derniers jours) ; l'application les fond
+    dans sa propre mémoire en UNION (ce qui y était reste, rien ne s'efface
+    jamais). v7.13.14 : bouton de la maison (NOTE : pas de bouton doré
+    improvisé) et route emballée en intent:// — le Navigateur sait qui
+    sonner, et revient à l'Espace au lieu d'une page morte."""
+    if not matloc:
+        return
+    try:
+        _serie = serie_dizaines_membre(str(matloc).strip().upper(), 90)
+        _jours = ",".join(str(_j) for (_j, _f) in _serie if _f)
+    except Exception:
+        return
+    if not _jours:
+        return
+    _n = _jours.count(",") + 1
+    _lien_app = _route_vers_application(
+        "pont?jours=" + urllib.parse.quote(_jours), str(matloc).strip().upper())
+    st.link_button(
+        "📱 " + str(_n) + (" journée" if _n == 1 else " journées")
+        + " de fidélité — reprendre dans l'application",
+        _lien_app, type="primary", width="stretch")
+
+
+def _render_fil_actualites(pid=None, lien_theme=None, equipe_membre_id=None,
+                           auteur_nom=None, intentions=True, matloc=None):
+    """v7.6 — fil du jour BLINDÉ : la ligne est complétée à 5 cases avant
+    tout accès par index. LOT C5 : dernière publication VISIBLE du contexte.
+    v7.8-h : une alerte « 📖 Nouveau feuillet » couronne le fil quand le
+    diocèse vient de publier le feuillet mensuel de prière.
+    v7.8.15 — « 🙏 Vos intentions à une équipe » est réservée à l'Espace
+    COMMUNAUTAIRE : intentions=False côté vue Membre (elle ne s'y affiche
+    plus).
+    v7.9.3 — FIL ALLÉGÉ (FIL_ALLEGEE=True) : le fil ne garde plus que la
+    section attendue — la prière/méditation DU JOUR. Le Coin Affiche, la
+    rubrique intentions (remontée AVANT « 🕯️ Un jour, une dizaine ») et les
+    Actualités de la Paroisse ne s'affichent plus ici (code conservé).
+    v7.9.18 — les ACTUALITÉS (publications « 📰 actualite » du Service
+    Communication : affiches, BA, enseignements…) reviennent dans le fil,
+    après la carte du jour — le fil allégé les avait fait disparaître
+    totalement : deux publications n'apparaissaient NULLE PART dans
+    l'Espace de Prière."""
+    _alerte_feuillet_fil(lien_theme)
+    # v7.9.19 — la carte vidéo a quitté la tête du fil : elle s'ouvre
+    # désormais JUSTE AVANT LE PIED DE PAGE (demande explicite), dans
+    # show_espace_membre, sur toutes les pages de l'Espace de Prière.
+
+    cond, prm = ("AND (paroisse_cible IS NULL OR paroisse_cible = ?)", [pid]) if pid \
+        else ("AND paroisse_cible IS NULL", [])
+    dernier = c.execute(f"""SELECT type_contenu, titre, contenu_texte, image_url, fichier_url
+                           FROM espace_spirituel
+                           WHERE type_contenu IN ('priere', 'meditation') {cond}
+                           ORDER BY date_publication DESC, id DESC LIMIT 1""", prm).fetchone()
+
+    if dernier:
+        ligne = list(dernier) + [None] * max(0, 5 - len(dernier))
+        etiquette = {"priere": "🙏 ", "meditation": "📖 "}.get(ligne[0], "📿 Du jour")
+        texte = ligne[2] or ""
+        url_pdf = ligne[4]
+        if not url_pdf:
+            texte, url_pdf = _extraire_pdf_legacy(texte)
+
+        # v7.8.11 — position de la photo : préfixe [droite]/[gauche] du lien
+        # (choisi à la soumission) → image flottante DANS la carte, le texte
+        # habille ; sinon l'image reste au-dessus (comportement initial).
+        _pos_fil, _url_fil = _parser_pos_photo(ligne[3])
+        _img_flottante = ""
+        if _pos_fil in ("droite", "gauche") and _url_fil and str(_url_fil).startswith("http"):
+            _img_flottante = ('<img src="' + html.escape(str(_url_fil)) + '" alt="" class="'
+                              + ("rub-photo-fd" if _pos_fil == "droite" else "rub-photo-fg") + '">')
+        elif ligne[3] and str(ligne[3]).startswith("http"):
+            st.markdown(f'<img src="{ligne[3]}" alt="" class="rub-photo">', unsafe_allow_html=True)
+
+        texte_html = texte.replace("\n", "<br>")
+        st.markdown(
+            f'<div class="rub-carte" style="padding:20px; text-align:center; margin:15px 10px;">'
+            f'{_img_flottante}'
+            f'<div class="rub-carte-titre" style="font-size:1.15rem; border-bottom:1px solid #27306b; padding-bottom:8px; margin-bottom:12px;">{etiquette} - {html.escape(ligne[1] or "")}</div>'
+            f'<div class="rub-carte-txt" style="font-size:0.98rem; line-height:1.7; text-align:left;">{texte_html}</div>'
+            f'<div style="clear:both;"></div>'
+            f'</div>', unsafe_allow_html=True)
+
+        if url_pdf:
+            _render_pdf_inline(url_pdf)
+    else:
+        st.info("Aucun contenu spirituel n'a encore été publié.")
+
+    # v7.9.18 — LES ACTUALITÉS RENTRENT DANS LE FIL : les publications
+    # « 📰 actualite » (enseignements, salves, affiches…) du diocèse et de
+    # la paroisse du contexte s'affichent APRÈS la carte du jour, pour le
+    # public comme pour les membres. Le fil allégé (v7.9.3) les masquait
+    # totalement : elles n'apparaissaient NULLE PART. La fonction se tait
+    # d'elle-même quand il n'y en a pas — aucun écran pollué à vide.
+    _render_actualites(pid)
+
+    # v7.9.3 — FIL D'ACTUALITÉ ALLÉGÉ : une seule section reste dans le fil
+    # (la prière/méditation du jour, ci-dessus). Le reste est conservé mais
+    # masqué — repasser FIL_ALLEGEE à False pour retrouver l'ancien fil.
+    if not FIL_ALLEGEE:
+        _render_coin_affiche(pid)
+        # v7.8.15 — « 🙏 Vos intentions à une équipe » JUSTE AVANT les actualités
+        # de la paroisse — ESPACE COMMUNAUTAIRE UNIQUEMENT (retirée côté Membre).
+        if intentions:
+            _render_intentions_equipes(pid=pid, equipe_membre_id=equipe_membre_id,
+                                       auteur_nom=auteur_nom)
+        _render_actualites_paroisse(pid)
+
+
+def _render_actualites_paroisse(pid=None):
+    """📰 Actualités de la Paroisse (v7.8.6) — le fil de l'espace communautaire
+    de la paroisse : les prochains évènements créés par ses ÉQUIPES (et par la
+    paroisse elle-même). Périmètre strict : visible UNIQUEMENT dans le contexte
+    de cette paroisse (QR paroissial ou membre de la paroisse) — jamais au-delà.
+    La Réponse de Communion reste dans « 📅 Mes évènements » côté membre."""
+    if not pid:
+        return  # aucun contexte paroissial → pas d'actualité paroissiale
+    try:
+        evts = c.execute("""SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
+                                   e.affiche_url, e.video_url, e.auteur_nom,
+                                   eq.nom_equipe, e.equipe_id
+                            FROM evenements e
+                            LEFT JOIN equipes eq ON e.equipe_id = eq.id
+                            WHERE e.date_evenement >= ?
+                              AND (eq.paroisse_id = ? OR e.paroisse_id = ?)
+                            ORDER BY e.date_evenement ASC LIMIT 5""",
+                         (date.today().isoformat(), pid, pid)).fetchall()
+    except Exception:
+        return
+    if not evts:
+        return
+    st.markdown('<h3 style="font-family:Georgia, serif;">📰 Actualités de la Paroisse</h3>',
+                unsafe_allow_html=True)
+    st.caption("🕊️ Les prochains évènements de votre communauté paroissiale — "
+               "annoncés par ses équipes. Membre : signez votre présence dans "
+               "« 📅 Mes évènements ».")
+    for evt in evts:
+        d_e = safe_date(evt[1])
+        date_txt = d_e.strftime("%d/%m/%Y") if d_e else "Date à définir"
+        delta = (d_e - date.today()).days if d_e else None
+        delai = "🔴 Aujourd'hui !" if delta == 0 else "🟠 Demain" if delta == 1 else \
+                (f"📅 Dans {delta} jours" if delta is not None else "")
+        icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
+                 "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(evt[2], "📅")
+        organisateur = f"👥 {evt[7]}" if evt[7] else "🏘️ La paroisse"
+        entete = f"{icone} {evt[2]} — {date_txt} · {delai}" if delai else f"{icone} {evt[2]} — {date_txt}"
+        with st.expander(entete):
+            st.write(f"**🏢 Organisé par :** {organisateur}")
+            st.write(f"**📍 Lieu :** {evt[3] or 'Lieu à définir'}")
+            _eu, _eurl = _parser_pos_photo(evt[4])
+            if _eurl and _eurl.startswith("http"):
+                st.markdown(f'<img src="{_eurl}" alt="" class="rub-photo">', unsafe_allow_html=True)
+            if evt[5] and str(evt[5]).startswith("http"):
+                try:
+                    st.video(evt[5], width="stretch")
+                except Exception:
+                    st.markdown(f"🎬 [Voir la vidéo]({evt[5]})")
+
+
+def _enregistrer_presence(membre_id, evt_id, choix):
+    try:
+        deja = c.execute("SELECT id FROM suivi_presences WHERE membre_id=? AND evenement_id=?",
+                         (membre_id, evt_id)).fetchone()
+        if deja:
+            c.execute("UPDATE suivi_presences SET statut=? WHERE id=?", (choix, deja[0]))
+        else:
+            c.execute("INSERT INTO suivi_presences (membre_id, evenement_id, statut) VALUES (?, ?, ?)",
+                      (membre_id, evt_id, choix))
+        commit_and_sync()
+    except Exception:
+        st.session_state["flash_warning"] = "⚠️ Impossible d'enregistrer votre réponse pour le moment. Réessayez."
+        st.rerun()
+        return
+    st.session_state["flash_success"] = "Merci pour votre engagement ! 🙏"
+    st.rerun()
+
+
+# v7.9.14 — le chapelet doré relevé une fois pour toutes (l'incorporation
+# ne se refait pas à chaque page) ; None tant qu'il n'a pas été cherché.
+_LOGO_PIED_MEMORISE = None
+
+def _render_pied_de_page(matloc_membre=None):
+    """🟣 PIED DE PAGE DU SITE (v7.9.3, refondu v7.9.9, disposition v7.9.10,
+    assagi v7.9.11) — présent sur TOUTES les pages des Espaces de Prière
+    (communautaire, membre, livre ouvert). TROIS colonnes :
+      • Colonne 1 — 🔒 Politique de confidentialité · 🍪 Politique de cookies ;
+      • Colonne 2 — le LOGO DU MOUVEMENT (le chapelet doré des Équipes du
+        Rosaire, dessiné pour lui — v7.9.11 : ce n'est plus l'icône de
+        l'application), LES ÉQUIPES DU ROSAIRE, DIOCÈSE DE GRAND-BASSAM,
+        le nom de la paroisse du fidèle (reconnu discrètement) et
+        « Contactez le responsable paroissial » (WhatsApp quand il est
+        renseigné) ;
+      • Colonne 3 — 🏠 Actualités · 📿 Rosaire · 🕯️ Thème · 🖼️ Galerie + ·
+        📖 Archives : les cinq rubriques de l'Espace, dans l'ordre — le même
+        menu que l'entête, naviguant dans l'onglet courant.
+    v7.9.11 — les trois phrases d'appel quittent le pied (la chaîne se
+    montre, elle ne se raconte plus) : il reste l'essentiel. Fond violet
+    nuit du badge « Bienvenue » (du haut jusqu'en bas), barre noire de
+    copyright en pied, icône Facebook (si LIEN_FACEBOOK est renseigné).
+    Le mode écoute dédié (?musique=1) en est exempté.
+    v7.9.14 — le chapelet doré est cherché à côté du module (adresse
+    certaine, où que la maison soit installée) et le nom de la paroisse
+    est dit chaque fois qu'il peut être connu : fidèle reconnu, ou
+    paroisse qui a ouvert la porte (QR / lien paroissial), sinon pied
+    sobre — jamais de vide qui ressemble à un oubli."""
+    if st.query_params.get("musique") == "1":
+        return
+    # v7.9.10 — le fidèle est reconnu discrètement (paroisse + responsable) :
+    # des lectures tolérantes, aucune fuite en cas d'imprévu.
+    # v7.9.14 — le nom de la paroisse est montré chaque fois qu'il peut être
+    # connu : celle du fidèle reconnu (même si son statut dort — le pied de
+    # page ne décide rien, il dit bonjour), sinon celle qui a ouvert la porte
+    # (le QR ou le lien paroissial qui a mené ici). Sinon, pied sobre.
+    _nom_par, _wa_par, _pid_par = None, None, None
+    _est_membre = False
+    if matloc_membre:
+        _ml = str(matloc_membre).upper().strip()
+        try:
+            _row_par = c.execute("""SELECT p.nom, p.whatsapp_responsable, p.id
+                                    FROM membres m
+                                    JOIN paroisses p ON m.paroisse_id = p.id
+                                    WHERE m.matloc=? AND m.statut='actif'
+                                    LIMIT 1""", (_ml,)).fetchone()
+            if _row_par:
+                _nom_par, _wa_par, _pid_par = _row_par[0], _row_par[1], _row_par[2]
+                _est_membre = True
+        except Exception:
+            _nom_par, _wa_par, _pid_par = None, None, None
+        if not _est_membre:
+            try:
+                _row_par = c.execute("""SELECT p.nom, p.whatsapp_responsable, p.id
+                                        FROM membres m
+                                        JOIN paroisses p ON m.paroisse_id = p.id
+                                        WHERE m.matloc=?
+                                        LIMIT 1""", (_ml,)).fetchone()
+                if _row_par:
+                    _nom_par, _wa_par, _pid_par = _row_par[0], _row_par[1], _row_par[2]
+                    _est_membre = True
+            except Exception:
+                pass
+    if not _nom_par:
+        try:
+            _pid_accueil = st.session_state.get("paroisse_origine")
+            if _pid_accueil:
+                _row_acc = c.execute("""SELECT nom, whatsapp_responsable, id
+                                        FROM paroisses WHERE id=?""",
+                                     (_pid_accueil,)).fetchone()
+                if _row_acc:
+                    _nom_par, _wa_par, _pid_par = _row_acc[0], _row_acc[1], _row_acc[2]
+        except Exception:
+            pass
+    # v7.9.10 — la colonne 3 pilote le MÊME menu que l'entête (?r=index) :
+    # l'ordre des cinq rubriques et l'index diffèrent (membre ≠ public).
+    _rubriques_pied = [
+        ("🏠 Actualités", "Actualités"),
+        ("📿 Rosaire", "Rosaire"),
+        ("🕯️ Thème", "Thème"),
+        ("🖼️ Galerie +", "Galerie +"),
+        ("📖 Archives", "Archives"),
+    ]
+    _index_rub = {"🏠 Actualités": 0, "📿 Rosaire": 1, "🕯️ Thème": 2,
+                  "🖼️ Galerie +": 3, "📖 Archives": 4}
+    if _est_membre:
+        _index_rub = {"🏠 Actualités": 0, "📿 Rosaire": 2, "🕯️ Thème": 1,
+                      "🖼️ Galerie +": 4, "📖 Archives": 5}
+    _base_lien = "?espace=1&nav=1"
+    _p_ctx = None
+    if _est_membre:
+        # membre reconnu : le lien emporte SON adresse (matloc + paroisse)
+        # et la colonne 3 suit l'ordre des rubriques membre
+        _base_lien += "&matloc=" + urllib.parse.quote(str(matloc_membre))
+        _p_ctx = _pid_par
+    else:
+        _p_ctx = st.session_state.get("paroisse_origine")
+    if _p_ctx:
+        _base_lien += "&p=" + str(_p_ctx)
+    _menu_pied = "".join(
+        '<li><a class="pdr-rub" href="' + _base_lien + "&r="
+        + str(_index_rub[_lib]) + '">' + _lib + '</a></li>'
+        for (_lib, _alt) in _rubriques_pied)
+    # v7.9.11 — le LOGO DU MOUVEMENT, INCORPORÉ (aucune adresse à manquer) :
+    # le chapelet doré des Équipes du Rosaire (static/logo_equipes_rosaire.png),
+    # dessiné pour lui — ce n'est plus l'icône de l'application.
+    # v7.9.14 — LE LOGO QUI NE SE PERD PLUS : il est cherché d'abord À CÔTÉ
+    # DU MODULE (l'adresse certaine, où que la maison soit installée), puis
+    # au coin habituel ; relevé une seule fois puis gardé en mémoire, il ne
+    # dépend plus du lieu d'où la page parle.
+    global _LOGO_PIED_MEMORISE
+    _logo_pied = _LOGO_PIED_MEMORISE
+    if _logo_pied is None:
+        try:
+            import base64 as _b64
+            _ici = os.path.dirname(os.path.abspath(__file__))
+            # v7.9.15 — images/logo.png D'ABORD : livré dans le paquet, et
+            # remplaçable un jour par le logo officiel (même nom) sans toucher
+            # au code — l'entête, la page d'accueil et le pied restent alors
+            # assortis. Le chapelet dessiné de static/ reste en secours.
+            for _cand in (os.path.join(_ici, os.pardir, "images", "logo.png"),
+                          os.path.join("images", "logo.png"),
+                          os.path.join(_ici, os.pardir, "static",
+                                       "logo_equipes_rosaire.png"),
+                          os.path.join("static", "logo_equipes_rosaire.png")):
+                if os.path.exists(_cand):
+                    with open(_cand, "rb") as _f:
+                        # v7.9.16 — plus d'attributs width/height figés : la
+                        # taille est pilotée par le CSS (.pdr-img)
+                        _logo_pied = ('<img class="pdr-img" src="data:image/png;base64,'
+                                      + _b64.b64encode(_f.read()).decode("ascii")
+                                      + '" alt="Les Équipes du Rosaire">')
+                    break
+        except Exception:
+            _logo_pied = None
+        if not _logo_pied:
+            _logo_pied = '<div class="pdr-logo">📿</div>'
+        _LOGO_PIED_MEMORISE = _logo_pied
+    # v7.9.10 — « Contactez le responsable paroissial » : WhatsApp quand la
+    # paroisse l'a renseigné, une simple invitation sinon.
+    _wa_chiffres = "".join(_ch for _ch in str(_wa_par or "") if _ch.isdigit())
+    if _wa_chiffres:
+        _contact_html = ('<a class="pdr-contact" href="https://wa.me/' + _wa_chiffres
+                         + '" target="_blank" rel="noopener">📞 Contactez le responsable'
+                         ' paroissial</a>')
+    else:
+        _contact_html = ('<div class="pdr-contact">📞 Contactez le responsable'
+                         ' paroissial</div>')
+    _fb = str(LIEN_FACEBOOK or "").strip()
+    _fb_html = ('<a class="pdr-fb" href="' + html.escape(_fb, quote=True) +
+                '" target="_blank" rel="noopener" aria-label="Facebook">f</a>') if _fb else ''
+    # v7.9.19 — L'ADRESSE DE LA CHAÎNE YOUTUBE (demande : « le lien de la
+    # chaîne youtube.com à ajouter comme adresse dans le pied de page ») :
+    # une ligne de plus dans la colonne centrale, sous le contact du
+    # responsable paroissial, comme une adresse du Mouvement.
+    _yt = str(LIEN_YOUTUBE_CHAINE or "").strip()
+    _yt_html = ('<a class="pdr-contact pdr-yt" href="' + html.escape(_yt, quote=True)
+                + '" target="_blank" rel="noopener">▶️ Notre chaîne YouTube</a>') if _yt else ''
+    st.markdown('<style>'
+                '.pdr-v910 { margin:30px 10px 18px 10px; border-radius:16px; overflow:hidden;'
+                ' background:linear-gradient(165deg, #241042 0%, #3B1177 55%, #4A148C 100%);'
+                ' box-shadow:0 6px 22px rgba(26,10,60,.45); }'
+                '.pdr-v910 .pdr-cols { display:flex; flex-wrap:wrap; gap:8px 26px;'
+                ' padding:22px 20px 14px 20px; }'
+                '.pdr-v910 .pdr-col { flex:1 1 210px; min-width:190px; color:#e6dcf7;'
+                ' font-size:0.86rem; line-height:1.8; }'
+                # v7.9.15 — disposition d'origine (base mobile) : la 3e
+                # colonne (menu) part du même rang que les autres, et le
+                # bloc @media ci-dessous règle les écrans larges (v7.9.19 :
+                # trois colonnes de MÊME largeur — colonne centrale
+                # équidistante des deux extrêmes, menu calé à droite).
+                # Sur téléphone (< 700 px), les colonnes s'empilent
+                # comme avant — aucun changement mobile.
+                '.pdr-v910 .pdr-col-droite { flex:1 1 210px; }'
+                # v7.9.19 — LA COLONNE CENTRALE ÉQUIDISTANTE DES DEUX EXTRÊMES
+                # (demande : « la 2ᵉ colonne semble plus proche de la 3ᵉ ») :
+                # sur les écrans larges, les TROIS colonnes ont exactement la
+                # même largeur (flex:1 1 0) — le centre du logo/nom tombe au
+                # juste milieu ; le menu de droite reste calé à droite. Sur
+                # téléphone (< 700 px), l'empilement ne change pas.
+                '@media (min-width:700px) {'
+                '.pdr-v910 .pdr-cols { flex-wrap:nowrap; }'
+                '.pdr-v910 .pdr-col { flex:1 1 0; min-width:0; }'
+                '.pdr-v910 .pdr-col-droite { flex:1 1 0; min-width:0;'
+                ' margin-left:0; padding-left:0; text-align:right; }'
+                '.pdr-v910 ul.pdr-menu { text-align:right; }'
+                '}'
+                '.pdr-v910 .pdr-col-milieu { text-align:center; }'
+                # v7.9.16 — LE LOGO AGRANDI : même largeur que le nom
+                # « LES ÉQUIPES DU ROSAIRE » (≈ 240 px), proportion carrée
+                # conservée, réduit proprement si l'écran est étroit
+                # (max-width:100%). L'ombre suit la forme ronde du chapelet
+                # (drop-shadow), pas un carré autour des coins transparents.
+                '.pdr-v910 .pdr-img { width:240px; max-width:100%; height:auto;'
+                ' filter:drop-shadow(0 3px 10px rgba(0,0,0,.45)); }'
+                '.pdr-v910 .pdr-logo { font-size:2.1rem; line-height:1.2;'
+                ' filter:drop-shadow(0 2px 6px rgba(0,0,0,.4)); }'
+                '.pdr-v910 .pdr-nom { color:#FFFFFF; font-weight:bold; letter-spacing:.06em;'
+                ' font-family:Georgia, serif; font-size:1.02rem; margin-top:8px; }'
+                '.pdr-v910 .pdr-dio { color:#FFD54F; font-size:0.84rem; letter-spacing:.05em; }'
+                '.pdr-v910 .pdr-par { color:#e6dcf7; font-size:0.84rem; margin-top:2px; }'
+                '.pdr-v910 ul.pdr-menu { list-style:none; margin:0 0 10px 0; padding:0; }'
+                '.pdr-v910 ul.pdr-menu li { padding:3px 0; }'
+                '.pdr-v910 ul.pdr-menu a { color:#e6dcf7; text-decoration:none;'
+                ' font-size:0.88rem; }'
+                '.pdr-v910 ul.pdr-menu a:hover { color:#FFD54F; text-decoration:underline; }'
+                '.pdr-v910 p { margin:0 0 12px 0; }'
+                '.pdr-v910 details { margin:0 0 10px 0; }'
+                '.pdr-v910 summary { cursor:pointer; list-style:none; color:#FFD54F;'
+                ' font-size:0.84rem; font-weight:600; padding:3px 0; }'
+                '.pdr-v910 summary::-webkit-details-marker { display:none; }'
+                '.pdr-v910 summary::before { content:"▸ "; color:#FFD54F; }'
+                '.pdr-v910 details[open] summary::before { content:"▾ "; }'
+                '.pdr-v910 .pdr-corps { color:#cfc2ea; font-size:0.8rem; line-height:1.75;'
+                ' margin-top:6px; }'
+                '.pdr-v910 .pdr-corps b { color:#e8eaf6; }'
+                '.pdr-v910 .pdr-contact { display:inline-block; color:#FFD54F;'
+                ' font-size:0.84rem; text-decoration:none; margin-top:4px; }'
+                '.pdr-v910 a.pdr-contact:hover { text-decoration:underline; }'
+                # v7.9.19 — la ligne YouTube de la colonne centrale
+                '.pdr-v910 .pdr-yt { display:block; margin-top:6px; }'
+                '.pdr-v910 .pdr-bas { background:rgba(5,2,12,.88); padding:10px 16px;'
+                ' display:flex; flex-wrap:wrap; gap:4px 18px; align-items:center;'
+                ' justify-content:space-between; }'
+                '.pdr-v910 .pdr-cop { color:#b9a8e0; font-size:0.76rem; }'
+                '.pdr-v910 .pdr-fb { display:inline-flex; align-items:center; justify-content:center;'
+                ' width:26px; height:26px; border-radius:50%; background:#1877F2; color:#fff;'
+                ' font-weight:bold; font-size:0.9rem; text-decoration:none;'
+                ' font-family:Georgia, serif; }'
+                '</style>', unsafe_allow_html=True)
+    st.markdown(
+        '<footer class="pdr-v910">'
+        '<div class="pdr-cols">'
+        '<div class="pdr-col">'
+        '<details><summary>🔒 Politique de confidentialité</summary>'
+        '<div class="pdr-corps">'
+        '<b>1 · Ce que nous recueillons.</b> Les intentions confiées à une équipe '
+        'enregistrent le nom (sauf si vous cochez « 🕊️ Rester anonyme »), un contact '
+        '(WhatsApp ou adresse mail) et le jour de naissance — cette dernière donnée '
+        'sert uniquement de clé discrète dans la chaîne de prière universelle : elle '
+        'n&#8217;identifie personne et garantit seulement que vous n&#8217;y prierez jamais votre '
+        'propre intention. Le pointage de dizaine (boutons « ✅ J’ai égrené ma dizaine '
+        'aujourd’hui » et « ✕ Terminer ») note seulement la participation du jour : '
+        'le membre par son matricule (MatLoc), le visiteur en simple passage anonyme — '
+        'jamais le contenu de votre prière.<br>'
+        '<b>2 · Ce que nous en faisons.</b> Vos données servent exclusivement à la vie '
+        'de prière du Mouvement : identifier votre intention auprès du responsable '
+        'd&#8217;équipe (et, s’il le souhaite, vous répondre), compter les participations et '
+        'assurer la sécurité de l&#8217;espace (lutte contre les envois automatisés — spam). '
+        'Elles ne sont ni vendues, ni partagées, ni utilisées à des fins commerciales. '
+        '🤫 Principe « être une tombe » : les intentions se portent en prière, elles ne '
+        'se racontent pas et ne sortent jamais de l&#8217;équipe.<br>'
+        '<b>3 · Vos droits.</b> Vous pouvez demander à tout moment la suppression de '
+        'votre intention ou de vos données auprès du responsable de votre équipe ou du '
+        'responsable paroissial ; la demande est honorée dans les meilleurs délais. Des '
+        'traces techniques minimales (date, session) peuvent être conservées pour la '
+        'sécurité de l&#8217;espace.'
+        '</div></details>'
+        '<details><summary>🍪 Politique de cookies</summary>'
+        '<div class="pdr-corps">L&#8217;Espace de Prière ne dépose aucune trace '
+        'publicitaire : seuls quelques réglages strictement nécessaires à ta visite '
+        'restent dans ton navigateur — jamais ailleurs.</div></details>'
+        '</div>'
+        '<div class="pdr-col pdr-col-milieu">'
+        + _logo_pied +
+        '<div class="pdr-nom">LES ÉQUIPES DU ROSAIRE</div>'
+        '<div class="pdr-dio">DIOCÈSE DE GRAND-BASSAM</div>'
+        # v7.9.16 — la ligne paroisse porte son libellé : « 🕯️ Paroisse : Nom »
+        + ('<div class="pdr-par">🕯️ Paroisse : ' + html.escape(str(_nom_par)) + '</div>' if _nom_par else '') +
+        _contact_html +
+        # v7.9.19 — l'adresse de la chaîne YouTube, comme une adresse du Mouvement
+        _yt_html +
+        '</div>'
+        '<div class="pdr-col pdr-col-droite">'
+        '<ul class="pdr-menu">' + _menu_pied + '</ul>'
+        '</div>'
+        '</div>'
+        '<div class="pdr-bas">'
+        '<div class="pdr-cop">© 2026 Les Équipes du Rosaire — Diocèse de Grand-Bassam</div>'
+        + _fb_html +
+        '</div>'
+        '</footer>', unsafe_allow_html=True)
+
+
+# ====================================================================
+# v7.13.4 — L'ESPACE VISITEUR TEMPORAIRE (21 JOURS)
+# Le fidèle qui vient de confier une intention reçoit un lien
+# (?espace=1&vis=CLÉ) : sa page à lui — intention relue, mémoire de ses
+# dizaines, livret du jour positionné — épurée, sans les rubriques
+# complètes. 21 jours, puis l'espace s'achève doucement.
+# ====================================================================
+def _carte_memoire_visiteur(jrnais):
+    """« 📿 Mémoire de mes dizaines » du visiteur — l'écho de la carte du
+    membre (v7.13.4) : les 14 derniers jours, le compteur du mois, la
+    flamme. Le même cadre doré, porté par son jour de naissance."""
+    try:
+        _serie = serie_dizaines_visiteur(jrnais, 14)
+        _mois, _flamme = compteur_dizaines_mois_visiteur(jrnais)
+    except Exception:
+        return
+    _cases = ""
+    for (_j, _fait) in reversed(_serie):
+        try:
+            _lib = date.fromisoformat(_j).strftime("%d/%m")
+        except Exception:
+            _lib = _j[5:]
+        _auj = "✨" if _j == date.today().isoformat() else ""
+        _cases += ('<div style="min-width:42px; flex:1 0 42px; background:'
+                   + ("#1b2a5e" if _fait else "#121a45")
+                   + '; border:1px solid ' + ("#FFD700" if _fait else "#27306b")
+                   + '; border-radius:8px; padding:5px 2px; text-align:center;">'
+                     '<div style="color:' + ("#FFD000" if _fait else "#5a6398")
+                   + '; font-weight:bold; font-size:0.82rem;">'
+                   + ("✅" if _fait else "·") + '</div>'
+                     '<div style="color:#8a93c9; font-size:0.62rem;">' + _auj
+                   + _lib + '</div></div>')
+    _total = sum(1 for (_j, _f) in _serie if _f)
+    st.markdown(
+        '<div style="background:#121a45; border:2px solid #FFD700; border-radius:15px;'
+        ' padding:14px 16px; margin:10px;">'
+        '<div style="color:#FFD000; font-weight:bold; font-size:1rem;">'
+        '📿 Mémoire de mes dizaines</div>'
+        '<div style="border-left:2px solid #FFD700; padding-left:8px;'
+        ' margin-top:7px; color:#ffffff; font-weight:bold; font-size:0.72rem;'
+        ' font-style:italic; line-height:1.5;">« Prends soin de cet homme. '
+        'Et ce que tu dépenseras en plus, je te le rendrai quand je '
+        'reviendrai. » — Luc 10,35</div>'
+        '<div style="color:#8a93c9; font-size:0.78rem; margin-top:4px;">'
+        'Ta fidélité du jour — les 14 derniers jours</div>'
+        '<div style="display:flex; flex-wrap:wrap; gap:5px; margin:10px 0 6px 0;">'
+        + _cases + '</div>'
+        '<div style="color:#e8eaf6; font-size:0.85rem; margin-top:6px;">📿 '
+        + str(_total) + ' dizaine(s) sur 14 jours · ' + str(_mois) + ' ce mois'
+        + (" · 🔥 " + str(_flamme) + " jour(s) de suite" if _flamme else "")
+        + '</div></div>', unsafe_allow_html=True)
+
+
+def _render_espace_visiteur(esv):
+    """La page du visiteur de 21 jours (v7.13.4) : bandeau, intention relue,
+    mémoire, livret du jour positionné, rappels. Épurée — « comme un membre,
+    mais juste pour faire sa dizaine »."""
+    (_id_v, _cle_v, _nom_v, _contact_v, _jrn_v, _id_int_v, _eq_v, _par_v,
+     _dc_v, _df_v) = esv
+    _jrs, _fin_iso = espace_visiteur_jours_restants(_df_v)
+    # ── 21 jours achevés : l'écran doux de l'achèvement ────────────────
+    if _jrs <= 0:
+        _render_header(masquer_bandes=True, rubriques=None, pid=_par_v)
+        st.markdown(
+            '<div style="background:#121a45; border:2px solid #FFD700; border-radius:15px;'
+            ' padding:18px; text-align:center; margin:12px;">'
+            '<div style="color:#FFD000; font-weight:bold; font-size:1.1rem;">'
+            '🕊️ Ton espace de 21 jours s’est achevé</div>'
+            '<div style="color:#e8eaf6; font-size:0.92rem; margin-top:8px; line-height:1.7;">'
+            'Merci pour ces jours de prière ! La chaîne de l’Espace de Prière reste '
+            'ouverte : confie une nouvelle intention et reviens chaque jour — '
+            'une équipe t’y accueille toujours.</div>'
+            '<a href="?espace=1" target="_self" style="display:inline-block;'
+            ' background:#1A237E; color:#ffffff !important; padding:10px 24px;'
+            ' border-radius:30px; border:1px solid #FFD700; font-weight:bold;'
+            ' text-decoration:none; margin-top:12px;">'
+            '<span style="color:#ffffff !important;">📿 Retourner à l’Espace de'
+            ' Prière</span></a></div>', unsafe_allow_html=True)
+        return
+    # ── sas déjà franchi : son jour de naissance est posé d'avance ─────
+    if not st.session_state.get("diz_jrnais"):
+        st.session_state["diz_jrnais"] = int(_jrn_v or 1)
+    # ── bandeau de l'espace ─────────────────────────────────────────────
+    try:
+        _fin_aff = date.fromisoformat(str(_fin_iso)[:10]).strftime("%d/%m/%Y")
+    except Exception:
+        _fin_aff = str(_df_v or "")[:10]
+    _bienvenue = ("🕊️ Bienvenue, " + str(_nom_v or "ami de la chaîne") + " !")
+    _render_header(masquer_bandes=True, rubriques=None, pid=_par_v)
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+        ' border:2px solid #FFD700; border-radius:15px; padding:16px;'
+        ' text-align:center; margin:6px 4px 10px 4px;">'
+        '<div style="color:#FFD000; font-family:Georgia,serif; font-weight:bold;'
+        ' font-size:clamp(1.05rem, 4.5vw, 1.25rem);">' + _bienvenue + '</div>'
+        '<div style="color:#ffffff; font-size:0.9rem; margin-top:6px; line-height:1.6;">'
+        'Ton espace personnel — ouvert encore <b>' + str(_jrs) + ' jour(s)</b>,'
+        ' jusqu’au ' + _fin_aff + '</div>'
+        '<div style="display:inline-block; margin-top:8px; background:rgba(255,215,0,0.14);'
+        ' border:1px solid #FFD700; border-radius:20px; padding:5px 14px;'
+        ' color:#FFD000; font-size:0.78rem;">Relis ton intention, médite ta dizaine'
+        ' du jour — la Vierge Marie veille sur toi 🙏</div></div>',
+        unsafe_allow_html=True)
+    # ── son intention relue ─────────────────────────────────────────────
+    if _id_int_v:
+        try:
+            _itn = c.execute("""SELECT texte, date_soumission, anonyme, equipe_id
+                                FROM intentions_equipes WHERE id=? LIMIT 1""",
+                             (int(_id_int_v),)).fetchone()
+        except Exception:
+            _itn = None
+        if _itn:
+            _nom_eq = None
+            try:
+                _r_eq = c.execute("SELECT nom_equipe FROM equipes WHERE id=? LIMIT 1",
+                                  (_itn[3],)).fetchone()
+                _nom_eq = _r_eq[0] if _r_eq else None
+            except Exception:
+                _nom_eq = None
+            _d_itn = safe_date(_itn[1]) if _itn[1] else None
+            st.markdown(
+                '<div style="background:#121a45; border:1px solid #27306b;'
+                ' border-radius:12px; padding:12px 14px; margin:0 4px 10px 4px;">'
+                '<div style="color:#8a93c9; font-size:0.78rem;">🕊️ Ton intention confiée'
+                + ((" le " + _d_itn.strftime("%d/%m/%Y")) if _d_itn else "")
+                + ((" à l’équipe " + html.escape(str(_nom_eq))) if _nom_eq else "")
+                + '</div>'
+                '<div style="color:#e8eaf6; font-size:0.95rem; margin-top:6px;'
+                ' line-height:1.6; font-style:italic;">« '
+                + html.escape(str(_itn[0] or "")) + ' »</div></div>',
+                unsafe_allow_html=True)
+    # ── le livre ouvert (CTA cliqué) : la page entière au livret ───────
+    if st.session_state.get("flt_ouvert"):
+        _render_feuillet_autonome(lecteur={"est_membre": False,
+                                           "paroisse_id": _par_v})
+        return
+    if st.session_state.get("diz_ouvert"):
+        _render_dizaine_du_jour(est_membre=False, paroisse_id=_par_v)
+        return
+    # ── le CTA du jour : le livret s'ouvre au mystère du jour ─────────
+    st.markdown('<div id="ev-cta-zone"></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div style="background:linear-gradient(135deg,#1A237E 0%,#283593 100%);'
+        ' border:2px solid #FFD700; border-radius:15px; padding:16px;'
+        ' text-align:center; margin:2px 4px 10px 4px;">'
+        '<div class="dpl-titre-g" style="color:#FFD000 !important;'
+        ' font-family:Georgia,serif !important; font-weight:bold !important;'
+        ' font-size:clamp(1.05rem, 4.5vw, 1.25rem);">📿 Ta dizaine du jour</div>'
+        '<div style="color:#ffffff; font-size:0.88rem; margin-top:6px; line-height:1.6;">'
+        'Ton livret t’attend, déjà positionné au mystère du jour — égrene ta dizaine,'
+        ' porte ton prochain dans la chaîne.</div></div>',
+        unsafe_allow_html=True)
+    _deja_v = bool(dizaine_visiteur_pointee(_jrn_v or 1))
+    if _deja_v:
+        st.success("📿 Merci Sainte Mère de Dieu pour ton aide de ce jour ! "
+                   "— À demain! 🕊️")
+    else:
+        if st.button("📿 Égrener ma dizaine maintenant", key="ev_cta_dizaine",
+                     type="primary", width="stretch"):
+            st.session_state["diz_ouvert"] = True
+            st.session_state["diz_page"] = 0
+            st.session_state.pop("flt_ouvert", None)
+            st.rerun()
+    # ── mémoire + rappels ───────────────────────────────────────────────
+    _carte_memoire_visiteur(_jrn_v or 1)
+    _carte_rappels_dizaine(est_membre=False)
+
+
+# ====================================================================
+# PAGE PRINCIPALE
+# ====================================================================
+def show_espace_membre(matloc_membre=None):
+    """Point d'entrée de l'Espace de Prière (v7.9.3) : le corps de page
+    (_corps_espace_membre, code d'origine inchangé), PUIS le pied de page
+    du site — présent sur toutes les pages, y compris le livre ouvert.
+    v7.9.10 — le pied de page connaît le fidèle (paroisse + responsable) :
+    v7.9.19 — la carte vidéo s'ouvre JUSTE AVANT le pied de page, sur
+    toutes les pages de l'Espace de Prière (demande : « s'il doit
+    s'ouvrir, c'est juste avant le pied de page »).
+    v7.9.20 — elle porte son nom d'aujourd'hui : la vidéo à la demande.
+    v7.10.1 — la vidéo NE SUIT PLUS le lecteur partout : elle ne s'ouvre
+    plus comme un second pied de page sous la méditation et la prière des
+    intentions. Elle retrouve sa place de carte d'accueil : visible sur la
+    page d'arrivée (« 🏠 Actualités »), absente du livre ouvert et des
+    autres pages — la prière reste toute à la prière."""
+    _corps_espace_membre(matloc_membre)
+    # v7.10.1 — accueil SEULEMENT : ni livre ouvert (dizaine, livret), ni
+    # autre rubrique (Rosaire, Thème, Galerie, Archives, évènements…).
+    # v7.13.11 — la page d'installation a pris sa retraite avec le
+    # raccourci : plus aucune condition d'installation ici.
+    if not (st.session_state.get("diz_ouvert") or st.session_state.get("flt_ouvert")):
+        # v7.13.4 — la page visiteur (21 jours) reste épurée : pas de carte vidéo.
+        _vis_q = st.query_params.get("vis")
+        if isinstance(_vis_q, list):
+            _vis_q = _vis_q[0] if _vis_q else None
+        if _vis_q:
+            _render_pied_de_page(matloc_membre)
+            return
+        try:
+            _rub_v = _lire_nav(RUBRIQUES_MEMBRE if matloc_membre
+                               else RUBRIQUES_PUBLIC)[0]
+        except Exception:
+            _rub_v = "🏠 Actualités"
+        if _rub_v == "🏠 Actualités":
+            _carte_vidéo_a_la_demande()
+    _render_pied_de_page(matloc_membre)
+
+
+def _corps_espace_membre(matloc_membre=None):
+    # v7.8 — lien profond « Ouvrir le livret » (?flt=1&fa=&fm=) AVANT tout
+    # affichage : il positionne la session et force un rerun propre.
+    _traiter_lien_profond_livret()
+    livre_ouvert = (st.session_state.get("diz_ouvert", False)
+                    or st.session_state.get("flt_ouvert", False))
+
+    _render_theme(compact=livre_ouvert)
+
+    # QR signé ?p=ID — AVANCÉ en tête : le contexte paroissial doit être
+    # connu AVANT le comptage des bandes et l'entête.
+    if "paroisse_origine" not in st.session_state:
+        p_raw = st.query_params.get("p")
+        if isinstance(p_raw, list):
+            p_raw = p_raw[0] if p_raw else None
+        if p_raw:
+            try:
+                p_int = int(p_raw)
+                if c.execute("SELECT id FROM paroisses WHERE id=?", (p_int,)).fetchone():
+                    st.session_state["paroisse_origine"] = p_int
+            except (ValueError, TypeError):
+                pass
+
+    # v7.15.1 — le dimensionnement VIT DANS LE CSS : l'entête est dans le
+    # flux (sticky), le contenu commence juste dessous — plus aucun script
+    # de mesure. L'ancien comptage est conservé QUE pour le diagnostic
+    # (&debug=1), avec le BON contexte paroissial.
+    if st.query_params.get("debug") == "1":
+        _compter_bandes(membre=bool(matloc_membre),
+                        pid=st.session_state.get("paroisse_origine"))
+
+    # v7.6 : les liens du menu naviguent dans l'onglet courant
+    _liens_meme_onglet("nav")
+
+    # v7.6.9 — MODE ÉCOUTE DÉDIÉ (?musique=1) : page-lecteur seule, pensée pour
+    # être ouverte dans un 2e onglet du navigateur. La musique y joue en continu
+    # pendant que l'espace est parcouru dans le premier onglet.
+    if st.query_params.get("musique") == "1":
+        _render_theme(compact=True)
+        st.markdown('<style>.block-container { padding-top: 2rem !important; }</style>', unsafe_allow_html=True)
+        st.markdown("<div style=\"background:linear-gradient(135deg,#1A237E 0%,#283593 100%);"
+                    " padding:14px; border-radius:15px; text-align:center; margin:10px;"
+                    " border:2px solid #FFD700;\">"
+                    "<div style=\"color:#FFD700 !important; font-weight:bold;\">🎧 Onglet d’écoute dédié</div>"
+                    "<div style=\"color:#e8eaf6 !important; font-size:0.85rem; margin-top:4px;\">"
+                    "Lancez la musique, puis « ◀️ Revenir à l’appli » : elle continue et vous suit de page en page. 📿🎶</div></div>",
+                    unsafe_allow_html=True)
+        _render_page_archives_audios(pid=st.session_state.get("paroisse_origine"))
+        return
+
+    # v7.8.9 — MINI-BARRE COMPAGNON : dès qu'une musique a été lancée, elle
+    # suit le visiteur sur TOUTES les pages de l'Espace de Prière (accueil,
+    # 📿 Rosaire chez les Équipiers, livret, archives…) — reprise automatique
+    # là où elle s'était arrêtée. Ne rend RIEN sans lecture récente.
+    _render_mini_lecteur(pid=st.session_state.get("paroisse_origine"))
+
+    msg_ok = st.session_state.pop("flash_success", None)
+    if msg_ok:
+        st.success(msg_ok)
+    msg_warn = st.session_state.pop("flash_warning", None)
+    if msg_warn:
+        st.warning(msg_warn)
+
+    # v7.13.11 — LE RACCOURCI PREND SA RETRAITE : la page d'installation
+    # n'existe plus (?espace=1&installer=1). Les adresses d'avant — venues
+    # d'un message ancien ou d'une icône déjà posée — atterrissent
+    # simplement dans l'Espace : le paramètre, s'il voyage encore, n'est
+    # plus lu par personne.
+
+    # ====== ÉTAT 1 BIS : L'ESPACE VISITEUR TEMPORAIRE (v7.13.4) ======
+    # Arrivé par le lien reçu à l'envoi de son intention (?espace=1&vis=CLÉ)
+    # : sa page à lui, épurée. Inconnu ou achevé : un mot doux, puis rien.
+    _vis_brut = st.query_params.get("vis")
+    if isinstance(_vis_brut, list):
+        _vis_brut = _vis_brut[0] if _vis_brut else None
+    if _vis_brut:
+        _esv = espace_visiteur_de_cle(_vis_brut)
+        if not _esv:
+            st.warning("🕊️ Ce lien d'espace n'est plus reconnu — pas d'inquiétude : "
+                       "l'Espace de Prière t'est toujours ouvert.")
+            return
+        _render_espace_visiteur(_esv)
+        return
+
+    # ================= ÉTAT 1 : VUE PUBLIQUE =================
+    if not matloc_membre:
+        # v7.6 : compteur fusionné — 1 visite = 1 ARRIVÉE (les navigations
+        # internes portent &nav=1). Journal missionnaire si QR signé.
+        if "nav" not in st.query_params and "visite_communaute" not in st.session_state:
+            st.session_state["visite_communaute"] = True
+            compter_visite("communautaire")
+            _origine = st.session_state.get("paroisse_origine")
+            if _origine:
+                try:
+                    c.execute("INSERT INTO visites_paroisse (paroisse_id, date_visite) VALUES (?, ?)",
+                              (_origine, date.today().isoformat()))
+                    commit_and_sync()
+                except Exception:
+                    try:
+                        c.execute("""CREATE TABLE IF NOT EXISTS visites_paroisse (
+                                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                        paroisse_id INTEGER,
+                                        date_visite TEXT)""")
+                        c.execute("INSERT INTO visites_paroisse (paroisse_id, date_visite) VALUES (?, ?)",
+                                  (_origine, date.today().isoformat()))
+                        commit_and_sync()
+                    except Exception:
+                        pass
+
+        rub, sub = _lire_nav(RUBRIQUES_PUBLIC)
+        pid_pub = _pid_contexte()
+        _render_header(masquer_bandes=livre_ouvert,
+                       rubriques=(None if livre_ouvert else RUBRIQUES_PUBLIC),
+                       rub_act=rub, sub_act=sub, pid=pid_pub)
+        # Accueil personnalisé si arrivée par QR paroissial signé
+        _origine = st.session_state.get("paroisse_origine")
+        if _origine:
+            _nom_par = c.execute("SELECT nom FROM paroisses WHERE id=?", (_origine,)).fetchone()
+            if _nom_par:
+                st.caption("🕊️ Bienvenue ! Vous découvrez cet espace via la communauté **"
+                           + _nom_par[0] + "** — toute la chaîne de prière du diocèse vous accompagne.")
+
+        if livre_ouvert:
+            if st.session_state.get("flt_ouvert"):
+                # v7.8 — livret mensuel en autonomie (logo + carte espace)
+                # v7.10.4 — le lecteur voyage : son questionnaire attend à la
+                # fin de la lecture (feuillet du moment comme feuillets relus).
+                _render_feuillet_autonome(lecteur={
+                    "est_membre": False, "paroisse_id": pid_pub})
+                return
+            _render_dizaine_du_jour(est_membre=False)
+            return
+
+        # v7.9.3 — la page ouverte commence EN HAUT de l'écran (feuillets)
+        _scroll_top_si_nouvelle_page("pub", rub, sub)
+
+        # v7.7.2 — le badge de bienvenue n'apparaît QUE sur l'accueil
+        if rub == "🏠 Actualités":
+            st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:15px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
+                        '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue dans votre Espace communautaire 🕊️</div>'
+                        '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">📿 Prières • Méditations • Dizaine du jour — Diocèse de Grand-Bassam · ' + _VERSION_APPLI + '</div>'
+                        '</div>', unsafe_allow_html=True)
+
+        if rub == "📿 Rosaire":
+            if sub == "Le Rosaire thématique":
+                _render_page_livret_thematique()
+            else:
+                _render_page_rosaire_eyquem()
+        elif rub == "📖 Archives":
+            if sub == "📖 Méditations":
+                _render_page_archives_textes("meditation", "Aucune méditation disponible.", pid=pid_pub)
+            elif sub == "🎵 Musiques":
+                _render_page_archives_audios(pid=pid_pub)
+            else:
+                _render_page_archives_textes("priere", "Aucune prière publiée.", pid=pid_pub)
+        elif rub == "🕯️ Thème":
+            if sub == "🎓 Enseignements":
+                _render_page_en_preparation("🎓", "Enseignements",
+                                            "Cet espace accueillera les résumés des enseignements reçus, publiés par le diocèse. Il est en préparation.")
+            elif sub == "💬 Discussions":
+                _render_page_en_preparation("💬", "Discussions",
+                                            "Cet espace accueillera les cadres de discussions thématiques. Il est en préparation.")
+            else:
+                _render_page_theme_ensemble(est_membre=False,
+                                            paroisse_id=pid_pub)
+        elif rub == "🖼️ Galerie +":
+            # v7.9.1 — souvenirs (photos) et témoignages (grâces reçues).
+            _render_page_galerie(sub)
+        else:
+            _depliant_mouvement(st.session_state.get("paroisse_origine"))
+            # v7.9.3 — « 🙏 Vos intentions à une équipe » REMONTÉE : elle
+            # précède désormais « 🕯️ Un jour, une dizaine » (et lui est
+            # harmonisée). Le livre ouvert la masque pour garder l'écran
+            # tout à la prière ; le CTA « Prier ma dizaine » reste opérationnel.
+            if not st.session_state.get("diz_ouvert"):
+                _render_intentions_equipes(pid=pid_pub)
+            _render_dizaine_du_jour(est_membre=False)
+            if st.session_state.get("diz_ouvert"):
+                return
+            # v7.12.0 — la carte des rappels (calendrier + notification) :
+            # le visiteur de la chaîne arme son téléphone une fois pour tout.
+            _carte_rappels_dizaine(est_membre=False)
+            _lien_theme_pub = ("?espace=1&nav=1&r=2"
+                               + (f"&p={pid_pub}" if pid_pub else ""))
+            _render_fil_actualites(pid=pid_pub, lien_theme=_lien_theme_pub)
+            # v7.9.18 — les actualités sont rendues DANS le fil (voir
+            # _render_fil_actualites) ; plus aucun appel séparé ici.
+        return
+
+    # ================= ÉTAT 2 : VUE MEMBRE =================
+    matloc_membre = str(matloc_membre).upper().strip()
+
+    membre = c.execute("""
+        SELECT m.id, m.nom, m.prenom, m.matloc, m.whatsapp, m.date_adhesion, m.photo_path,
+               m.numero_meditation, e.nom_equipe, p.nom, m.equipe_id, m.paroisse_id
+        FROM membres m
+        LEFT JOIN equipes e ON m.equipe_id = e.id
+        LEFT JOIN paroisses p ON m.paroisse_id = p.id
+        WHERE m.matloc=? AND m.statut='actif'
+    """, (matloc_membre,)).fetchone()
+
+    if not membre or len(membre) < 12:
+        st.error("Identifiant inconnu ou membre inactif.")
+        st.info("💡 Vous pouvez consulter l'espace public ci-dessous.")
+        rub_pub, sub_pub = _lire_nav(RUBRIQUES_PUBLIC)
+        _render_header(rubriques=RUBRIQUES_PUBLIC, rub_act=rub_pub, sub_act=sub_pub,
+                       pid=st.session_state.get("paroisse_origine"))
+        _render_fil_actualites(pid=st.session_state.get("paroisse_origine"),
+                               lien_theme="?espace=1&nav=1&r=2")
+        return
+
+    # v7.6 : compteur membre — 1 visite = 1 ARRIVÉE (même sémantique)
+    if "nav" not in st.query_params and "visite_membre" not in st.session_state:
+        st.session_state["visite_membre"] = True
+        compter_visite("membre")
+
+    rub, sub = _lire_nav(RUBRIQUES_MEMBRE)
+    pid_m = _pid_contexte(membre[11])
+    _render_header(membre, matloc_membre, masquer_bandes=livre_ouvert,
+                   rubriques=(None if livre_ouvert else RUBRIQUES_MEMBRE),
+                   rub_act=rub, sub_act=sub, pid=pid_m)
+
+    # v7.15.2 — LE PONT VIT SOUS L'ENTÊTE : la carte « 🕊 Le pont vers
+    # l'application », son bouton et le flash des journées reçues ne se
+    # posent plus AU-DESSUS de l'entête (ils la poussaient vers le bas —
+    # captures du diocèse) : ils naissent ICI, juste après elle. La
+    # machinerie muette (#pont_memoire) voyage avec, sans prendre de place.
+    # v7.13.12 — LE PONT DE LA MÉMOIRE (hors-ligne ↔ Espace) : le téléphone
+    # annonce ses journées priées (?pont_jours=…) et reçoit la fidélité du
+    # web (#pont_memoire) — la base ne passe que par la porte du livre.
+    _pont_memoire_hors_ligne(membre)
+
+    if livre_ouvert:
+        if st.session_state.get("flt_ouvert"):
+            # v7.8 — livret mensuel en autonomie (logo + carte espace)
+            # v7.10.4 — le lecteur voyage : le membre répond à la fin de la
+            # lecture sous sa signature (MatLoc), comme dans la vitrine.
+            _render_feuillet_autonome(lecteur={
+                "est_membre": True, "matloc": membre[3],
+                "nom_membre": ((membre[1] or "") + " " + (membre[2] or "")).strip(),
+                "equipe_id": membre[10], "paroisse_id": membre[11]})
+            return
+        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True,
+                                matloc=membre[3],
+                                nom_membre=((membre[1] or "") + " " + (membre[2] or "")).strip(),
+                                equipe_id=membre[10], paroisse_id=membre[11])
+        return
+
+    # v7.9.3 — la page ouverte commence EN HAUT de l'écran (feuillets)
+    _scroll_top_si_nouvelle_page("mbr", rub, sub)
+
+    # v7.15.3 — LES DEUX CAMPENT ENSEMBLE SUR LA MÊME LIGNE (demande du
+    # diocèse) : « 👤 Mon profil » à gauche, « 💰 État de mes cotisations »
+    # à son opposé à droite — même forme (popover), deux registres dos à
+    # dos. Le profil se relit comme avant, mot pour mot.
+    # v7.16.2 — LES DEUX NE CAMPENT PLUS QU'AU FIL DE L'ACTUALITÉ : retour
+    # à l'expression d'origine — visibles sur l'accueil (rubrique
+    # « 🏠 Actualités »), ils ne suivent plus le membre dans les autres
+    # rubriques (Thème, Rosaire, Mes évènements, Galerie, Archives), ni
+    # pendant la lecture d'un feuillet ou de la dizaine, où l'écran reste
+    # tout à la prière. La v7.16.1 les avait élargis partout en lisant
+    # l'observation comme un défaut ; elle était la demande elle-même.
+    if rub == "🏠 Actualités":
+        _col_profil, _col_cotis = st.columns(2)
+        with _col_profil:
+            with st.popover("👤 Mon profil"):
+                if membre[6]:
+                    try: st.image(membre[6], width=130)
+                    except Exception: pass
+                st.markdown(f"**{membre[1]} {membre[2]}**")
+                st.caption(f"MatLoc : `{membre[3]}`")
+                st.write(f"👥 Équipe : **{membre[8] or '—'}**")
+                st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
+                st.write(f"💬 WhatsApp : {membre[4] or '—'}")
+                st.write(f"📿 N° méditation : {membre[7] or '—'}")
+                d_adh = safe_date(membre[5])
+                st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
+        with _col_cotis:
+            # v7.16.0 — le montant du « Total dû à ce jour » campe dans le
+            # titre de l'encart, visible d'un coup d'œil sans l'ouvrir
+            # (demande du diocèse). La lecture se fait une fois ici puis
+            # voyage jusqu'à la fonction — lecture pure des deux côtés.
+            _du_pop = None
+            try:
+                _du_pop = cotis_div_total_du(membre[0], get_periode_pastorale()[0])
+            except Exception:
+                _du_pop = None
+            _du_txt = f"{int(_du_pop['total']) if _du_pop else 0:,}".replace(",", " ")
+            # v7.16.1 — LE BOUTON HORS MARGE SE REPLIE : titre et message sur
+            # DEUX LIGNES (demande du diocèse — téléphone surtout). Le CSS de
+            # la maison passe le libellé du popover en pre-line ; quand rien
+            # n'est dû, la deuxième ligne porte le « ✅ À jour ».
+            if _du_pop and int(_du_pop['total']) > 0:
+                _lbl_cotis = ("💰 État de mes cotisations\n"
+                              f"— doit : {_du_txt} FCFA")
+            else:
+                _lbl_cotis = "💰 État de mes cotisations\n✅ À jour"
+            with st.popover(_lbl_cotis):
+                _etat_cotisations_membre(membre, _du=_du_pop)
+
+    # v7.7.2 — le badge de bienvenue n'apparaît QUE sur l'accueil
+    if rub == "🏠 Actualités":
+        st.markdown('<div style="background:linear-gradient(135deg,#f3e5f5 0%,#e8eaf6 100%); padding:20px; border-radius:15px; text-align:center; margin:6px 10px; box-shadow:0 4px 12px rgba(0,0,0,0.35); border:1px solid #d1c4e9;">'
+                    '<div style="color:#4A148C; font-size:1.3rem; font-weight:bold;">Bienvenue ' + html.escape(membre[2]) + ' 🕊️</div>'
+                    '<div style="color:#4527a0; font-size:0.9rem; margin-top:6px;">Votre espace personnel — priez, participez, restez connecté(e) · ' + _VERSION_APPLI + '</div>'
+                        '</div>', unsafe_allow_html=True)
+
+        # v7.13.1 — « 📿 Mémoire de mes dizaines » entre la carte de
+        # bienvenue et « 📿 Ta dizaine du jour ».
+        _carte_memoire_membre(matloc_membre)
+        # v7.15.0 — « 🛖 Mémoire de l'aubergiste : Luc 10,35 », la sœur du
+        # mémoire : les deux deniers confiés par la chaîne, le surplus des
+        # visiteurs, les portages refermés — la promesse du Samaritain,
+        # jamais une note d'absence.
+        _carte_aubergiste(matloc_membre)
+        # v7.13.13 — LA SECONDE BERGE : le web rend sa fidélité au téléphone.
+        _bouton_retour_application(matloc_membre)
+        # v7.14.1 — « 💳 Abonnement - Réabonnement » : l'état de l'année
+        # pastorale (reçu numéroté téléchargeable, ou montants et échéance
+        # du diocèse), posé sur l'accueil comme la mémoire et la berge.
+        _carte_cotisation_membre(membre)
+
+    if rub == "📅 Mes évènements":
+        if membre[10] is None:
+            st.info("Vous n'êtes rattaché(e) à aucune équipe pour le moment.")
+        else:
+            st.markdown("### 📅 Mes prochains évènements")
+            try:
+                evts = c.execute('''
+                    SELECT e.id, e.date_evenement, e.type_evenement, e.lieu,
+                           (SELECT statut FROM suivi_presences WHERE membre_id=? AND evenement_id=e.id)
+                    FROM evenements e
+                    JOIN evenement_equipes ee ON e.id = ee.evenement_id
+                    WHERE ee.equipe_id = ? AND e.date_evenement >= ?
+                    ORDER BY e.date_evenement ASC
+                ''', (membre[0], membre[10], date.today().isoformat())).fetchall()
+            except Exception:
+                evts = []
+                st.warning("📅 La liste des évènements n'est pas disponible pour le moment.")
+
+            if not evts:
+                st.success("✅ Aucun événement à venir. Profitez de ce temps de repos !")
+            else:
+                for evt in evts:
+                    d = safe_date(evt[1])
+                    if not d:
+                        continue
+                    delta = (d - date.today()).days
+                    delai = "🔴 Aujourd'hui !" if delta == 0 else "🟠 Demain" if delta == 1 else f"📅 Dans {delta} jours"
+                    icone = {"Prière mensuelle": "🧎", "Prière commune": "🙏", "Prière spéciale": "✨",
+                             "Pèlerinage": "🚶‍♂️", "Réunion": "🤝"}.get(evt[2], "📅")
+
+                    statut = evt[4]
+                    marqueur = "✅ " if statut in ('physique', 'spirituel') else ""
+
+                    with st.expander(f"{marqueur}{icone} {evt[2]} — {d.strftime('%d/%m/%Y')} ({delai})",
+                                     expanded=(delta <= 1)):
+                        st.write(f"📍 {evt[3] or 'Lieu à définir'}")
+
+                        if statut == 'physique':
+                            st.success("✅ Votre réponse de communion : Présent(e) physiquement")
+                        elif statut == 'spirituel':
+                            st.success("🟡 Votre réponse de communion : Présent(e) spirituellement")
+                        else:
+                            st.caption("📿 Réponse de Communion — indiquez comment vous vous joignez à nous :")
+
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            if st.button("🟢 Présent physiquement", key=f"rsp_p_{evt[0]}",
+                                         width="stretch",
+                                         type="primary" if statut != 'physique' else "secondary"):
+                                _enregistrer_presence(membre[0], evt[0], 'physique')
+                        with c2:
+                            if st.button("🟡 Présent spirituellement", key=f"rsp_s_{evt[0]}",
+                                         width="stretch",
+                                         type="primary" if statut != 'spirituel' else "secondary"):
+                                _enregistrer_presence(membre[0], evt[0], 'spirituel')
+
+    elif rub == "📿 Rosaire":
+        if sub == "Le Rosaire thématique":
+            _render_page_livret_thematique()
+        else:
+            _render_page_rosaire_eyquem()
+
+    elif rub == "📖 Archives":
+        if sub == "📖 Méditations":
+            _render_page_archives_textes("meditation", "Aucune méditation disponible.", pid=pid_m)
+        elif sub == "🎵 Musiques":
+            _render_page_archives_audios(pid=pid_m)
+        else:
+            _render_page_archives_textes("priere", "Aucune prière publiée.", pid=pid_m)
+
+    elif rub == "🕯️ Thème":
+        if sub == "🎓 Enseignements":
+            _render_page_en_preparation("🎓", "Enseignements",
+                                        "Cet espace accueillera les résumés des enseignements reçus, publiés par le diocèse. Il est en préparation.")
+        elif sub == "💬 Discussions":
+            _render_page_en_preparation("💬", "Discussions",
+                                        "Cet espace accueillera les cadres de discussions thématiques. Il est en préparation.")
+        else:
+            _render_page_theme_ensemble(est_membre=True, matloc=membre[3],
+                                        nom_membre=((membre[1] or "") + " "
+                                                    + (membre[2] or "")).strip(),
+                                        equipe_id=membre[10],
+                                        paroisse_id=membre[11])
+
+    elif rub == "🖼️ Galerie +":
+        # v7.9.1 — souvenirs (photos) et témoignages (grâces reçues),
+        # identiques pour les membres et les visiteurs.
+        _render_page_galerie(sub)
+
+    else:
+        _render_dizaine_du_jour(numero_meditation=membre[7], est_membre=True,
+                                matloc=membre[3],
+                                nom_membre=((membre[1] or "") + " " + (membre[2] or "")).strip(),
+                                equipe_id=membre[10], paroisse_id=membre[11])
+        if st.session_state.get("diz_ouvert"):
+            return
+        # v7.12.0 — la carte des rappels (calendrier + notification) sous la
+        # dizaine du jour : le membre arme son téléphone une fois pour tout.
+        _carte_rappels_dizaine(est_membre=True, matloc=membre[3])
+        _lien_theme_m = ("?espace=1&matloc=" + str(matloc_membre)
+                         + (f"&p={pid_m}" if pid_m else "") + "&nav=1&r=1")
+        _render_fil_actualites(pid=pid_m, lien_theme=_lien_theme_m,
+                               equipe_membre_id=membre[10],
+                               auteur_nom=((membre[1] or "") + " " + (membre[2] or "")).strip(),
+                               intentions=False,  # v7.8.15 : retiré côté Membre
+                               matloc=membre[3])  # v7.13.0 — mémoire du tableau
+        # v7.9.18 — les actualités sont rendues DANS le fil (voir
+        # _render_fil_actualites) ; plus aucun appel séparé ici.
