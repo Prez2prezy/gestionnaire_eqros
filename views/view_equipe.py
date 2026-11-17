@@ -32,7 +32,8 @@ from database import (c, commit_and_sync, verifier_reparer_intentions, jours_dep
                       # toute l'équipe ou certains seulement
                       COTIS_DIV_TYPES, cotis_div_envoyer_groupe, cotis_div_etat,
                       cotis_div_montant_suggere, cotis_div_parametres_lire,
-                      cotis_div_supprimer, cotis_div_type_label)
+                      cotis_div_supprimer, cotis_div_regler,
+                      cotis_div_type_label)
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
@@ -1828,8 +1829,10 @@ def _section_registre_equipe(eid, annee, membres_eq):
                "catégories : choisis la catégorie, tape le montant (il est "
                "proposé), nomme la cotisation si tu veux, coche ceux qui "
                "reçoivent (toute l'équipe ou certains) et expédie : chacun le "
-               "voit aussitôt dans « 💰 État de mes cotisations ». "
-               "Pas de reçu numéroté ici : le registre dit l'état.")
+               "voit aussitôt dans « 💰 État de mes cotisations », à régler "
+               "en vert. Pas de reçu numéroté ici : le registre dit l'état — "
+               "et dès que tu notes le versement (✅ Régler), la ligne passe "
+               "réglée et la dette baisse d'autant.")
 
     # v7.15.4 — LE MOT DE L'EXPÉDITION : posé en session avant le rerun,
     # relu ici après — la responsable voit combien de membres ont reçu,
@@ -1839,16 +1842,19 @@ def _section_registre_equipe(eid, annee, membres_eq):
         del st.session_state['cotis_div_flash']
 
     _reglages_div = cotis_div_parametres_lire()
-    _totaux_eq = c.execute("""SELECT COUNT(*), COALESCE(SUM(montant), 0)
+    _totaux_eq = c.execute("""SELECT COUNT(*), COALESCE(SUM(montant), 0),
+                                     COALESCE(SUM(CASE WHEN regle_le IS NULL
+                                                       THEN montant ELSE 0 END), 0)
                               FROM cotisations_diverses
                               WHERE membre_id IN (SELECT id FROM membres
                                                   WHERE equipe_id=? AND statut='actif')
                               AND annee_debut=?""", (eid, annee)).fetchone()
     _tarif_mens = int(_reglages_div.get("cotis_div_montant_mensuelle", 0))
-    _rc1, _rc2, _rc3 = st.columns(3)
+    _rc1, _rc2, _rc3, _rc4 = st.columns(4)
     _rc1.metric("🧾 Lignes notées", f"{int(_totaux_eq[0] or 0):02d}")
     _rc2.metric("💰 Total du registre", f"{_fr(_totaux_eq[1] or 0)} FCFA")
-    _rc3.metric("🧮 Tarif mensuel posé", (f"{_fr(_tarif_mens)} FCFA"
+    _rc3.metric("⏳ À régler", f"{_fr(_totaux_eq[2] or 0)} FCFA")
+    _rc4.metric("🧮 Tarif mensuel posé", (f"{_fr(_tarif_mens)} FCFA"
                                           if _tarif_mens > 0 else "libre"))
 
     # LA CORRECTION EN DEUX TEMPS : le 🗑️ d'une ligne ouvre la
@@ -1880,13 +1886,59 @@ def _section_registre_equipe(eid, annee, membres_eq):
         else:
             del st.session_state['cotis_div_del_id']
 
+    # v7.16.1 — LE GESTE « ✅ RÉGLER » : depuis une ligne à régler
+    # (bouton dans l'expander du membre), le formulaire du versement s'ouvre
+    # ICI — le mode de paiement vit à ce geste-là seulement (il a quitté le
+    # formulaire d'expédition, même mécanique que la correction 🗑️).
+    if st.session_state.get('cotis_regl_id'):
+        _l_r = c.execute("""SELECT d.montant, d.type_cotisation, d.date_versement,
+                                   d.precision, m.nom, m.prenom
+                            FROM cotisations_diverses d
+                            JOIN membres m ON d.membre_id=m.id
+                            WHERE d.id=? AND d.regle_le IS NULL""",
+                         (st.session_state['cotis_regl_id'],)).fetchone()
+        if _l_r:
+            _nom_r = f"{_l_r[4]} {_l_r[5]}"
+            _cote_r = (f"{cotis_div_type_label(_l_r[1]) or _l_r[1]}"
+                       + (f" — {_l_r[3]}" if _l_r[3] else ""))
+            st.success(f"✅ Le versement de {_nom_r} est reçu — "
+                       f"{_cote_r} · {_fr(_l_r[0])} FCFA du "
+                       f"{_l_r[2] or '?'} : note-le pour régler la ligne.")
+            with st.form("cotis_regl_form"):
+                _mode_r = st.selectbox("Mode de paiement",
+                                       list(_modes_lbls.values()),
+                                       key="cotis_regl_mode")
+                if st.form_submit_button("💾 Noter le versement",
+                                         key="cotis_regl_go",
+                                         help="La ligne passe réglée, la "
+                                              "dette du membre baisse "
+                                              "aussitôt."):
+                    _mode_code_r = {v: k for k, v in _modes_lbls.items()}[_mode_r]
+                    if cotis_div_regler(st.session_state['cotis_regl_id'],
+                                        _mode_code_r,
+                                        regle_par=st.session_state.get('username')):
+                        st.success("Ligne réglée — le membre la voit aussitôt "
+                                   "✅ à jour dans son registre.")
+                    else:
+                        st.error("Le règlement n'a pas pu être posé — réessaie.")
+                    del st.session_state['cotis_regl_id']
+                    st.rerun()
+            if st.button("✖ Ne rien régler pour l'instant",
+                         key="cotis_regl_ann"):
+                del st.session_state['cotis_regl_id']
+                st.rerun()
+        else:
+            del st.session_state['cotis_regl_id']
+
     # v7.16.0 — L'EXPÉDITION, EN UN SEUL FORM : plus aucune
     # réactualisation à chaque champ (demande du diocèse) — la catégorie,
-    # le montant, la date, le mode, la précision et les destinataires se
-    # remplissent tranquillement ; rien ne part qu'au « 📮 Expédier ».
-    # Les tarifs réglés dans « 💼 Caisse du diocèse » voyagent dans le
-    # libellé de chaque catégorie (0 = saisie libre) et dans l'aide du
-    # montant — le libellé ne rerun pas, tout se voit d'un coup d'œil.
+    # le montant, la date, la précision et les destinataires se remplissent
+    # tranquillement ; rien ne part qu'au « 📮 Expédier ».
+    # v7.16.1 — LE MODE DE PAIEMENT A QUITTÉ LE FORMULAIRE (demande du
+    # diocèse) : ce qui part du registre est une RELANCE — « il y a une
+    # contribution de 3 000 FCFA pour l'Épiphanie » — qui s'affiche en vert
+    # tant que le versement n'est pas noté. Le mode se pose au geste
+    # « ✅ Régler » ci-dessus, quand le membre s'acquitte.
     _tarifs_aide = " · ".join(
         (f"{_lbl} {_fr(cotis_div_montant_suggere(_cd))} FCFA"
          if cotis_div_montant_suggere(_cd) > 0 else f"{_lbl} libre")
@@ -1912,11 +1964,11 @@ def _section_registre_equipe(eid, annee, membres_eq):
                 help=("Tarifs réglés dans « 💼 Caisse du diocèse » : "
                       + _tarifs_aide + " — le champ reste ajustable."))
         with _ec2:
-            _dv = st.date_input("Date du versement", value=date.today(),
-                                key="cotis_div_date_exp")
-        _mode_lbl = st.selectbox("Mode de paiement",
-                                 list(_modes_lbls.values()),
-                                 key="cotis_div_mode_exp")
+            _dv = st.date_input("Date de la cotisation", value=date.today(),
+                                key="cotis_div_date_exp",
+                                help="La date de la fête, de l'échéance ou du "
+                                     "versement — celle qui la situe dans "
+                                     "l'année.")
         _precision = st.text_input(
             "Précision — nomme la cotisation (facultatif)",
             max_chars=80, key="cotis_div_precision",
@@ -1934,10 +1986,9 @@ def _section_registre_equipe(eid, annee, membres_eq):
             options=list(_lbls_m.keys()),
             key="cotis_div_dest")
         if st.form_submit_button("📮 Expédier", key="cotis_div_exp_go",
-                                 help="Une ligne par membre choisi, signée à "
-                                      "ton nom — chacun la voit aussitôt dans "
-                                      "son registre."):
-            _mode_code = {v: k for k, v in _modes_lbls.items()}[_mode_lbl]
+                                 help="Une ligne à régler par membre choisi, "
+                                      "signée à ton nom — chacun la voit "
+                                      "aussitôt en vert dans son registre."):
             _ids_cibles = ([_m[0] for _m in (membres_eq or [])] if _tous
                            else [_lbls_m[_l] for _l in _choisis])
             if not _ids_cibles:
@@ -1946,7 +1997,7 @@ def _section_registre_equipe(eid, annee, membres_eq):
             else:
                 _nb = cotis_div_envoyer_groupe(
                     _ids_cibles, annee, _code, int(_montant),
-                    date_versement=_dv, mode_paiement=_mode_code,
+                    date_versement=_dv,
                     enregistre_par=st.session_state.get('username'),
                     origine="caisse_equipe",
                     precision=(_precision or "").strip() or None)
@@ -1955,8 +2006,10 @@ def _section_registre_equipe(eid, annee, membres_eq):
                     st.session_state['cotis_div_flash'] = (
                         f"✅ {cotis_div_type_label(_code)} de {_fr(_montant)} "
                         f"FCFA du {_dv.strftime('%d/%m/%Y')} expédiée à {_nb} "
-                        f"membre{_plur} — chacun la voit aussitôt dans "
-                        "« 💰 État de mes cotisations ».")
+                        f"membre{_plur} — chacun la voit aussitôt « ⏳ à "
+                        "régler » dans « 💰 État de mes cotisations ». Dès "
+                        "que le versement arrive, touche ✅ Régler sur la "
+                        "ligne.")
                     st.rerun()
                 else:
                     st.error("L'expédition n'a pas pu être posée — réessaie.")
@@ -1974,11 +2027,27 @@ def _section_registre_equipe(eid, annee, membres_eq):
                         _d_l = safe_date(_l[3])
                         _d_txt = _d_l.strftime("%d/%m/%Y") if _d_l else (_l[3] or "—")
                         _prec = str(_l[7] or "").strip() if len(_l) > 7 else ""
-                        st.info(f"{_d_txt} · {cotis_div_type_label(_l[1]) or _l[1]}"
-                                + (f" — {_prec}" if _prec else "")
-                                + f" · {_fr(_l[2])} FCFA · "
-                                f"{_modes_lbls.get(_l[4] or '', _l[4] or '—')}"
-                                + (f" · noté par {_l[5]}" if _l[5] else ""))
+                        _a_regler = not (_l[8] if len(_l) > 8 else False)
+                        if _a_regler:
+                            # v7.16.1 — LA RELANCE EN VERT tant que le
+                            # versement n'est pas noté (demande du diocèse).
+                            st.success(f"⏳ à régler — {_d_txt} · "
+                                       f"{cotis_div_type_label(_l[1]) or _l[1]}"
+                                       + (f" — {_prec}" if _prec else "")
+                                       + f" · {_fr(_l[2])} FCFA"
+                                       + (f" · noté par {_l[5]}" if _l[5] else ""))
+                            if st.button("✅ Régler", key=f"cotis_regl_{_l[0]}",
+                                         help="Le versement est reçu : pose le "
+                                              "mode de paiement et la ligne "
+                                              "passe réglée."):
+                                st.session_state['cotis_regl_id'] = _l[0]
+                                st.rerun()
+                        else:
+                            st.info(f"{_d_txt} · {cotis_div_type_label(_l[1]) or _l[1]}"
+                                    + (f" — {_prec}" if _prec else "")
+                                    + f" · {_fr(_l[2])} FCFA · "
+                                    f"{_modes_lbls.get(_l[4] or '', _l[4] or '—')} ✅"
+                                    + (f" · noté par {_l[5]}" if _l[5] else ""))
                     with _xcol:
                         if st.button("🗑️", key=f"cotis_div_del_{_l[0]}",
                                      help="Retirer cette ligne (avec confirmation)"):
