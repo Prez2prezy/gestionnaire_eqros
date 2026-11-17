@@ -2565,6 +2565,81 @@ par le diocèse (0 = libre) ; registre simple (pas de reçu) ; icône 💰.
   v7.14.3. La base de production n'est jamais touchée.
 - `_VERSION_APPLI = "v7.15.3"`.
 
+### 64. v7.16.1 — Les relances du registre : « ⏳ à régler » en vert, le versement noté au bon endroit
+
+MOT DU USER : « Une clarification concernant ces messages envoyés vers les
+équipiers : « 15/12/2026 · Évènementielle — Épiphanie · 3 000 FCFA · 💵 Espèces ·
+noté par famkoueq3 ». Ce sont en réalité des relances pour dire (notre exemple
+ici) qu'il y a une contribution de 3 000 F CFA pour la fête de l'épiphanie. Elle
+saurait être en vert tant que ce n'est pas encore réglé. Le mode de paiement ne
+devrait pas faire partie du formulaire par-conséquent. — Reste à le mettre en
+gras et en blanc [le verset]. Réduire la longueur du bouton « 💰 État de mes
+cotisations » pour qu'il ne soit pas hors marge (téléphone surtout). Faire le
+titre et le message sur 2 lignes. — 1. Tous les liens suivants [?espace=1,
+?espace=1&p=1, l'icône Streamlit] me redirigent vers mon lien personnel pc comme
+téléphone (même phénomène sur 2 autres téléphones). 2. Les encarts « 👤 Mon
+profil » et « 💰 État de mes cotisations » restent visibles UNIQUEMENT qu'en fil
+de l'actualité ; pas dans les autres rubriques. 3. Cliquer sur « 📖 Relire ce
+feuillet » doit nous renvoyer vers le sommaire. »
+
+- **LES RELANCES DU REGISTRE (v7.16.1)** — ce qui part de « 💰 Le registre des
+  cotisations » est une RELANCE : la ligne naît « ⏳ à régler » (colonne douce
+  `regle_le`, NULL = à régler) SANS mode de paiement — le champ « Mode de
+  paiement » a QUITTÉ le formulaire d'expédition (la « Date de la cotisation »
+  remplace « Date du versement »). La relance s'affiche EN VERT (st.success
+  côté caisse, pastille verte côté membre) tant que le versement n'est pas
+  noté ; le geste « ✅ Régler » (bouton sur chaque ligne à régler) ouvre le
+  formulaire du versement — le mode de paiement vit ICI désormais
+  (`cotis_div_regler` : mode + instant, une seule fois, refusé si déjà
+  réglé) — et la ligne passe réglée avec son mode ✅. Les lignes posées avant
+  cette version (qui portaient leur mode) sont réglées d'office par la
+  migration douce (UPDATE idempotent borné à la table).
+- **LA DETTE DIT TOUT** — `cotis_div_total_du` porte désormais `autres` :
+  les relances des catégories spéciale / évènementielle / extraordinaire
+  encore « ⏳ à régler » entrent dans le « 💰 Total dû à ce jour » (la
+  mensuelle vit toujours par les mois écoulés sans versement réglé — jamais
+  deux fois la même dette) ; la grille ne coche un mois qu'au versement
+  réglé ; « 🕊️ Déjà versé cette année pastorale » lit les lignes réglées
+  (`total_regle`) ; la caisse ajoute la 4ᵉ métrique « ⏳ À régler ».
+- **LE VERSET EN GRAS ET EN BLANC** — Luc 10,35 quitte le gris-violet pour
+  `color:#ffffff; font-weight:bold` (italique et trait doré gardés) dans les
+  DEUX cartes mémoire (membre et écho visiteur).
+- **LE BOUTON HORS MARGE SE REPLIE** — le libellé de « 💰 État de mes
+  cotisations » se déplie sur DEUX LIGNES (« 💰 État de mes cotisations » /
+  « — doit : X FCFA » ou « ✅ À jour ») : CSS `white-space: pre-line` +
+  hauteur auto ; sur téléphone (≤640 px), les deux encarts s'empilent l'un
+  sous l'autre (`:has()` sur le bloc à popover — dégradation gracieuse sans
+  `:has()`).
+- **CHAQUE LIEN MÈNE À SA DESTINATION** — la « mémoire du fidèle »
+  (localStorage `rosaire_matloc`, qui réécrivait toute adresse d'Espace sans
+  matloc vers le dernier lien personnel retenu) est RETIRÉE de
+  `components.py` : `?espace=1` ouvre l'Espace communautaire, `?espace=1&p=1`
+  l'espace de la paroisse, le lien personnel reste lui-même — PC comme
+  téléphone, quelle que soit l'icône posée d'avant. Version du passeur des
+  rappels rafraîchie (`sw.js?v=71611`).
+- **LES ENCARTS SUIVENT LE MEMBRE PARTOUT** — « 👤 Mon profil » et « 💰 État
+  de mes cotisations » campent juste sous l'entête AVANT le livre ouvert :
+  visibles sur toutes les rubriques (fil, Thème, Rosaire, Mes évènements,
+  Galerie, Archives) et même pendant la lecture du feuillet ou de la
+  dizaine.
+- **« RELIRE CE FEUILLET » ENVOIE AU SOMMAIRE** — le lien profond des
+  « 📚 Les feuillets précédents » ouvre le livret sur la couverture et son
+  sommaire (`flt_page = -1`, sens « avant »), comme « 📖 Ouvrir le livret ».
+- **Banc d'épreuve** — `scripts/test_v7161.py` (39 vérifications : migration
+  douce et lignes anciennes réglées d'office, expédition sans mode, le
+  geste « ✅ Régler » et son refus du double-règlement, la grille qui ne
+  coche qu'au versement réglé, la dette avec `autres` sans double compte,
+  le source — form sans mode, lignes vertes, label 2 lignes, verset gras
+  blanc, sommaire, encarts avant le livre, CSS, mémoire retirée, version,
+  compile ×12) et `scripts/test_v7161_vue.py` (AppTest, base NEUVE : le
+  form sans mode, les relances vertes, le règlement au vrai geste, les
+  encarts sur TOUTES les rubriques et le livre ouvert, le sommaire). 
+  Régressions repassées et actualisées : v7.16.0 (52 ✅) + sa vue,
+  v7.15.4 (37 ✅) + sa vue, v7.15.3 (42 ✅) + sa vue, v7.15.2 (27 ✅),
+  v7.15.1 (29 ✅), v7.15.0 + vue, v7.14.5, v7.14.3 — et la tournure
+  d'autorité qui s'était glissée dans l'entrée 63 de ce README est retirée.
+- `_VERSION_APPLI = "v7.16.1"`.
+
 ### 63. v7.16.0 — Le « 💰 Total dû à ce jour », l'abonnement dans l'état, la précision libre et le verset
 
 MOT DU USER : « 1. Mettre "« Prends soin de cet homme. Et ce que tu dépenseras
@@ -2615,8 +2690,8 @@ ce jour". »
   Expédier ». Les tarifs réglés voyagent dans le libellé de chaque catégorie
   (« Mensuelle — 500 FCFA (tarif réglé) », « Spéciale — saisie libre ») et
   dans l'aide du montant.
-- **La règle d'or** — lecture pure côté membre, « posé par le diocèse »
-  toujours banni, la base de production jamais montée (bancs sur copies
+- **La règle d'or** — lecture pure côté membre, tournures d'autorité
+  toujours bannies, la base de production jamais montée (bancs sur copies
   neuves, fixtures nettoyées).
 - **Banc d'épreuve** — `scripts/test_v7160.py` (52 vérifications : la
   précision, la migration douce, le total dû — mensuelle écoulée non versée,
