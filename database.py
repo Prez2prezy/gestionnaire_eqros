@@ -682,6 +682,7 @@ def init_tables_and_migrations():
         enregistre_par TEXT,
         origine TEXT DEFAULT 'caisse_equipe',
         precision TEXT,
+        regle_le TEXT,
         cree_le TEXT
     )""")
 
@@ -691,6 +692,25 @@ def init_tables_and_migrations():
     # ré-exécutable sur les bases posées avant v7.16.0 : une colonne à NULL,
     # rien d'existant ne bouge.
     safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN precision TEXT")
+
+    # v7.16.1 — LE REGISTRE SAIT QUI EST RÉGLÉ : la ligne expédiée par la
+    # caisse est une RELANCE (« il y a une contribution de 3 000 FCFA pour
+    # l'Épiphanie ») — elle reste « ⏳ à régler » tant que le versement n'est
+    # pas noté ; `regle_le` porte l'instant où la responsable note le
+    # versement (le mode de paiement voyage avec lui). Les lignes posées
+    # avant cette version portaient déjà leur mode de paiement (le
+    # formulaire l'exigeait) : elles sont réglées d'office, à leur
+    # `cree_le` — la migration douce est ré-exécutable (une fois posée, la
+    # clause ne prend plus rien). Le UPDATE de compat est borné à la table :
+    # quelques dizaines de lignes, rien d'autre ne bouge.
+    safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN regle_le TEXT")
+    try:
+        c.execute("""UPDATE cotisations_diverses
+                     SET regle_le=cree_le
+                     WHERE regle_le IS NULL AND mode_paiement IS NOT NULL""")
+        commit_and_sync()
+    except Exception as e:
+        logger.warning(f"compat regle_le cotisations_diverses : {e!r}")
 
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
     try:
@@ -4851,14 +4871,16 @@ def cotis_div_enregistrer(membre_id, annee_debut, type_cotisation, montant,
                           date_versement=None, mode_paiement=None,
                           enregistre_par=None, origine="caisse_equipe",
                           precision=None):
-    """UNE LIGNE DU REGISTRE : la responsable d'équipe note un versement
+    """UNE LIGNE DU REGISTRE : la responsable d'équipe note une cotisation
     (mensuelle, spéciale, évènementielle ou extraordinaire). INSERT pur —
-    rien d'existant n'est modifié, ni ici ni ailleurs. La date du versement
-    est celle d'aujourd'hui si aucune n'est passée. v7.16.0 — `precision` :
-    le NOM de la cotisation donné par la responsable (les quatre types sont
-    des catégories) — texte libre, nettoyé, 80 caractères au plus, vide →
-    NULL. Retourne l'id de la ligne, None si le geste n'a pas pu être
-    posé."""
+    rien d'existant n'est modifié, ni ici ni ailleurs. La date est celle
+    d'aujourd'hui si aucune n'est passée. v7.16.0 — `precision` : le NOM de
+    la cotisation donné par la responsable (les quatre types sont des
+    catégories) — texte libre, nettoyé, 80 caractères au plus, vide → NULL.
+    v7.16.1 — LE RÈGLEMENT : une ligne posée AVEC un mode de paiement est
+    un versement constaté — elle naît réglée (`regle_le` posé à l'instant
+    du geste) ; sans mode, elle naît « ⏳ à régler » (une relance). Retourne
+    l'id de la ligne, None si le geste n'a pas pu être posé."""
     _lbl = cotis_div_type_label(type_cotisation)
     if _lbl is None:
         logger.warning("cotis_div_enregistrer : type de cotisation inconnu")
@@ -4872,16 +4894,19 @@ def cotis_div_enregistrer(membre_id, annee_debut, type_cotisation, montant,
         _d = _d.isoformat()
     _d = str(_d or date.today().isoformat())
     _precision = str(precision or "").strip()[:80] or None
+    _regle = (datetime.now().isoformat(timespec="seconds")
+              if mode_paiement else None)   # v7.16.1 — avec un mode = réglée
     with _verrou_db:
         try:
             c.execute("""INSERT INTO cotisations_diverses
                          (membre_id, annee_debut, type_cotisation, montant,
                           date_versement, mode_paiement, enregistre_par,
-                          origine, precision, cree_le)
-                         VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                          origine, precision, regle_le, cree_le)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                       (membre_id, int(annee_debut),
                        str(type_cotisation).strip().lower(), _montant, _d,
                        mode_paiement, enregistre_par, origine, _precision,
+                       _regle,
                        datetime.now().isoformat(timespec="seconds")))
             _id = c.lastrowid
             commit_and_sync()
@@ -4892,13 +4917,17 @@ def cotis_div_enregistrer(membre_id, annee_debut, type_cotisation, montant,
 
 
 def cotis_div_envoyer_groupe(membres_ids, annee_debut, type_cotisation, montant,
-                             date_versement=None, mode_paiement=None,
+                             date_versement=None,
                              enregistre_par=None, origine="caisse_equipe",
                              precision=None):
     """L'EXPÉDITION DU REGISTRE (v7.15.4) : la responsable d'équipe choisit
-    la catégorie, le montant (celui qui est proposé), la date et le mode de
-    paiement, puis expédie à TOUTE l'équipe ou à CERTAINS membres seulement
-    — et chaque membre le voit aussitôt dans « 💰 État de mes cotisations ».
+    la catégorie, le montant (celui qui est proposé) et la date, puis
+    expédie à TOUTE l'équipe ou à CERTAINS membres seulement — et chaque
+    membre le voit aussitôt dans « 💰 État de mes cotisations ».
+    v7.16.1 — CE SONT DES RELANCES : la ligne part « ⏳ à régler » SANS mode
+    de paiement (demande du diocèse — « il y a une contribution de 3 000
+    FCFA pour l'Épiphanie ») ; le mode se note au geste « ✅ Régler » quand
+    le versement arrive (cotis_div_regler), et la dette baisse aussitôt.
     Une ligne par membre choisi, chacune signée et datée ; les doublons
     d'identifiants sont fondus (pas deux lignes pour le même membre d'un
     même geste). v7.16.0 — `precision` : le NOM de la cotisation donné par
@@ -4933,11 +4962,12 @@ def cotis_div_envoyer_groupe(membres_ids, annee_debut, type_cotisation, montant,
                 """INSERT INTO cotisations_diverses
                    (membre_id, annee_debut, type_cotisation, montant,
                     date_versement, mode_paiement, enregistre_par,
-                    origine, precision, cree_le)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    origine, precision, regle_le, cree_le)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 [(_mid, int(annee_debut),
                   str(type_cotisation).strip().lower(), _montant, _d,
-                  mode_paiement, enregistre_par, origine, _precision,
+                  None, enregistre_par, origine, _precision,
+                  None,
                   datetime.now().isoformat(timespec="seconds"))
                  for _mid in _ids])
             commit_and_sync()
@@ -4962,14 +4992,47 @@ def cotis_div_supprimer(ligne_id):
             return False
 
 
+def cotis_div_regler(ligne_id, mode_paiement, regle_par=None):
+    """v7.16.1 — LE VERSEMENT EST NOTÉ : la responsable pose le mode de
+    paiement sur UNE ligne « ⏳ à régler » du registre (Espèces, Wave,
+    Orange Money, MTN MoMo, Autre) — la ligne passe réglée (`regle_le` à
+    l'instant du geste) et la dette du membre baisse aussitôt. C'est le
+    geste que le diocèse a décrit : « dès que tu notes le versement ».
+    Aucune autre ligne ne bouge. Retourne True si la ligne a été réglée."""
+    _mode = str(mode_paiement or "").strip().lower()
+    if _mode not in ("especes", "wave", "orange_money", "mtn_momo", "autre"):
+        logger.warning(f"cotis_div_regler : mode de paiement inconnu {_mode!r}")
+        return False
+    with _verrou_db:
+        try:
+            _ex = c.execute("SELECT regle_le FROM cotisations_diverses "
+                            "WHERE id=?", (int(ligne_id),)).fetchone()
+            if not _ex or _ex[0]:
+                return False   # ligne inconnue, ou déjà réglée : rien à noter
+            c.execute("""UPDATE cotisations_diverses
+                         SET mode_paiement=?, regle_le=?
+                         WHERE id=? AND regle_le IS NULL""",
+                      (_mode, datetime.now().isoformat(timespec="seconds"),
+                       int(ligne_id)))
+            _apres = c.execute("SELECT regle_le FROM cotisations_diverses "
+                               "WHERE id=?", (int(ligne_id),)).fetchone()
+            commit_and_sync()
+            return bool(_apres and _apres[0])
+        except Exception as e:
+            logger.warning(f"cotis_div_regler : {e!r}")
+            return False
+
+
 def cotis_div_lignes(membre_id, annee_debut, type_cotisation=None):
     """LECTURE PURE — les lignes du registre d'un membre pour l'année
     pastorale (toutes, ou d'un seul type), du plus récent au plus ancien.
     (id, type_cotisation, montant, date_versement, mode_paiement,
-    enregistre_par, origine, precision) — v7.16.0 : la précision (le nom
-    libre de la cotisation) voyage avec chaque ligne, None si absente."""
+    enregistre_par, origine, precision, regle_le) — v7.16.0 : la précision
+    (le nom libre de la cotisation) voyage avec chaque ligne, None si
+    absente. v7.16.1 : `regle_le` (None = ⏳ à régler) en 9ᵉ champ."""
     _sql = """SELECT id, type_cotisation, montant, date_versement,
-                     mode_paiement, enregistre_par, origine, precision
+                     mode_paiement, enregistre_par, origine, precision,
+                     regle_le
               FROM cotisations_diverses
               WHERE membre_id=? AND annee_debut=?"""
     _args = [membre_id, annee_debut]
@@ -4988,14 +5051,23 @@ def cotis_div_etat(membre_id, annee_debut):
     """LECTURE PURE — L'ÉTAT DU REGISTRE d'un membre pour l'année
     pastorale, tel que « 💰 État de mes cotisations » le relit :
     `lignes`  — toutes les lignes (cotis_div_lignes) ;
-    `totaux`  — {type: total FCFA} pour les quatre types ;
-    `total`   — le total de l'année, tous types confondus ;
+    `totaux`  — {type: total FCFA} pour les quatre types (toutes lignes) ;
+    `total`   — le total de l'année, tous types confondus (tout le
+                registre) ;
+    `total_regle`   — la somme des lignes RÉGLÉES (v7.16.1) : le vrai
+                « déjà versé » ;
+    `total_a_regler` — la somme des lignes « ⏳ à régler » (relances en
+                attente, v7.16.1) ;
     `mois`    — la grille de la MENSUELLE : {mois calendaire 1-12 : total
-                versé ce mois}. Les mois se lisent dans la date du
-                versement (le diocèse l'a dit ainsi : pas de mois porté
-                par la ligne) ; seuls les versements tombés DANS la fenêtre
-                de l'année pastorale (1er sept. N → 31 août N+1) comptent."""
-    _etat = {"lignes": [], "totaux": {}, "total": 0, "mois": {}}
+                VERSÉ (réglé) ce mois}. Les mois se lisent dans la date de
+                la ligne (le diocèse l'a dit ainsi : pas de mois porté par
+                la ligne) ; seuls les versements tombés DANS la fenêtre de
+                l'année pastorale (1er sept. N → 31 août N+1) comptent.
+                v7.16.1 : seules les lignes RÉGLÉES soldent un mois — la
+                relance mensuelle expédiée mais pas encore versée ne
+                coche pas."""
+    _etat = {"lignes": [], "totaux": {}, "total": 0, "mois": {},
+             "total_regle": 0, "total_a_regler": 0}
     try:
         _lignes = cotis_div_lignes(membre_id, annee_debut)
         _etat["lignes"] = _lignes
@@ -5006,10 +5078,15 @@ def cotis_div_etat(membre_id, annee_debut):
         for _l in _lignes:
             _code = _l[1]
             _montant = int(_l[2] or 0)
+            _est_regle = bool(_l[8]) if len(_l) > 8 else False
+            if _est_regle:
+                _etat["total_regle"] += _montant
+            else:
+                _etat["total_a_regler"] += _montant
             if _code in _etat["totaux"]:
                 _etat["totaux"][_code] += _montant
             _etat["total"] += _montant
-            if _code == "mensuelle" and _l[3]:
+            if _code == "mensuelle" and _l[3] and _est_regle:
                 try:
                     _dv = date.fromisoformat(str(_l[3])[:10])
                     if _d_debut <= _dv <= _d_fin:
@@ -5041,14 +5118,22 @@ def cotis_div_total_du(membre_id, annee_debut):
       chose ; dès que la responsable note le versement (expédition du
       registre ou paiement d'abonnement), la dette baisse d'autant.
     Retourne un dict :
-    {mensuelle, abonnement, total, tarif_mensuel, mois_dus (labels des
-    mois écoulés non versés), mois_ecoules, abonnement_paye,
+    {mensuelle, abonnement, autres, total, tarif_mensuel, mois_dus (labels
+    des mois écoulés non versés), mois_ecoules, abonnement_paye,
     abonnement_nature, abonnement_attendu, abonnement_recu (dict ou
-    None), abonnement_echeance}"""
+    None), abonnement_echeance}
+    v7.16.1 — LES AUTRES CATÉGORIES (spéciale, évènementielle,
+    extraordinaire) entrent dans la dette : chaque ligne « ⏳ à régler »
+    posée dans la fenêtre pastorale est une relance qui attend son
+    versement (« il y a une contribution de 3 000 FCFA pour l'Épiphanie »)
+    — réglée, elle quitte la dette. Les lignes mensuelles à régler ne sont
+    PAS comptées ici (elles vivent déjà dans le calcul par mois écoulés —
+    jamais deux fois la même dette)."""
     _mois_lbls = {1: "Janv.", 2: "Févr.", 3: "Mars", 4: "Avr.", 5: "Mai",
                   6: "Juin", 7: "Juil.", 8: "Août", 9: "Sept.", 10: "Oct.",
                   11: "Nov.", 12: "Déc."}
-    _res = {"mensuelle": 0, "abonnement": 0, "total": 0, "tarif_mensuel": 0,
+    _res = {"mensuelle": 0, "abonnement": 0, "autres": 0, "total": 0,
+            "tarif_mensuel": 0,
             "mois_dus": [], "mois_ecoules": 0, "abonnement_paye": False,
             "abonnement_nature": "reabonnement", "abonnement_attendu": 0,
             "abonnement_recu": None, "abonnement_echeance": ""}
@@ -5103,7 +5188,22 @@ def cotis_div_total_du(membre_id, annee_debut):
         _res["abonnement_nature"] = _nat
         _res["abonnement_echeance"] = str(cotis_echeance_nature(_nat))
 
-        _res["total"] = _res["mensuelle"] + _res["abonnement"]
+        # v7.16.1 — LES AUTRES CATÉGORIES À RÉGLER : les lignes (spéciale,
+        # évènementielle, extraordinaire) posées dans la fenêtre pastorale
+        # et pas encore réglées (`regle_le` NULL). Lecture d'un seul SELECT.
+        try:
+            _autres = c.execute("""SELECT COALESCE(SUM(montant), 0)
+                                   FROM cotisations_diverses
+                                   WHERE membre_id=? AND annee_debut=?
+                                         AND type_cotisation != 'mensuelle'
+                                         AND regle_le IS NULL""",
+                                (membre_id, _annee)).fetchone()
+            _res["autres"] = int(_autres[0] or 0) if _autres else 0
+        except Exception as e:
+            logger.warning(f"cotis_div_total_du (autres) : {e!r}")
+
+        _res["total"] = (_res["mensuelle"] + _res["abonnement"]
+                         + _res["autres"])
         return _res
     except Exception as e:
         logger.warning(f"cotis_div_total_du : {e!r}")
