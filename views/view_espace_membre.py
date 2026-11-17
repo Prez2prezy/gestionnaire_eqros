@@ -143,7 +143,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.16.1"
+_VERSION_APPLI = "v7.16.2"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -6553,52 +6553,6 @@ def _corps_espace_membre(matloc_membre=None):
     # web (#pont_memoire) — la base ne passe que par la porte du livre.
     _pont_memoire_hors_ligne(membre)
 
-    # v7.15.3 — LES DEUX CAMPENT ENSEMBLE SUR LA MÊME LIGNE (demande du
-    # diocèse) : « 👤 Mon profil » à gauche, « 💰 État de mes cotisations »
-    # à son opposé à droite — même forme (popover), deux registres dos à
-    # dos. Le profil se relit comme avant, mot pour mot.
-    # v7.16.1 — LES ENCARTS SUIVENT LE MEMBRE PARTOUT : ils campent ICI,
-    # juste sous l'entête, sur toutes les rubriques — le fil d'actualité,
-    # Mes évènements, Rosaire, Galerie, Archives, Thème — et même le livre
-    # ouvert (feuillet ou dizaine), où l'écran restait sans eux (observé
-    # par le diocèse : « visibles seulement en fil d'actualité »).
-    _col_profil, _col_cotis = st.columns(2)
-    with _col_profil:
-        with st.popover("👤 Mon profil"):
-            if membre[6]:
-                try: st.image(membre[6], width=130)
-                except Exception: pass
-            st.markdown(f"**{membre[1]} {membre[2]}**")
-            st.caption(f"MatLoc : `{membre[3]}`")
-            st.write(f"👥 Équipe : **{membre[8] or '—'}**")
-            st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
-            st.write(f"💬 WhatsApp : {membre[4] or '—'}")
-            st.write(f"📿 N° méditation : {membre[7] or '—'}")
-            d_adh = safe_date(membre[5])
-            st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
-    with _col_cotis:
-        # v7.16.0 — le montant du « Total dû à ce jour » campe dans le
-        # titre de l'encart, visible d'un coup d'œil sans l'ouvrir
-        # (demande du diocèse). La lecture se fait une fois ici puis
-        # voyage jusqu'à la fonction — lecture pure des deux côtés.
-        _du_pop = None
-        try:
-            _du_pop = cotis_div_total_du(membre[0], get_periode_pastorale()[0])
-        except Exception:
-            _du_pop = None
-        _du_txt = f"{int(_du_pop['total']) if _du_pop else 0:,}".replace(",", " ")
-        # v7.16.1 — LE BOUTON HORS MARGE SE REPLIE : titre et message sur
-        # DEUX LIGNES (demande du diocèse — téléphone surtout). Le CSS de
-        # la maison passe le libellé du popover en pre-line ; quand rien
-        # n'est dû, la deuxième ligne porte le « ✅ À jour ».
-        if _du_pop and int(_du_pop['total']) > 0:
-            _lbl_cotis = ("💰 État de mes cotisations\n"
-                          f"— doit : {_du_txt} FCFA")
-        else:
-            _lbl_cotis = "💰 État de mes cotisations\n✅ À jour"
-        with st.popover(_lbl_cotis):
-            _etat_cotisations_membre(membre, _du=_du_pop)
-
     if livre_ouvert:
         if st.session_state.get("flt_ouvert"):
             # v7.8 — livret mensuel en autonomie (logo + carte espace)
@@ -6617,6 +6571,55 @@ def _corps_espace_membre(matloc_membre=None):
 
     # v7.9.3 — la page ouverte commence EN HAUT de l'écran (feuillets)
     _scroll_top_si_nouvelle_page("mbr", rub, sub)
+
+    # v7.15.3 — LES DEUX CAMPENT ENSEMBLE SUR LA MÊME LIGNE (demande du
+    # diocèse) : « 👤 Mon profil » à gauche, « 💰 État de mes cotisations »
+    # à son opposé à droite — même forme (popover), deux registres dos à
+    # dos. Le profil se relit comme avant, mot pour mot.
+    # v7.16.2 — LES DEUX NE CAMPENT PLUS QU'AU FIL DE L'ACTUALITÉ : retour
+    # à l'expression d'origine — visibles sur l'accueil (rubrique
+    # « 🏠 Actualités »), ils ne suivent plus le membre dans les autres
+    # rubriques (Thème, Rosaire, Mes évènements, Galerie, Archives), ni
+    # pendant la lecture d'un feuillet ou de la dizaine, où l'écran reste
+    # tout à la prière. La v7.16.1 les avait élargis partout en lisant
+    # l'observation comme un défaut ; elle était la demande elle-même.
+    if rub == "🏠 Actualités":
+        _col_profil, _col_cotis = st.columns(2)
+        with _col_profil:
+            with st.popover("👤 Mon profil"):
+                if membre[6]:
+                    try: st.image(membre[6], width=130)
+                    except Exception: pass
+                st.markdown(f"**{membre[1]} {membre[2]}**")
+                st.caption(f"MatLoc : `{membre[3]}`")
+                st.write(f"👥 Équipe : **{membre[8] or '—'}**")
+                st.write(f"🏘️ Paroisse : **{membre[9] or '—'}**")
+                st.write(f"💬 WhatsApp : {membre[4] or '—'}")
+                st.write(f"📿 N° méditation : {membre[7] or '—'}")
+                d_adh = safe_date(membre[5])
+                st.write(f"📅 Adhésion : {d_adh.strftime('%d/%m/%Y') if d_adh else '—'}")
+        with _col_cotis:
+            # v7.16.0 — le montant du « Total dû à ce jour » campe dans le
+            # titre de l'encart, visible d'un coup d'œil sans l'ouvrir
+            # (demande du diocèse). La lecture se fait une fois ici puis
+            # voyage jusqu'à la fonction — lecture pure des deux côtés.
+            _du_pop = None
+            try:
+                _du_pop = cotis_div_total_du(membre[0], get_periode_pastorale()[0])
+            except Exception:
+                _du_pop = None
+            _du_txt = f"{int(_du_pop['total']) if _du_pop else 0:,}".replace(",", " ")
+            # v7.16.1 — LE BOUTON HORS MARGE SE REPLIE : titre et message sur
+            # DEUX LIGNES (demande du diocèse — téléphone surtout). Le CSS de
+            # la maison passe le libellé du popover en pre-line ; quand rien
+            # n'est dû, la deuxième ligne porte le « ✅ À jour ».
+            if _du_pop and int(_du_pop['total']) > 0:
+                _lbl_cotis = ("💰 État de mes cotisations\n"
+                              f"— doit : {_du_txt} FCFA")
+            else:
+                _lbl_cotis = "💰 État de mes cotisations\n✅ À jour"
+            with st.popover(_lbl_cotis):
+                _etat_cotisations_membre(membre, _du=_du_pop)
 
     # v7.7.2 — le badge de bienvenue n'apparaît QUE sur l'accueil
     if rub == "🏠 Actualités":
