@@ -1973,15 +1973,16 @@ def injecter_icone_pwa(espace=False, matloc=None):
     • le visage de l'onglet (favicon 📿 / 🔑 incorporé — v7.9.10) ;
     • le titre court remis à chaque run par le guetteur (v7.13.10) ;
     • la couleur du bandeau du navigateur (theme-color) ;
-    • la MÉMOIRE DU FIDÈLE (v7.9.7, côté Espace seulement) : une adresse
-      d'Espace revisitée sans son Matloc retrouve le dernier lien
-      personnel retenu par le navigateur — c'est elle qui fait rouvrir
-      « ton Espace, tout prêt » à une icône déjà posée d'avant ;
     • le PASSEUR DES RAPPELS 🔔 (v7.12.0, côté Espace seulement) : il vit
       silencieux et porte les rondes, sans jamais rien proposer.
+    v7.16.1 — LA MÉMOIRE DU FIDÈLE EST RETIRÉE : elle réécrivait toute
+    adresse d'Espace sans matloc vers le dernier lien personnel retenu
+    (?espace=1, ?espace=1&p=1, icônes d'antan… ne menaient plus là où
+    ils portent). Chaque lien mène à sa destination — la navigation ne
+    lit plus rien dans le localStorage.
     (Le paramètre matloc reste accepté pour la compatibilité des appels ;
-     il n'est plus nécessaire à rien — la mémoire vit dans le navigateur.)"""
-    _ver_pwa = "71312"
+     il n'est plus nécessaire à rien.)"""
+    _ver_pwa = "71611"
 
     def _icon_data(nom_fichier):
         """v7.9.10 — l'icône lue sur le disque et INCORPORÉE en base64 :
@@ -2038,56 +2039,16 @@ def injecter_icone_pwa(espace=False, matloc=None):
     })();
     </script>
     """.replace("%ICO32%", _ico32).replace("%LIB%", _lib)
-    # v7.9.7 — MÉMOIRE DU FIDÈLE (espaces de prière SEULEMENT) : une adresse
-    # d'Espace ouverte SANS matloc retrouve le dernier lien personnel
-    # (?espace=1&matloc=…) retenu par le navigateur — le fidèle retrouve
-    # SON espace. Un lien avec matloc rafraîchit la mémoire. 100 %
-    # navigateur (localStorage local) : rien côté serveur, aucune trace,
-    # aucune migration — et l'administration n'a AUCUNE mémoire.
-    # v7.13.11 — elle reste pour TOUS les retours : une icône déjà posée
-    # d'avant (raccourci d'un essai ancien) ouvre toujours « ton Espace,
-    # tout prêt », même sans plus rien proposer à poser.
+    # v7.9.7 — MÉMOIRE DU FIDÈLE, RETIRÉE EN v7.16.1 (demande du diocèse).
+    # Elle réécrivait TOUTE adresse d'Espace ouverte sans matloc
+    # (?espace=1, ?espace=1&p=1, icônes d'antan…) vers le dernier lien
+    # personnel retenu par le navigateur — les liens ne menaient plus là
+    # où ils portent (observé sur PC comme sur téléphone, et sur deux
+    # autres téléphones). Désormais CHAQUE lien mène à sa destination :
+    # ?espace=1 ouvre l'Espace communautaire, ?espace=1&p=1 l'espace de la
+    # paroisse, le lien personnel (avec son matloc) reste lui-même. Rien
+    # n'est écrit ni lu dans le localStorage pour la navigation.
     if espace:
-        _js += """
-    <script>
-    (function(){
-      var f = null;
-      try { f = window.parent; } catch(e) { return; }
-      if (!f || !f.localStorage) { return; }
-      var q = null;
-      try { q = new URLSearchParams(f.location.search); } catch(e) { return; }
-      if (q.get('espace') !== '1') { return; }
-      var ml = (q.get('matloc') || '').trim().toUpperCase();
-      if (ml) {
-        try { f.localStorage.setItem('rosaire_matloc', ml); } catch(e) {}
-        return;
-      }
-      var memo = '';
-      try { memo = (f.localStorage.getItem('rosaire_matloc') || '').trim().toUpperCase(); } catch(e) {}
-      if (!memo) { return; }
-      var u = null;
-      try { u = new URL(f.location.href); } catch(e) { return; }
-      u.searchParams.set('matloc', memo);
-      /* v7.13.10 — LE BON GESTE POUR NAVIGUER : depuis que Streamlit
-         sandboixe ses iframes, un location.replace du PARENT lancé depuis
-         l'iframe lève une SecurityError EN SILENCE (catch(e) {}) — la
-         mémoire du fidèle était muette. La couture de la maison
-         (v7.8.1) : on pose une ancre DANS le document du parent et on la
-         clique — la navigation appartient alors à la page elle-même,
-         aucun bac à sable ne la bloque. */
-      try {
-        var _a = f.document.createElement('a');
-        _a.href = u.toString();
-        _a.style.display = 'none';
-        f.document.body.appendChild(_a);
-        _a.click();
-        setTimeout(function(){ try { _a.remove(); } catch(e2) {} }, 4000);
-      } catch(e1) {
-        try { f.location.replace(u.toString()); } catch(e2) {}
-      }
-    })();
-    </script>
-    """
         # v7.12.0 — LE PASSEUR DES RAPPELS s'installe dès l'arrivée (côté
         # espace seul) : les rondes 🔔 peuvent frapper même quand l'app est
         # fermée. Silencieux : une demande de rien, jamais de permission,
@@ -2101,7 +2062,7 @@ def injecter_icone_pwa(espace=False, matloc=None):
         try { f = window.parent; } catch(e) { return; }
         if (!f || !f.navigator || !('serviceWorker' in f.navigator)) { return; }
         f.navigator.serviceWorker
-          .register('/app/static/sw.js?v=71312').catch(function(){ });
+          .register('/app/static/sw.js?v=71611').catch(function(){ });
       } catch(e) { }
     })();
     </script>
