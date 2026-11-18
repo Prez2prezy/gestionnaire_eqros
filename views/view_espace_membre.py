@@ -143,7 +143,11 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       COTIS_DIV_TYPES,
                       # v7.16.0 — le « Total dû à ce jour » (dette mensuelle
                       # + abonnement, lecture pure)
-                      cotis_div_total_du)
+                      cotis_div_total_du,
+                      # v7.16.4 — le « Reçu par » des versements (la Note de
+                      # la maison : équipe / paroisse / diocèse), lecture
+                      # pure — la vue ne note jamais rien
+                      cotis_destination_label)
 from services import (safe_date, compter_visite, lien_whatsapp, urls_galerie,
                       URL_ESPACE_SPIRITUEL, get_periode_pastorale)
 
@@ -154,7 +158,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.16.3"
+_VERSION_APPLI = "v7.16.4"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -403,6 +407,88 @@ def _feuillette_geste(recul=True):
     })();
     </script>
     """.replace("%RECUL%", _recul_js)
+    try:
+        _comp_html(_script, height=0)
+    except Exception:
+        pass
+
+
+def _dizaine_ecran_telephone(idx, decompte=False):
+    """v7.16.4 — LE LIVRE DE LA DIZAINE, CÔTÉ TÉLÉPHONE (dossier b — la
+    suite du geste v7.16.3, validé) : sur le téléphone, le bouton
+    « Suivant ▶ » quitte l'écran du livre — les pages se tournent au
+    doigt (le geste qui tourne de la droite vers la gauche) — et sur les
+    pages des dix « Je vous salue Marie », le DÉCOMPTE DES 20 SECONDES
+    prend le relais : la prière reste affichée, la petite horloge dorée
+    compte vingt secondes, puis la page tourne toute seule vers la
+    suivante. Sur l'ordinateur, rien ne change : « Suivant ▶ » reste là
+    pour la souris et par sécurité — comme au livret du feuillet, qui ne
+    bouge pas du tout (le livre de la dizaine SEULEMENT, l'écran du
+    téléphone seulement). Le décompte porte un jeton de page (la même
+    mécanique « nonce » que les feuillets) : si la page a tourné entre-
+    temps — au doigt ou autrement — le vieux décompte se tait, et la
+    nouvelle page repart de vingt. L'adresse ?…&tel=1 force le côté
+    téléphone (banc d'essai au navigateur). La base n'est jamais touchée."""
+    _token = "diz_ecran_" + re.sub(r"[^0-9A-Za-z_-]", "", str(idx) or "x")
+    _box_js = "" if not decompte else (
+        'var box=d.createElement("div");'
+        'box.innerHTML=\'<div style="text-align:center;margin-top:6px;">'
+        '<div style="display:inline-block;min-width:200px;background:'
+        'linear-gradient(135deg,#1A237E 0%,#283593 100%);border:2px solid '
+        '#FFD700;border-radius:14px;padding:10px 16px;">'
+        '<div style="color:#FFD700;font-size:0.82rem;font-weight:bold;">'
+        '🕊️ Je vous salue Marie…</div>'
+        '<div class="diz_cpt_n" style="color:#ffffff;font-size:1.5rem;'
+        'font-weight:bold;line-height:1.25;">20 s</div>'
+        '<div style="height:6px;background:rgba(255,215,0,0.25);'
+        'border-radius:6px;overflow:hidden;">'
+        '<div class="diz_cpt_b" style="height:100%;width:100%;'
+        'background:#FFD700;"></div>'
+        '</div></div></div>\';'
+        'wrap.appendChild(box);'
+    )
+    _tic_js = "" if not decompte else (
+        'var reste=20;'
+        'function tic(){'
+        'if(d.__diz_ecran__!==token){return;}'
+        'reste-=1;'
+        'var n=box.querySelector(".diz_cpt_n"),br=box.querySelector(".diz_cpt_b");'
+        'if(br){br.style.width=(Math.max(0,reste)*5)+"%";}'
+        'if(reste<=0){if(n){n.textContent="🕊️";}b.click();return;}'
+        'if(n){n.textContent=reste+" s";}'
+        'setTimeout(tic,1000);'
+        '}'
+        'setTimeout(tic,1000);'
+    )
+    _script = """
+    <script>
+    (function(){
+      var d = null;
+      try { d = window.parent.document; } catch(e) { d = document; }
+      if (!d || !d.body) { return; }
+      var tel = false;
+      try { tel = !!(window.matchMedia && (window.matchMedia("(pointer: coarse)").matches || window.matchMedia("(max-width: 640px)").matches)); } catch(e) { tel = false; }
+      try { if ((window.parent.location.search || "").indexOf("tel=1") >= 0) { tel = true; } } catch(e) {}
+      if (!tel) { return; }
+      function bouton(txt){
+        var bs = d.querySelectorAll("button");
+        for (var i = 0; i < bs.length; i++) {
+          if (((bs[i].textContent || "").trim()) === txt) { return bs[i]; }
+        }
+        return null;
+      }
+      var b = bouton("Suivant ▶");
+      if (!b) { return; }
+      var token = "%TOKEN%";
+      d.__diz_ecran__ = token;
+      b.style.display = "none";
+      var wrap = b.closest('[data-testid="stButton"],.stButton') || b.parentElement;
+      if (!wrap) { return; }
+      %BOX%
+      %TIC%
+    })();
+    </script>
+    """.replace("%TOKEN%", _token).replace("%BOX%", _box_js).replace("%TIC%", _tic_js)
     try:
         _comp_html(_script, height=0)
     except Exception:
@@ -3750,6 +3836,15 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
                     st.session_state["diz_ouvert"] = False
                     st.session_state["diz_page"] = 0
                     st.rerun()
+        # v7.16.4 — CÔTÉ TÉLÉPHONE, LE BOUTON SE RETIRE ET LA PRIÈRE SE
+        # COMPTE (dossier b) : « Suivant ▶ » quitte l'écran du livre de la
+        # dizaine — les pages se tournent au doigt (le geste v7.16.3) — et
+        # sur les dix « Je vous salue Marie » le DÉCOMPTE DES 20 SECONDES
+        # prend le relais : la page tourne toute seule quand les vingt
+        # secondes sont posées. Sur l'ordinateur, le bouton reste là pour
+        # la souris et par sécurité ; le livret du feuillet, lui, ne
+        # bouge pas (le livre de la dizaine seulement).
+        _dizaine_ecran_telephone(idx, decompte=(page["t"] == "grain"))
 
     # v7.16.3 — LE GESTE AUSSI DANS LE LIVRE DE LA DIZAINE (dossier b) :
     # le doigt glisse de la droite vers la gauche, la page tourne. Ici on ne
@@ -4273,7 +4368,7 @@ async function activer_push_ro(){
     var u = new URL(window.parent.location.href);
     u.searchParams.set('push_abo', charge);%MATLOC%
     window.parent.location.href = u.href;
-  } catch(e) { etat.textContent='Le oui n\'a pas pu être noté — réessaie dans un instant.'; }
+  } catch(e) { etat.textContent='Le oui n’a pas pu être noté — réessaie dans un instant.'; }
 }
 </script>"""
                     _js = _js.replace("%CLE%", _cle_pub)
@@ -5136,24 +5231,25 @@ def _etat_cotisations_membre(membre, _du=None):
     """v7.16.0 — « 💰 État de mes cotisations » : LE REGISTRE DU MEMBRE,
     posé en face de « 👤 Mon profil » sur la même ligne. LECTURE PURE —
     ici, on ne note rien : la responsable d'équipe tient le registre dans
-    sa caisse (« 💼 Abonnement - Réabonnement », section registre) ; ce
-    que tu vois, elle vient de l'écrire, et tu le vois aussitôt — et dès
-    qu'elle note ton versement (expédition du registre ou abonnement
-    réglé), le « Total dû à ce jour » baisse d'autant.
-    — MENSUELLE : la grille des 12 mois de l'année pastorale (septembre →
-    août), cochée quand le versement est noté (réglé), avec le tarif réglé
-    dans « 💼 Caisse du diocèse » s'il en a posé un (0 = libre, rien n'est
-    affiché) ;
-    — SPÉCIALE, ÉVÈNEMENTIELLE, EXTRAORDINAIRE : leurs lignes (date ·
-    précision · montant) et leur total — la précision est le nom libre que
-    la responsable a donné à la cotisation (v7.16.0). v7.16.1 : la ligne
-    en attente de son versement s'affiche EN VERT « ⏳ à régler » — la
-    relance (« il y a une contribution de 3 000 FCFA pour l'Épiphanie ») ;
-    réglée, elle porte son mode de paiement ✅ ;
+    sa caisse (onglets « ✨ Cotisations diverses » et « 💰 Versement » de
+    la trésorerie) ; ce que tu vois, elle vient de l'écrire, et tu le vois
+    aussitôt — et dès qu'elle note ton versement (onglet « 💰 Versement »
+    ou abonnement réglé), le « Total dû à ce jour » baisse d'autant.
+    — LES QUATRE CATÉGORIES EN LIGNES (v7.16.4 : le tableau des cotisations
+    mensuelles est retiré, demande de la maison) — la mensuelle se lit
+    comme les autres, VERSEMENT PAR VERSEMENT : date · précision · montant
+    · mode · « Reçu par » ; le titre garde le compte des mois soldés et le
+    tarif réglé dans « 💼 Caisse du diocèse » s'il en a posé un (0 = libre,
+    rien n'est affiché) ;
+    — LA LIGNE EN ATTENTE de son versement s'affiche EN VERT « ⏳ à régler »
+    (v7.16.1) — la relance (« il y a une contribution de 3 000 FCFA pour
+    l'Épiphanie ») ; réglée, elle porte son mode de paiement et là où il a
+    été reçu (la trésorerie de l'équipe, de la paroisse ou du diocèse —
+    v7.16.4, la Note de la maison) ✅ ;
     — L'ABONNEMENT (ou le réabonnement) fait partie de l'état : réglé →
-    sa ligne (montant · date · reçu) ; à régler → le montant attendu et
+    sa ligne (montant · mode · reçu) ; à régler → le montant attendu et
     son échéance (v7.16.0, demande du diocèse) ;
-    — LE « 💰 TOTAL DÛ À CE JOUR » remplace le total de l'année : les mois
+    — LE « 💰 TOTAL DÙ À CE JOUR » remplace le total de l'année : les mois
     écoulés de mensuelle non versés (au tarif réglé) + l'abonnement non
     réglé + les lignes des autres catégories encore « ⏳ à régler »
     (v7.16.1) — 0 FCFA = à jour, carte verte ; le déjà versé (les lignes
@@ -5168,9 +5264,6 @@ def _etat_cotisations_membre(membre, _du=None):
     _reglages_div = cotis_div_parametres_lire()
     if _du is None:
         _du = cotis_div_total_du(_mid, _annee)
-    _mois_lbls = {1: "Janv.", 2: "Févr.", 3: "Mars", 4: "Avr.", 5: "Mai",
-                  6: "Juin", 7: "Juil.", 8: "Août", 9: "Sept.", 10: "Oct.",
-                  11: "Nov.", 12: "Déc."}
     _modes_lbls = {"especes": "💵 Espèces", "wave": "🌊 Wave",
                    "orange_money": "📱 Orange Money", "mtn_momo": "🟡 MTN MoMo",
                    "autre": "💳 Autre"}
@@ -5194,42 +5287,29 @@ def _etat_cotisations_membre(membre, _du=None):
         if int(_du["total"]) <= 0 and _du["abonnement_paye"]:
             return
 
-    # LA MENSUELLE EN GRILLE : l'année pastorale mois par mois, de
-    # septembre à août — le mois payé porte son total, les autres
-    # gardent leur trait discret.
+    # v7.16.4 — LE TABLEAU DES COTISATIONS MENSUELLES EST RETIRÉ (demande
+    # de la maison) : la mensuelle se lit comme les trois autres
+    # catégories, VERSEMENT PAR VERSEMENT — date, précision, montant,
+    # mode et « Reçu par » — le titre garde le compte des mois soldés et
+    # le tarif réglé s'il en a posé un (0 = libre).
     _tarif_mens = int(_reglages_div.get("cotis_div_montant_mensuelle", 0))
     _mois_payes = len(_etat["mois"])
-    st.markdown(f"**🧮 Mensuelle — {_mois_payes} mois sur 12 · "
-                f"{_fr(_etat['totaux']['mensuelle'])} FCFA**"
-                + (f" *(tarif réglé : {_fr(_tarif_mens)} FCFA/mois)*"
-                   if _tarif_mens > 0 else ""))
-    _cell = ('<div style="border:1px solid {bord}; border-radius:8px;'
-             ' padding:3px 2px; margin:2px 0; font-size:0.72rem;'
-             ' text-align:center; background:{fond}; color:{encre};">'
-             '{mois}<br><b>{val}</b></div>')
-    for _rang in (0, 1, 2):
-        _cols = st.columns(4)
-        for _j, _mois in enumerate((9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8)[_rang * 4:_rang * 4 + 4]):
-            _val = int(_etat["mois"].get(_mois, 0))
-            with _cols[_j]:
-                st.markdown(_cell.format(
-                    bord=("#66bb6a" if _val > 0 else "#b0a8c8"),
-                    fond=("#e8f5e9" if _val > 0 else "#f5f2fa"),
-                    encre=("#1b5e20" if _val > 0 else "#7a7292"),
-                    mois=_mois_lbls[_mois],
-                    val=((_fr(_val) + " F") if _val > 0 else "—")),
-                    unsafe_allow_html=True)
 
-    # LES TROIS AUTRES CATÉGORIES : leurs lignes (date · précision ·
-    # montant · mode) et leur total ; rien de noté, une seule ligne
+    # LES QUATRE CATÉGORIES : leurs lignes (date · précision · montant ·
+    # mode · reçu par) et leur total ; rien de noté, une seule ligne
     # discrète le dit. La précision est le nom libre de la cotisation
     # (v7.16.0) — portée entre la date et le montant quand elle existe.
     for _code, _lbl in COTIS_DIV_TYPES:
-        if _code == "mensuelle":
-            continue
+        _icon_cat = "🧮" if _code == "mensuelle" else "✨"
         _lignes_t = [_l for _l in _etat["lignes"] if _l[1] == _code]
         if _lignes_t:
-            st.markdown(f"**✨ {_lbl} — {_fr(_etat['totaux'][_code])} FCFA**")
+            if _code == "mensuelle":
+                st.markdown(f"**{_icon_cat} {_lbl} — {_mois_payes} mois sur 12 · "
+                            f"{_fr(_etat['totaux']['mensuelle'])} FCFA**"
+                            + (f" *(tarif réglé : {_fr(_tarif_mens)} FCFA/mois)*"
+                               if _tarif_mens > 0 else ""))
+            else:
+                st.markdown(f"**{_icon_cat} {_lbl} — {_fr(_etat['totaux'][_code])} FCFA**")
             for _l in _lignes_t[:6]:
                 _d_l = safe_date(_l[3])
                 _d_txt = _d_l.strftime("%d/%m/%Y") if _d_l else (_l[3] or "—")
@@ -5237,7 +5317,8 @@ def _etat_cotisations_membre(membre, _du=None):
                 _seg_prec = f" · {_prec}" if _prec else ""
                 # v7.16.1 — LA RELANCE EN VERT : la ligne qui attend son
                 # versement s'affiche « ⏳ à régler » sur fond vert ; réglée,
-                # elle porte son mode de paiement et le petit ✅.
+                # elle porte son mode de paiement — et, depuis la Note de
+                # la maison (v7.16.4), là où il a été reçu — et le ✅.
                 if not (_l[8] if len(_l) > 8 else False):
                     st.markdown(
                         "<span style='font-size:0.8rem; color:#1b5e20;"
@@ -5247,9 +5328,12 @@ def _etat_cotisations_membre(membre, _du=None):
                         f"{_d_txt}{_seg_prec} · {_fr(_l[2])} FCFA</span>",
                         unsafe_allow_html=True)
                 else:
+                    _dest_l = (cotis_destination_label(_l[9])
+                               if (len(_l) > 9 and _l[9]) else None)
+                    _seg_dest = f" · {_dest_l}" if _dest_l else ""
                     st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
                                 f"{_d_txt}{_seg_prec} · {_fr(_l[2])} FCFA · "
-                                f"{_modes_lbls.get(_l[4] or '', _l[4] or '—')} ✅</span>",
+                                f"{_modes_lbls.get(_l[4] or '', _l[4] or '—')}{_seg_dest} ✅</span>",
                                 unsafe_allow_html=True)
             if len(_lignes_t) > 6:
                 st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
@@ -5257,7 +5341,7 @@ def _etat_cotisations_membre(membre, _du=None):
                             unsafe_allow_html=True)
         else:
             st.markdown(f"<span style='font-size:0.8rem; color:#8a82a2;'>"
-                        f"✨ {_lbl} — rien de noté</span>",
+                        f"{_icon_cat} {_lbl} — rien de noté</span>",
                         unsafe_allow_html=True)
 
     # v7.16.0 — L'ABONNEMENT FAIT PARTIE DE L'ÉTAT (demande du diocèse) :
@@ -5270,8 +5354,15 @@ def _etat_cotisations_membre(membre, _du=None):
         _d_p = safe_date(_r_ab["date"])
         _d_ab = _d_p.strftime("%d/%m/%Y") if _d_p else (_r_ab["date"] or "—")
         st.markdown(f"**📅 {_nat_lbl} {_annee} - {_annee + 1} — ✅ réglé**")
+        # v7.16.4 — le versement de l'abonnement porte lui aussi son mode
+        # et son « Reçu par » (la Note de la maison) quand il en a un.
+        _seg_mode_ab = (f" · {_modes_lbls.get(_r_ab['mode'] or '', _r_ab['mode'] or '—')}"
+                        if _r_ab.get("mode") else "")
+        _seg_dest_ab = (f" · {cotis_destination_label(_r_ab['destination'])}"
+                        if _r_ab.get("destination") else "")
         st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
                     f"{_d_ab} · {_fr(_r_ab['montant'])} FCFA"
+                    + _seg_mode_ab + _seg_dest_ab
                     + (f" · reçu {_r_ab['numero']}" if _r_ab["numero"] else "")
                     + "</span>", unsafe_allow_html=True)
     else:
