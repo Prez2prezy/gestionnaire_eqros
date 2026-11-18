@@ -3231,3 +3231,719 @@ def recu_pdf_de_numero(numero_recu, porteur=None, echeance=None):
          "enregistre_par": _info[11], "origine": _info[12]},
         porteur=porteur or _reglages.get("cotis_porteur"),
         echeance_iso=echeance)
+
+
+# ======================================================================
+# v7.16.6 — LES MAISONS DE LA TRÉSORERIE (la paroisse et le diocèse)
+# Le constat de la maison : « la paroisse et le diocèse n'ont pas de
+# trésorerie — sinon où sont-elles générées ? » — leurs caisses naissent
+# ici : chaque maison porte les déclarations adressées à SON « Reçu par »
+# et expédie ses propres cotisations, dues comme les autres.
+# ======================================================================
+
+def maison_versement(dest_code, titre, annee, paroisse_id=None,
+                     key_prefix="mv"):
+    """v7.16.6 — LA MAISON « 💰 VERSEMENT » d'une trésorerie (la caisse de
+    la paroisse ou celle du diocèse). Le choix de la maison, validé par la
+    maison elle-même — « le « Régler » du membre pose une déclaration
+    (mode + « Reçu par ») que la trésorerie confirme dans sa maison « 💰
+    Versement » — le registre ne dit réglé que par elle. Cette maison ne
+    porte QUE les déclarations adressées à sa trésorerie (`dest_code`) :
+    les lignes du registre déclarées ici, la mensuelle et l'abonnement
+    déclarés ici. La confirmation suit le chemin de la caisse d'équipe —
+    le formulaire arrive prérempli avec le mode et le « Reçu par » du
+    membre, le refus se pose en deux temps — et les versements réglés ici
+    s'affichent en bas, preuve de ce qui est passé chez elle. La base
+    n'est écrite que par les gestes de confirmation de CETTE maison."""
+    from database import (c, cotis_div_declarations_maison,
+                          cotis_declarations_attente, cotis_div_regler,
+                          cotis_div_type_label, cotis_div_etat,
+                          cotis_div_total_du, cotis_div_montant_suggere,
+                          cotis_div_declaration_annuler,
+                          cotis_declaration_confirmer_mensuelle,
+                          cotis_declaration_confirmer_abonnement,
+                          cotis_declaration_retirer,
+                          cotis_destination_label, COTIS_DESTINATIONS)
+    _lbl_maison = cotis_destination_label(dest_code) or "Trésorerie"
+    _modes_lbls = {"especes": "💵 Espèces", "wave": "🌊 Wave",
+                   "orange_money": "📱 Orange Money", "mtn_momo": "🟡 MTN MoMo",
+                   "autre": "💳 Autre"}
+    _dest_lbls = {lbl: code for code, lbl in COTIS_DESTINATIONS}
+    _mois_lbls = {1: "Janv.", 2: "Févr.", 3: "Mars", 4: "Avr.", 5: "Mai",
+                  6: "Juin", 7: "Juil.", 8: "Août", 9: "Sept.", 10: "Oct.",
+                  11: "Nov.", 12: "Déc."}
+
+    def _fr(_n):
+        return f"{int(_n):,}".replace(",", " ")
+
+    def _lbl_mois_v(_lst):
+        return ", ".join(_mois_lbls.get(int(_m), str(_m)) for _m in (_lst or []))
+
+    st.markdown(f"### {titre}")
+    st.caption(f"Cette maison ne porte que les versements déclarés à « {_lbl_maison} » : "
+               "une déclaration confirmée ici marque la ligne réglée — le registre "
+               "ne dit réglé que par elle. Les déclarations adressées à l'équipe ou "
+               "à l'autre maison se confirment dans leur caisse à elles.")
+
+    _lignes_decl = cotis_div_declarations_maison(dest_code,
+                                                 paroisse_id=paroisse_id,
+                                                 annee_debut=annee)
+    _decls_ma = cotis_declarations_attente(dest=dest_code,
+                                           paroisse_id=paroisse_id,
+                                           annee_debut=annee)
+
+    # ── LE REFUS EN DEUX TEMPS (ligne ou cible) ──────────────────────────
+    if st.session_state.get(f'{key_prefix}_refus_id'):
+        _dr = next((_l for _l in _lignes_decl
+                    if _l[0] == st.session_state[f'{key_prefix}_refus_id']),
+                   None)
+        if _dr:
+            st.warning(f"🕊️ Refuser la déclaration de {_dr[8]} {_dr[9]} "
+                       f"({_dr[12] or '—'}) — "
+                       f"{cotis_div_type_label(_dr[2]) or _dr[2]}"
+                       + (f" — {_dr[4]}" if _dr[4] else "")
+                       + f" · {_fr(_dr[1])} FCFA) ? La ligne reprend son "
+                       "« ⏳ à régler » paisible — le membre peut déclarer "
+                       "à nouveau.")
+            _rc1, _rc2 = st.columns(2)
+            with _rc1:
+                if st.button("✔️ Oui, refuser cette déclaration",
+                             key=f"{key_prefix}_refus_ok"):
+                    cotis_div_declaration_annuler(
+                        st.session_state[f'{key_prefix}_refus_id'])
+                    del st.session_state[f'{key_prefix}_refus_id']
+                    st.session_state[f'{key_prefix}_flash'] = (
+                        "🕊️ Déclaration refusée — la ligne attend un nouveau "
+                        "versement, le membre la voit « ⏳ à régler ».")
+                    st.rerun()
+            with _rc2:
+                if st.button("✖ Annuler", key=f"{key_prefix}_refus_non"):
+                    del st.session_state[f'{key_prefix}_refus_id']
+                    st.rerun()
+        else:
+            del st.session_state[f'{key_prefix}_refus_id']
+    if st.session_state.get(f'{key_prefix}_declma_refus_id'):
+        _dr_ma = next((_d for _d in _decls_ma
+                       if _d[0] == st.session_state[f'{key_prefix}_declma_refus_id']),
+                      None)
+        if _dr_ma:
+            _cote_dr = ("🧮 Mensuelle (" + _lbl_mois_v(_dr_ma[5]) + ")"
+                        if _dr_ma[3] == "mensuelle" else "📅 " + _dr_ma[3])
+            st.warning(f"🕊️ Refuser la déclaration de {_dr_ma[9]} {_dr_ma[10]} "
+                       f"({_dr_ma[12] or '—'}) — {_cote_dr} · "
+                       f"{_fr(_dr_ma[4])} FCFA ? La déclaration s'efface et "
+                       "le dû reprend son « ⏳ à régler » paisible.")
+            _rc_m1, _rc_m2 = st.columns(2)
+            with _rc_m1:
+                if st.button("✔️ Oui, refuser cette déclaration",
+                             key=f"{key_prefix}_declma_refus_ok"):
+                    cotis_declaration_retirer(
+                        st.session_state[f'{key_prefix}_declma_refus_id'])
+                    del st.session_state[f'{key_prefix}_declma_refus_id']
+                    st.session_state[f'{key_prefix}_flash'] = (
+                        "🕊️ Déclaration refusée — le dû attend un nouveau "
+                        "versement, le membre le voit « ⏳ à régler ».")
+                    st.rerun()
+            with _rc_m2:
+                if st.button("✖ Annuler", key=f"{key_prefix}_declma_refus_non"):
+                    del st.session_state[f'{key_prefix}_declma_refus_id']
+                    st.rerun()
+        else:
+            del st.session_state[f'{key_prefix}_declma_refus_id']
+
+    # ── LA CONFIRMATION OUVERTE (formulaire prérempli) ───────────────────
+    if st.session_state.get(f'{key_prefix}_regl_id'):
+        _l_r = next((_l for _l in _lignes_decl
+                     if _l[0] == st.session_state[f'{key_prefix}_regl_id']),
+                    None)
+        if _l_r:
+            _nom_r = f"{_l_r[8]} {_l_r[9]}"
+            _cote_r = (f"{cotis_div_type_label(_l_r[2]) or _l_r[2]}"
+                       + (f" — {_l_r[4]}" if _l_r[4] else ""))
+            _modes_r = list(_modes_lbls.values())
+            _dests_r = list(_dest_lbls.keys())
+            _idx_mode_r = (list(_modes_lbls.values()).index(
+                _modes_lbls[_l_r[6]]) if _l_r[6] in _modes_lbls else 0)
+            _lbl_maison_r = cotis_destination_label(dest_code)
+            _idx_dest_r = (list(_dest_lbls.keys()).index(_lbl_maison_r)
+                           if _lbl_maison_r in _dest_lbls else 0)
+            st.info(f"🕊️ {_nom_r} ({_l_r[10] or '—'}) déclare avoir versé — "
+                    f"{_cote_r} · {_fr(_l_r[1])} FCFA du {_l_r[3] or '?'} "
+                    f"({_modes_lbls.get(_l_r[6] or '', _l_r[6] or '—')}). "
+                    "Vérifie et confirme : le formulaire arrive prérempli "
+                    "avec sa déclaration.")
+            with st.form(f"{key_prefix}_regl_form"):
+                _mode_r = st.selectbox("Mode de paiement", _modes_r,
+                                       index=_idx_mode_r,
+                                       key=f"{key_prefix}_regl_mode")
+                _dest_r = st.selectbox("Reçu par", _dests_r,
+                                       index=_idx_dest_r,
+                                       key=f"{key_prefix}_regl_dest",
+                                       help="Là où le versement a été reçu.")
+                if st.form_submit_button("💾 Noter le versement",
+                                         key=f"{key_prefix}_regl_go",
+                                         help="La ligne passe réglée, la "
+                                              "dette du membre baisse "
+                                              "aussitôt."):
+                    _mode_code_r = {v: k for k, v in _modes_lbls.items()}[_mode_r]
+                    if cotis_div_regler(
+                            st.session_state[f'{key_prefix}_regl_id'],
+                            _mode_code_r,
+                            regle_par=st.session_state.get('username'),
+                            destination=_dest_lbls[_dest_r]):
+                        st.session_state[f'{key_prefix}_flash'] = (
+                            "Ligne réglée — le membre la voit aussitôt ✅ à "
+                            "jour dans son registre.")
+                    else:
+                        st.session_state[f'{key_prefix}_flash'] = (
+                            "Le règlement n'a pas pu être posé — réessaie.")
+                    del st.session_state[f'{key_prefix}_regl_id']
+                    st.rerun()
+            if st.button("✖ Ne rien régler pour l'instant",
+                         key=f"{key_prefix}_regl_ann"):
+                del st.session_state[f'{key_prefix}_regl_id']
+                st.rerun()
+        else:
+            del st.session_state[f'{key_prefix}_regl_id']
+    if st.session_state.get(f'{key_prefix}_declma_id'):
+        _dc_ma = next((_d for _d in _decls_ma
+                       if _d[0] == st.session_state[f'{key_prefix}_declma_id']),
+                      None)
+        if _dc_ma:
+            (_id_d, _mid_d, _an_d, _cib_d, _mont_d, _mois_d, _decl_le_d,
+             _mode_d, _dest_d, _nom_d, _pre_d, _mat_d, _eq_d, _pid_d,
+             _par_d) = _dc_ma
+            _modes_d = list(_modes_lbls.values())
+            _dests_d = list(_dest_lbls.keys())
+            _idx_mode_d = (list(_modes_d).index(_modes_lbls[_mode_d])
+                           if _mode_d in _modes_lbls else 0)
+            _lbl_maison_d = cotis_destination_label(dest_code)
+            _idx_dest_d = (list(_dests_d).index(_lbl_maison_d)
+                           if _lbl_maison_d in _dests_d else 0)
+            if _cib_d == "mensuelle":
+                _tarif_m_d = cotis_div_montant_suggere("mensuelle")
+                _du_d = cotis_div_total_du(_mid_d, _an_d)
+                _etat_d = cotis_div_etat(_mid_d, _an_d)
+                _ordre_d = (9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8)
+                _dus_d = ([_m for _m in _ordre_d[:int(_du_d["mois_ecoules"])]
+                           if int(_etat_d["mois"].get(_m, 0)) <= 0]
+                          if _tarif_m_d > 0 else [])
+                _options_d = list(dict.fromkeys(
+                    list(_mois_d or []) + _dus_d))
+                _defaut_d = [_m for _m in (_mois_d or []) if _m in _options_d]
+                st.info(f"🕊️ {_nom_d} {_pre_d} ({_mat_d or '—'}) déclare "
+                        f"avoir versé sa mensuelle — {_lbl_mois_v(_mois_d)} · "
+                        f"{_fr(_mont_d)} FCFA "
+                        f"({_modes_lbls.get(_mode_d or '', _mode_d or '—')}). "
+                        "Vérifie les mois et confirme : chacun se vend à ta "
+                        "confirmation, la dette baisse aussitôt.")
+                with st.form(f"{key_prefix}_declma_mens_form"):
+                    _mois_choisis = st.multiselect(
+                        "Les mois réglés par ce versement",
+                        [f"{_mois_lbls.get(_m, str(_m))}" for _m in _options_d],
+                        default=[f"{_mois_lbls.get(_m, str(_m))}"
+                                 for _m in _defaut_d],
+                        key=f"{key_prefix}_declma_mens_mois")
+                    _mode_md = st.selectbox("Mode de paiement", _modes_d,
+                                            index=_idx_mode_d,
+                                            key=f"{key_prefix}_declma_mens_mode")
+                    _dest_md = st.selectbox("Reçu par", _dests_d,
+                                            index=_idx_dest_d,
+                                            key=f"{key_prefix}_declma_mens_dest")
+                    if st.form_submit_button("💾 Confirmer la mensuelle",
+                                             key=f"{key_prefix}_declma_mens_go"):
+                        _map_m = {f"{_mois_lbls.get(_m, str(_m))}": _m
+                                  for _m in _options_d}
+                        _codes_m = [_map_m[_l] for _l in _mois_choisis]
+                        _mode_code_md = {v: k for k, v in _modes_lbls.items()}[_mode_md]
+                        _nb_md = 0
+                        if _codes_m:
+                            _nb_md = cotis_declaration_confirmer_mensuelle(
+                                _id_d, _codes_m, _mode_code_md,
+                                destination=_dest_lbls[_dest_md],
+                                regle_par=st.session_state.get('username'))
+                        del st.session_state[f'{key_prefix}_declma_id']
+                        st.session_state[f'{key_prefix}_flash'] = (
+                            f"🕊️ {_nb_md} mois de mensuelle vend(s) pour "
+                            f"{_nom_d} {_pre_d} — la dette baisse aussitôt."
+                            if _nb_md else
+                            "La confirmation n'a pas pu être posée — réessaie.")
+                        st.rerun()
+                if st.button("✖ Ne rien confirmer pour l'instant",
+                             key=f"{key_prefix}_declma_mens_ann"):
+                    del st.session_state[f'{key_prefix}_declma_id']
+                    st.rerun()
+            else:
+                st.info(f"🕊️ {_nom_d} {_pre_d} ({_mat_d or '—'}) déclare "
+                        f"avoir versé — 📅 {_cib_d} · {_fr(_mont_d)} FCFA "
+                        f"({_modes_lbls.get(_mode_d or '', _mode_d or '—')}). "
+                        "Vérifie le montant et confirme : le reçu numéroté "
+                        "naît à ta confirmation.")
+                with st.form(f"{key_prefix}_declma_abo_form"):
+                    _mont_ab_d = st.number_input(
+                        "Montant (FCFA)", min_value=0, value=int(_mont_d or 0),
+                        step=500, key=f"{key_prefix}_declma_abo_mont",
+                        help="Le montant déclaré — ajustable si la vérité "
+                             "dit autre chose.")
+                    _mode_ad = st.selectbox("Mode de paiement", _modes_d,
+                                            index=_idx_mode_d,
+                                            key=f"{key_prefix}_declma_abo_mode")
+                    _dest_ad = st.selectbox("Reçu par", _dests_d,
+                                            index=_idx_dest_d,
+                                            key=f"{key_prefix}_declma_abo_dest")
+                    if st.form_submit_button("💾 Confirmer l'abonnement",
+                                             key=f"{key_prefix}_declma_abo_go"):
+                        _mode_code_ad = {v: k for k, v in _modes_lbls.items()}[_mode_ad]
+                        _res_ab_d = cotis_declaration_confirmer_abonnement(
+                            _id_d, int(_mont_ab_d), _mode_code_ad,
+                            destination=_dest_lbls[_dest_ad],
+                            regle_par=st.session_state.get('username'))
+                        del st.session_state[f'{key_prefix}_declma_id']
+                        st.session_state[f'{key_prefix}_flash'] = (
+                            f"🕊️ Abonnement de {_nom_d} {_pre_d} réglé — "
+                            f"reçu {_res_ab_d[1]} posé, le membre le voit "
+                            "dans son état." if _res_ab_d else
+                            "La confirmation n'a pas pu être posée — réessaie.")
+                        st.rerun()
+                if st.button("✖ Ne rien confirmer pour l'instant",
+                             key=f"{key_prefix}_declma_abo_ann"):
+                    del st.session_state[f'{key_prefix}_declma_id']
+                    st.rerun()
+        else:
+            del st.session_state[f'{key_prefix}_declma_id']
+
+    # ── LE MOT DE LA MAISON (flash) ──────────────────────────────────────
+    if st.session_state.get(f'{key_prefix}_flash'):
+        st.success(st.session_state[f'{key_prefix}_flash'])
+        del st.session_state[f'{key_prefix}_flash']
+
+    # ── LES DÉCLARATIONS DE LIGNES ADRESSÉES ICI ─────────────────────────
+    st.markdown(f"#### ⏳ Versements déclarés ici — {len(_lignes_decl):02d} "
+                "ligne(s)")
+    if not _lignes_decl:
+        st.success("🎉 Rien en attente ici — aucune déclaration adressée à "
+                   f"« {_lbl_maison} » pour cette année.")
+    for _l in _lignes_decl:
+        _lcol, _xcol = st.columns([7, 1])
+        with _lcol:
+            st.warning(f"🕊️ {_l[8]} {_l[9]} ({_l[10] or '—'}) déclare avoir "
+                       f"versé — {cotis_div_type_label(_l[2]) or _l[2]}"
+                       + (f" — {_l[4]}" if _l[4] else "")
+                       + f" · {_fr(_l[1])} FCFA du {_l[3] or '?'} · "
+                       f"{_modes_lbls.get(_l[6] or '', _l[6] or '—')}"
+                       + (f" · {(_l[11] or '')}" if _l[11] else ""))
+        with _xcol:
+            _b1, _b2 = st.columns(2)
+            with _b1:
+                if st.button("✅", key=f"{key_prefix}_regl_{_l[0]}",
+                             help="Confirmer cette déclaration — le "
+                                  "formulaire arrive prérempli avec le mode "
+                                  "et le « Reçu par » du membre."):
+                    st.session_state[f'{key_prefix}_regl_id'] = _l[0]
+                    st.rerun()
+            with _b2:
+                if st.button("✖", key=f"{key_prefix}_ref_{_l[0]}",
+                             help="Refuser cette déclaration (avec "
+                                  "confirmation) — la ligne reprend son "
+                                  "« ⏳ à régler »."):
+                    st.session_state[f'{key_prefix}_refus_id'] = _l[0]
+                    st.rerun()
+
+    # ── LES DÉCLARATIONS DE LA MENSUELLE ET DE L'ABONNEMENT ADRESSÉES ICI ─
+    if _decls_ma:
+        st.markdown(f"#### 🕊️ Déclarations — mensuelle & abonnement "
+                    f"({len(_decls_ma):02d})")
+        for _d_ma in _decls_ma:
+            _cote_d = ("🧮 Mensuelle (" + _lbl_mois_v(_d_ma[5]) + ")"
+                       if _d_ma[3] == "mensuelle"
+                       else "📅 " + ("Abonnement"
+                                     if _d_ma[3] == "abonnement"
+                                     else _d_ma[3]))
+            _lcol_d, _xcol_d = st.columns([7, 1])
+            with _lcol_d:
+                st.warning(f"🕊️ {_d_ma[9]} {_d_ma[10]} ({_d_ma[12] or '—'}) "
+                           f"déclare avoir versé — {_cote_d} · "
+                           f"{_fr(_d_ma[4])} FCFA · "
+                           f"{_modes_lbls.get(_d_ma[7] or '', _d_ma[7] or '—')}")
+            with _xcol_d:
+                _bx1, _bx2 = st.columns(2)
+                with _bx1:
+                    if st.button("✅", key=f"{key_prefix}_declma_go_{_d_ma[0]}",
+                                 help="Confirmer cette déclaration — le "
+                                      "formulaire arrive prérempli."):
+                        st.session_state[f'{key_prefix}_declma_id'] = _d_ma[0]
+                        st.rerun()
+                with _bx2:
+                    if st.button("✖", key=f"{key_prefix}_declma_ref_{_d_ma[0]}",
+                                 help="Refuser cette déclaration (avec "
+                                      "confirmation) — le dû reprend son "
+                                      "« ⏳ à régler » paisible."):
+                        st.session_state[f'{key_prefix}_declma_refus_id'] = _d_ma[0]
+                        st.rerun()
+
+    # ── LES VERSEMENTS RÉGLÉS ICI (les dernières 72 heures) ──────────────
+    _clause_par = ("AND m.paroisse_id=?" if paroisse_id else "")
+    _args_rec = ([dest_code, paroisse_id] if paroisse_id else [dest_code])
+    _recus = c.execute(f"""SELECT d.montant, d.type_cotisation, d.date_versement,
+                                  d.precision, d.mode_paiement, d.regle_le,
+                                  m.nom, m.prenom, e.nom_equipe
+                           FROM cotisations_diverses d
+                           JOIN membres m ON d.membre_id=m.id
+                           LEFT JOIN equipes e ON m.equipe_id=e.id
+                           WHERE m.statut='actif' AND d.destination=?
+                                 AND d.regle_le IS NOT NULL
+                                 AND d.regle_le >= datetime('now', '-3 days')
+                                 {_clause_par}
+                           ORDER BY d.regle_le DESC LIMIT 12""",
+                       _args_rec).fetchall()
+    _recus_abo = c.execute(f"""SELECT a.numero_recu, a.montant, a.type_abonnement,
+                                      a.date_paiement, a.mode_paiement, a.cree_le,
+                                      m.nom, m.prenom
+                               FROM abonnements a
+                               JOIN membres m ON a.membre_id=m.id
+                               WHERE m.statut='actif' AND a.statut='paye'
+                                     AND a.destination=?
+                                     AND COALESCE(a.cree_le, a.date_paiement)
+                                         >= date('now', '-3 days')
+                                     {_clause_par}
+                               ORDER BY a.id DESC LIMIT 12""",
+                           _args_rec).fetchall()
+    if _recus or _recus_abo:
+        st.markdown("#### ✅ Reçus ici — les dernières 72 heures")
+        for _r in _recus:
+            st.markdown(
+                f"<span style='font-size:0.8rem; color:#1b5e20;'>"
+                f"{str(_r[5] or '')[:16].replace('T', ' à ')} · {_r[6]} {_r[7]}"
+                + (f" ({_r[8] or '—'})" if _r[8] else "")
+                + f" — {cotis_div_type_label(_r[1]) or _r[1]}"
+                + (f" — {_r[3]}" if _r[3] else "")
+                + f" · {_fr(_r[0])} FCFA · "
+                f"{_modes_lbls.get(_r[4] or '', _r[4] or '—')} ✅</span>",
+                unsafe_allow_html=True)
+        for _ra in _recus_abo:
+            _nat_ra = ("Abonnement" if _ra[2] == "abonnement"
+                       else "Réabonnement")
+            st.markdown(
+                f"<span style='font-size:0.8rem; color:#1b5e20;'>"
+                f"{str(_ra[5] or _ra[3] or '')[:16].replace('T', ' à ')} · "
+                f"{_ra[6]} {_ra[7]} — 📅 {_nat_ra} · {_fr(_ra[1])} FCFA · "
+                f"{_modes_lbls.get(_ra[4] or '', _ra[4] or '—')} · "
+                f"reçu {_ra[0]} ✅</span>", unsafe_allow_html=True)
+        st.caption("🕊️ Après 72 heures, ces versements dorment au registre "
+                   "de l'année.")
+
+
+def formulaire_expedition_zone(zone, annee, key_prefix, paroisse_id=None,
+                               origine="caisse_paroisse"):
+    """v7.16.6 — L'EXPÉDITION DES CAISSES DE LA PAROISSE ET DU DIOCÈSE (la
+    maison : « toutes les expéditions sorties d'une trésorerie sont dues —
+    à l'exception de celle à choix ; à ce titre, elles subissent le même
+    mode opératoire que les autres cotisations »). Le même form que la
+    caisse d'équipe — la catégorie, le montant (le tarif réglé dans « 💼
+    Caisse du diocèse », 0 = libre), la date, la précision, « ⛓️
+    Obligatoire / 🕊️ À choix » avec son échéance — mais les destinataires
+    se choisissent à l'échelle de la maison : toutes les équipes de la
+    paroisse ou certaines (zone='paroisse'), toutes les paroisses du
+    diocèse ou certaines (zone='diocese'). Le pas de doublon de la Note
+    veille sur la pose entière, et le retrait d'une expédition entière
+    suit, borné aux membres de la maison. La base n'est écrite que par
+    cotis_div_envoyer_groupe et cotis_div_supprimer_groupe_membres."""
+    from database import (c, cotis_div_envoyer_groupe,
+                          cotis_div_montant_suggere, cotis_div_type_label,
+                          cotis_div_parametres_lire,
+                          cotis_div_supprimer_groupe_membres,
+                          COTIS_DIV_TYPES, COTIS_DIV_TYPES_EXP)
+    _modes_lbls = {"especes": "💵 Espèces", "wave": "🌊 Wave",
+                   "orange_money": "📱 Orange Money", "mtn_momo": "🟡 MTN MoMo",
+                   "autre": "💳 Autre"}
+
+    def _fr(_n):
+        return f"{int(_n):,}".replace(",", " ")
+
+    if zone == "paroisse":
+        st.markdown("### ✨ Cotisations diverses — l'expédition de la paroisse")
+        st.caption("La paroisse expédie une cotisation à ses équipes — chaque "
+                   "membre la voit aussitôt « ⏳ à régler » dans « 💰 État de mes "
+                   "cotisations », avec son bouton « Régler » (déclaration mode + "
+                   "« Reçu par »), comme toute expédition d'une trésorerie.")
+    else:
+        st.markdown("### ✨ Cotisations diverses — l'expédition du diocèse")
+        st.caption("Le diocèse expédie une cotisation à ses paroisses — chaque "
+                   "membre concerné la voit aussitôt « ⏳ à régler » dans « 💰 "
+                   "État de mes cotisations », avec son bouton « Régler », comme "
+                   "toute expédition d'une trésorerie.")
+
+    if st.session_state.get(f'{key_prefix}_flash'):
+        st.success(st.session_state[f'{key_prefix}_flash'])
+        del st.session_state[f'{key_prefix}_flash']
+
+    _tarifs_aide = " · ".join(
+        (f"{_lbl} {_fr(cotis_div_montant_suggere(_cd))} FCFA"
+         if cotis_div_montant_suggere(_cd) > 0 else f"{_lbl} libre")
+        for _cd, _lbl in COTIS_DIV_TYPES)
+    _lbls_types = [
+        (f"{_lbl} — {_fr(cotis_div_montant_suggere(_cd))} FCFA (tarif réglé)"
+         if cotis_div_montant_suggere(_cd) > 0 else f"{_lbl} — saisie libre")
+        for _cd, _lbl in COTIS_DIV_TYPES]
+
+    if zone == "paroisse":
+        _equipes = c.execute("SELECT id, nom_equipe FROM equipes "
+                             "WHERE paroisse_id=? ORDER BY nom_equipe",
+                             (paroisse_id,)).fetchall()
+        _choix_lbls = [e[1] for e in _equipes]
+        _cible_toutes = "⛪ Toutes mes équipes — chaque membre reçoit"
+        _cible_lbl = "Les équipes qui reçoivent (laisse vide si « Toutes » est cochée)"
+    else:
+        _paroisses = c.execute("SELECT id, nom FROM paroisses ORDER BY nom").fetchall()
+        _choix_lbls = [p[1] for p in _paroisses]
+        _cible_toutes = "🏘️ Toutes les paroisses — chaque membre reçoit"
+        _cible_lbl = "Les paroisses qui reçoivent (laisse vide si « Toutes » est cochée)"
+
+    with st.form(f"{key_prefix}_expedie"):
+        _type_lbl = st.selectbox("Catégorie de cotisation", _lbls_types,
+                                 key=f"{key_prefix}_type_exp")
+        _idx_type = (_lbls_types.index(_type_lbl)
+                     if _type_lbl in _lbls_types else 0)
+        _code = COTIS_DIV_TYPES[_idx_type][0]
+        _sug = cotis_div_montant_suggere(_code)
+        _ec1, _ec2 = st.columns(2)
+        with _ec1:
+            _montant = st.number_input(
+                "Montant (FCFA)", min_value=0, value=int(_sug), step=100,
+                key=f"{key_prefix}_mont_exp",
+                help=("Tarifs réglés dans « 💼 Caisse du diocèse » : "
+                      + _tarifs_aide + " — le champ reste ajustable."))
+        with _ec2:
+            _dv = st.date_input("Date de la cotisation", value=date.today(),
+                                key=f"{key_prefix}_date_exp",
+                                help="La date de la fête, de l'échéance ou du "
+                                     "versement — celle qui la situe dans "
+                                     "l'année.")
+        _ee1, _ee2 = st.columns(2)
+        with _ee1:
+            _texp_lbl = st.radio(
+                "Type d'expédition",
+                [lbl for _c, lbl in COTIS_DIV_TYPES_EXP],
+                index=0, horizontal=True, key=f"{key_prefix}_texp",
+                help="Obligatoire : le membre la règle (elle reste visible "
+                     "jusqu'au règlement). À choix : une contribution que "
+                     "chacun peut prendre ou non — elle quitte son état "
+                     "seule, à minuit le lendemain de son échéance.")
+        with _ee2:
+            _ech_exp = st.date_input(
+                "Échéance (utile pour « 🕊️ À choix »)",
+                value=date.today() + timedelta(days=30),
+                key=f"{key_prefix}_ech_exp",
+                help="Pour une « À choix » : le membre la voit jusqu'à "
+                     "minuit le lendemain de cette date, puis elle "
+                     "disparaît seule de son état et des attentes. Pour "
+                     "une « Obligatoire », ce champ dort.")
+        _precision = st.text_input(
+            "Précision — nomme la cotisation (facultatif)",
+            max_chars=80, key=f"{key_prefix}_precision",
+            placeholder="ex. Contribution diocésaine, Fête paroissiale…",
+            help=("Les quatre catégories peuvent être précisées d'un mot à "
+                  "toi — le membre relit ce nom dans son état."))
+        _toutes = st.checkbox(_cible_toutes, key=f"{key_prefix}_toutes",
+                              help="Une ligne par membre de la maison — "
+                                   "chacun la voit aussitôt dans « 💰 État "
+                                   "de mes cotisations ».")
+        _choisis = st.multiselect(_cible_lbl, options=_choix_lbls,
+                                  key=f"{key_prefix}_dest")
+        if st.form_submit_button("📮 Expédier", key=f"{key_prefix}_exp_go",
+                                 help="Une ligne à régler par membre choisi, "
+                                      "signée à ton nom — chacun la voit "
+                                      "aussitôt en vert dans son registre."):
+            _ids_cibles = []
+            if zone == "paroisse":
+                if _toutes:
+                    _ids_cibles = [r[0] for r in c.execute(
+                        """SELECT m.id FROM membres m
+                           JOIN equipes e ON m.equipe_id=e.id
+                           WHERE e.paroisse_id=? AND m.statut='actif'""",
+                        (paroisse_id,)).fetchall()]
+                else:
+                    _sel_ids = [e[0] for e in _equipes if e[1] in _choisis]
+                    if _sel_ids:
+                        _ph = ",".join("?" * len(_sel_ids))
+                        _ids_cibles = [r[0] for r in c.execute(
+                            f"""SELECT id FROM membres
+                                WHERE equipe_id IN ({_ph}) AND statut='actif'""",
+                            _sel_ids).fetchall()]
+            else:
+                if _toutes:
+                    _ids_cibles = [r[0] for r in c.execute(
+                        "SELECT id FROM membres WHERE statut='actif'").fetchall()]
+                else:
+                    _sel_ids = [p[0] for p in _paroisses if p[1] in _choisis]
+                    if _sel_ids:
+                        _ph = ",".join("?" * len(_sel_ids))
+                        _ids_cibles = [r[0] for r in c.execute(
+                            f"""SELECT id FROM membres
+                                WHERE paroisse_id IN ({_ph}) AND statut='actif'""",
+                            _sel_ids).fetchall()]
+            if not _ids_cibles:
+                st.warning("Choisis d'abord qui reçoit — toute la maison, ou "
+                           "des équipes / paroisses seulement.")
+            else:
+                _texp_code = {lbl: code
+                              for code, lbl in COTIS_DIV_TYPES_EXP}[_texp_lbl]
+                _ech_pos = (_ech_exp if _texp_code == "choix" else None)
+                _nb = cotis_div_envoyer_groupe(
+                    _ids_cibles, annee, _code, int(_montant),
+                    date_versement=_dv,
+                    enregistre_par=st.session_state.get('username'),
+                    origine=origine,
+                    precision=(_precision or "").strip() or None,
+                    type_expedition=_texp_code, echeance=_ech_pos)
+                if _nb == -1:
+                    st.session_state[f'{key_prefix}_flash'] = (
+                        "🕊️ Pas de doublon : une expédition identique (même "
+                        "catégorie, même montant, même date, même précision) "
+                        "est déjà au registre d'au moins un des membres "
+                        "choisis et n'est pas encore éteinte — rien n'a été "
+                        "posé une seconde fois.")
+                elif _nb:
+                    _plur = "s" if _nb > 1 else ""
+                    _seg_texp = (" · 🕊️ à choix (jusqu'au "
+                                 + _ech_exp.strftime("%d/%m/%Y") + ")"
+                                 if _texp_code == "choix" else "")
+                    st.session_state[f'{key_prefix}_flash'] = (
+                        f"✅ {cotis_div_type_label(_code)} de {_fr(_montant)} "
+                        f"FCFA du {_dv.strftime('%d/%m/%Y')}{_seg_texp} "
+                        f"expédiée à {_nb} membre{_plur} — chacun la voit "
+                        "aussitôt « ⏳ à régler » dans « 💰 État de mes "
+                        "cotisations ».")
+                else:
+                    st.session_state[f'{key_prefix}_flash'] = (
+                        "L'expédition n'a pas pu être posée — réessaie.")
+                st.rerun()
+
+    # ── RETIRER UNE EXPÉDITION (bornée aux membres de la maison) ────────
+    if zone == "paroisse":
+        _membres_zone = [r[0] for r in c.execute(
+            """SELECT m.id FROM membres m
+               JOIN equipes e ON m.equipe_id=e.id
+               WHERE e.paroisse_id=? AND m.statut='actif'""",
+            (paroisse_id,)).fetchall()]
+    else:
+        _membres_zone = [r[0] for r in c.execute(
+            "SELECT id FROM membres WHERE statut='actif'").fetchall()]
+    _exps_zone = []
+    if _membres_zone:
+        _ph_z = ",".join("?" * len(_membres_zone)) if len(_membres_zone) <= 400 else None
+        if _ph_z:
+            _exps_zone = c.execute(f"""SELECT type_cotisation, montant,
+                                              date_versement, precision,
+                                              enregistre_par, cree_le,
+                                              COUNT(*),
+                                              SUM(CASE WHEN regle_le IS NOT NULL
+                                                       THEN 1 ELSE 0 END),
+                                              type_expedition, echeance
+                                       FROM cotisations_diverses
+                                       WHERE membre_id IN ({_ph_z})
+                                       AND annee_debut=?
+                                       GROUP BY type_cotisation, montant,
+                                                date_versement, precision,
+                                                enregistre_par, cree_le,
+                                                type_expedition, echeance
+                                       ORDER BY cree_le DESC""",
+                                   _membres_zone + [annee]).fetchall()
+        else:
+            # maison très peuplée : la lecture passe par les équipes / paroisses
+            if zone == "paroisse":
+                _exps_zone = c.execute(f"""SELECT type_cotisation, montant,
+                                                  date_versement, precision,
+                                                  enregistre_par, cree_le,
+                                                  COUNT(*),
+                                                  SUM(CASE WHEN regle_le IS NOT NULL
+                                                           THEN 1 ELSE 0 END),
+                                                  type_expedition, echeance
+                                           FROM cotisations_diverses
+                                           WHERE membre_id IN (SELECT m.id FROM membres m
+                                                               JOIN equipes e ON m.equipe_id=e.id
+                                                               WHERE e.paroisse_id=? AND m.statut='actif')
+                                           AND annee_debut=?
+                                           GROUP BY type_cotisation, montant,
+                                                    date_versement, precision,
+                                                    enregistre_par, cree_le,
+                                                    type_expedition, echeance
+                                           ORDER BY cree_le DESC""",
+                                       (paroisse_id, annee)).fetchall()
+            else:
+                _exps_zone = c.execute(f"""SELECT type_cotisation, montant,
+                                                  date_versement, precision,
+                                                  enregistre_par, cree_le,
+                                                  COUNT(*),
+                                                  SUM(CASE WHEN regle_le IS NOT NULL
+                                                           THEN 1 ELSE 0 END),
+                                                  type_expedition, echeance
+                                           FROM cotisations_diverses
+                                           WHERE membre_id IN (SELECT id FROM membres
+                                                               WHERE statut='actif')
+                                           AND annee_debut=?
+                                           GROUP BY type_cotisation, montant,
+                                                    date_versement, precision,
+                                                    enregistre_par, cree_le,
+                                                    type_expedition, echeance
+                                           ORDER BY cree_le DESC""",
+                                       (annee,)).fetchall()
+    if _exps_zone:
+        st.markdown("#### 🗑️ Retirer une expédition")
+        st.caption("La ligne expédiée par cette maison se retire d'un seul "
+                   "geste, pour tous les membres concernés — confirmation en "
+                   "deux temps, comme chaque retrait.")
+        _lbls_exp = []
+        for _e in _exps_zone:
+            _d_e = safe_date(_e[2])
+            _d_txt_e = _d_e.strftime("%d/%m/%Y") if _d_e else (_e[2] or "—")
+            _seg_texp_e = ""
+            if str(_e[8] or "").strip().lower() == "choix":
+                _ech_e = safe_date(_e[9])
+                _seg_texp_e = (" · 🕊️ À choix (échéance le "
+                               + (_ech_e.strftime("%d/%m/%Y") if _ech_e
+                                  else str(_e[9] or "?")) + ")")
+            _lbls_exp.append(
+                f"{cotis_div_type_label(_e[0]) or _e[0]}"
+                + (f" — {_e[3]}" if _e[3] else "")
+                + f" · {_fr(_e[1])} FCFA du {_d_txt_e}"
+                + _seg_texp_e
+                + f" · {int(_e[6]):02d} ligne(s) ({int(_e[7] or 0):02d} réglée(s))"
+                + (f" · par {_e[4]}" if _e[4] else ""))
+        _sel_exp = st.selectbox("L'expédition à retirer", _lbls_exp,
+                                key=f"{key_prefix}_batch_sel")
+        if st.button("🗑️ Retirer cette expédition",
+                     key=f"{key_prefix}_batch_go",
+                     help="Ouvre la confirmation — rien ne quitte le registre "
+                          "sans un deuxième geste."):
+            st.session_state[f'{key_prefix}_batch'] = _exps_zone[_lbls_exp.index(_sel_exp)]
+            st.rerun()
+    if st.session_state.get(f'{key_prefix}_batch'):
+        _b = st.session_state[f'{key_prefix}_batch']
+        _d_b = safe_date(_b[2])
+        _d_txt_b = _d_b.strftime("%d/%m/%Y") if _d_b else (_b[2] or "—")
+        st.warning(f"🗑️ Retirer « {cotis_div_type_label(_b[0]) or _b[0]}"
+                   + (f" — {_b[3]}" if _b[3] else "")
+                   + f" · {_fr(_b[1])} FCFA du {_d_txt_b} » pour les "
+                   f"{int(_b[6])} membre(s) concerné(s) — dont "
+                   f"{int(_b[7] or 0)} versement(s) déjà réglé(s) ?")
+        _bb1, _bb2 = st.columns(2)
+        with _bb1:
+            if st.button("✔️ Oui, tout retirer", key=f"{key_prefix}_batch_ok"):
+                _n_b = cotis_div_supprimer_groupe_membres(
+                    _membres_zone, annee, _b[0], int(_b[1]), _b[2],
+                    precision=_b[3], enregistre_par=_b[4], cree_le=_b[5],
+                    type_expedition=_b[8], echeance=_b[9])
+                del st.session_state[f'{key_prefix}_batch']
+                if _n_b:
+                    st.session_state[f'{key_prefix}_flash'] = (
+                        f"🗑️ L'expédition a quitté le registre de {_n_b} "
+                        "membre(s) — tous les concernés la voient partir.")
+                else:
+                    st.session_state[f'{key_prefix}_flash'] = (
+                        "Rien à retirer — l'expédition n'était déjà plus là.")
+                st.rerun()
+        with _bb2:
+            if st.button("✖ Annuler", key=f"{key_prefix}_batch_non"):
+                del st.session_state[f'{key_prefix}_batch']
+                st.rerun()
