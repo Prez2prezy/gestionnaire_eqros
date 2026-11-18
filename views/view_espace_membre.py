@@ -1,5 +1,16 @@
 # ====================================================================
 # view_espace_membre.py — VERSION 7.8.11 (mise en page du feuillet)
+# v7.16.3 : ON TOURNE LES PAGES D'UN GLISSEMENT (dossier b) — _feuillette_geste
+#   pose le geste du téléphone sur le livret du feuillet ET sur le livre de
+#   la dizaine : le doigt glisse de la DROITE vers la GAUCHE, la page tourne
+#   (elle entre par la droite, comme un feuillet qu'on soulève) ; vers la
+#   droite elle revient (livret seulement — dans la dizaine on ne recule
+#   jamais). Le geste commande les MÊMES boutons (« Suivant ▶ », « ◀
+#   Précédent ») : ils restent là pour la souris et par sécurité. Le geste
+#   ne naît jamais sur les champs/formulaires/boutons/expanders ni d'un
+#   mouvement vertical ; un seul couple d'écouteurs vit sur la page (le
+#   précédent est retiré avant que le nouveau ne s'installe). La base n'est
+#   jamais touchée.
 # v7.13.16 : LE LIVRE DE LA DIZAINE SE FEUILLETTE (demande n°7) — « 📿 Égrener
 #   la dizaine » du Fil de l'actualité ouvre un livre dont les pages tournent
 #   comme celles du livret du feuillet (v7.13.15) et comme le téléphone :
@@ -143,7 +154,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.16.2"
+_VERSION_APPLI = "v7.16.3"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -318,6 +329,84 @@ def _feuillement_livret(cle, sens="avant"):
         + "</style>"
     )
     return _style, _nom
+
+
+def _feuillette_geste(recul=True):
+    """v7.16.3 — ON TOURNE LA PAGE D'UN GLISSEMENT DU DOIGT (dossier b —
+    « les pages qu'on tourne de la droite vers la gauche », le modèle du
+    téléphone en lieu et place du seul clic). Le doigt glisse vers la
+    GAUCHE : la page tourne en avant (elle entre par la droite, comme un
+    feuillet qu'on soulève) ; glisse vers la DROITE (livret seulement) :
+    elle revient par la gauche. Le geste commande les mêmes boutons que
+    d'habitude — « Suivant ▶ » et « ◀ Précédent » restent là pour la souris
+    et par sécurité. Le geste ne naît jamais sur ce qui réclame le doigt
+    (champs, formulaires, boutons, expanders, envois de fichiers) ni d'un
+    mouvement vertical (le défilement reste le défilement). Un SEUL couple
+    d'écouteurs vit sur la page, quel que soit le nombre de tours : le
+    précédent est retiré avant que le nouveau ne s'installe. La base n'est
+    jamais touchée."""
+    _recul_js = ("else { b = bouton('◀ Précédent'); }" if recul else "")
+    _script = """
+    <script>
+    (function(){
+      var d = null;
+      try { d = window.parent.document; } catch(e) { d = document; }
+      if (!d || !d.body) { return; }
+      var x0 = 0, y0 = 0, t0 = 0, ok = false;
+      function part(t){
+        var el = t.target;
+        while (el) {
+          var n = (el.tagName || "").toLowerCase();
+          if (n === "input" || n === "textarea" || n === "select" || n === "button" || n === "a" || n === "label") { return true; }
+          if (el.getAttribute && el.getAttribute("contenteditable") === "true") { return true; }
+          var tid = el.getAttribute ? (el.getAttribute("data-testid") || "") : "";
+          if (tid.indexOf("stForm") === 0 || tid.indexOf("stExpander") === 0 || tid.indexOf("stTabs") === 0 || tid === "stFileUploaderDropzone") { return true; }
+          var cl = el.classList || null;
+          if (cl && (cl.contains("stTextArea") || cl.contains("stTextInput") || cl.contains("stSelectbox") || cl.contains("stMultiselect") || cl.contains("stRadio") || cl.contains("stCheckbox") || cl.contains("stButton") || cl.contains("stDownloadButton") || cl.contains("stFileUploader") || cl.contains("stDateInput") || cl.contains("stNumberInput") || cl.contains("stForm"))) { return true; }
+          el = el.parentElement;
+        }
+        return false;
+      }
+      function bouton(txt){
+        var bs = d.querySelectorAll("button");
+        for (var i = 0; i < bs.length; i++) {
+          if (((bs[i].textContent || "").trim()) === txt) { return bs[i]; }
+        }
+        return null;
+      }
+      function auDepart(e){
+        ok = false;
+        if (!e.touches || e.touches.length !== 1) { return; }
+        x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now();
+        ok = !part(e);
+      }
+      function aLArrivee(e){
+        if (!ok) { return; }
+        ok = false;
+        var t = e.changedTouches && e.changedTouches[0];
+        if (!t) { return; }
+        var dx = t.clientX - x0, dy = t.clientY - y0, dt = Date.now() - t0;
+        if (dt > 900 || Math.abs(dx) < 70 || Math.abs(dx) < 2.2 * Math.abs(dy)) { return; }
+        var b = null;
+        if (dx < 0) { b = bouton("Suivant ▶"); } %RECUL%
+        if (b) { b.click(); }
+      }
+      if (d.__flt_geste__) {
+        try {
+          d.removeEventListener("touchstart", d.__flt_geste__.s);
+          d.removeEventListener("touchend", d.__flt_geste__.e);
+        } catch(e) { }
+      }
+      d.__flt_geste__ = {s: auDepart, e: aLArrivee};
+      d.addEventListener("touchstart", auDepart, {passive: true});
+      d.addEventListener("touchend", aLArrivee, {passive: true});
+    })();
+    </script>
+    """.replace("%RECUL%", _recul_js)
+    try:
+        _comp_html(_script, height=0)
+    except Exception:
+        pass
 
 
 def _scroll_top_si_nouvelle_page(cle, rub, sub):
@@ -1769,6 +1858,12 @@ def _render_feuillet_livret(annee_debut, mois_pastoral, autonome=True, pfx="flt"
                 'margin:16px auto 6px auto;"></div>'
                 '<div class="flt-pagination">Page ' + str(idx + 1) + " / "
                 + str(len(sections)) + "</div>", unsafe_allow_html=True)
+
+    # ---------- v7.16.3 — ON TOURNE D'UN GLISSEMENT (dossier b) ----------
+    # Le doigt glisse de la droite vers la gauche : la page tourne. Vers la
+    # droite : elle revient. Les boutons restent pour la souris et par
+    # sécurité — le geste et le clic commandent la même mécanique.
+    _feuillette_geste(recul=True)
 
     # ---------- v7.10.4 — LE QUESTIONNAIRE REVIENT AVEC SON FEUILLET ----------
     # À la DERNIÈRE page, le questionnaire du mois attend à la fin de la
@@ -3655,6 +3750,12 @@ def _render_dizaine_du_jour(numero_meditation=None, est_membre=False, matloc=Non
                     st.session_state["diz_ouvert"] = False
                     st.session_state["diz_page"] = 0
                     st.rerun()
+
+    # v7.16.3 — LE GESTE AUSSI DANS LE LIVRE DE LA DIZAINE (dossier b) :
+    # le doigt glisse de la droite vers la gauche, la page tourne. Ici on ne
+    # recule jamais — le glissement vers la droite ne tourne rien ; le
+    # « Suivant ▶ » reste là pour la souris et par sécurité.
+    _feuillette_geste(recul=False)
 
 
 def _render_pdf_inline(url_pdf):
