@@ -683,6 +683,7 @@ def init_tables_and_migrations():
         origine TEXT DEFAULT 'caisse_equipe',
         precision TEXT,
         regle_le TEXT,
+        destination TEXT,
         cree_le TEXT
     )""")
 
@@ -711,6 +712,21 @@ def init_tables_and_migrations():
         commit_and_sync()
     except Exception as e:
         logger.warning(f"compat regle_le cotisations_diverses : {e!r}")
+
+    # v7.16.4 — LE VERSEMENT DIT OÙ IL EST ALLÉ : la Note de la maison le
+    # décrit — le membre verse à la trésorerie de SON équipe (espèces ou
+    # Wave), à la trésorerie de la paroisse avec l'accord de son
+    # responsable d'équipe (espèces ou Wave), ou à la trésorerie du
+    # diocèse avec l'accord du responsable paroissial (Wave). La caisse
+    # note ce « Reçu par » au geste du versement, et le membre le relit
+    # dans son état. Migration douce et ré-exécutable sur les bases posées
+    # avant v7.16.4 : une colonne à NULL, rien d'existant ne bouge — les
+    # lignes d'antan ne portent pas de destination et se montent sans
+    # elle. La base de production n'est JAMAIS touchée par l'atelier :
+    # la migration vit dans le code, elle s'exécute chez l'hébergeur au
+    # premier démarrage, comme les précédentes.
+    safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN destination TEXT")
+    safe_migrate("ALTER TABLE abonnements ADD COLUMN destination TEXT")
 
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
     try:
@@ -4683,12 +4699,19 @@ def cotis_enregistrer_paiement(membre_id, annee_debut, montant,
                                type_abonnement="reabonnement",
                                mode_paiement="especes",
                                enregistre_par=None, origine="caisse",
-                               reference_ext=None, note=None):
+                               reference_ext=None, note=None,
+                               destination=None):
     """LE GESTE DE LA CAISSE (Phase 1) : un paiement confirmé en main
     propre — le reçu reçoit son numéro À CE MOMENT-LÀ. La convention
     historique est respectée : UN abonnement par membre et par année
     (mise à jour s'il existe déjà, sans renuméroter un reçu qui a déjà
-    son numéro). Retourne (id, numero_recu)."""
+    son numéro). v7.16.4 — `destination` : le « Reçu par » de la Note de
+    la maison (equipe / paroisse / diocese) — là où le versement a été
+    reçu ; None = les lignes d'antan, qui se montent sans elle. Retourne
+    (id, numero_recu)."""
+    _dest = (str(destination or "").strip().lower()
+             if str(destination or "").strip().lower() in _COTIS_DEST_CODES
+             else None)
     with _verrou_db:
         _ex = c.execute("""SELECT id, numero_recu FROM abonnements
                            WHERE membre_id=? AND annee_debut=?""",
@@ -4698,21 +4721,21 @@ def cotis_enregistrer_paiement(membre_id, annee_debut, montant,
             c.execute("""UPDATE abonnements
                          SET date_paiement=?, montant=?, type_abonnement=?, statut='paye',
                              mode_paiement=?, numero_recu=?, origine=?,
-                             enregistre_par=?, reference_ext=?, note=?
+                             enregistre_par=?, reference_ext=?, note=?, destination=?
                          WHERE id=?""",
                       (date.today().isoformat(), montant, type_abonnement,
                        mode_paiement, _numero, origine, enregistre_par,
-                       reference_ext, note, _ex[0]))
+                       reference_ext, note, _dest, _ex[0]))
             _id = _ex[0]
         else:
             c.execute("""INSERT INTO abonnements
                          (membre_id, annee_debut, date_paiement, montant,
                           type_abonnement, statut, mode_paiement, numero_recu,
-                          origine, enregistre_par, reference_ext, note)
-                         VALUES (?,?,?,?,?,'paye',?,?,?,?,?,?)""",
+                          origine, enregistre_par, reference_ext, note, destination)
+                         VALUES (?,?,?,?,?,'paye',?,?,?,?,?,?,?)""",
                       (membre_id, annee_debut, date.today().isoformat(),
                        montant, type_abonnement, mode_paiement, _numero,
-                       origine, enregistre_par, reference_ext, note))
+                       origine, enregistre_par, reference_ext, note, _dest))
             _id = c.lastrowid
         commit_and_sync()
     return _id, _numero
@@ -4801,6 +4824,19 @@ COTIS_DIV_TYPES = (
     ("extraordinaire", "Extraordinaire"),
 )
 
+# v7.16.4 — LES TROIS TRÉSORERIES DE LA NOTE DE LA MAISON : là où le
+# versement peut être reçu — l'équipe (espèces ou Wave), la paroisse
+# (avec l'accord du responsable d'équipe), le diocèse (avec l'accord du
+# responsable paroissial). Le code court voyage en base ; le libellé
+# s'affiche à la caisse comme dans l'état du membre.
+COTIS_DESTINATIONS = (
+    ("equipe", "🏠 Trésorerie de l'équipe"),
+    ("paroisse", "⛪ Trésorerie de la paroisse"),
+    ("diocese", "🏘️ Trésorerie du diocèse"),
+)
+
+_COTIS_DEST_CODES = tuple(code for code, _lbl in COTIS_DESTINATIONS)
+
 COTIS_DIV_DEFAUTS = {
     "cotis_div_montant_mensuelle": 0,        # Mensuelle (FCFA) — 0 = libre
     "cotis_div_montant_speciale": 0,         # Spéciale (FCFA) — 0 = libre
@@ -4815,6 +4851,16 @@ def cotis_div_type_label(code):
     """Le libellé français d'un type de cotisation (« Mensuelle »…) ;
     None si le code est inconnu — la porte reste fermée aux autres."""
     for _code, _lbl in COTIS_DIV_TYPES:
+        if _code == str(code or "").strip().lower():
+            return _lbl
+    return None
+
+
+def cotis_destination_label(code):
+    """v7.16.4 — Le libellé français d'une destination de versement
+    (« 🏠 Trésorerie de l'équipe »…) ; None si le code est inconnu ou
+    absent — les lignes d'antan ne portent pas de destination."""
+    for _code, _lbl in COTIS_DESTINATIONS:
         if _code == str(code or "").strip().lower():
             return _lbl
     return None
@@ -4992,17 +5038,73 @@ def cotis_div_supprimer(ligne_id):
             return False
 
 
-def cotis_div_regler(ligne_id, mode_paiement, regle_par=None):
+def cotis_div_supprimer_groupe(equipe_id, annee_debut, type_cotisation,
+                               montant, date_versement, precision=None,
+                               enregistre_par=None, cree_le=None):
+    """v7.16.4 — RETIRER UNE EXPÉDITION ENTIÈRE (le mécanisme adéquat
+    demandé) : la ligne qui a été posée pour TOUTE l'équipe en un seul
+    geste quitte le registre de TOUS les membres concernés en un seul
+    geste aussi — plus besoin de la retirer membre par membre. L'expédition
+    est retrouvée au mot près : même catégorie, même montant, même date,
+    même précision, même signature, même instant de pose (`cree_le`) —
+    les NULL se comparent avec IS (une précision absente en vaut une
+    autre absente). Comptées AVANT le geste (le rowcount n'est pas lu —
+    la leçon de la maison), puis retirées d'un seul DELETE borné aux
+    membres ACTIFS de l'équipe ; les autres équipes et les autres
+    expéditions ne bougent pas. Retourne le nombre de lignes retirées
+    (0 si rien ne correspond)."""
+    try:
+        _montant = int(montant or 0)
+    except Exception:
+        _montant = 0
+    _d = date_versement
+    if hasattr(_d, "isoformat"):
+        _d = _d.isoformat()
+    _d = str(_d) if _d else None
+    _where = """WHERE membre_id IN (SELECT id FROM membres
+                                       WHERE equipe_id=? AND statut='actif')
+                     AND annee_debut=? AND type_cotisation=? AND montant=?
+                     AND date_versement IS ? AND precision IS ?
+                     AND enregistre_par IS ? AND cree_le IS ?"""
+    _args = (int(equipe_id), int(annee_debut),
+             str(type_cotisation).strip().lower(), _montant, _d,
+             (str(precision) if precision else None),
+             (str(enregistre_par) if enregistre_par else None),
+             (str(cree_le) if cree_le else None))
+    with _verrou_db:
+        try:
+            _avant = c.execute(f"SELECT COUNT(*) FROM cotisations_diverses {_where}",
+                               _args).fetchone()
+            _n = int(_avant[0] or 0) if _avant else 0
+            if _n <= 0:
+                return 0
+            c.execute(f"DELETE FROM cotisations_diverses {_where}", _args)
+            commit_and_sync()
+            return _n
+        except Exception as e:
+            logger.warning(f"cotis_div_supprimer_groupe : {e!r}")
+            return 0
+
+
+def cotis_div_regler(ligne_id, mode_paiement, regle_par=None, destination=None):
     """v7.16.1 — LE VERSEMENT EST NOTÉ : la responsable pose le mode de
     paiement sur UNE ligne « ⏳ à régler » du registre (Espèces, Wave,
     Orange Money, MTN MoMo, Autre) — la ligne passe réglée (`regle_le` à
     l'instant du geste) et la dette du membre baisse aussitôt. C'est le
     geste que le diocèse a décrit : « dès que tu notes le versement ».
-    Aucune autre ligne ne bouge. Retourne True si la ligne a été réglée."""
+    v7.16.4 — `destination` : le « Reçu par » de la Note de la maison
+    (equipe / paroisse / diocese) — là où le versement a été reçu ; le
+    membre le relit dans son état. Aucune autre ligne ne bouge. Retourne
+    True si la ligne a été réglée."""
     _mode = str(mode_paiement or "").strip().lower()
     if _mode not in ("especes", "wave", "orange_money", "mtn_momo", "autre"):
         logger.warning(f"cotis_div_regler : mode de paiement inconnu {_mode!r}")
         return False
+    _dest = str(destination or "").strip().lower()
+    if _dest and _dest not in _COTIS_DEST_CODES:
+        logger.warning(f"cotis_div_regler : destination inconnue {_dest!r}")
+        return False
+    _dest = (_dest or None)
     with _verrou_db:
         try:
             _ex = c.execute("SELECT regle_le FROM cotisations_diverses "
@@ -5010,10 +5112,10 @@ def cotis_div_regler(ligne_id, mode_paiement, regle_par=None):
             if not _ex or _ex[0]:
                 return False   # ligne inconnue, ou déjà réglée : rien à noter
             c.execute("""UPDATE cotisations_diverses
-                         SET mode_paiement=?, regle_le=?
+                         SET mode_paiement=?, regle_le=?, destination=?
                          WHERE id=? AND regle_le IS NULL""",
                       (_mode, datetime.now().isoformat(timespec="seconds"),
-                       int(ligne_id)))
+                       _dest, int(ligne_id)))
             _apres = c.execute("SELECT regle_le FROM cotisations_diverses "
                                "WHERE id=?", (int(ligne_id),)).fetchone()
             commit_and_sync()
@@ -5027,12 +5129,13 @@ def cotis_div_lignes(membre_id, annee_debut, type_cotisation=None):
     """LECTURE PURE — les lignes du registre d'un membre pour l'année
     pastorale (toutes, ou d'un seul type), du plus récent au plus ancien.
     (id, type_cotisation, montant, date_versement, mode_paiement,
-    enregistre_par, origine, precision, regle_le) — v7.16.0 : la précision
-    (le nom libre de la cotisation) voyage avec chaque ligne, None si
-    absente. v7.16.1 : `regle_le` (None = ⏳ à régler) en 9ᵉ champ."""
+    enregistre_par, origine, precision, regle_le, destination) — v7.16.0 :
+    la précision (le nom libre de la cotisation) voyage avec chaque ligne,
+    None si absente. v7.16.1 : `regle_le` (None = ⏳ à régler) en 9ᵉ champ.
+    v7.16.4 : `destination` (None = les lignes d'antan) en 10ᵉ champ."""
     _sql = """SELECT id, type_cotisation, montant, date_versement,
                      mode_paiement, enregistre_par, origine, precision,
-                     regle_le
+                     regle_le, destination
               FROM cotisations_diverses
               WHERE membre_id=? AND annee_debut=?"""
     _args = [membre_id, annee_debut]
@@ -5165,7 +5268,7 @@ def cotis_div_total_du(membre_id, annee_debut):
         try:
             _r = c.execute("""SELECT numero_recu, montant, type_abonnement,
                                      date_paiement, mode_paiement, origine,
-                                     enregistre_par
+                                     enregistre_par, destination
                               FROM abonnements
                               WHERE membre_id=? AND annee_debut=?
                                     AND statut='paye'""",
@@ -5174,7 +5277,7 @@ def cotis_div_total_du(membre_id, annee_debut):
                 _res["abonnement_recu"] = {
                     "numero": _r[0], "montant": int(_r[1] or 0),
                     "type": _r[2] or _nat, "date": _r[3], "mode": _r[4],
-                    "origine": _r[5], "par": _r[6]}
+                    "origine": _r[5], "par": _r[6], "destination": _r[7]}
         except Exception as e:
             logger.warning(f"cotis_div_total_du (reçu) : {e!r}")
         if _res["abonnement_recu"]:
