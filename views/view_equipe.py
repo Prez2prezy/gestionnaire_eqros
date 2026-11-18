@@ -1240,7 +1240,14 @@ def show_equipe():
     # en onglet en v7.15.0) reste à sa place — l'onglet « 📣 Relances » dans
     # afficher_whatsapp_tabs, à la place de la section « 📢 Rappels
     # réabonnement ». Le meilleur des deux mondes, au mot près.
-    _rubriques_eq = ["👥 Mon équipe", "👤 Mes membres", "📅 Abonnement - Réabonnement", "📌 Suivi", "💬 WhatsApp", "📦 Archives"]
+    # v7.16.3 — LA RUBRIQUE UNIQUE DU 💼 TRÉSORIER (dossier c) : la
+    # trésorerie hors du responsable, à la manière du compte communication —
+    # le menu ne montre QUE la caisse ; le reste du Gestionnaire ne s'ouvre
+    # pas (ni « 👥 Mon équipe », ni les membres, ni le suivi).
+    if st.session_state.get('role') == 'tresorier':
+        _rubriques_eq = ["💼 Trésorerie"]
+    else:
+        _rubriques_eq = ["👥 Mon équipe", "👤 Mes membres", "📅 Abonnement - Réabonnement", "📌 Suivi", "💬 WhatsApp", "📦 Archives"]
     if "nav_eq" in st.session_state and st.session_state["nav_eq"] not in _rubriques_eq:
         del st.session_state["nav_eq"]
     if "nav_eq" not in st.session_state:
@@ -1271,6 +1278,18 @@ def show_equipe():
                         c.execute("UPDATE equipes SET responsable=?, bureau=? WHERE id=?", (nouveau_resp, nouveau_bureau, eid))
                         commit_and_sync(); st.success("Informations mises à jour ! ✅"); st.rerun()
                     else: st.error("Le nom du responsable est obligatoire.")
+
+            # v7.16.3 — LE 💼 TRÉSORIER DE LA CAISSE (dossier c) : le
+            # responsable voit QUI tient la trésorerie de son équipe ; le
+            # compte se désigne chez la paroisse (« 👥 Mes équipes »), à la
+            # manière du compte de la cellule communication.
+            _tres_eq = c.execute("SELECT username FROM utilisateurs WHERE equipe_id=? AND role='tresorier'", (eid,)).fetchone()
+            if _tres_eq:
+                st.info(f"💼 Trésorier de la caisse : **{_tres_eq[0]}** — cette personne "
+                        "ouvre la trésorerie de l'équipe avec son propre accès (la caisse, rien d'autre).")
+            else:
+                st.info("💼 Trésorier de la caisse : pas encore désigné — la demande se fait "
+                        "auprès de la paroisse (« 👥 Mes équipes »), qui ouvre l'accès à la trésorerie.")
 
     elif menu == "👤 Mes membres":
         st.markdown(f'<h2 style="color:#1A237E;">👤 Membres - {nom_equipe}</h2>', unsafe_allow_html=True)
@@ -1485,8 +1504,13 @@ def show_equipe():
                 st.download_button("📥 Exporter les membres (Excel)", data=output, file_name=f"membres_{nom_equipe}_{paroisse_nom}_{date.today()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"export_membres_eq_{eid}_{date.today()}")
             except Exception as e: st.error(f"Erreur export: {e}")
 
-    elif menu == "📅 Abonnement - Réabonnement":
-        st.markdown(f'<h2 style="color:#1A237E;">💼 Abonnement - Réabonnement — {nom_equipe}</h2>', unsafe_allow_html=True)
+    elif menu in ("📅 Abonnement - Réabonnement", "💼 Trésorerie"):
+        # v7.16.3 — la même caisse reçoit le 💼 Trésorier (le GO du dossier c) :
+        # son menu s'appelle « 💼 Trésorerie », le contenu est celui de la
+        # caisse de l'équipe, à l'identique — versements, reçus, registre.
+        _titre_caisse = ("💼 Trésorerie" if st.session_state.get('role') == 'tresorier'
+                         else "💼 Abonnement - Réabonnement")
+        st.markdown(f'<h2 style="color:#1A237E;">{_titre_caisse} — {nom_equipe}</h2>', unsafe_allow_html=True)
         st.caption("💼 Caisse de l\u2019équipe — note les paiements reçus en main propre "
                    "et édite les reçus numérotés.")
 
