@@ -2565,6 +2565,73 @@ par le diocèse (0 = libre) ; registre simple (pas de reçu) ; icône 💰.
   v7.14.3. La base de production n'est jamais touchée.
 - `_VERSION_APPLI = "v7.15.3"`.
 
+### 66. v7.16.3 — La clef dorée à l'onglet, les pages qu'on tourne, la trésorerie hors du responsable
+
+MOT DU USER : « Jusqu'ici tout va pour le mieux mais en regardant dans le
+rétroviseur, je crois que nous avons laissé en suspens 3 dossiers — enfin 2
+dossiers et 1/4, car avec l'union des 2 applications, le problème des icônes
+s'est réglé au 3/4. Nous avons donc à régler : a. Remplacer le bateau rouge
+de Streamlit par la clef dorée. b. Les pages qu'on tourne de la droite vers
+la gauche. c. La préouverture sur la trésorerie pour lequel je te donne le
+go. » — les trois dossiers du rétroviseur, réglés d'une seule livraison.
+
+- **A. LA CLEF DORÉE À L'ONGLET (le bateau rouge se retire)** — sur le
+  déploiement, l'application vit derrière la vitrine du portail : les
+  images incorporées de l'injection ne franchissent pas cette vitrine
+  (origines séparées) ; l'icône de `set_page_config`, elle, voyage par la
+  même route que le titre de l'onglet. `_icone_page_doree()` lit la face
+  (?espace / ?e / matloc) et pose une image INCORPORÉE (data URI) : la
+  clef dorée côté Gestionnaire, le chapelet doré côté Espaces, repli 📿 si
+  le fichier manque. Dès que l'application respire, l'onglet porte le vrai
+  visage — la seconde d'attente du portail reste la sienne (l'hôte du
+  nuage peint son propre écran d'attente), tout ce qui est à nous porte la
+  clef. L'injection dynamique reste en place pour les serveurs où elle
+  passe (elle peaufine le titre).
+- **B. LES PAGES QU'ON TOURNE D'UN GLISSEMENT** — `_feuillette_geste` pose
+  le geste du téléphone sur le livret du feuillet ET sur le livre de la
+  dizaine : le doigt glisse de la DROITE vers la GAUCHE, la page tourne
+  (elle entre par la droite, comme un feuillet qu'on soulève) ; vers la
+  droite elle revient (livret seulement — dans la dizaine on ne recule
+  jamais, le GO de la règle de la maison reste). Le geste commande les
+  MÊMES boutons (« Suivant ▶ », « ◀ Précédent » restent là pour la souris
+  et par sécurité). Le geste ne naît jamais sur ce qui réclame le doigt
+  (champs, formulaires, boutons, expanders, envois de fichiers) ni d'un
+  mouvement vertical (le défilement reste le défilement) ; un seul couple
+  d'écouteurs vit sur la page (le précédent retiré avant que le nouveau
+  ne s'installe). Vérifié au vrai navigateur : le livret tourne dans les
+  deux sens, la dizaine tourne sans reculer, le glissement trop court ne
+  tourne rien, zéro erreur page.
+- **C. LE RÔLE 💼 TRÉSORIER (le GO du dossier c)** — la trésorerie hors du
+  responsable, à la manière du compte de la cellule communication : la
+  PAROISSE désigne, réinitialise ou retire le trésorier dans « 👥 Mes
+  équipes » (identifiant pré-rempli « <connexion équipe>-tres », mot de
+  passe généré, retrait en deux gestes confirmés) ; le compte naît lié à
+  SON équipe (role `tresorier`, `equipe_id`) ; à la connexion, le menu ne
+  montre QUE « 💼 Trésorerie » — la caisse rend à l'identique (titre
+  « 💼 Trésorerie — Équipe », les quatre métriques, l'abonnement/réabonne-
+  ment, les reçus numérotés, le registre des cotisations), le reste du
+  Gestionnaire ne s'ouvre pas ; le responsable voit QUI tient sa caisse
+  (ligne « 💼 Trésorier de la caisse » dans « 👥 Mon équipe ») ; la
+  suppression d'équipe emporte l'accès trésorier comme les autres.
+- **Banc d'épreuve** — `scripts/test_v7163.py` (42 vérifications : la clef
+  dorée au source, le geste complet — seuils, gardes, un seul couple
+  d'écouteurs —, le rôle trésorier au source ET en base : naissance liée à
+  l'équipe, mot de passe vérifié, réinitialisation, retrait, compile ×12)
+  et `scripts/test_v7163_vue.py` (AppTest, base NEUVE : l'app tourne des
+  deux côtés avec l'icône incorporée, la paroisse désigne au vrai geste,
+  la trésorière ouvre sa rubrique unique, la caisse rend, le responsable
+  lit la ligne, le versement noté depuis SON accès naît « ⏳ à régler »)
+  et `scripts/test_web_v7163.sh` (navigateur réel : les glissements tour-
+  nent les pages des deux livres, les gardes tiennent, le favicon est un
+  PNG incorporé et non le SVG du portail). Régressions repassées et
+  actualisées (épingles de version → v7.16.3) : v7.16.2 (21 ✅) + vue,
+  v7.16.1 (39 ✅) + vue, v7.16.0 (52 ✅) + vue, v7.15.4 (37 ✅) + vue,
+  v7.15.3 (42 ✅) + vue, v7.15.2 (27 ✅), v7.15.1 (29 ✅), v7.15.0,
+  v7.14.5, v7.14.3 — les échecs des bancs anciens (v7101…v71316, v79xx)
+  préexistaient et sont caducs, prouvés contre les sources v7.16.2 d'avant
+  livraison. La base de production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.16.3"`.
+
 ### 65. v7.16.2 — Les encarts reviennent au fil de l'actualité
 
 MOT DU USER : « Tout est au vert à l'exception de : les encarts "👤 Mon
