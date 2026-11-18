@@ -667,6 +667,72 @@ def show_paroisse():
                     st.write(f"**Bureau :** {eq_bur}")
                     user_info = c.execute("SELECT username FROM utilisateurs WHERE equipe_id=? AND role='equipe'", (eq_id,)).fetchone()
                     if user_info: st.code(f"🔑 Connexion : {user_info[0]}")
+
+                    # v7.16.3 — LE 💼 TRÉSORIER DE LA CAISSE (dossier c, le GO) :
+                    # un second accès pour l'équipe, qui n'ouvre QUE la
+                    # trésorerie — la caisse sans le reste du Gestionnaire,
+                    # à la manière du compte de la cellule communication. La
+                    # paroisse désigne, réinitialise ou retire ; l'équipe voit
+                    # qui tient sa caisse ; le fidèle ne change de rien.
+                    _tres_par = c.execute("SELECT id, username FROM utilisateurs WHERE equipe_id=? AND role='tresorier'", (eq_id,)).fetchone()
+                    if _tres_par:
+                        st.code(f"💼 Trésorerie : {_tres_par[1]}")
+                        if st.session_state.get(f'confirm_tres_{eq_id}'):
+                            st.caption("⚠️ Le titulaire de cet accès perdra l'entrée à la trésorerie. "
+                                       "Le compte se rouvre en un geste, si la paroisse le souhaite.")
+                            _ct1, _ct2 = st.columns(2)
+                            if _ct1.button("🗑️ Oui, retirer l'accès", key=f"del_tres_go_{eq_id}", type="primary"):
+                                c.execute("DELETE FROM utilisateurs WHERE id=?", (_tres_par[0],))
+                                commit_and_sync()
+                                st.session_state[f'confirm_tres_{eq_id}'] = False
+                                st.success(f"Accès trésorerie retiré ({_tres_par[1]}).")
+                                st.rerun()
+                            if _ct2.button("✖ Ne rien retirer", key=f"del_tres_no_{eq_id}"):
+                                st.session_state[f'confirm_tres_{eq_id}'] = False
+                                st.rerun()
+                        elif st.button("🗑️ Retirer le compte Trésorier", key=f"del_tres_{eq_id}"):
+                            st.session_state[f'confirm_tres_{eq_id}'] = True
+                            st.rerun()
+                        if st.session_state.get(f'pwd_tres_{eq_id}'):
+                            st.markdown(f"<div style='background:#e8f5e9;padding:15px;border-radius:10px;border:1px solid #c8e6c9;'>🔑 Nouveau mot de passe du trésorier : <code style='color:#d84315;font-size:1.2rem;'>{st.session_state[f'pwd_tres_{eq_id}']}</code></div>", unsafe_allow_html=True)
+                            if st.button("OK, j'ai noté le mot de passe", key=f"ok_pwd_tres_{eq_id}"):
+                                del st.session_state[f'pwd_tres_{eq_id}']; st.rerun()
+                        if st.button("🔄 Réinitialiser le mot de passe du trésorier", key=f"reset_tres_{eq_id}"):
+                            _np = generer_mot_de_passe()
+                            c.execute("UPDATE utilisateurs SET password=? WHERE id=?", (hash_password(_np), _tres_par[0]))
+                            commit_and_sync()
+                            st.session_state[f'pwd_tres_{eq_id}'] = _np
+                            st.rerun()
+                    elif st.session_state.get(f'form_tres_{eq_id}'):
+                        _user_eq = user_info[0] if user_info else f"tresorier_{eq_id}"
+                        with st.form(f"form_tresorier_{eq_id}"):
+                            _nom_tres = st.text_input("Identifiant du trésorier", value=f"{_user_eq}-tres", key=f"tres_user_{eq_id}")
+                            _mdp_tres = st.text_input("Mot de passe (laisser vide → généré automatiquement)", type="password", key=f"tres_pwd_{eq_id}")
+                            _ft1, _ft2 = st.columns(2)
+                            if _ft1.form_submit_button("💼 Créer le compte Trésorier", use_container_width=True,
+                                                       key=f"tres_go_{eq_id}"):
+                                _ident_t = (_nom_tres or "").strip()
+                                if not _ident_t:
+                                    st.error("❌ L'identifiant du trésorier est obligatoire.")
+                                elif c.execute("SELECT id FROM utilisateurs WHERE username=?", (_ident_t,)).fetchone():
+                                    st.error("❌ Cet identifiant existe déjà.")
+                                else:
+                                    _mdp_final_t = (_mdp_tres or "").strip() or generer_mot_de_passe()
+                                    c.execute("INSERT INTO utilisateurs (username, password, role, paroisse_id, equipe_id) VALUES (?,?,?,?,?)",
+                                              (_ident_t, hash_password(_mdp_final_t), "tresorier", pid, eq_id))
+                                    commit_and_sync()
+                                    st.session_state[f'pwd_tres_{eq_id}'] = _mdp_final_t
+                                    st.session_state[f'form_tres_{eq_id}'] = False
+                                    st.rerun()
+                            if _ft2.form_submit_button("✖ Renoncer", use_container_width=True,
+                                                       key=f"tres_no_{eq_id}"):
+                                st.session_state[f'form_tres_{eq_id}'] = False
+                                st.rerun()
+                    else:
+                        if st.button("💼 Désigner un trésorier", key=f"add_tres_{eq_id}",
+                                     help="Ouvre un second accès pour l'équipe : la trésorerie seulement, sans le reste du Gestionnaire."):
+                            st.session_state[f'form_tres_{eq_id}'] = True
+                            st.rerun()
                 
                 # NOUVEAU : Bouton de suppression d'équipe
                 st.markdown("---")
