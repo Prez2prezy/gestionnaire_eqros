@@ -157,7 +157,12 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       cotis_div_declare, cotis_div_declaration_annuler,
                       cotis_div_exp_label, cotis_div_echeance_vivante,
                       cotis_div_lignes,
-                      COTIS_DIV_TYPES_EXP, COTIS_DESTINATIONS)
+                      COTIS_DIV_TYPES_EXP, COTIS_DESTINATIONS,
+                      # v7.16.6 — LA MENSUELLE ET L'ABONNEMENT DÉCLARABLES
+                      # (le « Régler » pose la déclaration — mode + « Reçu
+                      # par » — que la trésorerie confirme dans sa maison)
+                      cotis_declaration_poser, cotis_declaration_membre,
+                      cotis_declaration_retirer)
 from services import (safe_date, compter_visite, lien_whatsapp, urls_galerie,
                       URL_ESPACE_SPIRITUEL, get_periode_pastorale)
 
@@ -168,7 +173,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.16.5"
+_VERSION_APPLI = "v7.16.6"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -460,55 +465,42 @@ def _dizaine_ecran_telephone(idx, decompte=False):
     temps — au doigt ou autrement — le vieux décompte se tait, et la
     nouvelle page repart de vingt. L'adresse ?…&tel=1 force le côté
     téléphone (banc d'essai au navigateur). La base n'est jamais touchée.
-    v7.16.5 — LA NOTE DE LA MAISON SUR LE DÉCOMPTE (dossier b — la suite) :
-    1) L'HORLOGE NE RÉPÈTE PAS LA PRIÈRE — le rappel « 🕊️ Je vous salue
-    Marie… » quitte la boîte : la prière reste affichée sur la PAGE, la
-    petite horloge ne porte que le chiffre qui descend et la barre qui
-    s'écoule (le « ??? » signalé — « ne doit pas s'afficher ») ;
-    2) JAMAIS DEUX HORLOGES — React peut garder d'un tour à l'autre le
-    conteneur du bouton : l'horloge de la page d'avant, posée dedans,
-    restait empilée sous la nouvelle (des horloges fantômes gelées).
-    Toute horloge posée quitte l'écran avant qu'une autre ne naisse ;
-    3) LE BOUTON SE CACHE POUR DE BON — le bloc du décompte peut
-    s'exécuter avant que Streamlit n'ait posé le bouton : la vieille
-    version abandonnait alors (le bouton restait affiché, le décompte
-    manquait) ; désormais il est cherché avec patience, et caché sitôt
-    tenu ;
-    4) LE GESTE N'EST PAS LE ROI SUR LES GRAINS — tant que le décompte
+    v7.16.6 — LE DÉCOMPTE SECRET (dossier b — la suite, la maison l'a
+    dit : « le décompteur ne doit pas être visible. Il travaille
+    secrètement. Quand il arrive à 0 et seulement à ce moment là, la page
+    tourne elle seule ») : L'HORLOGE QUITTE L'ÉCRAN — ni chiffre qui
+    descend, ni barre qui s'écoule, aucune boîte dorée : le décompte des
+    20 secondes coule INVISIBLE, dans le silence de la page ; il tourne
+    SEULEMENT à zéro (et le geste, déjà roi depuis la note passée, ne
+    peut toujours pas devancer — le drapeau `__diz_grain__` le fait
+    taire tant que les vingt secondes coulent). Rien d'autre ne bouge :
+    la prière reste affichée sur la page, le bouton reste caché côté
+    téléphone, le livret du feuillet ne compte pas, l'ordinateur garde
+    son bouton pour la souris.
+    NOTE DE LA VERSION PASSÉE (v7.16.5, toujours vraie) :
+    1) la prière reste affichée sur la PAGE (le « ??? » signalé avait
+    quitté la boîte de l'horloge — la boîte entière quitte maintenant
+    l'écran) ;
+    2) LE BOUTON SE CACHE POUR DE BON — le bloc du décompte peut
+    s'exécuter avant que Streamlit n'ait posé le bouton : il est cherché
+    avec patience (25 essais, 5 secondes), et caché sitôt tenu ; si la
+    page a tourné entre-temps, le vieux chercheur se tait ; si vraiment
+    rien ne vient, le drapeau du grain retombe et le geste reste la
+    sécurité (la page ne reste jamais prisonnière) ;
+    3) LE GESTE N'EST PAS LE ROI SUR LES GRAINS — tant que le décompte
     court, le drapeau `__diz_grain__` (vrai sur un grain, faux ailleurs)
     fait taire le geste : la page tourne TOUTE SEULE à zéro, le doigt ne
-    la devance pas ; si le décompte n'a jamais pu démarrer, le drapeau
-    retombe et le geste reste la sécurité."""
+    la devance pas."""
     _token = "diz_ecran_" + re.sub(r"[^0-9A-Za-z_-]", "", str(idx) or "x")
-    # v7.16.5 — L'HORLOGE ÉPURÉE : le chiffre qui descend et la barre qui
-    # s'écoule — SANS le rappel de la prière (elle reste affichée sur la
-    # page ; l'horloge ne la répète pas). La boîte porte la classe
-    # `diz_cpt_box` : c'est elle que le nettoyage des fantômes retire.
-    _box_js = "" if not decompte else (
-        'var box=d.createElement("div");'
-        'box.className="diz_cpt_box";'
-        'box.innerHTML=\'<div style="text-align:center;margin-top:6px;">'
-        '<div style="display:inline-block;min-width:200px;background:'
-        'linear-gradient(135deg,#1A237E 0%,#283593 100%);border:2px solid '
-        '#FFD700;border-radius:14px;padding:10px 16px;">'
-        '<div class="diz_cpt_n" style="color:#ffffff;font-size:1.5rem;'
-        'font-weight:bold;line-height:1.25;">20 s</div>'
-        '<div style="height:6px;background:rgba(255,215,0,0.25);'
-        'border-radius:6px;overflow:hidden;">'
-        '<div class="diz_cpt_b" style="height:100%;width:100%;'
-        'background:#FFD700;"></div>'
-        '</div></div></div>\';'
-        'wrap.appendChild(box);'
-    )
+    # v7.16.6 — LE DÉCOMPTE SECRET : rien ne se dessine, rien ne se
+    # met à jour à l'écran — le compteur coule dans le silence et ne
+    # parle qu'à zéro, d'un seul clic que la page tourne elle seule.
     _tic_js = "" if not decompte else (
         'var reste=20;'
         'function tic(){'
         'if(d.__diz_ecran__!==token){return;}'
         'reste-=1;'
-        'var n=box.querySelector(".diz_cpt_n"),br=box.querySelector(".diz_cpt_b");'
-        'if(br){br.style.width=(Math.max(0,reste)*5)+"%";}'
-        'if(reste<=0){if(n){n.textContent="🕊️";}b.click();return;}'
-        'if(n){n.textContent=reste+" s";}'
+        'if(reste<=0){b.click();return;}'
         'setTimeout(tic,1000);'
         '}'
         'setTimeout(tic,1000);'
@@ -529,17 +521,6 @@ def _dizaine_ecran_telephone(idx, decompte=False):
       // C'est ce drapeau que le geste du livre lit pour se taire tant que
       // les vingt secondes coulent — « le geste ne doit pas être le roi ».
       d.__diz_grain__ = %GRAIN%;
-      // v7.16.5 — LE NETTOYAGE DES HORLOGES FANTÔMES : React peut garder
-      // d'un tour à l'autre le conteneur du bouton — l'horloge de la page
-      // d'avant, posée dedans, restait alors empilée sous la nouvelle
-      // (gelée sur son « 20 s »). Toute horloge posée quitte l'écran avant
-      // qu'une autre ne naisse : jamais deux horloges à la fois.
-      try {
-        var fant = d.querySelectorAll(".diz_cpt_box");
-        for (var f = 0; f < fant.length; f++) {
-          if (fant[f].parentNode) { fant[f].parentNode.removeChild(fant[f]); }
-        }
-      } catch(e) {}
       function bouton(txt){
         var bs = d.querySelectorAll("button");
         for (var i = 0; i < bs.length; i++) {
@@ -561,9 +542,6 @@ def _dizaine_ecran_telephone(idx, decompte=False):
       function pose(){
         if (d.__diz_ecran__ !== token) { return; }
         b.style.display = "none";
-        var wrap = b.closest('[data-testid="stButton"],.stButton') || b.parentElement;
-        if (!wrap) { return; }
-        %BOX%
         %TIC%
       }
       function cherche(){
@@ -577,7 +555,7 @@ def _dizaine_ecran_telephone(idx, decompte=False):
       cherche();
     })();
     </script>
-    """.replace("%TOKEN%", _token).replace("%GRAIN%", "true" if decompte else "false").replace("%BOX%", _box_js).replace("%TIC%", _tic_js)
+    """.replace("%TOKEN%", _token).replace("%GRAIN%", "true" if decompte else "false").replace("%TIC%", _tic_js)
     try:
         _comp_html(_script, height=0)
     except Exception:
@@ -5474,19 +5452,105 @@ def _etat_cotisations_membre(membre, _du=None):
                     st.rerun()
         # LA MENSUELLE DUE (obligatoire — le même mode que les expéditions,
         # la Note point 2) : les mois écoulés que rien ne couvre, au tarif
-        # réglé. Elle se règle chez ta responsable : elle l'expédie puis le
-        # note — le mois se vend aussitôt.
+        # réglé. v7.16.6 — ELLE EST DÉCLARABLE (la maison : « toutes les
+        # expéditions sorties d'une trésorerie sont dues — à ce titre,
+        # elles subissent le même mode opératoire que les autres
+        # cotisations ») : le « Régler » ouvre la déclaration (mode + «
+        # Reçu par » + les mois réglés) ; la trésorerie confirme dans SA
+        # maison « 💰 Versement » — chaque mois déclaré se vend à sa
+        # confirmation.
+        _mois_lbls_z1 = {1: "Janv.", 2: "Févr.", 3: "Mars", 4: "Avr.",
+                         5: "Mai", 6: "Juin", 7: "Juil.", 8: "Août",
+                         9: "Sept.", 10: "Oct.", 11: "Nov.", 12: "Déc."}
+        _mois_ordre_z1 = (9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8)
+        _mois_dus_n = ([_m for _m in _mois_ordre_z1[:int(_du["mois_ecoules"])]
+                        if int(_etat["mois"].get(_m, 0)) <= 0]
+                       if int(_du["tarif_mensuel"]) > 0 else [])
+        _decl_mens = cotis_declaration_membre(_mid, _annee, "mensuelle")
         if int(_du["mensuelle"]) > 0:
-            st.markdown(
-                "<span style='font-size:0.8rem; color:#1b5e20;"
-                " background:#e8f5e9; border:1px solid #a5d6a7;"
-                " border-radius:8px; padding:2px 8px; display:"
-                "inline-block; margin:1px 0;'>⏳ à régler · 🧮 Mensuelle — "
-                f"{_fr_liste(_du['mois_dus'])} · {_fr(_du['mensuelle'])}"
-                " FCFA · chez ta responsable d'équipe</span>",
-                unsafe_allow_html=True)
+            if _decl_mens:
+                # v7.16.6 — LA DÉCLARATION EST POSÉE (ambre) : le membre a
+                # dit son mode et son « Reçu par » ; la maison qui porte le
+                # « Reçu par » confirme dans « 💰 Versement ».
+                _dh_m = None
+                try:
+                    _dh_m = datetime.fromisoformat(
+                        str(_decl_mens["declare_le"]))
+                except Exception:
+                    _dh_m = None
+                _d_decl_m = (_dh_m.strftime("%d/%m à %H:%M") if _dh_m
+                             else str(_decl_mens["declare_le"])[:16])
+                _mode_decl_m = _modes_lbls.get(
+                    _decl_mens["declare_mode"] or "",
+                    _decl_mens["declare_mode"] or "—")
+                _dest_decl_m = (cotis_destination_label(
+                    _decl_mens["declare_dest"])
+                    if _decl_mens["declare_dest"] else None)
+                _mois_decl_m = _fr_liste([_mois_lbls_z1.get(_m, str(_m))
+                                          for _m in _decl_mens["mois"]])
+                st.markdown(
+                    "<span style='font-size:0.8rem; color:#8a6d1a;"
+                    " background:#fff8e1; border:1px solid #ffe082;"
+                    " border-radius:8px; padding:2px 8px; display:"
+                    "inline-block; margin:1px 0;'>🕊️ versé et déclaré le "
+                    f"{_d_decl_m} · 🧮 Mensuelle ({_mois_decl_m}) · "
+                    f"{_fr(_decl_mens['montant'])} FCFA · {_mode_decl_m}"
+                    + (f" · {_dest_decl_m}" if _dest_decl_m else "")
+                    + " — ta trésorerie confirme</span>",
+                    unsafe_allow_html=True)
+                if st.button("✖ Retirer ma déclaration",
+                             key="cotis_declret_mens",
+                             help="Tu t'es trompé de mode ou de caisse ? "
+                                  "Retire ta déclaration — la mensuelle "
+                                  "reprend son « ⏳ à régler » paisible."):
+                    cotis_declaration_retirer(_decl_mens["id"])
+                    st.rerun()
+                _mois_restants = [_m for _m in _mois_dus_n
+                                  if _m not in (_decl_mens["mois"] or [])]
+                if _mois_restants:
+                    _mont_restant = (int(_du["tarif_mensuel"])
+                                     * len(_mois_restants))
+                    st.markdown(
+                        "<span style='font-size:0.8rem; color:#1b5e20;"
+                        " background:#e8f5e9; border:1px solid #a5d6a7;"
+                        " border-radius:8px; padding:2px 8px; display:"
+                        "inline-block; margin:1px 0;'>⏳ à régler · 🧮 "
+                        "Mensuelle — "
+                        + _fr_liste([_mois_lbls_z1.get(_m, str(_m))
+                                     for _m in _mois_restants])
+                        + f" · {_fr(_mont_restant)} FCFA</span>",
+                        unsafe_allow_html=True)
+                    if st.button("Régler ces mois",
+                                 key="cotis_declmens_btn",
+                                 help="Tu as versé la mensuelle ? Déclare-le "
+                                      ": ton mode de paiement et ton « Reçu "
+                                      "par » partent à ta trésorerie, qui "
+                                      "confirme dans sa caisse (« 💰 "
+                                      "Versement »)."):
+                        st.session_state['cotis_decl_cible'] = "mensuelle"
+                        st.rerun()
+            else:
+                st.markdown(
+                    "<span style='font-size:0.8rem; color:#1b5e20;"
+                    " background:#e8f5e9; border:1px solid #a5d6a7;"
+                    " border-radius:8px; padding:2px 8px; display:"
+                    "inline-block; margin:1px 0;'>⏳ à régler · 🧮 Mensuelle — "
+                    f"{_fr_liste(_du['mois_dus'])} · {_fr(_du['mensuelle'])}"
+                    " FCFA · chez ta responsable d'équipe</span>",
+                    unsafe_allow_html=True)
+                if st.button("Régler", key="cotis_declmens_btn",
+                             help="Tu as versé la mensuelle ? Déclare-le : "
+                                  "ton mode de paiement et ton « Reçu par » "
+                                  "partent à ta trésorerie, qui confirme "
+                                  "dans sa caisse (« 💰 Versement »)."):
+                    st.session_state['cotis_decl_cible'] = "mensuelle"
+                    st.rerun()
         # L'ABONNEMENT DUE (obligatoire — le même mode, la Note point 2) :
         # le montant attendu pour CE membre et son échéance.
+        # v7.16.6 — IL EST DÉCLARABLE AUSSI : le « Régler » pose la
+        # déclaration (mode + « Reçu par ») ; la trésorerie confirme dans
+        # SA maison — le reçu numéroté naît à sa confirmation, pas avant.
+        _decl_abo = cotis_declaration_membre(_mid, _annee, "abonnement")
         if _abonnement_du:
             _nat_z1 = ("Abonnement" if _du["abonnement_nature"] == "abonnement"
                        else "Réabonnement")
@@ -5496,16 +5560,57 @@ def _etat_cotisations_membre(membre, _du=None):
                 _ech_z1 = _d_z1.strftime("%d/%m/%Y")
             except Exception:
                 pass
-            st.markdown(
-                "<span style='font-size:0.8rem; color:#1b5e20;"
-                " background:#e8f5e9; border:1px solid #a5d6a7;"
-                " border-radius:8px; padding:2px 8px; display:"
-                "inline-block; margin:1px 0;'>⏳ à régler · 📅 "
-                f"{_nat_z1} {_annee} - {_annee + 1} · "
-                f"{_fr(_du['abonnement_attendu'])} FCFA"
-                + (f" · échéance le {_ech_z1}" if _ech_z1 else "")
-                + " · chez ta responsable d'équipe (reçu numéroté)"
-                "</span>", unsafe_allow_html=True)
+            if _decl_abo:
+                _dh_a = None
+                try:
+                    _dh_a = datetime.fromisoformat(
+                        str(_decl_abo["declare_le"]))
+                except Exception:
+                    _dh_a = None
+                _d_decl_a = (_dh_a.strftime("%d/%m à %H:%M") if _dh_a
+                             else str(_decl_abo["declare_le"])[:16])
+                _mode_decl_a = _modes_lbls.get(
+                    _decl_abo["declare_mode"] or "",
+                    _decl_abo["declare_mode"] or "—")
+                _dest_decl_a = (cotis_destination_label(
+                    _decl_abo["declare_dest"])
+                    if _decl_abo["declare_dest"] else None)
+                st.markdown(
+                    "<span style='font-size:0.8rem; color:#8a6d1a;"
+                    " background:#fff8e1; border:1px solid #ffe082;"
+                    " border-radius:8px; padding:2px 8px; display:"
+                    "inline-block; margin:1px 0;'>🕊️ versé et déclaré le "
+                    f"{_d_decl_a} · 📅 {_nat_z1} {_annee} - {_annee + 1} · "
+                    f"{_fr(_decl_abo['montant'])} FCFA · {_mode_decl_a}"
+                    + (f" · {_dest_decl_a}" if _dest_decl_a else "")
+                    + " — ta trésorerie confirme (reçu numéroté)</span>",
+                    unsafe_allow_html=True)
+                if st.button("✖ Retirer ma déclaration",
+                             key="cotis_declret_abo",
+                             help="Tu t'es trompé de mode ou de caisse ? "
+                                  "Retire ta déclaration — l'abonnement "
+                                  "reprend son « ⏳ à régler » paisible."):
+                    cotis_declaration_retirer(_decl_abo["id"])
+                    st.rerun()
+            else:
+                st.markdown(
+                    "<span style='font-size:0.8rem; color:#1b5e20;"
+                    " background:#e8f5e9; border:1px solid #a5d6a7;"
+                    " border-radius:8px; padding:2px 8px; display:"
+                    "inline-block; margin:1px 0;'>⏳ à régler · 📅 "
+                    f"{_nat_z1} {_annee} - {_annee + 1} · "
+                    f"{_fr(_du['abonnement_attendu'])} FCFA"
+                    + (f" · échéance le {_ech_z1}" if _ech_z1 else "")
+                    + " · chez ta responsable d'équipe (reçu numéroté)"
+                    "</span>", unsafe_allow_html=True)
+                if st.button("Régler", key="cotis_declabo_btn",
+                             help="Tu as versé ton abonnement ? Déclare-le : "
+                                  "ton mode de paiement et ton « Reçu par » "
+                                  "partent à ta trésorerie, qui confirme "
+                                  "dans sa caisse (« 💰 Versement ») — le "
+                                  "reçu numéroté naît à sa confirmation."):
+                    st.session_state['cotis_decl_cible'] = "abonnement"
+                    st.rerun()
 
     # LE TOTAL DÛ À CE JOUR (v7.16.0) avec son « Tout régler » (la Note,
     # point 1 : un bouton au bout du total). Les « à choix » éteintes ne
@@ -5675,12 +5780,20 @@ def _panneau_declaration_membre(membre):
     responsable d'équipe, le diocèse avec l'accord du responsable
     paroissial en Wave) et pose sa DÉCLARATION — le registre ne dit réglé
     que par la trésorerie, qui confirme dans sa maison « 💰 Versement »
-    ou refuse. Retourne sans rien si aucun geste n'est en attente."""
+    ou refuse. Retourne sans rien si aucun geste n'est en attente.
+    v7.16.6 — LA MENSUELLE ET L'ABONNEMENT DEVIENT DÉCLARABLES (la maison
+    : « toutes les expéditions sorties d'une trésorerie sont dues — à ce
+    titre, elles subissent le même mode opératoire que les autres
+    cotisations ») : le « Régler » de la mensuelle ouvre le même panneau
+    — le membre choisit les mois qu'il règle, son mode, son « Reçu par »
+    — et celui de l'abonnement porte le montant attendu (le reçu
+    numéroté naîtra à la confirmation de la trésorerie, pas avant)."""
     if not membre:
         return
     _mono = st.session_state.get('cotis_decl_id')
     _tous = bool(st.session_state.get('cotis_decl_tous'))
-    if not _mono and not _tous:
+    _cible = st.session_state.get('cotis_decl_cible')
+    if not _mono and not _tous and not _cible:
         # le mot posé par la déclaration d'avant — relu puis effacé
         if st.session_state.get('cotis_decl_flash'):
             st.success(st.session_state['cotis_decl_flash'])
@@ -5694,6 +5807,119 @@ def _panneau_declaration_membre(membre):
                    "autre": "💳 Autre"}
     _dest_lbls = [lbl for _c, lbl in COTIS_DESTINATIONS]
     _dest_codes = {lbl: code for code, lbl in COTIS_DESTINATIONS}
+
+    def _fr(_n):
+        return f"{int(_n):,}".replace(",", " ")
+
+    # ─── v7.16.6 — LE « RÉGLER » DE LA MENSUELLE OU DE L'ABONNEMENT ─────
+    # Le même mode opératoire que les lignes : le membre déclare (mode +
+    # « Reçu par »), la trésorerie confirme dans SA maison « 💰 Versement ».
+    if _cible in ("mensuelle", "abonnement"):
+        _du_p = cotis_div_total_du(_mid, _annee)
+        if _cible == "mensuelle":
+            _nat_c = "🧮 Ta mensuelle"
+        else:
+            _nat_c = ("📅 Ton abonnement"
+                      if _du_p["abonnement_nature"] == "abonnement"
+                      else "📅 Ton réabonnement")
+        _mois_lbls_p = {1: "Janv.", 2: "Févr.", 3: "Mars", 4: "Avr.",
+                        5: "Mai", 6: "Juin", 7: "Juil.", 8: "Août",
+                        9: "Sept.", 10: "Oct.", 11: "Nov.", 12: "Déc."}
+        _mois_codes = []
+        if _cible == "mensuelle":
+            _etat_p = cotis_div_etat(_mid, _annee)
+            _mois_ordre_p = (9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8)
+            _mois_dus_n = ([_m for _m in
+                            _mois_ordre_p[:int(_du_p["mois_ecoules"])]
+                            if int(_etat_p["mois"].get(_m, 0)) <= 0]
+                           if int(_du_p["tarif_mensuel"]) > 0 else [])
+            if not _mois_dus_n:
+                del st.session_state['cotis_decl_cible']
+                st.info("🕊️ Ta mensuelle est déjà à jour — rien à "
+                        "déclarer. Ton encart dit la vérité du registre.")
+                return
+            _mois_map = {_mois_lbls_p[_m]: _m for _m in _mois_dus_n}
+            _sel_mois = st.multiselect(
+                "Les mois que tu règles",
+                list(_mois_map.keys()),
+                default=list(_mois_map.keys()),
+                key="cotis_decl_mois",
+                help="Chaque mois déclaré se vend à la confirmation de ta "
+                     "trésorerie — la dette baisse mois par mois.")
+            _mois_codes = [_mois_map[_l] for _l in _sel_mois]
+            _montant_c = (int(_du_p["tarif_mensuel"]) * len(_sel_mois))
+            st.info(f"🧮 {_fr(_montant_c)} FCFA — {len(_sel_mois)} mois × "
+                    f"{_fr(_du_p['tarif_mensuel'])} FCFA (le tarif réglé "
+                    "dans « 💼 Caisse du diocèse »).")
+        else:
+            _montant_c = int(_du_p["abonnement_attendu"])
+            if _du_p["abonnement_paye"] or _montant_c <= 0:
+                del st.session_state['cotis_decl_cible']
+                st.info("🕊️ Ton abonnement est déjà à jour — rien à "
+                        "déclarer. Ton encart dit la vérité du registre.")
+                return
+            st.info(f"📅 {_fr(_montant_c)} FCFA — le reçu numéroté naîtra "
+                    "à la confirmation de ta trésorerie, pas avant.")
+        st.success(
+            f"📮 Ta déclaration de versement — {_nat_c}. Dis comment tu as "
+            "versé et où : ta trésorerie confirme dans sa caisse (« 💰 "
+            "Versement »).")
+        _mode_lbl = st.selectbox("Mode de paiement",
+                                 list(_modes_lbls.values()),
+                                 key="cotis_decl_mode",
+                                 help="Comment ton versement est passé — "
+                                      "espèces, Wave, Orange Money…")
+        _dest_lbl = st.selectbox("Reçu par", _dest_lbls, key="cotis_decl_dest",
+                                 help="La Note de la maison : 🏠 l'équipe "
+                                      "(espèces ou Wave), ⛪ la paroisse avec "
+                                      "l'accord de ton responsable d'équipe "
+                                      "(espèces ou Wave), 🏘️ le diocèse avec "
+                                      "l'accord du responsable paroissial "
+                                      "(Wave).")
+        _pc1, _pc2 = st.columns(2)
+        with _pc1:
+            if st.button("📮 Déclarer mon versement", key="cotis_decl_go_cible",
+                         type="primary",
+                         help="Ta déclaration part à ta trésorerie — elle "
+                              "confirme dans sa caisse (« 💰 Versement »)."):
+                _mode_code = {v: k for k, v in _modes_lbls.items()}[_mode_lbl]
+                _dest_code = _dest_codes[_dest_lbl]
+                _ok_c = False
+                if _cible == "mensuelle":
+                    if not _mois_codes:
+                        st.warning("Choisis d'abord les mois que tu règles.")
+                    else:
+                        _ok_c = cotis_declaration_poser(
+                            _mid, _annee, "mensuelle", _montant_c,
+                            mois=_mois_codes, mode_paiement=_mode_code,
+                            destination=_dest_code)
+                else:
+                    _ok_c = cotis_declaration_poser(
+                        _mid, _annee, "abonnement", _montant_c,
+                        mode_paiement=_mode_code, destination=_dest_code)
+                if st.session_state.get('cotis_decl_cible'):
+                    del st.session_state['cotis_decl_cible']
+                if _ok_c:
+                    st.session_state['cotis_decl_flash'] = (
+                        ("🕊️ Ta mensuelle est déclarée — ta trésorerie la "
+                         "confirmera dans sa caisse (« 💰 Versement »), et "
+                         "les mois déclarés se vendront à sa confirmation.")
+                        if _cible == "mensuelle" else
+                        "🕊️ Ton abonnement est déclaré — ta trésorerie le "
+                        "confirmera dans sa caisse (« 💰 Versement ») ; le "
+                        "reçu numéroté naît à sa confirmation.")
+                else:
+                    st.session_state['cotis_decl_flash'] = (
+                        "La déclaration n'a pas pu être posée — réessaie.")
+                st.rerun()
+        with _pc2:
+            if st.button("✖ Annuler", key="cotis_decl_non_cible",
+                         help="Rien n'est posé — ton encart reste tel quel."):
+                if st.session_state.get('cotis_decl_cible'):
+                    del st.session_state['cotis_decl_cible']
+                st.rerun()
+        return
+
     _dues = _dues_expeditions_membre(cotis_div_lignes(_mid, _annee))
     if _mono:
         _cibles = [_l for _l in _dues if _l[0] == _mono]
@@ -5708,9 +5934,6 @@ def _panneau_declaration_membre(membre):
             del st.session_state['cotis_decl_tous']
             st.info("🕊️ Rien à régler — ton état est déjà à jour.")
             return
-
-    def _fr(_n):
-        return f"{int(_n):,}".replace(",", " ")
 
     _tot_cibles = sum(int(_l[2] or 0) for _l in _cibles)
     st.success(
