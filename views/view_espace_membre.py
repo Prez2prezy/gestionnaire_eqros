@@ -7397,7 +7397,7 @@ def _corps_espace_membre(matloc_membre=None):
             # n'est dû, la deuxième ligne porte le « ✅ À jour ».
             if _du_pop and int(_du_pop['total']) > 0:
                 _lbl_cotis = ("💰 État de mes cotisations\n"
-                              f"— doit : {_du_txt} FCFA")
+                              f"— Doit : {_du_txt} FCFA")
             else:
                 _lbl_cotis = "💰 État de mes cotisations\n✅ À jour"
             with st.popover(_lbl_cotis):
