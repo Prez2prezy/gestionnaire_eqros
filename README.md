@@ -2565,6 +2565,105 @@ par le diocèse (0 = libre) ; registre simple (pas de reçu) ; icône 💰.
   v7.14.3. La base de production n'est jamais touchée.
 - `_VERSION_APPLI = "v7.15.3"`.
 
+### 67. v7.16.4 — Le décompte des 20 secondes, la trésorerie en trois onglets, le « Reçu par » des versements
+
+MOT DU USER : « a. La clef dorée à l'onglet 🔑 — ✅ et le chapelet doré
+(Espaces) ✅. b. Les pages qu'on tourne 📿 — ✅ le geste du téléphone est
+posé sur le livret du feuillet ET sur le livre de la dizaine 👍🏽. Cependant,
+je souhaite que, dans le livre de la dizaine seulement (côté téléphone) :
+la décompte des 20 secondes après chaque "Je vous salue Marie" soit
+intégrée. Le bouton "Suivant" soit supprimé. c. La trésorerie hors du
+responsable : créer 3 onglets — 01 pour "Abonnement — Réabonnement", 01
+pour "Cotisations diverses", 01 pour "Versement". Comment supprimer une
+ligne entrée pour tous les membres d'une équipe ? Membre par membre ?
+Mécanisme adéquat à créer ! Que devrait voir concrètement le membre dans
+"💰 État de mes cotisations" ? Le tableau des cotisations mensuelles est à
+retirer. » — avec la Note de la maison : le membre verse à la trésorerie
+de son équipe (espèces ou Wave), à la trésorerie de la paroisse avec
+l'accord de son responsable d'équipe (espèces ou Wave), ou à la trésorerie
+du diocèse avec l'accord du responsable paroissial (Wave).
+
+- **B. LE DÉCOMPTE DES 20 SECONDES DANS LE LIVRE DE LA DIZAINE (côté
+  téléphone)** — `_dizaine_ecran_telephone()` : sur le téléphone, le
+  bouton « Suivant ▶ » quitte l'écran du livre de la dizaine SEULEMENT —
+  les pages se tournent au doigt (le geste v7.16.3, validé, reste roi) —
+  et sur les dix pages « Je vous salue Marie » le DÉCOMPTE prend le
+  relais : la prière reste affichée, la petite horloge dorée compte vingt
+  secondes (barre qui s'écoule, chiffre qui descend), puis la page tourne
+  TOUTE SEULE vers la suivante. Le livret du feuillet ne bouge pas ; sur
+  l'ordinateur, « Suivant ▶ » reste là pour la souris et par sécurité. Le
+  décompte porte un jeton de page (la mécanique « nonce » des feuillets) :
+  si la page a tourné entre-temps, le vieux décompte se tait. L'adresse
+  ?…&tel=1 force le côté téléphone (banc d'essai). Vérifié au vrai
+  navigateur : le grain compte 15 s → 10 s → la page tourne seule vers la
+  suivante, le décompte repart ; l'intro ne compte pas ; le livret garde
+  son bouton ; l'ordinateur garde le sien ; zéro erreur page.
+- **C. LA TRÉSORERIE EN TROIS ONGLETS** — le sélecteur PERSISTANT et à
+  clé `caisse_onglet` (la leçon v7.8.14 : st.tabs ne garde AUCUNE
+  mémoire) : « 📅 Abonnement — Réabonnement » (le contenu historique de la
+  caisse, repris à l'identique dans `_section_abonnement_equipe` : les
+  deux échéances, les compteurs, les reçus numérotés et leur panneau, les
+  trois listes), « ✨ Cotisations diverses » (le registre : les quatre
+  métriques, l'expédition en un seul form, les expanders, la correction en
+  deux temps), « 💰 Versement » (`_section_versements_equipe` : le form du
+  règlement de la v7.16.1 reçoit sa maison propre, avec la Note en
+  devanture, et la liste des versements en attente de toute l'équipe).
+  Tant qu'un versement attend sa note, l'onglet « 💰 Versement » s'ouvre
+  AVANT le rendu — le geste ne se perd pas en chemin.
+- **LE « REÇU PAR » DES VERSEMENTS (la Note de la maison)** — colonne
+  douce `destination` sur `cotisations_diverses` ET `abonnements`
+  (migration douce ré-exécutable, rien d'existant ne bouge) ; les trois
+  trésoreries portent leur libellé (🏠 équipe / ⛪ paroisse / 🏘️ diocèse,
+  `COTIS_DESTINATIONS` + `cotis_destination_label`). Le versement noté au
+  geste « ✅ Régler » porte son mode ET son « Reçu par » (l'équipe par
+  défaut) ; l'abonnement noté dans son onglet porte le sien ; la ligne
+  réglée du registre et la ligne d'abonnement réglé les montrent, côté
+  caisse comme côté membre ; une destination inconnue est refusée.
+- **LE MÉCANISME ADÉQUAT DE SUPPRESSION D'UNE EXPÉDITION** — plus besoin
+  de retirer membre par membre : dans l'onglet « ✨ Cotisations diverses »,
+  « 🗑️ Retirer une expédition » liste les poses du registre (catégorie,
+  précision, montant, date, nombre de lignes, réglées) ; choisir,
+  confirmer (« ✔️ Oui, tout retirer »), et `cotis_div_supprimer_groupe()`
+  emporte TOUTES les lignes de cette expédition-là — retrouvée au mot
+  près (même catégorie, montant, date, précision, signature, instant),
+  comptées avant le geste (le rowcount n'est pas lu), le DELETE borné aux
+  membres actifs de l'équipe ; les autres expéditions et les hors-équipe
+  ne bougent pas. Le 🗑️ ligne à ligne reste là pour les retouches fines.
+- **« 💰 ÉTAT DE MES COTISATIONS » — LE TABLEAU MENSUEL RETIRÉ** (demande
+  de la maison) : la mensuelle se lit comme les trois autres catégories,
+  VERSEMENT PAR VERSEMENT — date · précision · montant · mode · « Reçu
+  par » — le titre garde le compte des mois soldés et le tarif réglé
+  s'il en a posé un ; les relances restent EN VERT « ⏳ à régler » ; les
+  lignes réglées portent leur destination ; l'abonnement réglé porte son
+  mode et son « Reçu par » ; le « 💰 Total dû à ce jour » et le « 🕊️ Déjà
+  versé » closent l'état. Lecture pure gardée.
+- **RÉPARATION DÉCOUVERTE AU BANC** — le script des rappels (« 🔔 Dire oui
+  aux rappels ») cassait à la pose : un apostrophe non échappé dans la
+  chaîne JS (« Le oui n'a pas pu être noté… ») rendait le script entier
+  muet (SyntaxError à chaque rendu dès que les clefs VAPID existent — la
+  fonction `activer_push_ro()` n'existait jamais). L'apostrophe
+  typographique le répare : le script respire, zéro erreur page.
+- **Banc d'épreuve** — `scripts/test_v7164.py` (65 vérifications : le
+  décompte au source — jeton, vingt pas, horloge, tel=1 — la destination
+  des deux tables et du règlement, la suppression d'expédition qui emporte
+  les siennes et épargne les autres, les trois onglets, la vue membre sans
+  grille, compile ×12) et `scripts/test_v7164_vue.py` (AppTest, base
+  NEUVE : les trois onglets au vrai écran, l'expédition puis le retrait
+  d'un seul geste, le versement avec mode et « Reçu par », l'abonnement
+  avec le sien, l'état du membre sans le tableau, la trésorière aux mêmes
+  onglets) et `scripts/test_web_v7164.sh` (navigateur réel : le livret ne
+  bouge pas côté téléphone forcé, la dizaine compte et tourne seule, le
+  PC garde son bouton, la clef dorée reste à l'onglet, zéro erreur page).
+  Régressions repassées et ACTUALISÉES (épingles de version → v7.16.4 ; la
+  vérification 20 de v7.15.3 et la 27 de v7.15.4 retournées — la grille
+  mensuelle est retirée de la vue membre ; la ligne réglée de v7.16.1 porte
+  son « Reçu par » ; les bancs vue choisissent l'onglet cotisations) :
+  v7.16.3 (42 ✅) + vue, v7.16.2 (21 ✅) + vue, v7.16.1 (39 ✅) + vue,
+  v7.16.0 (52 ✅) + vue, v7.15.4 (37 ✅) + vue, v7.15.3 (42 ✅) + vue,
+  v7.15.2 (27 ✅), v7.15.1 (29 ✅), v7.15.0, v7.14.5, v7.14.3. La base de
+  production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.16.4"`.
+
 ### 66. v7.16.3 — La clef dorée à l'onglet, les pages qu'on tourne, la trésorerie hors du responsable
 
 MOT DU USER : « Jusqu'ici tout va pour le mieux mais en regardant dans le
