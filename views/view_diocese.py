@@ -46,7 +46,10 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
                         afficher_etat_presences_paroisse, _qrcode_png_bytes,
                         afficher_reponses_questionnaire_feuillet,
                         recu_pdf_de_numero,  # v7.14.0 — reçus numérotés
-                        cotis_relance_ligne_urgence)  # v7.14.4 — relance
+                        cotis_relance_ligne_urgence,  # v7.14.4 — relance
+                        # v7.16.6 — LES MAISONS DE LA TRÉSORERIE : la caisse
+                        # du diocèse (versement + expéditions)
+                        maison_versement, formulaire_expedition_zone)
 
 
 def _gestionnaire_archives_espace(texte_intro, types_contenus, prefixe):
@@ -709,6 +712,26 @@ def show_diocese():
         annee_pastorale_en_cours = get_periode_pastorale()[0]
         annee_debut = st.number_input("Année de début de la période", min_value=2020, max_value=annee_pastorale_en_cours, value=annee_pastorale_en_cours, step=1)
         st.write(f"**Période :** {periode_affichage(annee_debut)}")
+
+        # v7.16.6 — LA TRÉSORERIE DU DIOCÈSE (dossier c — le constat de la
+        # maison : « la paroisse et le diocèse n'ont pas de trésorerie —
+        # sinon où sont-elles générées ? »). Deux maisons vivent ici, en
+        # tête de la caisse : « 💰 Versement », où les déclarations
+        # adressées à « 🏘️ Trésorerie du diocèse » se confirment (le
+        # registre ne dit réglé que par elle) ; et « ✨ Cotisations
+        # diverses », où le diocèse expédie ses propres cotisations — dues
+        # comme les autres, « à ce titre, elles subissent le même mode
+        # opératoire ». Les réglages, l'historique et les relances vivent
+        # plus bas, comme avant.
+        maison_versement(dest_code="diocese",
+                         titre="💰 Versement — la maison du diocèse",
+                         annee=annee_debut, paroisse_id=None,
+                         key_prefix="mvdio")
+        st.markdown("---")
+        formulaire_expedition_zone(zone="diocese", annee=annee_debut,
+                                   key_prefix="expdio",
+                                   origine="caisse_diocese")
+        st.markdown("---")
 
         # v7.14.2 — LES RÉGLAGES de la caisse : montants
         # adulte/jeune × abonnement/réabonnement, les DEUX échéances de
