@@ -28,7 +28,10 @@ from components import ligne_intercession
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, afficher_historique_suivi, 
                         afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales,
                         # v7.14.4 — le message de relance prêt à copier
-                        cotis_reglages_aff, cotis_relance_message_collectif)
+                        cotis_reglages_aff, cotis_relance_message_collectif,
+                        # v7.16.6 — LES MAISONS DE LA TRÉSORERIE : la caisse
+                        # de la paroisse (versement + expéditions)
+                        maison_versement, formulaire_expedition_zone)
 
 def _zone_du_jour_paroisse(pid, equipes):
     """🕯️ ZONE DU JOUR — LE SAS DES INTENTIONS (v7.9.10, déménagée du
@@ -545,7 +548,7 @@ def show_paroisse():
     nom_p = p_info[0]
     
     _rubriques_par = ["🏘️ Ma paroisse", "👥 Mes équipes", "👤 Membres", "📊 Statistiques",
-                      "📅 Abonnements", "📌 Suivi", "💬 WhatsApp", "📥 Export Excel", "📦 Archives"]
+                      "📅 Abonnements", "💼 Caisse de la paroisse", "📌 Suivi", "💬 WhatsApp", "📥 Export Excel", "📦 Archives"]
     if "nav_par" in st.session_state and st.session_state["nav_par"] not in _rubriques_par:
         del st.session_state["nav_par"]
     if "nav_par" not in st.session_state:
@@ -924,6 +927,26 @@ def show_paroisse():
                                 _rel_eq, cotis_reglages_aff(cotis_parametres_lire()),
                                 responsable_nom=str(eq[2] or "").strip()),
                                 language=None)
+
+    elif menu == "💼 Caisse de la paroisse":
+        # v7.16.6 — LA TRÉSORERIE DE LA PAROISSE (dossier c — le constat de
+        # la maison : « la paroisse et le diocèse n'ont pas de trésorerie —
+        # sinon où sont-elles générées ? »). Deux maisons vivent ici :
+        # « 💰 Versement », où les déclarations adressées à « ⛪ Trésorerie
+        # de la paroisse » se confirment (le registre ne dit réglé que par
+        # elle) ; et « ✨ Cotisations diverses », où la paroisse expédie
+        # ses propres cotisations — dues comme les autres, « à ce titre,
+        # elles subissent le même mode opératoire ». La base n'est écrite
+        # que par les gestes de confirmation et d'expédition d'ici.
+        annee_caisse = get_periode_pastorale()[0]
+        maison_versement(dest_code="paroisse",
+                         titre="💰 Versement — la maison de la paroisse",
+                         annee=annee_caisse, paroisse_id=pid,
+                         key_prefix="mvpar")
+        st.markdown("---")
+        formulaire_expedition_zone(zone="paroisse", annee=annee_caisse,
+                                   key_prefix="exppar", paroisse_id=pid,
+                                   origine="caisse_paroisse")
 
     elif menu == "📌 Suivi":
         st.markdown(f'<h2 style="color:#1A237E;">📌 Suivi et Agenda - {nom_p}</h2>', unsafe_allow_html=True)
