@@ -2565,6 +2565,109 @@ par le diocèse (0 = libre) ; registre simple (pas de reçu) ; icône 💰.
   v7.14.3. La base de production n'est jamais touchée.
 - `_VERSION_APPLI = "v7.15.3"`.
 
+### 68. v7.16.5 — La Note dans « 💰 État de mes cotisations » : les dus ligne à ligne, le « Régler » du membre, les « à choix » qui s'éteignent seules — et le décompte corrigé
+
+MOT DU USER : « b. Le livre de la dizaine, côté téléphone — le bouton
+« Suivant ▶ » quitte l'écran du livre ✅. Sur les dix pages « Je vous salue
+Marie », le décompte des 20 secondes prend le relais ✅ : la prière reste
+affichée ✅, la petite horloge dorée compte (barre qui s'écoule, chiffre
+qui descend), ??? ---> ne doit pas s'afficher ; le doigt peut toujours
+devancer ??? — puisque la page tourne toute seule il n'est pas utile de
+faire le geste. S'il devait tourner la page au geste, ça doit être quand
+le décompte est à zéro. En tout cas pour les 10 « Je vous salue Marie »,
+le geste ne doit pas être le roi. c. La trésorerie en trois onglets ✅ …
+Il y a ces 2 lignes avant le formulaire d'expédition, à éclaircir. » +
+LA NOTE de la maison : 1. toute expédition d'une trésorerie, qu'importe
+sa provenance hiérarchique, est un dû — ligne après ligne dans « 💰 État
+de mes cotisations », ajoutée au « 💰 Total dû à ce jour », un bouton
+« Régler » en bout de ligne et « Tout régler » au bout du total ; 2. deux
+types d'expéditions — « obligatoire » jusqu'au règlement total, « à
+choix » jusqu'à minuit après son échéance puis elle disparaît seule
+(champ de type à ajouter au formulaire) ; la mensuelle et « Abonnement —
+Réabonnement » suivent le même mode ; 3. pas de doublon dans une
+expédition ; 4. la relance n'est pas une expédition et ne s'affiche pas
+dans l'état ; 5. un montant réglé s'affiche 72 h dans une section de
+l'état puis rentre dans les archives.
+
+- **LE DÉCOMPTE, LA SUITE (dossier b)** — dans `_dizaine_ecran_telephone` :
+  l'HORLOGE ÉPURÉE (le rappel « 🕊️ Je vous salue Marie… » quitte la boîte —
+  la prière reste affichée sur la page, l'horloge ne porte que le chiffre
+  qui descend et la barre qui s'écoule : le « ??? » ne s'affiche plus) ;
+  JAMAIS DEUX HORLOGES (React peut garder le conteneur du bouton d'un tour
+  à l'autre : les horloges fantômes gelées sont purgées avant chaque pose
+  — classe `diz_cpt_box`) ; LE BOUTON SE CACHE POUR DE BON (recherche
+  patiente, 25 essais × 200 ms, caché sitôt tenu — fini la page où il
+  restait affiché et le décompte manquait) ; et LE GESTE N'EST PAS LE ROI :
+  le drapeau `__diz_grain__` (vrai sur un grain tant que le décompte
+  court, faux ailleurs) fait taire `_feuillette_geste(recul=False,
+  grain=…)` — la page tourne TOUTE SEULE à zéro, le doigt ne devance pas ;
+  si le décompte n'a jamais pu démarrer, le drapeau retombe et le geste
+  reste la sécurité. Le livret du feuillet (`recul=True`, sans grain) ne
+  bouge pas ; l'ordinateur garde son bouton.
+- **LA NOTE DANS LES ONGLETS (dossier c)** — les QUATRE lignes de
+  métriques éclaircies (« ⏳ Reste à régler » à la place de « ⏳ À régler »,
+  « libre — montant au choix » à la place du « libre » muet, « Tarif
+  mensuel posé en caisse ») + une légende qui dit ce que chacune pèse ;
+  le « reste à régler » ne compte plus les « à choix » éteintes.
+- **LE TYPE D'EXPÉDITION (la Note, point 2)** — le formulaire porte
+  « ⛓️ Obligatoire / 🕊️ À choix » et l'échéance ; colonnes douces
+  `type_expedition` + `echeance` (NULL = obligatoire, les lignes d'antan
+  vivent) ; une « à choix » s'affiche dans l'état du membre JUSQU'À MINUIT
+  APRÈS SON ÉCHÉANCE (le jour de l'échéance et le lendemain entier —
+  `cotis_div_echeance_vivante` et son jumeau SQL), puis disparaît SEULE de
+  l'état, de la dette (`cotis_div_total_du`) et des attentes de la caisse
+  — elle reste au registre de l'onglet cotisations. `cotis_div_lignes`
+  rend 15 champs.
+- **LE PAS DE DOUBLON (la Note, point 3)** — `cotis_div_envoyer_groupe`
+  regarde AVANT la pose : une ligne identique (catégorie, montant, date,
+  précision) déjà posée pour l'un des membres choisis et encore vivante
+  bloque la pose ENTIÈRE (-1) et l'écran le dit ; une expédition réglée ou
+  une « à choix » éteinte ne bloque pas (la caisse peut la reposer neuve).
+- **LE « RÉGLER » DU MEMBRE (la Note, point 1)** — l'état se réorganise
+  en TROIS ZONES : « ⏳ À régler — ligne par ligne » (chaque expédition due
+  de n'importe quelle trésorerie porte son bouton « Régler » ; la
+  mensuelle et l'abonnement suivent le même mode, affichés jusqu'au
+  règlement), « 💰 Total dû à ce jour » avec son « 💰 Tout régler »,
+  « ✅ Réglés — les dernières 72 heures » (point 5 : un montant réglé
+  s'affiche 72 h — `regle_le` du registre, `cree_le` de l'abonnement —
+  puis rejoint « 📚 Les archives — versement par versement »), et les
+  archives : le registre de l'année où les réglés dorment. La RELANCE
+  n'apparaît nulle part dans l'état (la Note, point 4).
+- **LA DÉCLARATION ET LA MAISON DE LA TRÉSORERIE** — « Régler » (une
+  ligne) ou « 💰 Tout régler » ouvre le PANNEAU DE LA DÉCLARATION dans la
+  page (il survit au popover, qui se replie à chaque tour) : le membre dit
+  son mode et son « Reçu par » (la Note : l'équipe en espèces ou Wave, la
+  paroisse avec l'accord de son responsable d'équipe, le diocèse avec
+  l'accord du responsable paroissial en Wave) et pose sa déclaration
+  (`cotis_div_declare` : `declare_le`, `declare_mode`, `declare_dest` —
+  colonnes douces). Le registre ne dit réglé QUE par la trésorerie : dans
+  « 💰 Versement », les déclarations campent en tête (« 🕊️ Jean déclare
+  avoir versé »), le formulaire arrive PRÉREMPLI avec le mode et le
+  « Reçu par » du membre, le règlement (`cotis_div_regler`) confirme et
+  EFFACE la déclaration ; le refus (✖) se pose en deux temps
+  (`cotis_div_declaration_annuler`). Le membre retire sa déclaration
+  (« ✖ Retirer ») tant qu'elle n'est pas confirmée.
+- **Banc d'épreuve** — `scripts/test_v7165.py` (57 vérifications :
+  l'horloge épurée, les fantômes, le drapeau du grain, les colonnes
+  douces, l'échéance à minuit après, le pas de doublon, la déclaration
+  confirmée puis effacée, les 72 h, les onglets, la vue membre, la
+  compile ×12, la base repart à zéro) et `scripts/test_v7165_vue.py`
+  (AppTest, base NEUVE : le type « à choix » au vrai form, le doublon
+  bloqué, l'état en trois zones, la déclaration du membre, la trésorière
+  préremplie, le refus, l'« à choix » éteinte qui disparaît seule, le
+  « Tout régler »). ÉPREUVE DU FEU navigateur (`scripts/test_web_v7165.sh`
+  + `prepare_banc_web_v7165.py`) : l'horloge sans le rappel, une seule
+  horloge, le bouton caché, et LE GESTE SILENCIÉ AU VRAI DOIGT — trois
+  glissements sur un grain ne dévient pas (15 s → 9 s → 3 s), la page
+  tourne TOUTE SEULE à zéro et le décompte repart de vingt ; le livret et
+  l'ordinateur ne bougent pas ; la clef dorée demeure. Régressions
+  repassées et actualisées : v7.14.3, v7.14.5, v7.15.0, v7.15.1 (29 ✅),
+  v7.15.2 (27 ✅), v7.15.3 (42 ✅) + vue, v7.15.4 (37 ✅) + vue, v7.16.0
+  (52 ✅) + vue, v7.16.1 (39 ✅) + vue, v7.16.2 (21 ✅) + vue, v7.16.3
+  (42 ✅) + vue, v7.16.4 (65 ✅) + vue. La base de production n'est jamais
+  touchée.
+- `_VERSION_APPLI = "v7.16.5"`.
+
 ### 67. v7.16.4 — Le décompte des 20 secondes, la trésorerie en trois onglets, le « Reçu par » des versements
 
 MOT DU USER : « a. La clef dorée à l'onglet 🔑 — ✅ et le chapelet doré
