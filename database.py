@@ -760,6 +760,33 @@ def init_tables_and_migrations():
     safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN declare_dest TEXT")
     safe_migrate("ALTER TABLE abonnements ADD COLUMN cree_le TEXT")
 
+    # v7.16.6 — LES DÉCLARATIONS DE LA MENSUELLE ET DE L'ABONNEMENT (la
+    # suite de la maison) : la mensuelle et l'abonnement sont des dus comme
+    # les autres — le membre peut les DÉCLARER (« Régler » : mode + « Reçu
+    # par ») depuis « 💰 État de mes cotisations », et la trésorerie
+    # confirme dans SA maison « 💰 Versement ». Ces deux dus n'ont pas de
+    # ligne du registre où poser leurs colonnes declare_* : la mensuelle se
+    # calcule mois par mois (grille) et l'abonnement dort dans la table
+    # `abonnements` (son reçu numéroté). Une table douce les porte — une
+    # déclaration EN ATTENTE par membre, par année et par cible ; la
+    # confirmation ou le refus l'efface (le registre ne dit réglé que par
+    # la trésorerie, jamais par le membre seul). Ré-exécutable : rien
+    # d'existant ne bouge. La base de production n'est JAMAIS touchée par
+    # l'atelier : la table vit dans le code, elle naît chez l'hébergeur au
+    # premier démarrage, comme les précédentes.
+    c.execute("""CREATE TABLE IF NOT EXISTS cotis_declarations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        membre_id INTEGER,
+        annee_debut INTEGER,
+        cible TEXT,
+        montant INTEGER DEFAULT 0,
+        mois TEXT,
+        declare_le TEXT,
+        declare_mode TEXT,
+        declare_dest TEXT,
+        cree_le TEXT
+    )""")
+
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
     try:
         anciens_evts = c.execute("SELECT id, equipe_id FROM evenements WHERE equipe_id IS NOT NULL AND paroisse_id IS NULL AND diocese_id IS NULL").fetchall()
@@ -5148,19 +5175,29 @@ def cotis_div_envoyer_groupe(membres_ids, annee_debut, type_cotisation, montant,
             # rien ne part, l'écran le dit. Une expédition éteinte (réglée
             # ou « à choix » passée minuit après son échéance) ne bloque
             # pas — la caisse peut la reposer neuve.
+            # v7.16.6 — LES GRANDES MAISONS : la vérification se fait par
+            # tranches de 400 identifiants (la limite de variables de
+            # SQLite ne doit jamais bloquer l'expédition du diocèse à
+            # toutes ses paroisses) — le pas de doublon garde sa force.
             _q_doublon = f"""SELECT COUNT(*) FROM cotisations_diverses
-                             WHERE membre_id IN ({','.join('?' * len(_ids))})
+                             WHERE membre_id IN ({{PH}})
                                    AND annee_debut=? AND type_cotisation=?
                                    AND montant=? AND date_versement IS ?
                                    AND precision IS ?
                                    AND regle_le IS NULL
                                    AND {COTIS_DIV_CHOIX_VIVANT_SQL}"""
-            _doublon = c.execute(
-                _q_doublon,
-                list(_ids) + [int(annee_debut),
-                              str(type_cotisation).strip().lower(), _montant,
-                              _d, _precision]).fetchone()
-            if _doublon and int(_doublon[0] or 0) > 0:
+            _args_doublon = [int(annee_debut),
+                             str(type_cotisation).strip().lower(), _montant,
+                             _d, _precision]
+            _doublon_n = 0
+            for _i in range(0, len(_ids), 400):
+                _tranche = _ids[_i:_i + 400]
+                _ph_d = ','.join('?' * len(_tranche))
+                _n_d = c.execute(
+                    _q_doublon.replace("{PH}", _ph_d),
+                    _tranche + _args_doublon).fetchone()
+                _doublon_n += int(_n_d[0] or 0) if _n_d else 0
+            if _doublon_n > 0:
                 logger.info("cotis_div_envoyer_groupe : doublon bloqué")
                 return -1
             c.executemany(
@@ -5369,6 +5406,452 @@ def cotis_div_declaration_annuler(ligne_id):
         except Exception as e:
             logger.warning(f"cotis_div_declaration_annuler : {e!r}")
             return False
+
+
+# ======================================================================
+# v7.16.6 — LES DÉCLARATIONS DE LA MENSUELLE ET DE L'ABONNEMENT
+# (la suite de la maison : « toutes les expéditions sorties d'une
+# trésorerie sont dues — à ce titre, elles subissent le même mode
+# opératoire que les autres cotisations ». La mensuelle et l'abonnement
+# deviennent DÉCLARABLES : le membre pose son « Régler » — mode + « Reçu
+# par » — et la trésorerie confirme dans SA maison « 💰 Versement ».)
+# ======================================================================
+
+_COTIS_DECL_CIBLES = ("mensuelle", "abonnement")
+
+
+def _cotis_declarations_table():
+    """La table douce existe dès le premier geste — ré-exécutable, sans
+    bruit (les ateliers qui relisent une base ancienne la voient naître
+    ici plutôt qu'au démarrage)."""
+    try:
+        c.execute("""CREATE TABLE IF NOT EXISTS cotis_declarations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            membre_id INTEGER,
+            annee_debut INTEGER,
+            cible TEXT,
+            montant INTEGER DEFAULT 0,
+            mois TEXT,
+            declare_le TEXT,
+            declare_mode TEXT,
+            declare_dest TEXT,
+            cree_le TEXT
+        )""")
+    except Exception as e:
+        logger.warning(f"_cotis_declarations_table : {e!r}")
+
+
+def _cotis_declaration_mois_propre(mois):
+    """Les mois d'une déclaration mensuelle, propres : des entiers de
+    calendrier (1-12) sans doublon, en ordre de l'année pastorale
+    (septembre → août) — None si rien de lisible."""
+    _trouves = set()
+    try:
+        for _m in (mois if isinstance(mois, (list, tuple)) else []):
+            _mi = int(_m)
+            if 1 <= _mi <= 12:
+                _trouves.add(_mi)
+    except Exception:
+        return None
+    if not _trouves:
+        return None
+    _ordre = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8]
+    return [_m for _m in _ordre if _m in _trouves]
+
+
+def cotis_declaration_poser(membre_id, annee_debut, cible, montant,
+                            mois=None, mode_paiement=None, destination=None):
+    """v7.16.6 — LE « RÉGLER » DE LA MENSUELLE OU DE L'ABONNEMENT (la Note
+    de la maison : les dues suivent le même mode opératoire) : le membre
+    déclare son versement — le mode et le « Reçu par » — depuis « 💰 État
+    de mes cotisations ». La déclaration n'écrit PAS le registre réglé :
+    elle pose UNE ligne en attente (une seule par membre, année et cible —
+    re-déclarer remplace, le membre corrige son geste) et la trésorerie la
+    voit dans SA maison « 💰 Versement » pour la CONFIRMER ou la refuser.
+    `mois` : les mois de calendrier couverts (mensuelle seulement). Le
+    « Reçu par » voyage avec la déclaration : la maison qui le porte est
+    celle qui confirme — le registre ne dit réglé que par elle. Retourne
+    True si la déclaration a été posée."""
+    _cib = str(cible or "").strip().lower()
+    if _cib not in _COTIS_DECL_CIBLES:
+        logger.warning(f"cotis_declaration_poser : cible inconnue {_cib!r}")
+        return False
+    _mode = str(mode_paiement or "").strip().lower()
+    if _mode not in ("especes", "wave", "orange_money", "mtn_momo", "autre"):
+        logger.warning(f"cotis_declaration_poser : mode inconnu {_mode!r}")
+        return False
+    _dest = str(destination or "").strip().lower()
+    if _dest and _dest not in _COTIS_DEST_CODES:
+        logger.warning(f"cotis_declaration_poser : destination inconnue {_dest!r}")
+        return False
+    _dest = (_dest or None)
+    try:
+        _montant = max(0, int(montant or 0))
+    except Exception:
+        _montant = 0
+    _mois_txt = None
+    if _cib == "mensuelle":
+        _mois = _cotis_declaration_mois_propre(mois)
+        if not _mois:
+            logger.warning("cotis_declaration_poser : aucun mois lisible")
+            return False
+        _mois_txt = json.dumps(_mois)
+    _maintenant = datetime.now().isoformat(timespec="seconds")
+    _cotis_declarations_table()
+    with _verrou_db:
+        try:
+            _ex = c.execute("""SELECT id FROM cotis_declarations
+                               WHERE membre_id=? AND annee_debut=? AND cible=?""",
+                            (int(membre_id), int(annee_debut), _cib)).fetchone()
+            if _ex:
+                c.execute("""UPDATE cotis_declarations
+                             SET montant=?, mois=?, declare_le=?, declare_mode=?,
+                                 declare_dest=?
+                             WHERE id=?""",
+                          (_montant, _mois_txt, _maintenant, _mode, _dest,
+                           _ex[0]))
+            else:
+                c.execute("""INSERT INTO cotis_declarations
+                             (membre_id, annee_debut, cible, montant, mois,
+                              declare_le, declare_mode, declare_dest, cree_le)
+                             VALUES (?,?,?,?,?,?,?,?,?)""",
+                          (int(membre_id), int(annee_debut), _cib, _montant,
+                           _mois_txt, _maintenant, _mode, _dest, _maintenant))
+            commit_and_sync()
+            return True
+        except Exception as e:
+            logger.warning(f"cotis_declaration_poser : {e!r}")
+            return False
+
+
+def cotis_declaration_membre(membre_id, annee_debut, cible):
+    """v7.16.6 — La déclaration EN ATTENTE du membre pour une cible
+    (lecture pure) : dict {id, montant, mois (liste), declare_le,
+    declare_mode, declare_dest} ou None si rien n'attend."""
+    _cib = str(cible or "").strip().lower()
+    if _cib not in _COTIS_DECL_CIBLES:
+        return None
+    try:
+        _r = c.execute("""SELECT id, montant, mois, declare_le, declare_mode,
+                                 declare_dest
+                          FROM cotis_declarations
+                          WHERE membre_id=? AND annee_debut=? AND cible=?""",
+                       (int(membre_id), int(annee_debut), _cib)).fetchone()
+    except Exception as e:
+        logger.warning(f"cotis_declaration_membre : {e!r}")
+        return None
+    if not _r:
+        return None
+    try:
+        _mois = json.loads(_r[2]) if _r[2] else []
+    except Exception:
+        _mois = []
+    return {"id": _r[0], "montant": int(_r[1] or 0), "mois": _mois or [],
+            "declare_le": _r[3], "declare_mode": _r[4],
+            "declare_dest": _r[5]}
+
+
+def cotis_declaration_retirer(declaration_id):
+    """v7.16.6 — La déclaration s'efface : le membre retire (« ✖ Retirer »)
+    ou la trésorerie refuse (✖ dans sa maison) — la ligne en attente
+    quitte la table et le dû reprend son « ⏳ à régler » paisible. Une
+    déclaration déjà confirmée n'existe plus (le règlement l'a effacée).
+    Retourne True si une déclaration a été effacée."""
+    _cotis_declarations_table()
+    with _verrou_db:
+        try:
+            c.execute("DELETE FROM cotis_declarations WHERE id=?",
+                      (int(declaration_id),))
+            commit_and_sync()
+            return True
+        except Exception as e:
+            logger.warning(f"cotis_declaration_retirer : {e!r}")
+            return False
+
+
+def cotis_declarations_attente(dest="equipe", paroisse_id=None,
+                               annee_debut=None):
+    """v7.16.6 — LES DÉCLARATIONS QUI ATTENDENT UNE MAISON (lecture pure) :
+    les déclarations de la mensuelle et de l'abonnement adressées à la
+    trésorerie `dest` (« équipe » par défaut — les d'antan n'avaient pas
+    de « Reçu par » et viennent chez elle), bornées à la paroisse si
+    `paroisse_id` est donné (la maison de la paroisse) et à l'année
+    pastorale si `annee_debut` est donné (None = toutes). Chaque entrée :
+    (id, membre_id, annee_debut, cible, montant, mois [liste], declare_le,
+    declare_mode, declare_dest, nom, prenom, matloc, equipe, paroisse_id,
+    paroisse)."""
+    _d = str(dest or "equipe").strip().lower()
+    _clause_dest = ("(d.declare_dest IS NULL OR d.declare_dest='equipe')"
+                    if _d == "equipe" else "d.declare_dest=?")
+    _args = [] if _d == "equipe" else [_d]
+    _sql = f"""SELECT d.id, d.membre_id, d.annee_debut, d.cible, d.montant,
+                      d.mois, d.declare_le, d.declare_mode, d.declare_dest,
+                      m.nom, m.prenom, m.matloc, e.nom_equipe, p.id, p.nom
+               FROM cotis_declarations d
+               JOIN membres m ON d.membre_id=m.id
+               LEFT JOIN equipes e ON m.equipe_id=e.id
+               LEFT JOIN paroisses p ON m.paroisse_id=p.id
+               WHERE m.statut='actif' AND {_clause_dest}"""
+    if paroisse_id:
+        _sql += " AND m.paroisse_id=?"
+        _args.append(int(paroisse_id))
+    if annee_debut:
+        _sql += " AND d.annee_debut=?"
+        _args.append(int(annee_debut))
+    _sql += " ORDER BY d.declare_le DESC"
+    _res = []
+    try:
+        _cotis_declarations_table()
+        for _r in c.execute(_sql, _args).fetchall():
+            try:
+                _mois = json.loads(_r[5]) if _r[5] else []
+            except Exception:
+                _mois = []
+            _res.append((_r[0], _r[1], _r[2], _r[3], int(_r[4] or 0),
+                         _mois or [], _r[6], _r[7], _r[8], _r[9], _r[10],
+                         _r[11], _r[12], _r[13], _r[14]))
+        return _res
+    except Exception as e:
+        logger.warning(f"cotis_declarations_attente : {e!r}")
+        return []
+
+
+def cotis_declaration_confirmer_mensuelle(declaration_id, mois,
+                                          mode_paiement, destination=None,
+                                          regle_par=None):
+    """v7.16.6 — LA CONFIRMATION D'UNE DÉCLARATION MENSUELLE (le geste de
+    la trésorerie dans sa maison) : la déclaration devient des lignes
+    réglées du registre — UNE PAR MOIS choisi, datée dans son mois (le 1ᵉʳ
+    du mois ; le mois courant porte la date du jour) pour que la grille
+    des 12 mois vende chaque mois déclaré — avec le mode, le « Reçu par »
+    et la signature de la trésorerie. Les mois DÉJÀ couverts par un
+    versement mensuel réglé (la trésorière l'a noté entre-temps) ne se
+    posent pas une seconde fois. La déclaration s'efface : le registre ne
+    dit réglé que par la trésorerie. Retourne le nombre de lignes posées
+    (0 si la déclaration n'a pas pu être confirmée)."""
+    _mode = str(mode_paiement or "").strip().lower()
+    if _mode not in ("especes", "wave", "orange_money", "mtn_momo", "autre"):
+        logger.warning(f"cotis_declaration_confirmer_mensuelle : mode inconnu {_mode!r}")
+        return 0
+    _dest = str(destination or "").strip().lower()
+    if _dest and _dest not in _COTIS_DEST_CODES:
+        logger.warning(f"cotis_declaration_confirmer_mensuelle : destination inconnue {_dest!r}")
+        return 0
+    _dest = (_dest or None)
+    _mois = _cotis_declaration_mois_propre(mois)
+    if not _mois:
+        logger.warning("cotis_declaration_confirmer_mensuelle : aucun mois")
+        return 0
+    _cotis_declarations_table()
+    with _verrou_db:
+        try:
+            _d = c.execute("""SELECT membre_id, annee_debut, montant
+                              FROM cotis_declarations WHERE id=?""",
+                           (int(declaration_id),)).fetchone()
+            if not _d:
+                logger.warning("cotis_declaration_confirmer_mensuelle : "
+                               "déclaration introuvable")
+                return 0
+            _mid, _annee, _montant_decl = int(_d[0]), int(_d[1]), int(_d[2] or 0)
+            _tarif = cotis_div_montant_suggere("mensuelle")
+            _par_ligne = (_tarif if _tarif > 0
+                          else max(1, _montant_decl // len(_mois)))
+            # Les mois déjà vendus (réglés) ne se posent pas deux fois.
+            _grille = cotis_div_etat(_mid, _annee)["mois"]
+            _maintenant = datetime.now().isoformat(timespec="seconds")
+            _poses = 0
+            for _m in _mois:
+                if int(_grille.get(_m, 0)) > 0:
+                    continue   # déjà réglé par la trésorière entre-temps
+                _an_mois = _annee if _m >= 9 else _annee + 1
+                if (_an_mois == date.today().year
+                        and _m == date.today().month):
+                    _dv = date.today().isoformat()
+                else:
+                    _dv = date(_an_mois, _m, 1).isoformat()
+                c.execute("""INSERT INTO cotisations_diverses
+                             (membre_id, annee_debut, type_cotisation, montant,
+                              date_versement, mode_paiement, enregistre_par,
+                              origine, precision, regle_le, destination,
+                              cree_le, type_expedition, echeance,
+                              declare_le, declare_mode, declare_dest)
+                             VALUES (?,?,?,?,?,?,?,?,
+                                     'confirmation de la déclaration du membre',
+                                     ?,?,?,NULL,NULL,NULL,NULL,NULL)""",
+                          (_mid, _annee, "mensuelle", _par_ligne, _dv, _mode,
+                           regle_par, "declaration_membre", _maintenant,
+                           _dest, _maintenant))
+                _poses += 1
+            c.execute("DELETE FROM cotis_declarations WHERE id=?",
+                      (int(declaration_id),))
+            commit_and_sync()
+            return _poses
+        except Exception as e:
+            logger.warning(f"cotis_declaration_confirmer_mensuelle : {e!r}")
+            return 0
+
+
+def cotis_declaration_confirmer_abonnement(declaration_id, montant,
+                                           mode_paiement, destination=None,
+                                           regle_par=None):
+    """v7.16.6 — LA CONFIRMATION D'UNE DÉCLARATION D'ABONNEMENT (le geste
+    de la trésorerie dans sa maison) : le paiement d'abonnement se note
+    par le même chemin que la caisse (cotis_enregistrer_paiement) — le
+    reçu reçoit son numéro À CE MOMENT-LÀ, avec le mode, le « Reçu par »
+    et la signature de la trésorerie — et la déclaration s'efface. Le
+    montant reste ajustable au geste (la trésorerie vérifie). Retourne
+    (id, numero_recu) ou None si le geste n'a pas pu être posé."""
+    _mode = str(mode_paiement or "").strip().lower()
+    if _mode not in ("especes", "wave", "orange_money", "mtn_momo", "autre"):
+        logger.warning(f"cotis_declaration_confirmer_abonnement : mode inconnu {_mode!r}")
+        return None
+    _dest = str(destination or "").strip().lower()
+    if _dest and _dest not in _COTIS_DEST_CODES:
+        logger.warning(f"cotis_declaration_confirmer_abonnement : destination inconnue {_dest!r}")
+        return None
+    _dest = (_dest or None)
+    try:
+        _montant = max(0, int(montant or 0))
+    except Exception:
+        _montant = 0
+    if _montant <= 0:
+        logger.warning("cotis_declaration_confirmer_abonnement : montant vide")
+        return None
+    _cotis_declarations_table()
+    try:
+        _d = c.execute("""SELECT membre_id, annee_debut
+                          FROM cotis_declarations WHERE id=?""",
+                       (int(declaration_id),)).fetchone()
+        if not _d:
+            logger.warning("cotis_declaration_confirmer_abonnement : "
+                           "déclaration introuvable")
+            return None
+        _mid, _annee = int(_d[0]), int(_d[1])
+        _nature = cotis_nature_membre(_mid, _annee)
+        _res = cotis_enregistrer_paiement(
+            _mid, _annee, _montant, type_abonnement=_nature,
+            mode_paiement=_mode, enregistre_par=regle_par,
+            origine="declaration_membre", destination=_dest)
+        with _verrou_db:
+            c.execute("DELETE FROM cotis_declarations WHERE id=?",
+                      (int(declaration_id),))
+            commit_and_sync()
+        return _res
+    except Exception as e:
+        logger.warning(f"cotis_declaration_confirmer_abonnement : {e!r}")
+        return None
+
+
+def cotis_div_declarations_maison(dest, paroisse_id=None, annee_debut=None):
+    """v7.16.6 — LES DÉCLARATIONS DE LIGNES QUI ATTENDENT UNE MAISON
+    (lecture pure) : les lignes du registre que des membres ont DÉCLARÉES
+    à la trésorerie `dest` (le « Reçu par » de leur déclaration) et pas
+    encore confirmées — la maison qui porte ce « Reçu par » est celle qui
+    confirme, le registre ne dit réglé que par elle. Bornée à la paroisse
+    si `paroisse_id` est donné (la maison de la paroisse) et à l'année si
+    `annee_debut` est donné. Chaque entrée : (id, montant, type_cotisation,
+    date_versement, precision, declare_le, declare_mode, declare_dest,
+    nom, prenom, matloc, equipe, paroisse). Les « à choix » éteintes ne
+    s'affichent plus (minuit après leur échéance passé)."""
+    _d = str(dest or "").strip().lower()
+    if _d not in _COTIS_DEST_CODES:
+        return []
+    _args = [_d]
+    _sql = f"""SELECT d.id, d.montant, d.type_cotisation, d.date_versement,
+                      d.precision, d.declare_le, d.declare_mode,
+                      d.declare_dest, m.nom, m.prenom, m.matloc,
+                      e.nom_equipe, p.nom
+               FROM cotisations_diverses d
+               JOIN membres m ON d.membre_id=m.id
+               LEFT JOIN equipes e ON m.equipe_id=e.id
+               LEFT JOIN paroisses p ON m.paroisse_id=p.id
+               WHERE m.statut='actif' AND d.regle_le IS NULL
+                     AND d.declare_le IS NOT NULL AND d.declare_dest=?
+                     AND {COTIS_DIV_CHOIX_VIVANT_SQL}"""
+    if paroisse_id:
+        _sql += " AND m.paroisse_id=?"
+        _args.append(int(paroisse_id))
+    if annee_debut:
+        _sql += " AND d.annee_debut=?"
+        _args.append(int(annee_debut))
+    _sql += " ORDER BY d.declare_le DESC, d.date_versement DESC"
+    try:
+        return c.execute(_sql, _args).fetchall()
+    except Exception as e:
+        logger.warning(f"cotis_div_declarations_maison : {e!r}")
+        return []
+
+
+def cotis_div_supprimer_groupe_membres(membres_ids, annee_debut,
+                                       type_cotisation, montant,
+                                       date_versement, precision=None,
+                                       enregistre_par=None, cree_le=None,
+                                       type_expedition=None, echeance=None):
+    """v7.16.6 — RETIRER UNE EXPÉDITION AU-DELÀ DE L'ÉQUIPE (jumeau de
+    cotis_div_supprimer_groupe, pour les caisses de la paroisse et du
+    diocèse) : l'expédition est retrouvée au mot près — même catégorie,
+    même montant, même date, même précision, même signature, même instant
+    de pose, même type et même échéance — mais bornée à la LISTE DE
+    MEMBRES donnée (les actifs de la paroisse, ceux des paroisses du
+    diocèse). Les NULL se comparent avec IS ; comptées avant le geste,
+    puis retirées d'un seul DELETE. Retourne le nombre de lignes
+    retirées (0 si rien ne correspond)."""
+    try:
+        _montant = int(montant or 0)
+    except Exception:
+        _montant = 0
+    _d = date_versement
+    if hasattr(_d, "isoformat"):
+        _d = _d.isoformat()
+    _d = str(_d) if _d else None
+    _texp = str(type_expedition or "").strip().lower() or None
+    if _texp == "obligatoire":
+        _texp = None
+    _ech = cotis_div_echeance_propre(echeance)
+    try:
+        _ids = sorted({int(_m) for _m in (membres_ids or [])
+                       if _m is not None and int(_m) > 0})
+    except Exception:
+        logger.warning("cotis_div_supprimer_groupe_membres : ids illisibles")
+        return 0
+    if not _ids:
+        return 0
+    # v7.16.6 — LES GRANDES MAISONS : le retrait se fait par tranches de
+    # 400 identifiants (la limite de variables de SQLite ne doit jamais
+    # bloquer le retrait d'une expédition diocésaine) — chaque tranche
+    # est comptée puis retirée, le total reste vrai.
+    _where_t = """WHERE membre_id IN ({PH})
+                     AND annee_debut=? AND type_cotisation=? AND montant=?
+                     AND date_versement IS ? AND precision IS ?
+                     AND enregistre_par IS ? AND cree_le IS ?
+                     AND type_expedition IS ? AND echeance IS ?"""
+    _queue_args = [int(annee_debut),
+                   str(type_cotisation).strip().lower(), _montant, _d,
+                   (str(precision) if precision else None),
+                   (str(enregistre_par) if enregistre_par else None),
+                   (str(cree_le) if cree_le else None),
+                   _texp, _ech]
+    _total_n = 0
+    with _verrou_db:
+        try:
+            for _i in range(0, len(_ids), 400):
+                _tranche = _ids[_i:_i + 400]
+                _ph_m = ','.join('?' * len(_tranche))
+                _args_m = _tranche + _queue_args
+                _avant = c.execute(
+                    "SELECT COUNT(*) FROM cotisations_diverses "
+                    + _where_t.replace("{PH}", _ph_m), _args_m).fetchone()
+                _n = int(_avant[0] or 0) if _avant else 0
+                if _n > 0:
+                    c.execute("DELETE FROM cotisations_diverses "
+                              + _where_t.replace("{PH}", _ph_m), _args_m)
+                    _total_n += _n
+            if _total_n > 0:
+                commit_and_sync()
+            return _total_n
+        except Exception as e:
+            logger.warning(f"cotis_div_supprimer_groupe_membres : {e!r}")
+            return _total_n
 
 
 def cotis_div_lignes(membre_id, annee_debut, type_cotisation=None):
