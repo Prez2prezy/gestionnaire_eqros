@@ -33,10 +33,35 @@ from services import (hash_password, verifier_mot_de_passe,
                       supprimer_token_session)
 
 # --- Configuration de la page ---
-# v7.8.14 — page_icon par défaut 📿 : l'icône Streamlit (❗) disparaît de l'onglet.
-# L'injection dynamique (injecter_icone_pwa) affine ensuite : 📿 Espaces / 🔑 Admin.
+# v7.16.3 — LA CLEF DORÉE À L'ONGLET (dossier a — le bateau rouge se retire).
+# Sur le déploiement, l'application vit derrière la vitrine du portail :
+# les images incorporées de l'injection ne franchissent pas cette vitrine,
+# mais l'icône de set_page_config voyage par la même route que le titre de
+# l'onglet — celle-là porte désormais le VRAI visage, dès que l'application
+# respire : la clef dorée côté Gestionnaire, le chapelet doré côté Espaces
+# (?espace=1, ?e=…, matloc). L'injection dynamique reste en place pour les
+# serveurs où elle passe (elle peaufine le titre).
+def _icone_page_doree():
+    """v7.16.3 — l'icône de l'onglet en image incorporée : le visage de la
+    maison dès la première seconde, sans dépendre d'aucune adresse."""
+    try:
+        _espace_vu = bool(st.query_params.get("espace")
+                          or st.query_params.get("e")
+                          or st.query_params.get("matloc"))
+        _nom = "icon_espace_32.png" if _espace_vu else "icon_admin_32.png"
+        _chemin = os.path.join("static", _nom)
+        if not os.path.isfile(_chemin):
+            return "📿"
+        import base64 as _b64
+        with open(_chemin, "rb") as _f:
+            return "data:image/png;base64," + _b64.b64encode(_f.read()).decode("ascii")
+    except Exception:
+        return "📿"
+
+# v7.8.14 — l'icône du portail (le « bateau rouge ») ne montre plus le bout
+# de son nez : page_icon porte le visage de la maison (v7.16.3, ci-dessus).
 st.set_page_config(page_title="Gestionnaire des Équipes du Rosaire - Diocèse de Grand-Bassam",
-                   page_icon="📿", layout="wide")
+                   page_icon=_icone_page_doree(), layout="wide")
 
 # --- v7.9.12 — LA NOTE DOUCE DU VERSEMENT INCOMPLET ------------------------
 # (le drapeau _paquet_complet a été levé tout en haut, avant les imports ;
@@ -465,9 +490,12 @@ if 'logged_in' not in st.session_state:
                 'role': row[3], 'diocese_id': row[4], 'paroisse_id': row[5], 'equipe_id': row[6]
             })
             # On force le menu de navigation sur la PREMIÈRE rubrique du rôle
+            # v7.16.3 — le 💼 Trésorier arrive sur sa trésorerie (le GO du
+            # dossier c) : un seul rubrique, la caisse, rien d'autre.
             _entrees = {"diocese": ("nav_dio", "🏛️ Voir diocèse"),
                         "paroisse": ("nav_par", "🏘️ Ma paroisse"),
-                        "equipe": ("nav_eq", "👥 Mon équipe")}
+                        "equipe": ("nav_eq", "👥 Mon équipe"),
+                        "tresorier": ("nav_eq", "💼 Trésorerie")}
             if row[3] in _entrees:
                 _cle, _val = _entrees[row[3]]
                 st.session_state[_cle] = _val
@@ -534,6 +562,12 @@ elif st.session_state['role'] == 'paroisse':
     from views.view_paroisse import show_paroisse
     show_paroisse()
 elif st.session_state['role'] == 'equipe':
+    from views.view_equipe import show_equipe
+    show_equipe()
+elif st.session_state['role'] == 'tresorier':
+    # v7.16.3 — LE RÔLE 💼 TRÉSORIER (dossier c, à la manière de la cellule
+    # communication) : le même cœur que l'équipe, mais le menu ne montre
+    # QUE la trésorerie — la caisse sans le reste du Gestionnaire.
     from views.view_equipe import show_equipe
     show_equipe()
 elif st.session_state['role'] == 'communication':
