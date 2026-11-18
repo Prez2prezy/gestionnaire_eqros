@@ -7,7 +7,7 @@ import hashlib
 import secrets
 import logging
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 # Configuration du logging pour éviter d'utiliser st.error dans la base de données
 logging.basicConfig(level=logging.ERROR)
@@ -276,7 +276,7 @@ def init_tables_and_migrations():
     c.execute("""CREATE TABLE IF NOT EXISTS equipes (id INTEGER PRIMARY KEY, nom_equipe TEXT, responsable TEXT, bureau TEXT, paroisse_id INTEGER, max_membres INTEGER DEFAULT 10)""")
     c.execute("""CREATE TABLE IF NOT EXISTS membres (id INTEGER PRIMARY KEY, matloc TEXT UNIQUE, nom TEXT, prenom TEXT, date_naissance DATE, whatsapp TEXT, date_adhesion DATE, photo_path TEXT, paroisse_id INTEGER, equipe_id INTEGER, statut TEXT DEFAULT 'actif', numero_meditation TEXT, matricule TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS utilisateurs (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, role TEXT, diocese_id INTEGER, paroisse_id INTEGER, equipe_id INTEGER)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS abonnements (id INTEGER PRIMARY KEY, membre_id INTEGER, annee_debut INTEGER, date_paiement DATE, montant REAL DEFAULT 0, type_abonnement TEXT DEFAULT 'abonnement', statut TEXT DEFAULT 'non_paye')""")
+    c.execute("""CREATE TABLE IF NOT EXISTS abonnements (id INTEGER PRIMARY KEY, membre_id INTEGER, annee_debut INTEGER, date_paiement DATE, montant REAL DEFAULT 0, type_abonnement TEXT DEFAULT 'abonnement', statut TEXT DEFAULT 'non_paye', cree_le TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS archives (id INTEGER PRIMARY KEY, membre_id INTEGER, situation TEXT, date_debut DATE, date_fin DATE, commentaire TEXT, auteur_id INTEGER, auteur_nom TEXT, auteur_role TEXT, paroisse_id INTEGER, equipe_id INTEGER)""")
     c.execute("""CREATE TABLE IF NOT EXISTS evenements (id INTEGER PRIMARY KEY, equipe_id INTEGER, paroisse_id INTEGER, diocese_id INTEGER, type_evenement TEXT, date_evenement DATE, lieu TEXT, auteur_nom TEXT)""")
     c.execute("""CREATE TABLE IF NOT EXISTS evenement_equipes (id INTEGER PRIMARY KEY, evenement_id INTEGER, equipe_id INTEGER)""")
@@ -684,7 +684,12 @@ def init_tables_and_migrations():
         precision TEXT,
         regle_le TEXT,
         destination TEXT,
-        cree_le TEXT
+        cree_le TEXT,
+        type_expedition TEXT,
+        echeance TEXT,
+        declare_le TEXT,
+        declare_mode TEXT,
+        declare_dest TEXT
     )""")
 
     # v7.16.0 — LA PRÉCISION DE LA COTISATION : les quatre types du registre
@@ -727,6 +732,33 @@ def init_tables_and_migrations():
     # premier démarrage, comme les précédentes.
     safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN destination TEXT")
     safe_migrate("ALTER TABLE abonnements ADD COLUMN destination TEXT")
+
+    # v7.16.5 — LA NOTE DANS L'ÉTAT DU MEMBRE (la suite de la maison) :
+    # 1) `type_expedition` + `echeance` : les deux types d'expédition —
+    #    « obligatoire » (s'affiche jusqu'au règlement total, le mode des
+    #    lignes d'antan : NULL = obligatoire) et « à choix » (s'affiche
+    #    jusqu'à minuit après son échéance, puis disparaît seule de l'état
+    #    du membre et des attentes — elle reste au registre de la caisse) ;
+    # 2) `declare_le` / `declare_mode` / `declare_dest` : LA DÉCLARATION
+    #    DU MEMBRE — le bouton « Régler » de son état pose le jour, le mode
+    #    et le « Reçu par » que le membre déclare ; la trésorerie confirme
+    #    dans « 💰 Versement » (sa maison) au geste du règlement, qui
+    #    efface la déclaration — le registre ne dit réglé que par la
+    #    trésorerie, jamais par le membre seul.
+    # 3) `cree_le` sur abonnements : l'instant du règlement noté par la
+    #    caisse — la section « réglés des dernières 72 h » de l'état du
+    #    membre s'appuie dessus (les lignes d'antan retombent sur leur
+    #    date_paiement). Migration douce et ré-exécutable : des colonnes à
+    #    NULL, rien d'existant ne bouge. La base de production n'est JAMAIS
+    #    touchée par l'atelier : la migration vit dans le code, elle
+    #    s'exécute chez l'hébergeur au premier démarrage, comme les
+    #    précédentes.
+    safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN type_expedition TEXT")
+    safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN echeance TEXT")
+    safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN declare_le TEXT")
+    safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN declare_mode TEXT")
+    safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN declare_dest TEXT")
+    safe_migrate("ALTER TABLE abonnements ADD COLUMN cree_le TEXT")
 
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
     try:
@@ -4717,25 +4749,29 @@ def cotis_enregistrer_paiement(membre_id, annee_debut, montant,
                            WHERE membre_id=? AND annee_debut=?""",
                         (membre_id, annee_debut)).fetchone()
         _numero = (_ex[1] if _ex and _ex[1] else cotis_numero_recu_suivant(annee_debut))
+        _maintenant = datetime.now().isoformat(timespec="seconds")
         if _ex:
             c.execute("""UPDATE abonnements
                          SET date_paiement=?, montant=?, type_abonnement=?, statut='paye',
                              mode_paiement=?, numero_recu=?, origine=?,
-                             enregistre_par=?, reference_ext=?, note=?, destination=?
+                             enregistre_par=?, reference_ext=?, note=?, destination=?,
+                             cree_le=?
                          WHERE id=?""",
                       (date.today().isoformat(), montant, type_abonnement,
                        mode_paiement, _numero, origine, enregistre_par,
-                       reference_ext, note, _dest, _ex[0]))
+                       reference_ext, note, _dest, _maintenant, _ex[0]))
             _id = _ex[0]
         else:
             c.execute("""INSERT INTO abonnements
                          (membre_id, annee_debut, date_paiement, montant,
                           type_abonnement, statut, mode_paiement, numero_recu,
-                          origine, enregistre_par, reference_ext, note, destination)
-                         VALUES (?,?,?,?,?,'paye',?,?,?,?,?,?,?)""",
+                          origine, enregistre_par, reference_ext, note, destination,
+                          cree_le)
+                         VALUES (?,?,?,?,?,'paye',?,?,?,?,?,?,?,?)""",
                       (membre_id, annee_debut, date.today().isoformat(),
                        montant, type_abonnement, mode_paiement, _numero,
-                       origine, enregistre_par, reference_ext, note, _dest))
+                       origine, enregistre_par, reference_ext, note, _dest,
+                       _maintenant))
             _id = c.lastrowid
         commit_and_sync()
     return _id, _numero
@@ -4837,6 +4873,59 @@ COTIS_DESTINATIONS = (
 
 _COTIS_DEST_CODES = tuple(code for code, _lbl in COTIS_DESTINATIONS)
 
+# v7.16.5 — LES DEUX TYPES D'EXPÉDITION (la Note de la maison) :
+# « obligatoire » s'affiche dans « 💰 État de mes cotisations » jusqu'au
+# règlement total (c'est le mode des lignes d'antan : NULL = obligatoire,
+# et c'est le mode de la mensuelle comme de l'abonnement) ; « à choix »
+# s'affiche jusqu'à minuit APRÈS son échéance — le jour de l'échéance et
+# le lendemain entier — puis disparaît seule de l'état du membre et des
+# attentes de la caisse (elle reste au registre de la caisse, où la
+# trésorerie la relit si besoin).
+COTIS_DIV_TYPES_EXP = (
+    ("obligatoire", "⛓️ Obligatoire"),
+    ("choix", "🕊️ À choix"),
+)
+
+# La règle SQL jumelle : une « à choix » est VIVANTE tant qu'aujourd'hui
+# est dans son échéance ou son lendemain (date(echeance) >= date('now')
+# - 1 jour). Au-delà — « minuit après l'échéance » — elle n'est plus
+# attendue : ni dans l'état du membre, ni dans les attentes, ni dans le
+# « reste à régler » ; les lignes d'antan (NULL = obligatoire) vivent
+# toujours. La base n'est jamais écrite de ce chef.
+COTIS_DIV_CHOIX_VIVANT_SQL = (
+    "NOT (COALESCE(type_expedition,'obligatoire')='choix' "
+    "AND echeance IS NOT NULL AND date(echeance) < date('now', '-1 day'))"
+)
+
+
+def cotis_div_exp_label(code):
+    """v7.16.5 — Le libellé d'un type d'expédition (« ⛓️ Obligatoire »,
+    « 🕊️ À choix ») ; None si inconnu — NULL vaut obligatoire."""
+    _c = str(code or "obligatoire").strip().lower()
+    for _code, _lbl in COTIS_DIV_TYPES_EXP:
+        if _code == _c:
+            return _lbl
+    return None
+
+
+def cotis_div_echeance_vivante(echeance):
+    """v7.16.5 — Le jumeau Python de la règle SQL : True tant que
+    l'échéance d'une « à choix » n'est pas passée d'un jour et plus
+    (visible le jour de l'échéance et le lendemain, disparue après
+    « minuit après l'échéance »). None ou date illisible → vivante (les
+    lignes d'antan ne meurent pas d'un accident de date)."""
+    if echeance in (None, ""):
+        return True
+    try:
+        _e = echeance if hasattr(echeance, "year") else date.fromisoformat(
+            str(echeance)[:10])
+    except Exception:
+        return True
+    try:
+        return date.today() <= _e + timedelta(days=1)
+    except Exception:
+        return True
+
 COTIS_DIV_DEFAUTS = {
     "cotis_div_montant_mensuelle": 0,        # Mensuelle (FCFA) — 0 = libre
     "cotis_div_montant_speciale": 0,         # Spéciale (FCFA) — 0 = libre
@@ -4913,10 +5002,27 @@ def cotis_div_montant_suggere(type_cotisation):
         "cotis_div_montant_" + str(type_cotisation or "").strip().lower(), 0))
 
 
+def cotis_div_echeance_propre(echeance):
+    """v7.16.5 — L'ÉCHÉANCE PROPRE : une date ISO (le jour, tronqué à 10),
+    sinon None — une échéance illisible ne doit jamais dormir dans la base
+    (les « à choix » éteintes se reconnaissent à une date vraie)."""
+    _ech = echeance
+    if hasattr(_ech, "isoformat"):
+        _ech = _ech.isoformat()
+    _ech = (str(_ech)[:10] or None) if _ech else None
+    if _ech:
+        try:
+            date.fromisoformat(_ech)
+        except Exception:
+            return None
+    return _ech
+
+
 def cotis_div_enregistrer(membre_id, annee_debut, type_cotisation, montant,
                           date_versement=None, mode_paiement=None,
                           enregistre_par=None, origine="caisse_equipe",
-                          precision=None):
+                          precision=None, type_expedition="obligatoire",
+                          echeance=None):
     """UNE LIGNE DU REGISTRE : la responsable d'équipe note une cotisation
     (mensuelle, spéciale, évènementielle ou extraordinaire). INSERT pur —
     rien d'existant n'est modifié, ni ici ni ailleurs. La date est celle
@@ -4925,8 +5031,12 @@ def cotis_div_enregistrer(membre_id, annee_debut, type_cotisation, montant,
     catégories) — texte libre, nettoyé, 80 caractères au plus, vide → NULL.
     v7.16.1 — LE RÈGLEMENT : une ligne posée AVEC un mode de paiement est
     un versement constaté — elle naît réglée (`regle_le` posé à l'instant
-    du geste) ; sans mode, elle naît « ⏳ à régler » (une relance). Retourne
-    l'id de la ligne, None si le geste n'a pas pu être posé."""
+    du geste) ; sans mode, elle naît « ⏳ à régler » (une relance).
+    v7.16.5 — LE TYPE D'EXPÉDITION (la Note de la maison) : « obligatoire »
+    (le mode des lignes d'antan) ou « à choix » avec son `echeance` — la
+    ligne s'affiche dans l'état du membre jusqu'à minuit après son
+    échéance, puis disparaît seule. Retourne l'id de la ligne, None si le
+    geste n'a pas pu être posé."""
     _lbl = cotis_div_type_label(type_cotisation)
     if _lbl is None:
         logger.warning("cotis_div_enregistrer : type de cotisation inconnu")
@@ -4942,18 +5052,27 @@ def cotis_div_enregistrer(membre_id, annee_debut, type_cotisation, montant,
     _precision = str(precision or "").strip()[:80] or None
     _regle = (datetime.now().isoformat(timespec="seconds")
               if mode_paiement else None)   # v7.16.1 — avec un mode = réglée
+    # v7.16.5 — le type d'expédition et son échéance (la Note) : un code
+    # inconnu retombe sur « obligatoire », une échéance illisible sur NULL.
+    _texp = str(type_expedition or "obligatoire").strip().lower()
+    if cotis_div_exp_label(_texp) is None:
+        _texp = "obligatoire"
+    _texp = None if _texp == "obligatoire" else _texp   # NULL = obligatoire
+    _ech = cotis_div_echeance_propre(echeance)
     with _verrou_db:
         try:
             c.execute("""INSERT INTO cotisations_diverses
                          (membre_id, annee_debut, type_cotisation, montant,
                           date_versement, mode_paiement, enregistre_par,
-                          origine, precision, regle_le, cree_le)
-                         VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                          origine, precision, regle_le, cree_le,
+                          type_expedition, echeance)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (membre_id, int(annee_debut),
                        str(type_cotisation).strip().lower(), _montant, _d,
                        mode_paiement, enregistre_par, origine, _precision,
                        _regle,
-                       datetime.now().isoformat(timespec="seconds")))
+                       datetime.now().isoformat(timespec="seconds"),
+                       _texp, _ech))
             _id = c.lastrowid
             commit_and_sync()
             return _id
@@ -4965,7 +5084,8 @@ def cotis_div_enregistrer(membre_id, annee_debut, type_cotisation, montant,
 def cotis_div_envoyer_groupe(membres_ids, annee_debut, type_cotisation, montant,
                              date_versement=None,
                              enregistre_par=None, origine="caisse_equipe",
-                             precision=None):
+                             precision=None, type_expedition="obligatoire",
+                             echeance=None):
     """L'EXPÉDITION DU REGISTRE (v7.15.4) : la responsable d'équipe choisit
     la catégorie, le montant (celui qui est proposé) et la date, puis
     expédie à TOUTE l'équipe ou à CERTAINS membres seulement — et chaque
@@ -4978,9 +5098,19 @@ def cotis_div_envoyer_groupe(membres_ids, annee_debut, type_cotisation, montant,
     d'identifiants sont fondus (pas deux lignes pour le même membre d'un
     même geste). v7.16.0 — `precision` : le NOM de la cotisation donné par
     la responsable (texte libre, nettoyé, 80 caractères au plus), porté par
-    CHAQUE ligne expédiée. Un seul verrou, un seul commit : le geste est un
-    bloc — si une ligne ne passe pas, rien n'est posé. Retourne le nombre
-    de lignes posées (0 si le geste n'a pas pu être posé)."""
+    CHAQUE ligne expédiée.
+    v7.16.5 — LE TYPE D'EXPÉDITION ET LE PAS DE DOUBLON (la Note de la
+    maison) : `type_expedition` porte « obligatoire » ou « à choix » (avec
+    son `echeance` — la ligne quitte seule l'état du membre à minuit après)
+    ; et AVANT la pose, la caisse regarde si une LIGNE IDENTIQUE (même
+    catégorie, même montant, même date, même précision) existe déjà pour
+    l'un des membres choisis et n'est pas encore éteinte (pas réglée, pas
+    une « à choix » éteinte) : si oui, RIEN n'est posé — l'expédition ne
+    crée jamais de doublon — et la fonction répond -1 pour que l'écran le
+    dise. Un seul verrou, un seul commit : le geste est un bloc — si une
+    ligne ne passe pas, rien n'est posé. Retourne le nombre de lignes
+    posées, -1 si un doublon bloque la pose, 0 si le geste n'a pas pu être
+    posé."""
     _lbl = cotis_div_type_label(type_cotisation)
     if _lbl is None:
         logger.warning("cotis_div_envoyer_groupe : type de cotisation inconnu")
@@ -4994,6 +5124,12 @@ def cotis_div_envoyer_groupe(membres_ids, annee_debut, type_cotisation, montant,
         _d = _d.isoformat()
     _d = str(_d or date.today().isoformat())
     _precision = str(precision or "").strip()[:80] or None
+    # v7.16.5 — le type d'expédition et son échéance (la Note).
+    _texp = str(type_expedition or "obligatoire").strip().lower()
+    if cotis_div_exp_label(_texp) is None:
+        _texp = "obligatoire"
+    _texp = None if _texp == "obligatoire" else _texp   # NULL = obligatoire
+    _ech = cotis_div_echeance_propre(echeance)
     try:
         _ids = list(dict.fromkeys(int(_m) for _m in (membres_ids or [])
                                   if _m is not None and int(_m) > 0))
@@ -5004,17 +5140,42 @@ def cotis_div_envoyer_groupe(membres_ids, annee_debut, type_cotisation, montant,
         return 0
     with _verrou_db:
         try:
+            # v7.16.5 — LE PAS DE DOUBLON (la Note : « il ne peut pas avoir
+            # de doublon dans une expédition ») : une ligne identique déjà
+            # posée pour l'un des membres choisis — même catégorie, même
+            # montant, même date, même précision — et encore vivante (pas
+            # réglée, pas une « à choix » éteinte) bloque la pose ENTIÈRE :
+            # rien ne part, l'écran le dit. Une expédition éteinte (réglée
+            # ou « à choix » passée minuit après son échéance) ne bloque
+            # pas — la caisse peut la reposer neuve.
+            _q_doublon = f"""SELECT COUNT(*) FROM cotisations_diverses
+                             WHERE membre_id IN ({','.join('?' * len(_ids))})
+                                   AND annee_debut=? AND type_cotisation=?
+                                   AND montant=? AND date_versement IS ?
+                                   AND precision IS ?
+                                   AND regle_le IS NULL
+                                   AND {COTIS_DIV_CHOIX_VIVANT_SQL}"""
+            _doublon = c.execute(
+                _q_doublon,
+                list(_ids) + [int(annee_debut),
+                              str(type_cotisation).strip().lower(), _montant,
+                              _d, _precision]).fetchone()
+            if _doublon and int(_doublon[0] or 0) > 0:
+                logger.info("cotis_div_envoyer_groupe : doublon bloqué")
+                return -1
             c.executemany(
                 """INSERT INTO cotisations_diverses
                    (membre_id, annee_debut, type_cotisation, montant,
                     date_versement, mode_paiement, enregistre_par,
-                    origine, precision, regle_le, cree_le)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    origine, precision, regle_le, cree_le,
+                    type_expedition, echeance)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 [(_mid, int(annee_debut),
                   str(type_cotisation).strip().lower(), _montant, _d,
                   None, enregistre_par, origine, _precision,
                   None,
-                  datetime.now().isoformat(timespec="seconds"))
+                  datetime.now().isoformat(timespec="seconds"),
+                  _texp, _ech)
                  for _mid in _ids])
             commit_and_sync()
             return len(_ids)
@@ -5040,13 +5201,15 @@ def cotis_div_supprimer(ligne_id):
 
 def cotis_div_supprimer_groupe(equipe_id, annee_debut, type_cotisation,
                                montant, date_versement, precision=None,
-                               enregistre_par=None, cree_le=None):
+                               enregistre_par=None, cree_le=None,
+                               type_expedition=None, echeance=None):
     """v7.16.4 — RETIRER UNE EXPÉDITION ENTIÈRE (le mécanisme adéquat
     demandé) : la ligne qui a été posée pour TOUTE l'équipe en un seul
     geste quitte le registre de TOUS les membres concernés en un seul
     geste aussi — plus besoin de la retirer membre par membre. L'expédition
     est retrouvée au mot près : même catégorie, même montant, même date,
     même précision, même signature, même instant de pose (`cree_le`) —
+    v7.16.5 : même type d'expédition et même échéance (la Note) —
     les NULL se comparent avec IS (une précision absente en vaut une
     autre absente). Comptées AVANT le geste (le rowcount n'est pas lu —
     la leçon de la maison), puis retirées d'un seul DELETE borné aux
@@ -5061,16 +5224,22 @@ def cotis_div_supprimer_groupe(equipe_id, annee_debut, type_cotisation,
     if hasattr(_d, "isoformat"):
         _d = _d.isoformat()
     _d = str(_d) if _d else None
+    _texp = str(type_expedition or "").strip().lower() or None
+    if _texp == "obligatoire":
+        _texp = None   # NULL = obligatoire en base
+    _ech = cotis_div_echeance_propre(echeance)
     _where = """WHERE membre_id IN (SELECT id FROM membres
                                        WHERE equipe_id=? AND statut='actif')
                      AND annee_debut=? AND type_cotisation=? AND montant=?
                      AND date_versement IS ? AND precision IS ?
-                     AND enregistre_par IS ? AND cree_le IS ?"""
+                     AND enregistre_par IS ? AND cree_le IS ?
+                     AND type_expedition IS ? AND echeance IS ?"""
     _args = (int(equipe_id), int(annee_debut),
              str(type_cotisation).strip().lower(), _montant, _d,
              (str(precision) if precision else None),
              (str(enregistre_par) if enregistre_par else None),
-             (str(cree_le) if cree_le else None))
+             (str(cree_le) if cree_le else None),
+             _texp, _ech)
     with _verrou_db:
         try:
             _avant = c.execute(f"SELECT COUNT(*) FROM cotisations_diverses {_where}",
@@ -5111,8 +5280,14 @@ def cotis_div_regler(ligne_id, mode_paiement, regle_par=None, destination=None):
                             "WHERE id=?", (int(ligne_id),)).fetchone()
             if not _ex or _ex[0]:
                 return False   # ligne inconnue, ou déjà réglée : rien à noter
+            # v7.16.5 — LE RÈGLEMENT EFFACE LA DÉCLARATION : la trésorerie a
+            # confirmé de son propre geste (mode et « Reçu par » à elle) —
+            # ce que le membre avait déclaré a servi, il s'efface : le
+            # registre ne porte que la vérité de la trésorerie.
             c.execute("""UPDATE cotisations_diverses
-                         SET mode_paiement=?, regle_le=?, destination=?
+                         SET mode_paiement=?, regle_le=?, destination=?,
+                             declare_le=NULL, declare_mode=NULL,
+                             declare_dest=NULL
                          WHERE id=? AND regle_le IS NULL""",
                       (_mode, datetime.now().isoformat(timespec="seconds"),
                        _dest, int(ligne_id)))
@@ -5125,17 +5300,93 @@ def cotis_div_regler(ligne_id, mode_paiement, regle_par=None, destination=None):
             return False
 
 
+def cotis_div_declare(ligne_id, mode_paiement, destination=None):
+    """v7.16.5 — LE « RÉGLER » DU MEMBRE (la Note de la maison) : en bout
+    de chaque ligne due de « 💰 État de mes cotisations », le membre
+    déclare son versement — le mode (espèces, Wave…) et là où il l'a
+    reçu (l'équipe, la paroisse avec l'accord de son responsable, le
+    diocèse avec l'accord du responsable paroissial). La déclaration
+    n'écrit PAS le registre réglé : elle pose `declare_le` (l'instant du
+    geste), `declare_mode` et `declare_dest`, et la trésorerie la voit
+    aussitôt dans « 💰 Versement » pour la CONFIRMER à son propre geste
+    (cotis_div_regler) ou la refuser (cotis_div_declaration_annuler).
+    Une ligne déjà réglée ne se déclare pas ; une déclaration en place se
+    re-déclare (le membre corrige son mode). Retourne True si la
+    déclaration a été posée."""
+    _mode = str(mode_paiement or "").strip().lower()
+    if _mode not in ("especes", "wave", "orange_money", "mtn_momo", "autre"):
+        logger.warning(f"cotis_div_declare : mode de paiement inconnu {_mode!r}")
+        return False
+    _dest = str(destination or "").strip().lower()
+    if _dest and _dest not in _COTIS_DEST_CODES:
+        logger.warning(f"cotis_div_declare : destination inconnue {_dest!r}")
+        return False
+    _dest = (_dest or None)
+    with _verrou_db:
+        try:
+            _ex = c.execute("SELECT regle_le FROM cotisations_diverses "
+                            "WHERE id=?", (int(ligne_id),)).fetchone()
+            if not _ex or _ex[0]:
+                return False   # ligne inconnue ou déjà réglée : rien à déclarer
+            c.execute("""UPDATE cotisations_diverses
+                         SET declare_le=?, declare_mode=?, declare_dest=?
+                         WHERE id=? AND regle_le IS NULL""",
+                      (datetime.now().isoformat(timespec="seconds"), _mode,
+                       _dest, int(ligne_id)))
+            _apres = c.execute("SELECT declare_le FROM cotisations_diverses "
+                               "WHERE id=?", (int(ligne_id),)).fetchone()
+            commit_and_sync()
+            return bool(_apres and _apres[0])
+        except Exception as e:
+            logger.warning(f"cotis_div_declare : {e!r}")
+            return False
+
+
+def cotis_div_declaration_annuler(ligne_id):
+    """v7.16.5 — LA DÉCLARATION S'EFFACE : le membre retire sa déclaration
+    (✖ Retirer) ou la trésorerie la refuse (✖ Refuser dans « 💰 Versement »)
+    — les trois colonnes retournent à NULL et la ligne reprend son « ⏳ à
+    régler » paisible. Une ligne déjà RÉGLÉE ne bouge pas (sa déclaration
+    a déjà été effacée par le règlement). Retourne True si une déclaration
+    a été effacée."""
+    with _verrou_db:
+        try:
+            _ex = c.execute("SELECT regle_le, declare_le FROM cotisations_diverses "
+                            "WHERE id=?", (int(ligne_id),)).fetchone()
+            if not _ex or _ex[0] or not _ex[1]:
+                return False   # ligne inconnue, réglée, ou rien déclaré
+            c.execute("""UPDATE cotisations_diverses
+                         SET declare_le=NULL, declare_mode=NULL,
+                             declare_dest=NULL
+                         WHERE id=? AND regle_le IS NULL
+                               AND declare_le IS NOT NULL""",
+                      (int(ligne_id),))
+            _apres = c.execute("""SELECT declare_le FROM cotisations_diverses
+                                  WHERE id=?""",
+                               (int(ligne_id),)).fetchone()
+            commit_and_sync()
+            return bool(_apres and not _apres[0])
+        except Exception as e:
+            logger.warning(f"cotis_div_declaration_annuler : {e!r}")
+            return False
+
+
 def cotis_div_lignes(membre_id, annee_debut, type_cotisation=None):
     """LECTURE PURE — les lignes du registre d'un membre pour l'année
     pastorale (toutes, ou d'un seul type), du plus récent au plus ancien.
     (id, type_cotisation, montant, date_versement, mode_paiement,
-    enregistre_par, origine, precision, regle_le, destination) — v7.16.0 :
-    la précision (le nom libre de la cotisation) voyage avec chaque ligne,
-    None si absente. v7.16.1 : `regle_le` (None = ⏳ à régler) en 9ᵉ champ.
-    v7.16.4 : `destination` (None = les lignes d'antan) en 10ᵉ champ."""
+    enregistre_par, origine, precision, regle_le, destination,
+    type_expedition, echeance, declare_le, declare_mode, declare_dest)
+    — v7.16.0 : la précision (le nom libre de la cotisation) voyage avec
+    chaque ligne, None si absente. v7.16.1 : `regle_le` (None = ⏳ à
+    régler) en 9ᵉ champ. v7.16.4 : `destination` (None = les lignes
+    d'antan) en 10ᵉ champ. v7.16.5 : le type d'expédition (NULL =
+    obligatoire), l'échéance des « à choix », puis la déclaration du
+    membre (instant, mode, « Reçu par ») en 11ᵉ à 15ᵉ champs."""
     _sql = """SELECT id, type_cotisation, montant, date_versement,
                      mode_paiement, enregistre_par, origine, precision,
-                     regle_le, destination
+                     regle_le, destination, type_expedition, echeance,
+                     declare_le, declare_mode, declare_dest
               FROM cotisations_diverses
               WHERE membre_id=? AND annee_debut=?"""
     _args = [membre_id, annee_debut]
@@ -5268,7 +5519,7 @@ def cotis_div_total_du(membre_id, annee_debut):
         try:
             _r = c.execute("""SELECT numero_recu, montant, type_abonnement,
                                      date_paiement, mode_paiement, origine,
-                                     enregistre_par, destination
+                                     enregistre_par, destination, cree_le
                               FROM abonnements
                               WHERE membre_id=? AND annee_debut=?
                                     AND statut='paye'""",
@@ -5277,7 +5528,8 @@ def cotis_div_total_du(membre_id, annee_debut):
                 _res["abonnement_recu"] = {
                     "numero": _r[0], "montant": int(_r[1] or 0),
                     "type": _r[2] or _nat, "date": _r[3], "mode": _r[4],
-                    "origine": _r[5], "par": _r[6], "destination": _r[7]}
+                    "origine": _r[5], "par": _r[6], "destination": _r[7],
+                    "cree_le": _r[8]}
         except Exception as e:
             logger.warning(f"cotis_div_total_du (reçu) : {e!r}")
         if _res["abonnement_recu"]:
@@ -5294,12 +5546,16 @@ def cotis_div_total_du(membre_id, annee_debut):
         # v7.16.1 — LES AUTRES CATÉGORIES À RÉGLER : les lignes (spéciale,
         # évènementielle, extraordinaire) posées dans la fenêtre pastorale
         # et pas encore réglées (`regle_le` NULL). Lecture d'un seul SELECT.
+        # v7.16.5 — les « à choix » éteintes (minuit après leur échéance
+        # passé) ne doivent plus rien : elles quittent la dette comme elles
+        # quittent l'état du membre — seul, sans un geste.
         try:
-            _autres = c.execute("""SELECT COALESCE(SUM(montant), 0)
+            _autres = c.execute(f"""SELECT COALESCE(SUM(montant), 0)
                                    FROM cotisations_diverses
                                    WHERE membre_id=? AND annee_debut=?
                                          AND type_cotisation != 'mensuelle'
-                                         AND regle_le IS NULL""",
+                                         AND regle_le IS NULL
+                                         AND {COTIS_DIV_CHOIX_VIVANT_SQL}""",
                                 (membre_id, _annee)).fetchone()
             _res["autres"] = int(_autres[0] or 0) if _autres else 0
         except Exception as e:
