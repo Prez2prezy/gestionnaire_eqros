@@ -2668,6 +2668,96 @@ l'état puis rentre dans les archives.
   touchée.
 - `_VERSION_APPLI = "v7.16.5"`.
 
+### 69. v7.16.6 — Le décompte secret et les maisons de la trésorerie
+
+MOT DU USER : « Dossier b — Le décompteur ne doit pas être visible. Il
+travaille secrètement. Quand il arrive à 0 et seulement à ce moment là, la
+page tourne elle seule. Dossier c — ta Note est devenue geste. … Je fais le
+constat la paroisse et le diocèse n'ont pas de trésorerie sinon où
+sont-elles générer ? Un choix à valider : le « Régler » du membre pose une
+déclaration (mode + « Reçu par ») que la trésorerie confirme dans sa maison
+« 💰 Versement » — le registre ne dit réglé que par elle. Je pense que
+cette voie est due à l'absence du système de paiement en ligne et se
+rétablira dès que possible. Toutes les expéditions sorties d'une trésorerie
+sont dues à l'exception de celle à choix. À ce titre, elles subissent le
+même mode opératoire que les autres cotisations. Je m'étonnais de l'absence
+de « Régler » "Abonnement - Réabonnement". Rendre aussi la mensuelle et
+l'abonnement déclarables. »
+
+- **LE DÉCOMPTE SECRET (dossier b)** — dans `_dizaine_ecran_telephone` :
+  l'HORLOGE QUITTE L'ÉCRAN — plus de boîte dorée, plus de chiffre, plus de
+  barre (le nettoyage des fantômes part avec : aucune boîte n'est jamais
+  posée) ; le décompte des 20 secondes coule INVISIBLE — « il travaille
+  secrètement » — et ne parle qu'à zéro (`reste<=0 → b.click()`) : la page
+  tourne ELLE SEULE, et seulement à ce moment là. Le drapeau
+  `__diz_grain__` fait toujours taire le geste tant que les vingt secondes
+  coulent (la note passée reste vraie) ; si le décompte n'a jamais pu
+  démarrer, le drapeau retombe et le geste reste la sécurité. La prière
+  reste affichée, le bouton reste caché côté téléphone, le jeton de page
+  rend muet le vieux décompte, le livret du feuillet ne compte pas,
+  l'ordinateur garde son bouton.
+- **LE CHOIX VALIDÉ (dossier c) — LES MAISONS** : chaque déclaration du
+  membre va DANS SA MAISON, celle que porte son « Reçu par ». L'équipe
+  confirme les siennes dans « 💰 Versement » ; celles adressées à la
+  paroisse ou au diocèse se confirment dans leurs caisses — chez l'équipe,
+  elles campent pour information seule (« 🕊️ Déclarées à une autre maison
+  »), sans aucun geste : le registre ne dit réglé que par la maison qui
+  porte le versement. La voie reste prête pour le paiement en ligne à
+  venir : il posera le règlement à la place de la confirmation, les
+  colonnes de la déclaration sont déjà la vérité du terrain.
+- **LES CAISSES DE LA PAROISSE ET DU DIOCÈSE (le constat : « où sont-elles
+  générées ? »)** — « 💼 Caisse de la paroisse » : NOUVELLE rubrique du
+  compte paroisse (après « 📅 Abonnements ») avec « 💰 Versement — la
+  maison de la paroisse » (déclarations « ⛪ » confirmées ou refusées ici,
+  versements réglés ici des dernières 72 h) et « ✨ Cotisations diverses —
+  l'expédition de la paroisse » (le form complet : catégorie, montant,
+  date, précision, « ⛓️ Obligatoire / 🕊️ À choix » + échéance ; toutes ses
+  équipes ou certaines ; retrait d'une expédition entière borné à la
+  maison). La maison du diocèse s'installe en tête de sa rubrique « 📅
+  Abonnement - Réabonnement » : « 💰 Versement — la maison du diocèse »
+  (déclarations « 🏘️ » de toutes les paroisses) + « ✨ Cotisations diverses
+  — l'expédition du diocèse » (toutes les paroisses ou certaines) ; les
+  réglages, l'historique et les relances restent plus bas, comme avant.
+  LES GRANDES MAISONS : le pas de doublon et le retrait travaillent par
+  tranches de 400 identifiants — la limite de variables de SQLite ne
+  bloquera jamais l'expédition d'un diocèse entier.
+- **LA MENSUELLE ET L'ABONNEMENT DÉCLARABLES (la Note : les dues suivent
+  le même mode opératoire)** — dans « ⏳ À régler — ligne par ligne », la
+  « 🧮 Mensuelle » et la « 📅 Abonnement » portent leur « Régler » : le
+  panneau de la déclaration s'ouvre dans la page — les mois que tu règles
+  (tous proposés par défaut, montant = tarif × mois) pour la mensuelle ; le
+  montant attendu pour l'abonnement (« le reçu numéroté naîtra à la
+  confirmation de ta trésorerie, pas avant »). La déclaration pose son ambre
+  avec son « ✖ Retirer », comme les lignes ; LA TABLE DOUCE
+  `cotis_declarations` les porte (une en attente par membre/année/cible,
+  re-déclarer remplace, la confirmation ou le refus l'efface). LA
+  CONFIRMATION MENSUELLE pose des lignes réglées UNE PAR MOIS, datées dans
+  leur mois (le 1ᵉʳ du mois, le courant au jour même) — la grille vend les
+  mois, la dette baisse ; les mois déjà réglés ne se posent pas deux fois.
+  LA CONFIRMATION ABONNEMENT note le paiement par le chemin de la caisse —
+  le reçu reçoit son numéro COT-… à ce moment-là. Les « à choix » restent
+  telles que validées (elles s'éteignent seules à minuit après leur
+  échéance) et la relance n'entre jamais dans l'état.
+- **Banc d'épreuve** — `scripts/test_v7166.py` (59 vérifications : le
+  décompte secret au mot près, la table douce, les confirmations et leurs
+  garde-fous, le routage des maisons, les tranches de 400, les rubriques,
+  la compile ×12, la base repart à zéro) et `scripts/test_v7166_vue.py`
+  (AppTest, base NEUVE : AUCUNE horloge visible à l'écran du livre, les
+  « Régler » des cibles, la maison d'équipe qui confirme reçu numéroté et
+  mois vendus, la route vers la paroisse confirmée par la vraie maison
+  paroissiale, l'expédition paroissiale et son pas de doublon, la maison du
+  diocèse rendue sans exception). Épreuve du feu navigateur préparée
+  (`scripts/test_web_v7166.sh` + `prepare_banc_web_v7166.py`) mais bloquée
+  par l'atelier : les iframes des composants ne s'hydratent plus dans le
+  navigateur sans tête (le banc témoin v7.16.5, inchangé, montre le même
+  symptôme) — la preuve du vrai doigt sera portée par le téléphone de la
+  maison. Régressions repassées et actualisées : v7.14.3, v7.14.5, v7.15.0,
+  v7.15.1 (29 ✅), v7.15.2 (27 ✅), v7.15.3 (42 ✅) + vue, v7.15.4 (37 ✅) +
+  vue, v7.16.0 (52 ✅) + vue, v7.16.1 (39 ✅) + vue, v7.16.2 (21 ✅) + vue,
+  v7.16.3 (42 ✅) + vue, v7.16.4 (65 ✅) + vue, v7.16.5 (57 ✅) + vue. La
+  base de production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.16.6"`.
+
 ### 67. v7.16.4 — Le décompte des 20 secondes, la trésorerie en trois onglets, le « Reçu par » des versements
 
 MOT DU USER : « a. La clef dorée à l'onglet 🔑 — ✅ et le chapelet doré
