@@ -173,7 +173,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.16.6"
+_VERSION_APPLI = "v7.16.7"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -7397,7 +7397,7 @@ def _corps_espace_membre(matloc_membre=None):
             # n'est dû, la deuxième ligne porte le « ✅ À jour ».
             if _du_pop and int(_du_pop['total']) > 0:
                 _lbl_cotis = ("💰 État de mes cotisations\n"
-                              f"— Doit : {_du_txt} FCFA")
+                              f"— doit : {_du_txt} FCFA")
             else:
                 _lbl_cotis = "💰 État de mes cotisations\n✅ À jour"
             with st.popover(_lbl_cotis):
