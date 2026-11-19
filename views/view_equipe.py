@@ -1266,11 +1266,22 @@ def show_equipe():
     if st.session_state.get('role') == 'tresorier':
         _rubriques_eq = ["💼 Trésorerie"]
     else:
-        _rubriques_eq = ["👥 Mon équipe", "👤 Mes membres", "📅 Abonnement - Réabonnement", "📌 Suivi", "💬 WhatsApp", "📦 Archives"]
+        # v7.16.7 — LA MUE DU RÔLE (le mot de la maison) : « le rôle
+        # "Abonnement - Réabonnement" au niveau des entités se mue
+        # "Ressources". Le responsable pourra y faire ses contrôles et
+        # autres tâches qui lui sont dévolues concernant les finances. »
+        # La maison des finances de l'équipe garde tout son contenu — le
+        # 💼 Trésorier, lui, garde SA maison (« 💼 Trésorerie »).
+        _rubriques_eq = ["👥 Mon équipe", "👤 Mes membres", "💼 Ressources", "📌 Suivi", "💬 WhatsApp", "📦 Archives"]
+    # v7.16.7 — la mémoire des sessions suit : l'ancien nom porte le nouveau.
+    if st.session_state.get("nav_eq") == "📅 Abonnement - Réabonnement":
+        st.session_state["nav_eq"] = "💼 Ressources"
     if "nav_eq" in st.session_state and st.session_state["nav_eq"] not in _rubriques_eq:
         del st.session_state["nav_eq"]
     if "nav_eq" not in st.session_state:
         _rub = lire_menu_session()
+        if _rub == "📅 Abonnement - Réabonnement":
+            _rub = "💼 Ressources"   # v7.16.7 — l'ancien nom porte le nouveau
         if _rub and _rub in _rubriques_eq:
             st.session_state["nav_eq"] = _rub
             st.session_state["_menu_sync"] = _rub
@@ -1523,12 +1534,15 @@ def show_equipe():
                 st.download_button("📥 Exporter les membres (Excel)", data=output, file_name=f"membres_{nom_equipe}_{paroisse_nom}_{date.today()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"export_membres_eq_{eid}_{date.today()}")
             except Exception as e: st.error(f"Erreur export: {e}")
 
-    elif menu in ("📅 Abonnement - Réabonnement", "💼 Trésorerie"):
+    elif menu in ("💼 Ressources", "💼 Trésorerie"):
         # v7.16.3 — la même caisse reçoit le 💼 Trésorier (le GO du dossier c) :
         # son menu s'appelle « 💼 Trésorerie », le contenu est celui de la
         # caisse de l'équipe, à l'identique — versements, reçus, registre.
+        # v7.16.7 — le responsable arrive par SA rubrique, mue « 💼
+        # Ressources » : la maison où il fait ses contrôles et les tâches
+        # qui lui sont dévolues concernant les finances.
         _titre_caisse = ("💼 Trésorerie" if st.session_state.get('role') == 'tresorier'
-                         else "💼 Abonnement - Réabonnement")
+                         else "💼 Ressources")
         st.markdown(f'<h2 style="color:#1A237E;">{_titre_caisse} — {nom_equipe}</h2>', unsafe_allow_html=True)
         st.caption("💼 Caisse de l\u2019équipe — note les paiements reçus en main propre "
                    "et édite les reçus numérotés.")
@@ -2358,7 +2372,7 @@ def _section_versements_equipe(eid, annee):
 
 def _section_registre_equipe(eid, annee, membres_eq):
     """v7.16.0 — LE REGISTRE DES COTISATIONS (section de la caisse
-    « 📅 Abonnement - Réabonnement ») : les cotisations MENSUELLE,
+    « 💼 Ressources ») : les cotisations MENSUELLE,
     SPÉCIALE, ÉVÈNEMENTIELLE et EXTRAORDINAIRE — quatre CATÉGORIES que la
     responsable peut nommer d'une précision libre (« Cotisation des
     fêtes… ») — expédiées par la responsable d'équipe en UN SEUL GESTE,
