@@ -17,7 +17,9 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       intentions_du_jour_attente, intentions_du_jour_compte,
                       envoyer_intention_du_jour_en_reserve, ecarter_intention_du_jour,
                       # v7.14.4 — la relance (lecture seule, rien n'écrit)
-                      cotis_parametres_lire, cotis_relances_lignes)
+                      cotis_parametres_lire, cotis_relances_lignes,
+                      # v7.16.7 — le suivi de près de la caisse (lecture pure)
+                      cotis_div_declarations_maison, cotis_declarations_attente)
 from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, supprimer_photo,
                       archiver_membre, safe_date, afficher_situation, sans_accents, 
                       enregistrer_abonnement, verifier_abonnement, periode_affichage, 
@@ -28,10 +30,7 @@ from components import ligne_intercession
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, afficher_historique_suivi, 
                         afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales,
                         # v7.14.4 — le message de relance prêt à copier
-                        cotis_reglages_aff, cotis_relance_message_collectif,
-                        # v7.16.6 — LES MAISONS DE LA TRÉSORERIE : la caisse
-                        # de la paroisse (versement + expéditions)
-                        maison_versement, formulaire_expedition_zone)
+                        cotis_reglages_aff, cotis_relance_message_collectif)
 
 def _zone_du_jour_paroisse(pid, equipes):
     """🕯️ ZONE DU JOUR — LE SAS DES INTENTIONS (v7.9.10, déménagée du
@@ -548,11 +547,25 @@ def show_paroisse():
     nom_p = p_info[0]
     
     _rubriques_par = ["🏘️ Ma paroisse", "👥 Mes équipes", "👤 Membres", "📊 Statistiques",
-                      "📅 Abonnements", "💼 Caisse de la paroisse", "📌 Suivi", "💬 WhatsApp", "📥 Export Excel", "📦 Archives"]
+                      "💼 Ressources", "📌 Suivi", "💬 WhatsApp", "📥 Export Excel", "📦 Archives"]
+    # v7.16.7 — LES CAISSES HORS DES ENTITÉS + RESSOURCES : la rubrique
+    # « 💼 Caisse de la paroisse » QUITTE le menu (les trésoreries
+    # existent en-dehors des entités, à la manière de la cellule de
+    # communication) ; « 📅 Abonnements » se mue « 💼 Ressources » — la
+    # maison où le responsable fait ses contrôles et les tâches qui lui
+    # sont dévolues concernant les finances. La mémoire des sessions
+    # suit : l'ancien nom porte le nouveau, l'ancienne caisse ramène à
+    # l'accueil de la paroisse.
+    _nouveaux_noms_par = {"📅 Abonnements": "💼 Ressources",
+                          "💼 Caisse de la paroisse": "🏘️ Ma paroisse"}
+    if st.session_state.get("nav_par") in _nouveaux_noms_par:
+        st.session_state["nav_par"] = _nouveaux_noms_par[st.session_state["nav_par"]]
     if "nav_par" in st.session_state and st.session_state["nav_par"] not in _rubriques_par:
         del st.session_state["nav_par"]
     if "nav_par" not in st.session_state:
         _rub = lire_menu_session()
+        if _rub in _nouveaux_noms_par:
+            _rub = _nouveaux_noms_par[_rub]
         if _rub and _rub in _rubriques_par:
             st.session_state["nav_par"] = _rub
             st.session_state["_menu_sync"] = _rub
@@ -581,6 +594,114 @@ def show_paroisse():
                 c.execute("UPDATE paroisses SET responsable=?, bureau=?, whatsapp_responsable=? WHERE id=?",
                           (nr, nb, nwa.strip() or None, pid))
                 commit_and_sync(); st.success("Mis à jour !"); st.rerun()
+
+        # v7.16.7 — LA CAISSE HORS DES ENTITÉS (le mot de la maison :
+        # « pas en nouvelle rubrique ou en nouvelle section — les
+        # trésoreries doivent exister en-dehors des entités comme la
+        # cellule de communication pour le diocèse »). La trésorerie de
+        # la paroisse tient SA maison avec son propre compte — la caisse,
+        # rien d'autre. Le trésorier gère ; le responsable suit de près
+        # (les lignes ci-dessous ne font que RELIRE la base) et accorde
+        # l'autorisation : le compte se désigne, se renouvelle et se
+        # retire ici.
+        _tres_ca = c.execute("SELECT id, username FROM utilisateurs "
+                             "WHERE paroisse_id=? AND role='tresorier_paroisse'",
+                             (pid,)).fetchone()
+        _annee_caisse = get_periode_pastorale()[0]
+        with st.expander("💼 Caisse de la paroisse (hors des rubriques)"):
+            if _tres_ca:
+                st.info(f"💼 Caisse tenue par **{_tres_ca[1]}** — la maison s'ouvre avec son propre "
+                        "accès (la caisse, rien d'autre) ; le registre ne dit réglé que par elle.")
+            else:
+                st.info("La caisse de la paroisse vit hors des rubriques, à la manière du compte "
+                        "de la cellule communication : le trésorier la tient avec son propre accès — "
+                        "la caisse, rien d'autre. La demande d'autorisation se fait ici.")
+            # LE SUIVI DE PRÈS (lecture pure — la base n'est jamais écrite ici)
+            _att_lignes = cotis_div_declarations_maison("paroisse", paroisse_id=pid,
+                                                        annee_debut=_annee_caisse)
+            _att_cibles = cotis_declarations_attente(dest="paroisse", paroisse_id=pid,
+                                                     annee_debut=_annee_caisse)
+            _n_att = len(_att_lignes) + len(_att_cibles)
+            _n_recus = c.execute("""SELECT
+                    (SELECT COUNT(*) FROM cotisations_diverses d
+                     JOIN membres m ON d.membre_id=m.id
+                     WHERE m.statut='actif' AND d.destination='paroisse'
+                           AND d.regle_le >= datetime('now','-3 days')
+                           AND m.paroisse_id=?)
+                  + (SELECT COUNT(*) FROM abonnements a
+                     JOIN membres m ON a.membre_id=m.id
+                     WHERE m.statut='actif' AND a.destination='paroisse'
+                           AND a.statut='paye'
+                           AND COALESCE(a.cree_le, a.date_paiement) >= date('now','-3 days')
+                           AND m.paroisse_id=?)""",
+                (pid, pid)).fetchone()[0]
+            st.caption(f"👀 Suivi de près — ⏳ {_n_att} déclaration(s) attendent sa "
+                       f"confirmation · ✅ {_n_recus} versement(s) réglé(s) ici "
+                       "ces dernières 72 heures.")
+            if _tres_ca:
+                if st.session_state.get(f'pwd_tresca_{pid}'):
+                    st.markdown(f"<div style='background:#e8f5e9;padding:15px;border-radius:10px;border:1px solid #c8e6c9;'>🔑 Nouveau mot de passe du trésorier : <code style='color:#d84315;font-size:1.2rem;'>{st.session_state[f'pwd_tresca_{pid}']}</code></div>", unsafe_allow_html=True)
+                    if st.button("OK, j'ai noté le mot de passe", key=f"ok_pwd_tresca_{pid}"):
+                        del st.session_state[f'pwd_tresca_{pid}']; st.rerun()
+                if st.button("🔄 Réinitialiser le mot de passe du trésorier", key=f"reset_tresca_{pid}"):
+                    _np_ca = generer_mot_de_passe()
+                    c.execute("UPDATE utilisateurs SET password=? WHERE id=?", (hash_password(_np_ca), _tres_ca[0]))
+                    commit_and_sync()
+                    st.session_state[f'pwd_tresca_{pid}'] = _np_ca
+                    st.rerun()
+                if st.session_state.get(f'confirm_tresca_{pid}'):
+                    st.caption("⚠️ Le titulaire de cet accès perdra l'entrée à la caisse. "
+                               "L'autorisation se redonne en un geste, si tu le souhaites.")
+                    _ct1ca, _ct2ca = st.columns(2)
+                    if _ct1ca.button("🗑️ Oui, retirer l'accès", key=f"del_tresca_go_{pid}", type="primary"):
+                        c.execute("DELETE FROM utilisateurs WHERE id=?", (_tres_ca[0],))
+                        commit_and_sync()
+                        st.session_state[f'confirm_tresca_{pid}'] = False
+                        st.success(f"Accès caisse retiré ({_tres_ca[1]}).")
+                        st.rerun()
+                    if _ct2ca.button("✖ Ne rien retirer", key=f"del_tresca_no_{pid}"):
+                        st.session_state[f'confirm_tresca_{pid}'] = False
+                        st.rerun()
+                elif st.button("🗑️ Retirer l'accès à la caisse", key=f"del_tresca_{pid}"):
+                    st.session_state[f'confirm_tresca_{pid}'] = True
+                    st.rerun()
+            elif st.session_state.get(f'form_tresca_{pid}'):
+                _user_par_ca = c.execute("SELECT username FROM utilisateurs WHERE paroisse_id=? AND role='paroisse'",
+                                         (pid,)).fetchone()
+                # (le form porte un ID différent de son drapeau — l'état de
+                # session et les clefs de widgets ne partagent pas leur nom)
+                with st.form(f"form_tresorier_ca_{pid}"):
+                    _nom_ca = st.text_input("Identifiant du trésorier",
+                                            value=f"{(_user_par_ca[0] if _user_par_ca else 'paroisse')}-tres",
+                                            key=f"tresca_user_{pid}")
+                    _mdp_ca = st.text_input("Mot de passe (laisser vide → généré automatiquement)",
+                                            type="password", key=f"tresca_pwd_{pid}")
+                    _fc1, _fc2 = st.columns(2)
+                    if _fc1.form_submit_button("💼 Donner l'accès à la caisse", use_container_width=True,
+                                               key=f"tresca_go_{pid}"):
+                        _ident_ca = (_nom_ca or "").strip()
+                        if not _ident_ca:
+                            st.error("❌ L'identifiant du trésorier est obligatoire.")
+                        elif c.execute("SELECT id FROM utilisateurs WHERE username=?", (_ident_ca,)).fetchone():
+                            st.error("❌ Cet identifiant existe déjà.")
+                        else:
+                            _mdp_final_ca = (_mdp_ca or "").strip() or generer_mot_de_passe()
+                            c.execute("INSERT INTO utilisateurs (username, password, role, paroisse_id) VALUES (?,?,?,?)",
+                                      (_ident_ca, hash_password(_mdp_final_ca), "tresorier_paroisse", pid))
+                            commit_and_sync()
+                            st.session_state[f'pwd_tresca_{pid}'] = _mdp_final_ca
+                            st.session_state[f'form_tresca_{pid}'] = False
+                            st.rerun()
+                    if _fc2.form_submit_button("✖ Renoncer", use_container_width=True,
+                                               key=f"tresca_no_{pid}"):
+                        st.session_state[f'form_tresca_{pid}'] = False
+                        st.rerun()
+            else:
+                if st.button("💼 Donner l'accès à la caisse", key=f"add_tresca_{pid}",
+                             help="Ouvre la maison de la trésorerie de la paroisse : la caisse seule, "
+                                  "hors des rubriques — à la manière du compte de la cellule communication."):
+                    st.session_state[f'form_tresca_{pid}'] = True
+                    st.rerun()
 
         # NOUVEAU : Zone de réinitialisation de la paroisse
         with st.expander("⚠️ ZONE DANGEREUSE : Réinitialisation de la paroisse"):
@@ -865,8 +986,15 @@ def show_paroisse():
         with _t_bord:
             _tableau_de_bord_paroisse(pid, nom_p)
 
-    elif menu == "📅 Abonnements":
-        st.markdown(f'<h2 style="color:#1A237E;">💰 État des abonnements - {nom_p}</h2>', unsafe_allow_html=True)
+    elif menu == "💼 Ressources":
+        # v7.16.7 — LA MUE DU RÔLE (le mot de la maison) : « le rôle
+        # "Abonnement - Réabonnement" au niveau des entités se mue
+        # "Ressources". Le responsable pourra y faire ses contrôles et
+        # autres tâches qui lui sont dévolues concernant les finances. »
+        # La maison du responsable paroissial : l'état des abonnements,
+        # le recouvrement équipe par équipe, les relances prêtes à copier
+        # — les contrôles, sans jamais écrire à la place des caisses.
+        st.markdown(f'<h2 style="color:#1A237E;">💼 Ressources - {nom_p}</h2>', unsafe_allow_html=True)
         
         annee_pastorale_en_cours = get_periode_pastorale()[0]
         annee = st.number_input("Année de début de période", min_value=2020, max_value=annee_pastorale_en_cours, value=annee_pastorale_en_cours, step=1)
@@ -927,26 +1055,6 @@ def show_paroisse():
                                 _rel_eq, cotis_reglages_aff(cotis_parametres_lire()),
                                 responsable_nom=str(eq[2] or "").strip()),
                                 language=None)
-
-    elif menu == "💼 Caisse de la paroisse":
-        # v7.16.6 — LA TRÉSORERIE DE LA PAROISSE (dossier c — le constat de
-        # la maison : « la paroisse et le diocèse n'ont pas de trésorerie —
-        # sinon où sont-elles générées ? »). Deux maisons vivent ici :
-        # « 💰 Versement », où les déclarations adressées à « ⛪ Trésorerie
-        # de la paroisse » se confirment (le registre ne dit réglé que par
-        # elle) ; et « ✨ Cotisations diverses », où la paroisse expédie
-        # ses propres cotisations — dues comme les autres, « à ce titre,
-        # elles subissent le même mode opératoire ». La base n'est écrite
-        # que par les gestes de confirmation et d'expédition d'ici.
-        annee_caisse = get_periode_pastorale()[0]
-        maison_versement(dest_code="paroisse",
-                         titre="💰 Versement — la maison de la paroisse",
-                         annee=annee_caisse, paroisse_id=pid,
-                         key_prefix="mvpar")
-        st.markdown("---")
-        formulaire_expedition_zone(zone="paroisse", annee=annee_caisse,
-                                   key_prefix="exppar", paroisse_id=pid,
-                                   origine="caisse_paroisse")
 
     elif menu == "📌 Suivi":
         st.markdown(f'<h2 style="color:#1A237E;">📌 Suivi et Agenda - {nom_p}</h2>', unsafe_allow_html=True)
