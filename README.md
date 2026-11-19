@@ -2758,6 +2758,111 @@ l'abonnement déclarables. »
   base de production n'est jamais touchée.
 - `_VERSION_APPLI = "v7.16.6"`.
 
+### 70. v7.16.7 — Les caisses hors des entités, le trésorier gère, le responsable suit et accorde — et le rôle se mue « 💼 Ressources »
+
+MOT DU USER : « Encore 🙏 pour les efforts consentis ! Observations &
+Suggestions. Dossier b — le décompte secret ✅ et clos. Dossier c — les
+maisons de la trésorerie : Ton choix est validé et va plus loin : chaque
+déclaration se confirme dans sa maison — celle que porte son « Reçu par ».
+Chez l'équipe, une déclaration « paroisse » ou « diocèse » campe pour
+information seule, sans aucun geste. Le jour du paiement en ligne, il
+posera le règlement à la place de la confirmation, sans rien casser. La
+paroisse et le diocèse ont leur caisse : ---> Pas en nouvelle rubrique ou
+en nouvelle section. Les trésoreries doivent exister en-dehors des entités
+comme la cellule de communication pour le diocèse. Le trésorier gère et le
+responsable suit de près, accorde les autorisations quand il le faut. La
+mensuelle et l'abonnement sont déclarables ✅. Je préconise que le rôle
+"Abonnement - Réabonnement" au niveau des entités se mue "Ressources". Le
+responsable pourra y faire ses contrôles et autres tâches qui lui sont
+dévolues concernant les finances. Fais-moi des propositions, je semble
+être à court d'idées. »
+
+- **LES CAISSES QUITTENT LES ENTITÉS (le mot de la maison : « pas en
+  nouvelle rubrique ou en nouvelle section — les trésoreries doivent
+  exister en-dehors des entités comme la cellule de communication pour le
+  diocèse »)** — NOUVEAU `views/view_caisse.py` : UNE vue, DEUX maisons
+  (`show_caisse("paroisse")` / `show_caisse("diocese")`), routées dans
+  `app.py` par deux rôles neufs à la manière du compte communication —
+  `tresorier_paroisse` (porteur de `paroisse_id`) et `tresorier_diocese`
+  (porteur de `diocese_id`). La porte ne s'ouvre qu'au rôle de CETTE
+  maison et à sa clé portée ; chaque maison tient SES deux pièces aux
+  clefs d'état inchangées depuis la v7.16.6 — « 💰 Versement »
+  (`mvpar`/`mvdio` : les déclarations adressées à « ⛪ Trésorerie de la
+  paroisse » / « 🏘️ Trésorerie du diocèse » se confirment ici — le
+  registre ne dit réglé que par elle — avec formulaire prérempli, refus
+  en deux temps, « ✅ Reçus ici — les dernières 72 heures ») et « ✨
+  Cotisations diverses » (`exppar`/`expdio` : l'expédition de la maison,
+  toutes les équipes de la paroisse / toutes les paroisses du diocèse ou
+  certaines, « ⛓️ Obligatoire / 🕊️ À choix » avec son échéance, pas de
+  doublon, retrait entier par tranches de 400). Le sélecteur d'année
+  pastorale de la caisse d'équipe s'y est invité ; la rubrique unique
+  (« 💼 Caisse de la paroisse » / « 💼 Caisse du diocèse ») suit le
+  modèle du 💼 Trésorier d'équipe — la caisse, rien d'autre ; la
+  connexion pose le trésorier DANS sa maison et le jeton le y retrouve
+  au F5 (`nav_cais`). Chez l'équipe, la déclaration « paroisse » ou «
+  diocèse » campe pour information seule — confirmée ICI, dans sa maison
+  à elle. Le jour du paiement en ligne, il posera le règlement à la
+  place de la confirmation, sans rien casser.
+- **LES VUES DES ENTITÉS SE VIDENT** — la vue paroisse perd la rubrique
+  « 💼 Caisse de la paroisse » (les neuf rubriques d'antan reviennent) ;
+  la vue diocèse perd les deux maisons de sa caisse ; LES RÉGLAGES,
+  L'HISTORIQUE DES REÇUS ET LES RELANCES Y RESTENT — le responsable suit
+  de près par là, en lecture pure. Les maisons ne s'écrivent plus nulle
+  part dans les entités.
+- **L'AUTORISATION SE DONNE CHEZ LE RESPONSABLE** — chez la paroisse :
+  la carte « 💼 Caisse de la paroisse (hors des rubriques) » dans « 🏘️
+  Ma paroisse » (l'accès se donne — identifiant prérempli, mot de passe
+  généré ou choisi, montré une fois —, se renouvelle
+  (réinitialisation), se retire (avec confirmation) ; le suivi de près
+  se lit en tête de carte : « 👀 ⏳ N déclaration(s) attendent sa
+  confirmation · ✅ N versement(s) réglé(s) ici ces dernières 72 heures
+  »). Au diocèse : la section « 💼 Caisse du diocèse » dans « 🔐 Gérer
+  les accès », le même motif que « 📡 Service Communication » (créer le
+  compte, réinitialiser son mot de passe, retirer l'accès, suivi de
+  près) ; la rubrique « 💼 Ressources (Diocèse) » annonce qui tient la
+  caisse. La base n'est écrite que par ces gestes d'autorisation et par
+  le trésorier dans sa maison.
+- **LA MUE DU RÔLE : « 💼 RESSOURCES »** — « le rôle "Abonnement -
+  Réabonnement" au niveau des entités se mue "Ressources". Le
+  responsable pourra y faire ses contrôles et autres tâches qui lui sont
+  dévolues concernant les finances » : équipe (« 💼 Ressources — {nom de
+  l'équipe} », la même caisse à trois onglets — le 💼 Trésorier garde SA
+  maison « 💼 Trésorerie »), paroisse (« 💼 Ressources — {nom de la
+  paroisse} » : l'état des abonnements, le recouvrement équipe par
+  équipe, les relances prêtes à copier) et diocèse (« 💼 Ressources
+  (Diocèse) » : les réglages, les totaux, l'historique des reçus, le
+  livre des relances). La mémoire des sessions suit : « 📅 Abonnements »
+  et « 📅 Abonnement - Réabonnement » portent « 💼 Ressources », « 💼
+  Caisse de la paroisse » ramène paisiblement à « 🏘️ Ma paroisse ».
+- **LES PROPOSITIONS DES « 💼 RESSOURCES » (à valider, prêtes à poser)**
+  — la maison des contrôles peut encore accueillir : ① l'export
+  financier d'un seul geste (reçus + registre + relances en un classeur
+  Excel daté) ; ② le rapprochement déclaré/réglé (ce que les membres ont
+  DÉCLARÉ à côté de ce que la maison a CONFIRMÉ — les écarts se voient,
+  rien ne s'écrit) ; ③ la fiche de synthèse imprimable de l'année
+  (totaux par maison, par catégorie, par mois) ; ④ la mémoire des
+  échéances (le rappel doux des années passées pour préparer le
+  réabonnement) ; ⑤ l'accueil du paiement en ligne (la maison pose déjà
+  les colonnes).
+- **Banc d'épreuve** — `scripts/test_v7167.py` (44 vérifications : les
+  maisons hors des entités, la porte et sa clé, les clefs d'état
+  conservées, les vues vidées qui gardent leurs contrôles, les cartes
+  d'autorisation et le suivi de près, le routage des maisons, la mue
+  « Ressources » aux trois niveaux, la compile ×13, la base repart à
+  zéro) et `scripts/test_v7167_vue.py` (AppTest, base NEUVE :
+  l'autorisation au vrai geste — le compte naît porteur de SA paroisse —,
+  la porte qui tient les rôles et la clé, la maison du diocèse créée
+  depuis « 🔐 Gérer les accès », « 💼 Ressources » rendu aux trois
+  niveaux, la mémoire d'antan qui porte le nouveau nom, le 💼 Trésorier
+  qui garde SA maison). Régressions repassées et actualisées :
+  v7.14.3, v7.14.5, v7.15.0, v7.15.1, v7.15.2 (27 ✅), v7.15.3 + vue,
+  v7.15.4 + vue, v7.16.0 + vue, v7.16.1 + vue, v7.16.2 + vue, v7.16.3 +
+  vue, v7.16.4 + vue, v7.16.5 + vue, v7.16.6 (59 ✅) + vue (réécrite :
+  les maisons au vrai écran, hors des entités) — les bancs retirés
+  v7.14.4 / v7.14.5-vue (gelés à leur version d'antan) restent hors
+  chaîne. La base de production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.16.7"`.
+
 ### 67. v7.16.4 — Le décompte des 20 secondes, la trésorerie en trois onglets, le « Reçu par » des versements
 
 MOT DU USER : « a. La clef dorée à l'onglet 🔑 — ✅ et le chapelet doré
