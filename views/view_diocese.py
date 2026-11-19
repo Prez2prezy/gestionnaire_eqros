@@ -34,7 +34,9 @@ from database import (c, commit_and_sync, safe_migrate,
                       # v7.14.4 — le livre des relances (lecture seule)
                       cotis_relances_lignes,
                       # v7.15.3 — le registre des cotisations (montants du diocèse)
-                      cotis_div_parametres_lire, cotis_div_parametres_ecrire)
+                      cotis_div_parametres_lire, cotis_div_parametres_ecrire,
+                      # v7.16.7 — le suivi de près de la caisse (lecture pure)
+                      cotis_div_declarations_maison, cotis_declarations_attente)
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation,
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale,
                       supprimer_photo, afficher_messages_flash, lien_whatsapp, URL_ESPACE_SPIRITUEL,
@@ -46,10 +48,7 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
                         afficher_etat_presences_paroisse, _qrcode_png_bytes,
                         afficher_reponses_questionnaire_feuillet,
                         recu_pdf_de_numero,  # v7.14.0 — reçus numérotés
-                        cotis_relance_ligne_urgence,  # v7.14.4 — relance
-                        # v7.16.6 — LES MAISONS DE LA TRÉSORERIE : la caisse
-                        # du diocèse (versement + expéditions)
-                        maison_versement, formulaire_expedition_zone)
+                        cotis_relance_ligne_urgence)  # v7.14.4 — relance
 
 
 def _gestionnaire_archives_espace(texte_intro, types_contenus, prefixe):
@@ -512,16 +511,26 @@ def show_diocese():
 
     _rubriques_dio = [
         "🏛️ Voir diocèse", "🏘️ Créer paroisses", "📋 Gérer paroisses",
-        "📅 Abonnement - Réabonnement", "📌 Suivi", "🕊️ Espace spirituel", "💬 WhatsApp",
+        "💼 Ressources", "📌 Suivi", "🕊️ Espace spirituel", "💬 WhatsApp",
         "🔍 Rechercher matricule", "🔐 Gérer les accès", "📊 Statistiques", "📥 Export Excel",
         "📦 Archives", "🗑️ Réinitialiser"
     ]
-    # Session neuve (F5) : restituer la rubrique mémorisée AVANT de dessiner
-    # le menu — sinon il retombe sur la 1ʳᵉ entrée et efface la mémoire.
+    # v7.16.7 — LES CAISSES HORS DES ENTITÉS + RESSOURCES : les maisons
+    # « 💰 Versement » et « ✨ Cotisations diverses » QUITTENT cette vue
+    # (les trésoreries existent en-dehors des entités, à la manière de
+    # la cellule de communication) ; « 📅 Abonnement - Réabonnement » se
+    # mue « 💼 Ressources » — la maison des contrôles du responsable
+    # diocésain. La mémoire des sessions suit : l'ancien nom porte le
+    # nouveau.
+    _nouveaux_noms_dio = {"📅 Abonnement - Réabonnement": "💼 Ressources"}
+    if st.session_state.get("nav_dio") in _nouveaux_noms_dio:
+        st.session_state["nav_dio"] = _nouveaux_noms_dio[st.session_state["nav_dio"]]
     if "nav_dio" in st.session_state and st.session_state["nav_dio"] not in _rubriques_dio:
         del st.session_state["nav_dio"]
     if "nav_dio" not in st.session_state:
         _rub = lire_menu_session()
+        if _rub in _nouveaux_noms_dio:
+            _rub = _nouveaux_noms_dio[_rub]
         if _rub and _rub in _rubriques_dio:
             st.session_state["nav_dio"] = _rub
             st.session_state["_menu_sync"] = _rub
@@ -703,8 +712,28 @@ def show_diocese():
                         out.seek(0)
                         st.download_button(f"📥 Exporter les équipiers de {nom}", data=out, file_name=f"equipiers_{nom}_{date.today()}.xlsx", key=f"export_par_{pid}")
 
-    elif menu == "📅 Abonnement - Réabonnement":
-        st.markdown('<h2 style="color:#1A237E;">📅 Abonnement - Réabonnement (Diocèse)</h2>', unsafe_allow_html=True)
+    elif menu == "💼 Ressources":
+        # v7.16.7 — LA MUE DU RÔLE : « le rôle "Abonnement - Réabonnement"
+        # au niveau des entités se mue "Ressources". Le responsable pourra
+        # y faire ses contrôles et autres tâches qui lui sont dévolues
+        # concernant les finances. » Et LES CAISSES HORS DES ENTITÉS : les
+        # maisons « 💰 Versement » et « ✨ Cotisations diverses » vivent
+        # désormais dans « 💼 Caisse du diocèse », hors des rubriques — à
+        # la manière de la cellule de communication ; l'accès se donne
+        # dans « 🔐 Gérer les accès ». Ici restent les contrôles du
+        # responsable : réglages, totaux, historique, relances.
+        st.markdown('<h2 style="color:#1A237E;">💼 Ressources (Diocèse)</h2>', unsafe_allow_html=True)
+        _tres_dio_compte = c.execute("SELECT username FROM utilisateurs "
+                                     "WHERE role='tresorier_diocese'").fetchone()
+        st.caption("💼 Caisse du diocèse : "
+                   + (f"tenue par **{_tres_dio_compte[0]}** — la maison vit hors des "
+                      "rubriques, l'accès se donne et se renouvelle dans « 🔐 Gérer les accès »."
+                      if _tres_dio_compte else
+                      "pas encore de trésorier désigné — l'autorisation se donne dans "
+                      "« 🔐 Gérer les accès », à la manière du compte de la cellule "
+                      "communication.")
+                   + " Les maisons « 💰 Versement » et « ✨ Cotisations diverses » y "
+                     "vivent — le registre n'y dit réglé que par elles.")
 
         for state in ['show_paroisse_abos', 'show_equipe_abos', 'abos_view_type']:
             if state not in st.session_state: st.session_state[state] = None
@@ -713,25 +742,11 @@ def show_diocese():
         annee_debut = st.number_input("Année de début de la période", min_value=2020, max_value=annee_pastorale_en_cours, value=annee_pastorale_en_cours, step=1)
         st.write(f"**Période :** {periode_affichage(annee_debut)}")
 
-        # v7.16.6 — LA TRÉSORERIE DU DIOCÈSE (dossier c — le constat de la
-        # maison : « la paroisse et le diocèse n'ont pas de trésorerie —
-        # sinon où sont-elles générées ? »). Deux maisons vivent ici, en
-        # tête de la caisse : « 💰 Versement », où les déclarations
-        # adressées à « 🏘️ Trésorerie du diocèse » se confirment (le
-        # registre ne dit réglé que par elle) ; et « ✨ Cotisations
-        # diverses », où le diocèse expédie ses propres cotisations — dues
-        # comme les autres, « à ce titre, elles subissent le même mode
-        # opératoire ». Les réglages, l'historique et les relances vivent
-        # plus bas, comme avant.
-        maison_versement(dest_code="diocese",
-                         titre="💰 Versement — la maison du diocèse",
-                         annee=annee_debut, paroisse_id=None,
-                         key_prefix="mvdio")
-        st.markdown("---")
-        formulaire_expedition_zone(zone="diocese", annee=annee_debut,
-                                   key_prefix="expdio",
-                                   origine="caisse_diocese")
-        st.markdown("---")
+        # v7.16.7 — LES MAISONS SONT PARTIES : « 💰 Versement » et « ✨
+        # Cotisations diverses » vivent dans « 💼 Caisse du diocèse », hors
+        # des entités (comme la cellule de communication) — l'accès se
+        # donne dans « 🔐 Gérer les accès ». Ici restent les réglages et
+        # les contrôles du responsable.
 
         # v7.14.2 — LES RÉGLAGES de la caisse : montants
         # adulte/jeune × abonnement/réabonnement, les DEUX échéances de
@@ -1329,6 +1344,86 @@ def show_diocese():
                                   (ident, hash_password(_mdp_final), "communication", 1))
                         commit_and_sync()
                         st.session_state['new_pwd_com'] = {'user': ident, 'pwd': _mdp_final}
+                        st.rerun()
+
+        # v7.16.7 — 💼 CAISSE DU DIOCÈSE (les caisses hors des entités, à
+        # la manière du compte ci-dessus) : la trésorerie du diocèse tient
+        # SA maison avec son propre compte — la caisse, rien d'autre. Le
+        # trésorier gère ; le responsable suit de près (les lignes
+        # ci-dessous ne font que RELIRE la base) et accorde l'autorisation :
+        # le compte se désigne, se renouvelle et se retire ici.
+        st.markdown("### 💼 Caisse du diocèse")
+        _tres_dio_ca = c.execute("SELECT id, username FROM utilisateurs "
+                                 "WHERE role='tresorier_diocese'").fetchone()
+        _annee_dio_ca = get_periode_pastorale()[0]
+        _att_dio_lignes = cotis_div_declarations_maison("diocese",
+                                                        annee_debut=_annee_dio_ca)
+        _att_dio_cibles = cotis_declarations_attente(dest="diocese",
+                                                     annee_debut=_annee_dio_ca)
+        _n_dio_att = len(_att_dio_lignes) + len(_att_dio_cibles)
+        _n_dio_recus = c.execute("""SELECT
+                (SELECT COUNT(*) FROM cotisations_diverses d
+                 JOIN membres m ON d.membre_id=m.id
+                 WHERE m.statut='actif' AND d.destination='diocese'
+                       AND d.regle_le >= datetime('now','-3 days'))
+              + (SELECT COUNT(*) FROM abonnements a
+                 JOIN membres m ON a.membre_id=m.id
+                 WHERE m.statut='actif' AND a.destination='diocese'
+                       AND a.statut='paye'
+                       AND COALESCE(a.cree_le, a.date_paiement) >= date('now','-3 days'))""").fetchone()[0]
+        if _tres_dio_ca:
+            with st.expander(f"💼 Compte existant — {_tres_dio_ca[1]}"):
+                st.write(f"**Identifiant :** `{_tres_dio_ca[1]}`")
+                st.info("💼 La maison vit hors des rubriques (la caisse, rien d'autre) — "
+                        "le registre n'y dit réglé que par elle.")
+                st.caption(f"👀 Suivi de près — ⏳ {_n_dio_att} déclaration(s) attendent sa "
+                           f"confirmation · ✅ {_n_dio_recus} versement(s) réglé(s) ici "
+                           "ces dernières 72 heures.")
+                if st.session_state.get('pwd_tresdio'):
+                    st.markdown(f"<div style='background:#e8f5e9;padding:15px;border-radius:10px;border:1px solid #c8e6c9;'>🔑 Nouveau mot de passe pour <code>{st.session_state['pwd_tresdio']['user']}</code> : <code style='color:#d84315;font-size:1.2rem;'>{st.session_state['pwd_tresdio']['pwd']}</code></div>", unsafe_allow_html=True)
+                    if st.button("OK, j'ai noté le mot de passe", key="ok_pwd_tresdio"):
+                        del st.session_state['pwd_tresdio']
+                        st.rerun()
+                if st.button("🔄 Réinitialiser le mot de passe", key="reset_tresdio"):
+                    _np_dio = generer_mot_de_passe()
+                    c.execute("UPDATE utilisateurs SET password=? WHERE id=?", (hash_password(_np_dio), _tres_dio_ca[0]))
+                    commit_and_sync()
+                    st.session_state['pwd_tresdio'] = {'user': _tres_dio_ca[1], 'pwd': _np_dio}
+                    st.rerun()
+                if st.session_state.get('confirm_tresdio'):
+                    st.caption("⚠️ Le titulaire de cet accès perdra l'entrée à la caisse. "
+                               "L'autorisation se redonne en un geste, si tu le souhaites.")
+                    _td1, _td2 = st.columns(2)
+                    if _td1.button("🗑️ Oui, retirer l'accès", key="del_tresdio_go", type="primary"):
+                        c.execute("DELETE FROM utilisateurs WHERE id=?", (_tres_dio_ca[0],))
+                        commit_and_sync()
+                        st.session_state['confirm_tresdio'] = False
+                        st.success(f"Accès caisse retiré ({_tres_dio_ca[1]}).")
+                        st.rerun()
+                    if _td2.button("✖ Ne rien retirer", key="del_tresdio_no"):
+                        st.session_state['confirm_tresdio'] = False
+                        st.rerun()
+                elif st.button("🗑️ Retirer l'accès à la caisse", key="del_tresdio"):
+                    st.session_state['confirm_tresdio'] = True
+                    st.rerun()
+        else:
+            with st.expander("➕ Créer le compte de la caisse du diocèse"):
+                st.caption("Ce compte ouvre « 💼 Caisse du diocèse », hors des rubriques — la caisse seule, "
+                           "à la manière du compte de la cellule communication : le trésorier y confirme "
+                           "les déclarations adressées à « 🏘️ Trésorerie du diocèse » et y expédie les "
+                           "cotisations de la maison. Le registre n'y dit réglé que par elle.")
+                nom_dio = st.text_input("Nom d'utilisateur", value="tresorier-diocese", key="tresdio_user")
+                mdp_dio = st.text_input("Mot de passe (laisser vide → généré automatiquement)", type="password", key="tresdio_pwd")
+                if st.button("💼 Créer le compte de la caisse", key="btn_creer_tresdio", type="primary"):
+                    ident_dio = (nom_dio or "").strip() or "tresorier-diocese"
+                    if c.execute("SELECT id FROM utilisateurs WHERE username=?", (ident_dio,)).fetchone():
+                        st.error("❌ Ce nom d'utilisateur existe déjà.")
+                    else:
+                        _mdp_final_dio = (mdp_dio or "").strip() or generer_mot_de_passe()
+                        c.execute("INSERT INTO utilisateurs (username, password, role, diocese_id) VALUES (?,?,?,?)",
+                                  (ident_dio, hash_password(_mdp_final_dio), "tresorier_diocese", 1))
+                        commit_and_sync()
+                        st.session_state['pwd_tresdio'] = {'user': ident_dio, 'pwd': _mdp_final_dio}
                         st.rerun()
 
     elif menu == "📊 Statistiques":
