@@ -395,9 +395,13 @@ if 'logged_in' not in st.session_state:
                 'equipe_id': _user[6]
             })
             # Restaurer la rubrique où l'utilisateur se trouvait avant le F5
+            # v7.16.7 — les caisses hors des entités : le trésorier d'une
+            # grande caisse retrouve sa maison après le rafraîchissement.
             if _user[7]:
                 _cle_menu = {"diocese": "nav_dio", "paroisse": "nav_par",
-                             "equipe": "nav_eq"}.get(_user[3])
+                             "equipe": "nav_eq",
+                             "tresorier_paroisse": "nav_cais",
+                             "tresorier_diocese": "nav_cais"}.get(_user[3])
                 if _cle_menu:
                     st.session_state[_cle_menu] = _user[7]
                 st.session_state["_menu_sync"] = _user[7]
@@ -492,17 +496,24 @@ if 'logged_in' not in st.session_state:
             # On force le menu de navigation sur la PREMIÈRE rubrique du rôle
             # v7.16.3 — le 💼 Trésorier arrive sur sa trésorerie (le GO du
             # dossier c) : un seul rubrique, la caisse, rien d'autre.
+            # v7.16.7 — les trésoriers des grandes caisses arrivent DANS
+            # leur maison (hors des entités, à la manière du compte
+            # communication) : la caisse, rien d'autre.
             _entrees = {"diocese": ("nav_dio", "🏛️ Voir diocèse"),
                         "paroisse": ("nav_par", "🏘️ Ma paroisse"),
                         "equipe": ("nav_eq", "👥 Mon équipe"),
-                        "tresorier": ("nav_eq", "💼 Trésorerie")}
+                        "tresorier": ("nav_eq", "💼 Trésorerie"),
+                        "tresorier_paroisse": ("nav_cais", "💼 Caisse de la paroisse"),
+                        "tresorier_diocese": ("nav_cais", "💼 Caisse du diocèse")}
             if row[3] in _entrees:
                 _cle, _val = _entrees[row[3]]
                 st.session_state[_cle] = _val
             # Session persistante : jeton dans l'URL → le rafraîchissement
             # ne déconnecte plus (30 jours, révoqué à la déconnexion)
             _menu_premier = st.session_state.get({"diocese": "nav_dio", "paroisse": "nav_par",
-                                                  "equipe": "nav_eq"}.get(row[3]))
+                                                  "equipe": "nav_eq",
+                                                  "tresorier_paroisse": "nav_cais",
+                                                  "tresorier_diocese": "nav_cais"}.get(row[3]))
             st.query_params["t"] = creer_token_session(row[0], _menu_premier)
             st.rerun()
         else:
@@ -573,3 +584,15 @@ elif st.session_state['role'] == 'tresorier':
 elif st.session_state['role'] == 'communication':
     from views.view_communication import show_communication
     show_communication()
+elif st.session_state['role'] == 'tresorier_paroisse':
+    # v7.16.7 — LES CAISSES HORS DES ENTITÉS (le mot de la maison : « pas
+    # en nouvelle rubrique ou en nouvelle section — les trésoreries
+    # existent en-dehors des entités, comme la cellule de communication
+    # pour le diocèse »). Le trésorier gère SA maison : confirmations,
+    # expéditions, registre. Le responsable suit de près chez lui et
+    # accorde l'autorisation (le compte se désigne chez lui).
+    from views.view_caisse import show_caisse
+    show_caisse("paroisse")
+elif st.session_state['role'] == 'tresorier_diocese':
+    from views.view_caisse import show_caisse
+    show_caisse("diocese")
