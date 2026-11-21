@@ -2758,6 +2758,81 @@ l'abonnement déclarables. »
   base de production n'est jamais touchée.
 - `_VERSION_APPLI = "v7.16.6"`.
 
+### 71. v7.16.8 — La note de la maison, les réglés des 24 heures, les archives dans leur expander — et le guide se mue avec
+
+MOT DU USER : « Modifications à apporter et dans le code et dans le guide.
+1. Quatre sortes de cotisations peuvent ainsi naître : ---> Deux sortes de
+cotisations peuvent ainsi naître : ⛓️ La cotisation obligatoire : due par
+chacun, sans condition ni discussion. 🕊️ La cotisation à choix : due elle
+aussi, mais portée avec une échéance ; si elle n'est pas honorée, elle
+s'efface seule à minuit le lendemain de cette échéance. La mensuelle et
+L'abonnement — réabonnement font partie de la cotisation obligatoire et
+doivent être traités comme telle.
+2. La zone des réglés des 72 heures : ---> La zone des réglés des 24 heures
+ce qui vient d'être confirmé reste trois jours sous les yeux, le temps de
+vérifier tranquillement.
+3. 📚 Les archives — versement par versement ---> dans un expander.
+4. Dans la maison : la confirmation — une note certainement omise :
+- Un membre paie directement à la trésorerie de son équipe
+- Une équipe paie directement à la trésorerie de sa paroisse
+- Une paroisse paie directement à la trésorerie de son diocèse
+- Un paiement au-delà de son entité supérieure nécessite une autorisation
+  de son responsable direct.
+Manquant dans le guide : la trésorerie, qui la crée ? Qui génère les mots
+de passe ? Comment y accéder ? »
+
+- **LA NOTE DE LA MAISON (les quatre règles du chemin des fonds)** — elle
+  campe là où la confirmation se fait, dans TOUTES les maisons : un membre
+  paie directement à la trésorerie de son équipe ; une équipe paie
+  directement à la trésorerie de sa paroisse ; une paroisse paie
+  directement à la trésorerie de son diocèse ; un paiement au-delà de son
+  entité supérieure nécessite une autorisation de son responsable direct.
+  La caisse d'équipe porte la sienne dans « 💰 Versement » (le vieux
+  caption verbeux s'efface, remplacé par la note + le rappel « chaque
+  déclaration se confirme DANS SA MAISON ») ; `maison_versement` la porte
+  pour les deux grandes caisses (paroisse + diocèse) — trois maisons, une
+  seule note, posée avant la file des déclarations.
+- **LES RÉGLÉS DES DERNIÈRES 24 HEURES** — le titre change des deux côtés :
+  le membre lit « ✅ Réglés — les dernières 24 heures », la maison lit « ✅
+  Reçus ici — les dernières 24 heures » ; et LA FENÊTRE RESTE DE TROIS
+  JOURS (les requêtes `timedelta(hours=72)` côté membre et
+  `datetime('now', '-3 days')` côté maison ne bougent pas) — les légendes
+  le disent au mot de la maison : « ce qui vient d'être confirmé reste
+  trois jours sous les yeux, le temps de vérifier tranquillement ». Le
+  suivi de près du responsable garde son « 72 heures » honnête (= 3 jours).
+- **LES ARCHIVES DANS LEUR EXPANDER** — le registre de l'année se replie
+  dans SON `st.expander("📚 Les archives — versement par versement")` : la
+  boucle des catégories, l'abonnement réglé avec son reçu numéroté et la
+  caption du total versé s'indendent sous lui ; le titre gras d'antan
+  n'existe plus (aucun doublon). Le tiroir s'ouvre quand on veut, il ne
+  dérange plus la lecture des dues.
+- **DEUX SORTES DE COTISATIONS (le code n'a jamais contredit)** — les
+  expéditions naissent « ⛓️ Obligatoire / 🕊️ À choix » (échéance, effacement
+  seule à minuit le lendemain) et rien d'autre ; la mensuelle et
+  l'abonnement n'ont PAS ce sélecteur : obligatoires par nature, ils se
+  déclarent et se confirment comme les autres. La retouche « Quatre sortes
+  ---> Deux sortes » vit dans le GUIDE, qui désormais présente ⛓️ et 🕊️ et
+  range la mensuelle et l'abonnement dans l'obligatoire.
+- **LE GUIDE SE MUE AVEC (et rattrape son manquant)** —
+  Guide_tresorerie_et_caisse.docx / .pdf : « Deux sortes de cotisations »,
+  la zone des réglés des 24 heures (trois jours sous les yeux), les
+  archives dans leur tiroir, la note de la maison au chapitre de la
+  confirmation — et UNE SECTION NEUVE « Qui ouvre la caisse : la création
+  et l'accès » : qui crée chaque trésorerie (le responsable désigne, la
+  demande se fait chez lui), qui fabrique les mots de passe (l'app les
+  génère au geste du responsable, montrés une fois, réinitialisables),
+  comment on y accède (identifiant + mot de passe → la caisse seule, rien
+  d'autre autour). Les chapitres se renumérotent (dix chapitres).
+- **Banc d'épreuve** — `scripts/test_v7168.py` (27 vérifications : la note
+  dans les trois maisons posée avant la file, les titres 24 heures des
+  deux côtés, la fenêtre de trois jours conservée, les légendes au mot,
+  l'expander qui porte tout le registre, ⛓️/🕊️ seuls à naître, la
+  compile ×13, les mots bannis) ; régressions repassées et actualisées :
+  v7.16.5 (57 ✅ + vue — les checks zone 2/zone 3 mués au nouveau nom et au
+  tiroir), v7.16.6 (59 ✅ + vue), v7.16.7 (44 ✅ + vue). La base de
+  production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.16.8"`.
+
 ### 70. v7.16.7 — Les caisses hors des entités, le trésorier gère, le responsable suit et accorde — et le rôle se mue « 💼 Ressources »
 
 MOT DU USER : « Encore 🙏 pour les efforts consentis ! Observations &
