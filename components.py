@@ -3284,6 +3284,13 @@ def maison_versement(dest_code, titre, annee, paroisse_id=None,
                "une déclaration confirmée ici marque la ligne réglée — le registre "
                "ne dit réglé que par elle. Les déclarations adressées à l'équipe ou "
                "à l'autre maison se confirment dans leur caisse à elles.")
+    # v7.16.8 — LA NOTE DE LA MAISON (omise jusqu'ici) : le chemin des fonds,
+    # posé là où la confirmation se fait — chez le trésorier qui confirme.
+    st.info("💡 **La note de la maison** — un membre paie directement à la "
+            "trésorerie de son équipe ; une équipe paie directement à la "
+            "trésorerie de sa paroisse ; une paroisse paie directement à la "
+            "trésorerie de son diocèse. Un paiement au-delà de son entité "
+            "supérieure nécessite une autorisation de son responsable direct.")
 
     _lignes_decl = cotis_div_declarations_maison(dest_code,
                                                  paroisse_id=paroisse_id,
@@ -3581,7 +3588,8 @@ def maison_versement(dest_code, titre, annee, paroisse_id=None,
                         st.session_state[f'{key_prefix}_declma_refus_id'] = _d_ma[0]
                         st.rerun()
 
-    # ── LES VERSEMENTS RÉGLÉS ICI (les dernières 72 heures) ──────────────
+    # ── LES VERSEMENTS RÉGLÉS ICI (les dernières 24 heures — trois jours
+    #    sous les yeux, la fenêtre reste de trois jours) ─────────────────
     _clause_par = ("AND m.paroisse_id=?" if paroisse_id else "")
     _args_rec = ([dest_code, paroisse_id] if paroisse_id else [dest_code])
     _recus = c.execute(f"""SELECT d.montant, d.type_cotisation, d.date_versement,
@@ -3609,7 +3617,7 @@ def maison_versement(dest_code, titre, annee, paroisse_id=None,
                                ORDER BY a.id DESC LIMIT 12""",
                            _args_rec).fetchall()
     if _recus or _recus_abo:
-        st.markdown("#### ✅ Reçus ici — les dernières 72 heures")
+        st.markdown("#### ✅ Reçus ici — les dernières 24 heures")
         for _r in _recus:
             st.markdown(
                 f"<span style='font-size:0.8rem; color:#1b5e20;'>"
@@ -3629,8 +3637,9 @@ def maison_versement(dest_code, titre, annee, paroisse_id=None,
                 f"{_ra[6]} {_ra[7]} — 📅 {_nat_ra} · {_fr(_ra[1])} FCFA · "
                 f"{_modes_lbls.get(_ra[4] or '', _ra[4] or '—')} · "
                 f"reçu {_ra[0]} ✅</span>", unsafe_allow_html=True)
-        st.caption("🕊️ Après 72 heures, ces versements dorment au registre "
-                   "de l'année.")
+        st.caption("🕊️ Ce qui vient d'être confirmé reste trois jours sous les "
+                   "yeux, le temps de vérifier tranquillement, puis dort au "
+                   "registre de l'année.")
 
 
 def formulaire_expedition_zone(zone, annee, key_prefix, paroisse_id=None,
