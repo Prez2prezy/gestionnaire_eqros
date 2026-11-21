@@ -1933,13 +1933,17 @@ def _section_versements_equipe(eid, annee):
     def _fr(_n):
         return f"{int(_n):,}".replace(",", " ")
 
-    st.caption("🏠 Le membre verse à la trésorerie de son équipe (espèces ou Wave), "
-               "⛪ à la trésorerie de la paroisse avec l\'accord de son responsable "
-               "d\'équipe (espèces ou Wave), 🏘️ ou à la trésorerie du diocèse avec "
-               "l\'accord du responsable paroissial (Wave). v7.16.6 — chaque "
-               "déclaration se confirme DANS SA MAISON : ici celles de l\'équipe ; "
-               "les déclarations « paroisse » ou « diocèse » se confirment dans "
-               "leur caisse à elles.")
+    # v7.16.8 — LA NOTE DE LA MAISON (omise jusqu'ici) : le chemin des
+    # fonds, posé là où la confirmation se fait. Elle remplace le vieux
+    # caption verbeux — elle se dit partout, dans toutes les maisons.
+    st.info("💡 **La note de la maison** — un membre paie directement à la "
+            "trésorerie de son équipe ; une équipe paie directement à la "
+            "trésorerie de sa paroisse ; une paroisse paie directement à la "
+            "trésorerie de son diocèse. Un paiement au-delà de son entité "
+            "supérieure nécessite une autorisation de son responsable direct.")
+    st.caption("🏠 Et chaque déclaration se confirme DANS SA MAISON : ici celles "
+               "de l'équipe ; les déclarations « paroisse » ou « diocèse » se "
+               "confirment dans leur caisse à elles.")
 
     # v7.16.1 — LE FORMULAIRE DU VERSEMENT (déménagé ici en v7.16.4) : le
     # mode de paiement vit à ce geste-là seulement (il a quitté le
