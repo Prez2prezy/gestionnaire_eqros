@@ -153,7 +153,8 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       # déclaration du membre, confirmée par la trésorerie
                       # dans sa maison « 💰 Versement »), les « à choix »
                       # qui s'éteignent seules à minuit après leur échéance,
-                      # et la section des réglés des dernières 72 h
+                      # et la section des réglés des dernières 24 h
+                      # (fenêtre de trois jours, v7.16.8)
                       cotis_div_declare, cotis_div_declaration_annuler,
                       cotis_div_exp_label, cotis_div_echeance_vivante,
                       cotis_div_lignes,
@@ -173,7 +174,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.16.7"
+_VERSION_APPLI = "v7.16.8"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -5337,11 +5338,14 @@ def _etat_cotisations_membre(membre, _du=None):
       règlement) ; « 💰 Tout régler » campe au bout du « Total dû à ce
       jour » ; la RELANCE, elle, n'est pas une expédition : elle
       n'apparaît jamais ici (point 4) — ses canaux sont ailleurs ;
-    — LES RÉGLÉS DES DERNIÈRES 72 HEURES (point 5) : un montant réglé
-      s'affiche 72 heures dans sa section, puis rejoint les archives ;
-    — LES ARCHIVES : le registre de l'année, versement par versement —
-      date · précision · montant · mode · « Reçu par » (v7.16.4) — où les
-      réglés dorment après leurs 72 heures. Le tableau des cotisations
+    — LES RÉGLÉS DES DERNIÈRES 24 HEURES (point 5) : ce qui vient d'être
+      confirmé reste trois jours sous les yeux, le temps de vérifier
+      tranquillement — puis rejoint les archives ;
+    — LES ARCHIVES (point 5) : le registre de l'année, versement par
+      versement — date · précision · montant · mode · « Reçu par »
+      (v7.16.4) — replié dans SON EXPANDER (v7.16.8) : le tiroir s'ouvre
+      quand on veut, il ne dérange pas la lecture des dues ; où les
+      réglés dorment après leurs trois jours. Le tableau des cotisations
       mensuelles y reste retiré (v7.16.4, demande de la maison).
     La ligne en attente garde son vert « ⏳ à régler » ; le « Total dû à
     ce jour » garde ses trois dettes (mensuelle écoulée, abonnement,
@@ -5638,10 +5642,11 @@ def _etat_cotisations_membre(membre, _du=None):
             st.session_state['cotis_decl_tous'] = True
             st.rerun()
 
-    # ─── ZONE 2 — LES RÉGLÉS DES DERNIÈRES 72 HEURES (la Note, point 5) ─
-    # Un montant réglé s'affiche 72 heures dans sa section, puis rejoint
-    # les archives. Les règlements du registre portent leur instant
-    # (`regle_le`) ; l'abonnement porte le sien (`cree_le`, sinon sa date).
+    # ─── ZONE 2 — LES RÉGLÉS DES DERNIÈRES 24 HEURES (la Note, point 5) ─
+    # Ce qui vient d'être confirmé reste trois jours sous les yeux (la
+    # fenêtre reste de trois jours), puis rejoint les archives. Les
+    # règlements du registre portent leur instant (`regle_le`) ;
+    # l'abonnement porte le sien (`cree_le`, sinon sa date).
     _limite72 = datetime.now() - timedelta(hours=72)
     _fresh = []
     for _l in _etat["lignes"]:
@@ -5666,7 +5671,7 @@ def _etat_cotisations_membre(membre, _du=None):
             except Exception:
                 _fresh_abo = False
     if _fresh or _fresh_abo:
-        st.markdown("**✅ Réglés — les dernières 72 heures**")
+        st.markdown("**✅ Réglés — les dernières 24 heures**")
         for _l in _fresh:
             _d_l = safe_date(_l[3])
             _d_txt = _d_l.strftime("%d/%m/%Y") if _d_l else (_l[3] or "—")
@@ -5692,81 +5697,84 @@ def _etat_cotisations_membre(membre, _du=None):
                         + _seg_mode_ab + _seg_dest_ab
                         + (f" · reçu {_r_ab['numero']}" if _r_ab["numero"] else "")
                         + " ✅</span>", unsafe_allow_html=True)
-        st.caption("🕊️ Après 72 heures, ces versements dorment dans les "
-                   "archives ci-dessous.")
+        st.caption("🕊️ Ce qui vient d'être confirmé reste trois jours sous les "
+                   "yeux, le temps de vérifier tranquillement, puis rejoint "
+                   "les archives ci-dessous.")
 
-    # ─── ZONE 3 — LES ARCHIVES (la Note, point 5) ────────────────────────
-    # Le registre de l'année, versement par versement : les réglés y
-    # dorment après leurs 72 heures ; les lignes encore à régler y laissent
-    # leur renvoi (elles attendent en haut de l'état). La RELANCE n'y entre
-    # jamais — elle n'est pas une expédition (la Note, point 4).
-    st.markdown("**📚 Les archives — versement par versement**")
-    for _code, _lbl in COTIS_DIV_TYPES:
-        _icon_cat = "🧮" if _code == "mensuelle" else "✨"
-        _lignes_t = [_l for _l in _etat["lignes"] if _l[1] == _code]
-        _reglees_t = [_l for _l in _lignes_t
-                      if (_l[8] if len(_l) > 8 else False)]
-        _dues_t = [_l for _l in _lignes_t
-                   if not (_l[8] if len(_l) > 8 else False)]
-        if _reglees_t:
-            if _code == "mensuelle":
-                st.markdown(f"**{_icon_cat} {_lbl} — {_mois_payes} mois sur 12 · "
-                            f"{_fr(_etat['totaux']['mensuelle'])} FCFA**"
-                            + (f" *(tarif réglé : {_fr(_tarif_mens)} FCFA/mois)*"
-                               if _tarif_mens > 0 else ""))
+    # ─── ZONE 3 — LES ARCHIVES, DANS LEUR EXPANDER (la Note, point 5) ─
+    # v7.16.8 — le registre de l'année se replie dans SON EXPANDER : le
+    # tiroir s'ouvre quand on veut, il ne dérange plus la lecture des dues.
+    # Les réglés y dorment après leurs trois jours ; les lignes encore à
+    # régler y laissent leur renvoi (elles attendent en haut de l'état). La
+    # RELANCE n'y entre jamais — elle n'est pas une expédition (la Note,
+    # point 4).
+    with st.expander("📚 Les archives — versement par versement"):
+        for _code, _lbl in COTIS_DIV_TYPES:
+            _icon_cat = "🧮" if _code == "mensuelle" else "✨"
+            _lignes_t = [_l for _l in _etat["lignes"] if _l[1] == _code]
+            _reglees_t = [_l for _l in _lignes_t
+                          if (_l[8] if len(_l) > 8 else False)]
+            _dues_t = [_l for _l in _lignes_t
+                       if not (_l[8] if len(_l) > 8 else False)]
+            if _reglees_t:
+                if _code == "mensuelle":
+                    st.markdown(f"**{_icon_cat} {_lbl} — {_mois_payes} mois sur 12 · "
+                                f"{_fr(_etat['totaux']['mensuelle'])} FCFA**"
+                                + (f" *(tarif réglé : {_fr(_tarif_mens)} FCFA/mois)*"
+                                   if _tarif_mens > 0 else ""))
+                else:
+                    st.markdown(f"**{_icon_cat} {_lbl} — {_fr(_etat['totaux'][_code])} FCFA**")
+                for _l in _reglees_t[:6]:
+                    _d_l = safe_date(_l[3])
+                    _d_txt = _d_l.strftime("%d/%m/%Y") if _d_l else (_l[3] or "—")
+                    _prec = str(_l[7] or "").strip() if len(_l) > 7 else ""
+                    _seg_prec = f" · {_prec}" if _prec else ""
+                    _dest_l = (cotis_destination_label(_l[9])
+                               if (len(_l) > 9 and _l[9]) else None)
+                    _seg_dest = f" · {_dest_l}" if _dest_l else ""
+                    st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
+                                f"{_d_txt}{_seg_prec} · {_fr(_l[2])} FCFA · "
+                                f"{_modes_lbls.get(_l[4] or '', _l[4] or '—')}{_seg_dest} ✅</span>",
+                                unsafe_allow_html=True)
+                if len(_reglees_t) > 6:
+                    st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
+                                f"… et {len(_reglees_t) - 6} autre(s) versement(s)</span>",
+                                unsafe_allow_html=True)
+                if _dues_t:
+                    st.markdown(f"<span style='font-size:0.8rem; color:#1b5e20;'>"
+                                f"⏳ {len(_dues_t)} ligne(s) à régler — elles "
+                                "attendent en haut de l'état</span>",
+                                unsafe_allow_html=True)
+            elif _dues_t:
+                st.markdown(f"<span style='font-size:0.8rem; color:#8a82a2;'>"
+                            f"{_icon_cat} {_lbl} — rien de réglé pour l'instant · "
+                            f"{len(_dues_t)} ligne(s) à régler en haut</span>",
+                            unsafe_allow_html=True)
             else:
-                st.markdown(f"**{_icon_cat} {_lbl} — {_fr(_etat['totaux'][_code])} FCFA**")
-            for _l in _reglees_t[:6]:
-                _d_l = safe_date(_l[3])
-                _d_txt = _d_l.strftime("%d/%m/%Y") if _d_l else (_l[3] or "—")
-                _prec = str(_l[7] or "").strip() if len(_l) > 7 else ""
-                _seg_prec = f" · {_prec}" if _prec else ""
-                _dest_l = (cotis_destination_label(_l[9])
-                           if (len(_l) > 9 and _l[9]) else None)
-                _seg_dest = f" · {_dest_l}" if _dest_l else ""
-                st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
-                            f"{_d_txt}{_seg_prec} · {_fr(_l[2])} FCFA · "
-                            f"{_modes_lbls.get(_l[4] or '', _l[4] or '—')}{_seg_dest} ✅</span>",
+                st.markdown(f"<span style='font-size:0.8rem; color:#8a82a2;'>"
+                            f"{_icon_cat} {_lbl} — rien de noté</span>",
                             unsafe_allow_html=True)
-            if len(_reglees_t) > 6:
-                st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
-                            f"… et {len(_reglees_t) - 6} autre(s) versement(s)</span>",
-                            unsafe_allow_html=True)
-            if _dues_t:
-                st.markdown(f"<span style='font-size:0.8rem; color:#1b5e20;'>"
-                            f"⏳ {len(_dues_t)} ligne(s) à régler — elles "
-                            "attendent en haut de l'état</span>",
-                            unsafe_allow_html=True)
-        elif _dues_t:
-            st.markdown(f"<span style='font-size:0.8rem; color:#8a82a2;'>"
-                        f"{_icon_cat} {_lbl} — rien de réglé pour l'instant · "
-                        f"{len(_dues_t)} ligne(s) à régler en haut</span>",
-                        unsafe_allow_html=True)
-        else:
-            st.markdown(f"<span style='font-size:0.8rem; color:#8a82a2;'>"
-                        f"{_icon_cat} {_lbl} — rien de noté</span>",
-                        unsafe_allow_html=True)
 
-    # L'ABONNEMENT RÉGLÉ DORT DANS LES ARCHIVES (à régler, il attend en
-    # haut de l'état) — avec son reçu numéroté s'il en a un.
-    if _du["abonnement_paye"] and _du["abonnement_recu"]:
-        _nat_lbl = ("Abonnement" if _du["abonnement_nature"] == "abonnement"
-                    else "Réabonnement")
-        _r_ab = _du["abonnement_recu"]
-        _d_p = safe_date(_r_ab["date"])
-        _d_ab = _d_p.strftime("%d/%m/%Y") if _d_p else (_r_ab["date"] or "—")
-        st.markdown(f"**📅 {_nat_lbl} {_annee} - {_annee + 1} — ✅ réglé**")
-        _seg_mode_ab = (f" · {_modes_lbls.get(_r_ab['mode'] or '', _r_ab['mode'] or '—')}"
-                        if _r_ab.get("mode") else "")
-        _seg_dest_ab = (f" · {cotis_destination_label(_r_ab['destination'])}"
-                        if _r_ab.get("destination") else "")
-        st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
-                    f"{_d_ab} · {_fr(_r_ab['montant'])} FCFA"
-                    + _seg_mode_ab + _seg_dest_ab
-                    + (f" · reçu {_r_ab['numero']}" if _r_ab["numero"] else "")
-                    + "</span>", unsafe_allow_html=True)
-    st.caption(f"🕊️ Déjà versé cette année pastorale : "
-               f"{_fr(_etat.get('total_regle', _etat['total']))} FCFA")
+        # L'ABONNEMENT RÉGLÉ DORT DANS LES ARCHIVES (à régler, il attend en
+        # haut de l'état) — avec son reçu numéroté s'il en a un.
+        if _du["abonnement_paye"] and _du["abonnement_recu"]:
+            _nat_lbl = ("Abonnement" if _du["abonnement_nature"] == "abonnement"
+                        else "Réabonnement")
+            _r_ab = _du["abonnement_recu"]
+            _d_p = safe_date(_r_ab["date"])
+            _d_ab = _d_p.strftime("%d/%m/%Y") if _d_p else (_r_ab["date"] or "—")
+            st.markdown(f"**📅 {_nat_lbl} {_annee} - {_annee + 1} — ✅ réglé**")
+            _seg_mode_ab = (f" · {_modes_lbls.get(_r_ab['mode'] or '', _r_ab['mode'] or '—')}"
+                            if _r_ab.get("mode") else "")
+            _seg_dest_ab = (f" · {cotis_destination_label(_r_ab['destination'])}"
+                            if _r_ab.get("destination") else "")
+            st.markdown(f"<span style='font-size:0.8rem; color:#5a5470;'>"
+                        f"{_d_ab} · {_fr(_r_ab['montant'])} FCFA"
+                        + _seg_mode_ab + _seg_dest_ab
+                        + (f" · reçu {_r_ab['numero']}" if _r_ab["numero"] else "")
+                        + "</span>", unsafe_allow_html=True)
+        st.caption(f"🕊️ Déjà versé cette année pastorale : "
+                   f"{_fr(_etat.get('total_regle', _etat['total']))} FCFA")
 
 
 def _panneau_declaration_membre(membre):
