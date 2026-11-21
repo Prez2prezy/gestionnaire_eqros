@@ -746,13 +746,13 @@ def init_tables_and_migrations():
     #    efface la déclaration — le registre ne dit réglé que par la
     #    trésorerie, jamais par le membre seul.
     # 3) `cree_le` sur abonnements : l'instant du règlement noté par la
-    #    caisse — la section « réglés des dernières 72 h » de l'état du
-    #    membre s'appuie dessus (les lignes d'antan retombent sur leur
-    #    date_paiement). Migration douce et ré-exécutable : des colonnes à
-    #    NULL, rien d'existant ne bouge. La base de production n'est JAMAIS
-    #    touchée par l'atelier : la migration vit dans le code, elle
-    #    s'exécute chez l'hébergeur au premier démarrage, comme les
-    #    précédentes.
+    #    caisse — la section « réglés des dernières 24 h » de l'état du
+    #    membre s'appuie dessus (fenêtre de trois jours, v7.16.8 ; les
+    #    lignes d'antan retombent sur leur date_paiement). Migration
+    #    douce et ré-exécutable : des colonnes à NULL, rien d'existant
+    #    ne bouge. La base de production n'est JAMAIS touchée par
+    #    l'atelier : la migration vit dans le code, elle s'exécute chez
+    #    l'hébergeur au premier démarrage, comme les précédentes.
     safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN type_expedition TEXT")
     safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN echeance TEXT")
     safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN declare_le TEXT")
