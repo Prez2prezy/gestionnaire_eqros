@@ -157,8 +157,13 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       # (fenêtre de trois jours, v7.16.8)
                       cotis_div_declare, cotis_div_declaration_annuler,
                       cotis_div_exp_label, cotis_div_echeance_vivante,
-                      cotis_div_lignes,
+                      cotis_div_lignes, cotis_div_type_label,
                       COTIS_DIV_TYPES_EXP, COTIS_DESTINATIONS,
+                      # v7.16.9 — LE REPORT D'ÉCHÉANCE : la carte
+                      # d'abonnement dit la date qui répond pour le membre —
+                      # le report accordé par sa caisse, sinon la date
+                      # butoir du diocèse
+                      cotis_report_abo_lire,
                       # v7.16.6 — LA MENSUELLE ET L'ABONNEMENT DÉCLARABLES
                       # (le « Régler » pose la déclaration — mode + « Reçu
                       # par » — que la trésorerie confirme dans sa maison)
@@ -174,7 +179,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.16.8"
+_VERSION_APPLI = "v7.16.9"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -5258,8 +5263,14 @@ def _carte_cotisation_membre(membre):
         # v7.14.2 — l'échéance se recalcule pour LA NATURE DU MEMBRE (sans
         # reçu posé, la clé globale ci-dessus sert au seul reçu) : les
         # nouveaux regardent le 31/12, les anciens le délai de rigueur.
-        _echeance_aff = str(_reglages.get(
-            "cotis_echeance_abo" if _nouveau else "cotis_echeance", "2026-12-15"))
+        # v7.16.9 — L'ÉCHÉANCE EFFECTIVE : un report accordé par la caisse
+        # répond avant la date butoir du diocèse — la carte porte la date
+        # reportée et le dit (« Report accordé »).
+        _rep_abo = cotis_report_abo_lire(_mid, _annee)
+        _echeance_aff = (str(_rep_abo["echeance_reportee"]) if _rep_abo
+                         else str(_reglages.get(
+                             "cotis_echeance_abo" if _nouveau else "cotis_echeance",
+                             "2026-12-15")))
         try:
             _d_ech = date.fromisoformat(_echeance_aff)
             _echeance_aff = _d_ech.strftime("%d/%m/%Y")
@@ -5269,9 +5280,11 @@ def _carte_cotisation_membre(membre):
         if _nouveau:
             _titre = "⏳ Information - Abonnement"
             _ligne_mont = f'📝 Abonnement <b>{_m_txt}</b> FCFA'
-            _ligne_ech = ('⏰ Le ' + _echeance_aff + ' est passé — va voir ton responsable dès aujourd&#39;hui.'
-                          if _ech_passee else
-                          '🗓️ À régler au plus tard le <b>' + _echeance_aff + '</b>')
+            _ligne_ech = (("🗓️ Report accordé — à régler au plus tard le <b>" + _echeance_aff + "</b>")
+                          if (_rep_abo and not _ech_passee) else
+                          ('⏰ Le ' + _echeance_aff + ' est passé — va voir ton responsable dès aujourd&#39;hui.'
+                           if _ech_passee else
+                           '🗓️ À régler au plus tard le <b>' + _echeance_aff + '</b>'))
             _badge_mention = ('<div style="display:inline-block; background:rgba(255,215,0,0.14);'
                               ' border:1px solid #FFD700; border-radius:9px; padding:3px 10px;'
                               ' margin-top:9px; color:#FFD000; font-size:0.8rem;">'
@@ -5279,9 +5292,11 @@ def _carte_cotisation_membre(membre):
         else:
             _titre = "⏳ Rappel - Réabonnement"
             _ligne_mont = f'🔄 Réabonnement <b>{_m_txt}</b> FCFA'
-            _ligne_ech = ('⏰ Le délai de rigueur du ' + _echeance_aff + ' est passé — va voir ton responsable dès aujourd&#39;hui.'
-                          if _ech_passee else
-                          '🗓️ À régler au plus tard le <b>' + _echeance_aff + '</b> délai de rigueur')
+            _ligne_ech = (("🗓️ Report accordé — à régler au plus tard le <b>" + _echeance_aff + "</b>")
+                          if (_rep_abo and not _ech_passee) else
+                          ('⏰ Le délai de rigueur du ' + _echeance_aff + ' est passé — va voir ton responsable dès aujourd&#39;hui.'
+                           if _ech_passee else
+                           '🗓️ À régler au plus tard le <b>' + _echeance_aff + '</b> délai de rigueur'))
             _badge_mention = ""
         st.markdown(
             '<div style="background:linear-gradient(165deg,#241042 0%,#3B1177 55%,#4A148C 100%);'
@@ -5775,6 +5790,59 @@ def _etat_cotisations_membre(membre, _du=None):
                         + "</span>", unsafe_allow_html=True)
         st.caption(f"🕊️ Déjà versé cette année pastorale : "
                    f"{_fr(_etat.get('total_regle', _etat['total']))} FCFA")
+
+    # ─── ZONE 4 — ⏪ AVANT SEPTEMBRE : CE QUI RESTE DE L'ANNÉE PASSÉE ───
+    # v7.16.9 (la maison : « Comment gérer les arriérés antérieurs à
+    # septembre ? ») — chaque année pastorale vit sa propre vie : la
+    # fenêtre s'ouvre le 1er septembre, et les impayés d'avant se règlent
+    # dans le registre de l'année d'ORIGINE — ils ne remontent JAMAIS
+    # dans la dette de l'année en cours. Cette zone est une LECTURE SEULE
+    # : elle montre ce qui reste, pointe vers la trésorerie, et ne pose
+    # aucun geste. Les 🕊️ « à choix » éteintes d'antan n'y entrent pas :
+    # elles se sont effacées seules à minuit le lendemain de leur
+    # échéance — elles ne sont plus des arriérés.
+    _lignes_avant = []
+    try:
+        for _l_av in (cotis_div_lignes(_mid, _annee - 1) or []):
+            _regle_av = _l_av[8] if len(_l_av) > 8 else False
+            if _regle_av:
+                continue
+            if (len(_l_av) > 10
+                    and str(_l_av[10] or "").strip().lower() == "choix"
+                    and not cotis_div_echeance_vivante(
+                        _l_av[11] if len(_l_av) > 11 else None)):
+                continue
+            _lignes_avant.append(_l_av)
+    except Exception:
+        _lignes_avant = []
+    _abo_avant = False
+    try:
+        _abo_avant = c.execute("SELECT 1 FROM abonnements WHERE membre_id=? "
+                               "AND annee_debut=? AND statut='paye'",
+                               (_mid, _annee - 1)).fetchone() is None
+    except Exception:
+        _abo_avant = False
+    if _lignes_avant or _abo_avant:
+        with st.expander("⏪ Avant septembre — ce qui reste de l'année passée"):
+            if _abo_avant:
+                st.markdown(f"<span style='font-size:0.82rem; color:#4A148C;"
+                            f";'>📅 Abonnement — Réabonnement "
+                            f"{_annee - 1} - {_annee} — non réglé · ⏳</span>",
+                            unsafe_allow_html=True)
+            for _l_av in _lignes_avant:
+                _d_av = safe_date(_l_av[3])
+                _d_av_txt = _d_av.strftime("%d/%m/%Y") if _d_av else (_l_av[3] or "—")
+                _prec_av = str(_l_av[7] or "").strip() if len(_l_av) > 7 else ""
+                _seg_av = f" · {_prec_av}" if _prec_av else ""
+                _lbl_av = cotis_div_type_label(_l_av[1]) or _l_av[1]
+                st.markdown(f"<span style='font-size:0.8rem; color:#4A148C;'>"
+                            f"{_d_av_txt} · {_lbl_av}{_seg_av} · "
+                            f"{_fr(_l_av[2])} FCFA · ⏳</span>",
+                            unsafe_allow_html=True)
+            st.caption("🕊️ Lecture seule : ces arriérés se règlent auprès de ta "
+                       "trésorerie, dans le registre de l'année d'origine "
+                       f"({_annee - 1} - {_annee}) — ils ne pèsent pas sur "
+                       "l'année en cours.")
 
 
 def _panneau_declaration_membre(membre):
