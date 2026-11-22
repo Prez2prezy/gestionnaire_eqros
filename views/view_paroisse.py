@@ -19,7 +19,10 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       # v7.14.4 — la relance (lecture seule, rien n'écrit)
                       cotis_parametres_lire, cotis_relances_lignes,
                       # v7.16.7 — le suivi de près de la caisse (lecture pure)
-                      cotis_div_declarations_maison, cotis_declarations_attente)
+                      cotis_div_declarations_maison, cotis_declarations_attente,
+                      # v7.17.0 — LES CONTRÔLES DU RESPONSABLE (lecture pure) :
+                      # le livre des reports de ses équipes, les arriérés
+                      cotis_reports_abo_livre, cotis_arrieres_annee)
 from services import (hash_password, generer_mot_de_passe, sauvegarder_photo, supprimer_photo,
                       archiver_membre, safe_date, afficher_situation, sans_accents, 
                       enregistrer_abonnement, verifier_abonnement, periode_affichage, 
@@ -1055,6 +1058,81 @@ def show_paroisse():
                                 _rel_eq, cotis_reglages_aff(cotis_parametres_lire()),
                                 responsable_nom=str(eq[2] or "").strip()),
                                 language=None)
+
+        # v7.17.0 — LES CONTRÔLES DU RESPONSABLE PAROISSIAL (le même
+        # regard que chez l'équipe, étendu aux équipes de sa paroisse) :
+        # le livre des reports accordés par les caisses de ses équipes,
+        # les équipiers hors course et les arriérés de l'année passée —
+        # lecture PURE, la base n'est jamais écrite ici ; les gestes
+        # restent dans les caisses (celles des équipes, et la caisse de
+        # la paroisse hors des rubriques).
+        st.markdown("---")
+        st.markdown("### 🧭 Les contrôles du responsable")
+        st.caption("🔎 Lecture pure — les gestes restent dans les caisses "
+                   "(celles des équipes et la caisse de la paroisse).")
+        _livre_par = cotis_reports_abo_livre(annee, paroisse_id=pid)
+        _rel_par = cotis_relances_lignes(paroisse_id=pid, annee_debut=annee)
+        _hors_par = [l for l in _rel_par
+                     if l.get("jours") is not None and l["jours"] < 0]
+        _vivants_par = [l for l in _livre_par if l["vivant"]]
+        _arr_par = cotis_arrieres_annee(annee - 1, paroisse_id=pid)
+        _kp1, _kp2, _kp3 = st.columns(3)
+        _kp1.metric("⏳ Reports en course", len(_vivants_par),
+                    help="Les reports d'échéance accordés par les caisses "
+                         "de tes équipes et toujours vivants.")
+        _kp2.metric("⛔ Hors course", len(_hors_par),
+                    help="Les équipiers de ta paroisse dont l'échéance "
+                         "effective est passée sans règlement.")
+        _kp3.metric(f"⏪ Arriérés {annee - 1} - {annee}", len(_arr_par),
+                    help="Les impayés de l'année passée portés par tes "
+                         "équipiers — le règlement vit dans l'année "
+                         "d'origine (sélecteur d'année des caisses).")
+        with st.expander(f"📋 Le livre des reports d'échéance — {len(_livre_par)} accord(s) posé(s)"):
+            st.caption("Chaque accord posé par une caisse de tes équipes : "
+                       "l'échéance d'origine → la reportée, la signature, "
+                       "le mot — et l'état du membre aujourd'hui.")
+            if _livre_par:
+                _df_repp = pd.DataFrame([{
+                    "Membre": f"{l['nom']} {l['prenom']}",
+                    "Équipe": l["equipe"],
+                    "D'origine": l["echeance_origine"],
+                    "Reportée au": l["echeance_reportee"],
+                    "Accordée par": (l["accordee_par_nom"] or "—")
+                                    + (f" ({l['accordee_par_role']})"
+                                       if l["accordee_par_role"] else ""),
+                    "Le mot": l["motif"] or "—",
+                    "État": l["etat"],
+                } for l in _livre_par])
+                _df_repp.index = _df_repp.index + 1
+                st.dataframe(_df_repp, width="stretch")
+            else:
+                st.info("Aucun report posé par les caisses de tes équipes "
+                        "pour cette année.")
+        with st.expander(f"⛔ Hors course — {len(_hors_par)} équipier(s) hors délai"):
+            if _hors_par:
+                _df_hcp = pd.DataFrame([{
+                    "Membre": f"{l['nom']} {l['prenom']}",
+                    "Équipe": l["equipe"],
+                    "MatLoc": l["matloc"] or "—",
+                    "Échéance effective": l["echeance_aff"],
+                    "Dépassée de": f"{-l['jours']} jour(s)",
+                } for l in _hors_par])
+                _df_hcp.index = _df_hcp.index + 1
+                st.dataframe(_df_hcp, width="stretch")
+            else:
+                st.success("✅ Personne hors délai dans ta paroisse.")
+        with st.expander(f"⏪ Les arriérés de l'année passée ({annee - 1} - {annee}) — "
+                         f"{len(_arr_par)} équipier(s)"):
+            if _arr_par:
+                _df_avp = pd.DataFrame([{
+                    "Membre": f"{a[1]} {a[2]}", "Équipe": a[4],
+                    "MatLoc": a[3] or "—",
+                } for a in _arr_par])
+                _df_avp.index = _df_avp.index + 1
+                st.dataframe(_df_avp, width="stretch")
+            else:
+                st.success("✅ Aucun arriéré de l'année passée dans ta "
+                           "paroisse.")
 
     elif menu == "📌 Suivi":
         st.markdown(f'<h2 style="color:#1A237E;">📌 Suivi et Agenda - {nom_p}</h2>', unsafe_allow_html=True)
