@@ -183,7 +183,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.18.0"
+_VERSION_APPLI = "v7.18.1"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -800,8 +800,22 @@ def _render_theme(compact=False):
     .stButton > button { background-color: #1a2150 !important; color: #e8eaf6 !important; border: 1px solid #2a3160 !important; }
     .stButton > button[kind="primary"] { background-color: #4527a0 !important; border-color: #5e35b1 !important; color: #ffffff !important; }
     .stApp [data-testid="stDownloadButton"] > button { background-color: #1a2150 !important; color: #e8eaf6 !important; border: 1px solid #2a3160 !important; }
-    [data-testid="stAlert"] { background-color: #151b3d !important; }
-    [data-testid="stAlert"] p { color: #e8eaf6 !important; }
+    .stApp [data-testid="stAlert"], .stApp [data-testid="stAlertContainer"],
+    .stApp .stAlertContainer { background-color: #151b3d !important; border-radius: 10px !important; }
+    .stApp [data-testid="stAlert"] p { color: #e8eaf6 !important; }
+    /* === v7.18.1 — LE FOND VISIBLE (la leçon du téléphone en thème clair) ===
+       Streamlit a refondu l'alerte : le fond natif se peint désormais sur le
+       CONTENEUR INTÉRIEUR (stAlertContainer), pas sur stAlert — la règle
+       ancienne, qui ne peignait que stAlert, laissait la boîte native ambre
+       visible sous le texte clair forcé : le mot doux du pont devenait
+       illisible chez les lecteurs en thème clair. On peint AUJOURD'HUI les
+       deux conteneurs, quelle que soit la version de Streamlit, et le liseré
+       de la nature de l'alerte se lit par le contenu (:has) — les navigateurs
+       sans :has gardent la boîte lisible, simplement sans liseré. */
+    .stApp [data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]) { border-left: 4px solid #FFD700 !important; }
+    .stApp [data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) { border-left: 4px solid #66BB6A !important; }
+    .stApp [data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]) { border-left: 4px solid #EF5350 !important; }
+    .stApp [data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]) { border-left: 4px solid #64B5F6 !important; }
     [data-testid="stPopover"] { width: fit-content !important; max-width: 260px !important; margin-left: 0 !important; }
     [data-testid="stPopover"] button { background-color: #4527a0 !important; color: #ffffff !important; border: 1px solid #5e35b1 !important; border-radius: 20px !important; font-weight: 600 !important;
         /* v7.16.1 — le libellé se déplie sur DEUX LIGNES (titre puis le dû) : le bouton grandit en hauteur au lieu de sortir de la marge (téléphone surtout). */
