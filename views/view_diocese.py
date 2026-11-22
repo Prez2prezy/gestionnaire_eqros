@@ -36,7 +36,9 @@ from database import (c, commit_and_sync, safe_migrate,
                       # v7.15.3 — le registre des cotisations (montants du diocèse)
                       cotis_div_parametres_lire, cotis_div_parametres_ecrire,
                       # v7.16.7 — le suivi de près de la caisse (lecture pure)
-                      cotis_div_declarations_maison, cotis_declarations_attente)
+                      cotis_div_declarations_maison, cotis_declarations_attente,
+                      # v7.17.0 — LE LIVRE DES REPORTS DU DIOCÈSE (lecture pure)
+                      cotis_reports_abo_livre, cotis_arrieres_annee)
 from services import (hash_password, generer_mot_de_passe, safe_date, afficher_situation,
                       exporter_excel_diocese, periode_affichage, get_periode_pastorale,
                       supprimer_photo, afficher_messages_flash, lien_whatsapp, URL_ESPACE_SPIRITUEL,
@@ -971,6 +973,57 @@ def show_diocese():
                                file_name=f"suivi_abonnements_{annee_debut}_{date.today()}.xlsx",
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                key=f"cotis_export_suivi_{annee_debut}")
+
+        # v7.17.0 — LE LIVRE DES REPORTS DU DIOCÈSE (les contrôles du
+        # responsable) : les reports d'échéance posés par les caisses
+        # d'équipe de tout le diocèse — chaque accord est une ligne, la
+        # signature voyage avec (qui, quel rôle, quand) et l'état du
+        # membre répond aujourd'hui (✅ réglé, ⏳ en course, ⛔ hors
+        # course). Lecture PURE : la base n'est jamais écrite ici — le
+        # délai de rigueur reste celui du diocèse, le report ne fait que
+        # le reculer pour celui qui ne peut pas le tenir.
+        _livre_dio = cotis_reports_abo_livre(annee_debut)
+        _hors_dio = [l for l in _rel_dio
+                     if l.get("jours") is not None and l["jours"] < 0]
+        _vivants_dio = [l for l in _livre_dio if l["vivant"]]
+        _arr_dio = cotis_arrieres_annee(annee_debut - 1)
+        st.markdown("### 🧭 Le livre des reports d'échéance")
+        st.caption("🔎 Lecture pure — les reports vivent dans les caisses "
+                   "d'équipe ; ici le diocèse les relit tous : chaque accord "
+                   "recule la date du délai de rigueur pour un membre, "
+                   "jamais la dette.")
+        _kd1, _kd2, _kd3 = st.columns(3)
+        _kd1.metric("⏳ Reports en course", len(_vivants_dio),
+                    help="Les accords vivants de toutes les caisses — la "
+                         "date reportée court encore.")
+        _kd2.metric("⛔ Hors course", len(_hors_dio),
+                    help="Les équipiers dont l'échéance effective (report "
+                         "comprise) est passée sans règlement.")
+        _kd3.metric(f"⏪ Arriérés {annee_debut - 1} - {annee_debut}", len(_arr_dio),
+                    help="Les impayés de l'année passée — chaque année "
+                         "pastorale vit sa propre vie ; le règlement vit "
+                         "dans l'année d'origine.")
+        with st.expander(f"📋 Les accords posés par les caisses — {len(_livre_dio)} ligne(s)"):
+            if _livre_dio:
+                _df_rd = pd.DataFrame([{
+                    "Membre": f"{l['nom']} {l['prenom']}",
+                    "Paroisse": l["paroisse"],
+                    "Équipe": l["equipe"],
+                    "D'origine": l["echeance_origine"],
+                    "Reportée au": l["echeance_reportee"],
+                    "Accordée par": (l["accordee_par_nom"] or "—")
+                                    + (f" ({l['accordee_par_role']})"
+                                       if l["accordee_par_role"] else ""),
+                    "Posée le": l["pose_le"][:10] if l["pose_le"] else "—",
+                    "Le mot": l["motif"] or "—",
+                    "État": l["etat"],
+                } for l in _livre_dio])
+                _df_rd.index = _df_rd.index + 1
+                st.dataframe(_df_rd, width="stretch")
+            else:
+                st.info("Aucun report posé par les caisses d'équipe pour "
+                        "cette année — les échéances du diocèse répondent "
+                        "pour tous.")
         st.markdown("---")
 
         for p in c.execute("SELECT id, nom FROM paroisses ORDER BY nom").fetchall():
