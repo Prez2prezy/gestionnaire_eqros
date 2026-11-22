@@ -787,6 +787,31 @@ def init_tables_and_migrations():
         cree_le TEXT
     )""")
 
+    # v7.16.9 — LE REPORT D'ÉCHÉANCE DE L'ABONNEMENT — RÉABONNEMENT (la
+    # maison : « cette cotisation est aussi à échéance puisqu'il y a une
+    # date butoir… il est impérieux de faire un report d'échéance ») : la
+    # caisse de l'équipe accorde, membre par membre, une nouvelle date au-
+    # delà du délai de rigueur — l'échéance qui répond pour CE membre
+    # devient la sienne, et les conséquences de la clôture (plus équipier,
+    # feuillets suspendus, MatLoc gelé) attendent la date REPORTÉE, pas
+    # avant. Une table douce porte la trace : chaque accord est une ligne,
+    # le DERNIER accord répond, le lever efface les accords vivants (les
+    # lignes d'antan restent comme mémoire du registre). Ré-exécutable :
+    # rien d'existant ne bouge. La base de production n'est JAMAIS touchée
+    # par l'atelier : la table vit dans le code, elle naît chez l'hébergeur
+    # au premier démarrage, comme les précédentes.
+    c.execute("""CREATE TABLE IF NOT EXISTS cotis_reports_abo (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        membre_id INTEGER,
+        annee_debut INTEGER,
+        echeance_origine TEXT,
+        echeance_reportee TEXT,
+        motif TEXT,
+        accordee_par_nom TEXT,
+        accordee_par_role TEXT,
+        pose_le TEXT
+    )""")
+
     # --- 4. MIGRATION DE DONNÉES (évènements anciens) ---
     try:
         anciens_evts = c.execute("SELECT id, equipe_id FROM evenements WHERE equipe_id IS NOT NULL AND paroisse_id IS NULL AND diocese_id IS NULL").fetchall()
@@ -4645,6 +4670,141 @@ def cotis_echeance_nature(nature=None):
                           else "cotis_echeance"))
 
 
+# ────────────────────────────────────────────────────────────────────────
+# v7.16.9 — LE REPORT D'ÉCHÉANCE DE L'ABONNEMENT — RÉABONNEMENT
+# L'abonnement est ⛓️ obligatoire ET à échéance (la date butoir du
+# diocèse). Quand la date ne peut pas être tenue, la caisse de l'équipe
+# accorde un REPORT : une nouvelle date, membre par membre, signée —
+# l'échéance EFFECTIVE du membre devient la reportée jusqu'à son
+# règlement. Le report recule la date, jamais la dette.
+# ────────────────────────────────────────────────────────────────────────
+
+def cotis_report_abo_poser(membre_id, annee_debut, nouvelle_echeance,
+                           motif=None, accordee_par_nom=None,
+                           accordee_par_role="Responsable d'équipe",
+                           nature="reabonnement"):
+    """v7.16.9 — POSER LE REPORT : la caisse de l'équipe accorde à un
+    membre non encore réabonné une nouvelle échéance au-delà du délai de
+    rigueur (ou du report précédent). `nature` : la nature du membre
+    (« abonnement » pour les nouveaux, « reabonnement » sinon) — elle dit
+    quelle échéance du diocèse sert de date d'origine quand aucun report
+    ne dort déjà. INSERT pur — les accords d'antan restent dans la table
+    comme trace du registre ; c'est le DERNIER accord qui répond.
+    `nouvelle_echeance` : date ISO (le jour tronqué à 10) ; `motif` : le
+    mot du report, nettoyé, 200 caractères au plus, vide → NULL. Retourne
+    l'id du report, None si la date est illisible ou égale à l'échéance
+    vivante d'origine (un report qui ne recule rien ne se pose pas)."""
+    _d = cotis_div_echeance_propre(nouvelle_echeance)
+    if not _d:
+        logger.warning("cotis_report_abo_poser : échéance reportée illisible")
+        return None
+    try:
+        _ancien = cotis_report_abo_lire(membre_id, annee_debut)
+        _origine = (str(_ancien["echeance_reportee"]) if _ancien
+                    else cotis_echeance_nature(nature))
+        if str(_origine)[:10] == _d:
+            logger.warning("cotis_report_abo_poser : le report ne recule rien")
+            return None
+        c.execute("""INSERT INTO cotis_reports_abo
+                     (membre_id, annee_debut, echeance_origine,
+                      echeance_reportee, motif, accordee_par_nom,
+                      accordee_par_role, pose_le)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                  (int(membre_id), int(annee_debut), str(_origine)[:10], _d,
+                   (str(motif).strip()[:200] or None) if motif else None,
+                   (str(accordee_par_nom).strip() or None)
+                   if accordee_par_nom else None,
+                   str(accordee_par_role).strip()
+                   or "Responsable d'équipe",
+                   datetime.now().isoformat(timespec="seconds")))
+        commit_and_sync()
+        _r = c.execute("SELECT id FROM cotis_reports_abo WHERE membre_id=? "
+                       "AND annee_debut=? ORDER BY id DESC LIMIT 1",
+                       (int(membre_id), int(annee_debut))).fetchone()
+        return _r[0] if _r else None
+    except Exception as e:
+        logger.warning(f"cotis_report_abo_poser : {e!r}")
+        return None
+
+
+def cotis_report_abo_lire(membre_id, annee_debut):
+    """v7.16.9 — LE REPORT VIVANT d'un membre pour l'année (lecture pure) :
+    le dernier accord posé, None s'il n'y en a pas. Retourne un dict
+    {id, membre_id, annee_debut, echeance_origine, echeance_reportee,
+    motif, accordee_par_nom, accordee_par_role, pose_le}."""
+    try:
+        _r = c.execute("""SELECT id, membre_id, annee_debut,
+                                 echeance_origine, echeance_reportee,
+                                 motif, accordee_par_nom,
+                                 accordee_par_role, pose_le
+                          FROM cotis_reports_abo
+                          WHERE membre_id=? AND annee_debut=?
+                          ORDER BY id DESC LIMIT 1""",
+                       (int(membre_id), int(annee_debut))).fetchone()
+        if not _r:
+            return None
+        return {"id": _r[0], "membre_id": _r[1], "annee_debut": _r[2],
+                "echeance_origine": _r[3], "echeance_reportee": _r[4],
+                "motif": _r[5], "accordee_par_nom": _r[6],
+                "accordee_par_role": _r[7], "pose_le": _r[8]}
+    except Exception as e:
+        logger.warning(f"cotis_report_abo_lire : {e!r}")
+        return None
+
+
+def cotis_report_abo_lever(membre_id, annee_debut):
+    """v7.16.9 — LEVER LE REPORT : l'échéance du diocèse reprend sa place.
+    Seuls les accords VIVANTS de ce membre, cette année, s'effacent — les
+    lignes d'antan de la table demeurent la mémoire du registre (une
+    erreur de pose se corrige en repositionnant un nouveau report)."""
+    try:
+        c.execute("DELETE FROM cotis_reports_abo WHERE membre_id=? "
+                  "AND annee_debut=? AND pose_le >= ?",
+                  (int(membre_id), int(annee_debut),
+                   (date.today() - timedelta(days=365)).isoformat()))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"cotis_report_abo_lever : {e!r}")
+        return False
+
+
+def cotis_reports_abo_annee(annee_debut):
+    """v7.16.9 — LE DERNIER REPORT VIVANT DE CHAQUE MEMBRE pour l'année
+    (lecture pure), en dictionnaire {membre_id: report} — les maisons
+    lisent leurs échéances effectives sans questionner membre par membre."""
+    _out = {}
+    try:
+        for _r in c.execute("""SELECT id, membre_id, echeance_origine,
+                                      echeance_reportee, motif,
+                                      accordee_par_nom, accordee_par_role,
+                                      pose_le
+                               FROM cotis_reports_abo
+                               WHERE annee_debut=? ORDER BY id ASC""",
+                            (int(annee_debut),)).fetchall():
+            _out[_r[1]] = {"id": _r[0], "membre_id": _r[1],
+                           "annee_debut": int(annee_debut),
+                           "echeance_origine": _r[2],
+                           "echeance_reportee": _r[3], "motif": _r[4],
+                           "accordee_par_nom": _r[5],
+                           "accordee_par_role": _r[6], "pose_le": _r[7]}
+    except Exception as e:
+        logger.warning(f"cotis_reports_abo_annee : {e!r}")
+    return _out
+
+
+def cotis_echeance_effective(membre_id, annee_debut, nature="reabonnement"):
+    """v7.16.9 — L'ÉCHÉANCE QUI RÉPOND pour ce membre, cette année : le
+    report accordé par sa caisse s'il en porte un (le dernier accord),
+    sinon l'échéance du diocèse pour sa nature (délai de rigueur / 31
+    décembre). Retourne (iso, report ou None) — le report accompagne la
+    date pour que les maisons puissent le dire à côté."""
+    _rep = cotis_report_abo_lire(membre_id, annee_debut)
+    if _rep and _rep.get("echeance_reportee"):
+        return str(_rep["echeance_reportee"]), _rep
+    return cotis_echeance_nature(nature), None
+
+
 def cotis_relances_lignes(equipe_id=None, paroisse_id=None, annee_debut=None):
     """v7.14.4 — LE LIVRE DES RELANCES (lecture seule) : les membres actifs
     dont le paiement de l'année pastorale n'est pas posé, chacun avec la
@@ -4652,14 +4812,19 @@ def cotis_relances_lignes(equipe_id=None, paroisse_id=None, annee_debut=None):
     abonnement, sinon réabonnement — la même règle que cotis_nature_membre,
     lue ici en bloc pour ne pas questionner la base membre par membre), le
     montant attendu (réglages du diocèse, catégorie adulte/jeune selon le
-    nom de l'équipe) et l'échéance qui le concerne (réabonnement au délai
+    nom de l'équipe) et l'échéance EFFECTIVE qui le concerne (v7.16.9 : le
+    report accordé par la caisse répond avant le délai de rigueur, et la
+    date qui s'affiche est la sienne ; sans report, réabonnement au délai
     de rigueur, abonnement des nouveaux au 31/12). AUCUNE écriture : on ne
     fait que relire ce que la base sait déjà — la relance n'est pas une
     caisse.
     Retourne une liste de dicts :
     {membre_id, nom, prenom, matloc, whatsapp, equipe_id, equipe, paroisse,
-     nature, categorie, montant, echeance, echeance_aff, jours}
-    — jours : nombre de jours avant l'échéance (négatif = dépassée)."""
+     nature, categorie, montant, echeance, echeance_aff, jours, report,
+     report_par}
+    — jours : nombre de jours avant l'échéance effective (négatif =
+    dépassée) ; report : True si un report d'échéance répond pour ce
+    membre ; report_par : qui l'a accordé."""
     if annee_debut is None:
         _t = date.today()
         annee_debut = _t.year if _t.month >= 9 else _t.year - 1
@@ -4693,6 +4858,7 @@ def cotis_relances_lignes(equipe_id=None, paroisse_id=None, annee_debut=None):
     except Exception:
         _d_abo = None
     _lignes = []
+    _reports = cotis_reports_abo_annee(annee_debut)
     try:
         for r in c.execute(_sql, _args).fetchall():
             (_mid, _nom, _prenom, _matloc, _wa, _eid, _eq, _par,
@@ -4704,11 +4870,19 @@ def cotis_relances_lignes(equipe_id=None, paroisse_id=None, annee_debut=None):
             _cat = "jeune" if (_eq and "jeune" in str(_eq).lower()) else "adulte"
             _cle_m = f"cotis_montant_{_cat}_{'abo' if _nouveau else 'reab'}"
             _montant = int(params.get(_cle_m, 5000))
-            _ech_iso = _ech_abo if _nouveau else _ech_reab
-            _d_ech = _d_abo if _nouveau else _d_reab
+            # v7.16.9 — L'ÉCHÉANCE EFFECTIVE : le report accordé par la
+            # caisse répond avant le délai de rigueur du diocèse.
+            _rep = _reports.get(_mid)
+            _ech_iso = (str(_rep["echeance_reportee"]) if _rep
+                        else (_ech_abo if _nouveau else _ech_reab))
+            try:
+                _d_ech = date.fromisoformat(str(_ech_iso)[:10])
+            except Exception:
+                _d_ech = None
             _jours = (_d_ech - _auj).days if _d_ech else None
             try:
-                _ech_aff = date.fromisoformat(_ech_iso).strftime("%d/%m/%Y")
+                _ech_aff = date.fromisoformat(str(_ech_iso)[:10]).strftime(
+                    "%d/%m/%Y")
             except Exception:
                 _ech_aff = _ech_iso
             _lignes.append({"membre_id": _mid, "nom": _nom or "",
@@ -4718,7 +4892,10 @@ def cotis_relances_lignes(equipe_id=None, paroisse_id=None, annee_debut=None):
                             "equipe": _eq or "—", "paroisse": _par or "—",
                             "nature": _nature, "categorie": _cat,
                             "montant": _montant, "echeance": _ech_iso,
-                            "echeance_aff": _ech_aff, "jours": _jours})
+                            "echeance_aff": _ech_aff, "jours": _jours,
+                            "report": bool(_rep),
+                            "report_par": (_rep or {}).get(
+                                "accordee_par_nom") or ""})
     except Exception as e:
         logger.warning(f"cotis_relances_lignes : {e!r}")
     return _lignes
