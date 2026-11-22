@@ -168,7 +168,11 @@ from database import (c, commit_and_sync, verifier_reparer_intentions,
                       # (le « Régler » pose la déclaration — mode + « Reçu
                       # par » — que la trésorerie confirme dans sa maison)
                       cotis_declaration_poser, cotis_declaration_membre,
-                      cotis_declaration_retirer)
+                      cotis_declaration_retirer,
+                      # v7.18.0 — L'AUTORISATION EN GESTE BLOQUANT : la
+                      # déclaration au-delà de sa maison attend l'accord du
+                      # responsable direct (la règle, pour dire le mot juste)
+                      cotis_autorisation_requise)
 from services import (safe_date, compter_visite, lien_whatsapp, urls_galerie,
                       URL_ESPACE_SPIRITUEL, get_periode_pastorale)
 
@@ -179,7 +183,7 @@ from mysteres import get_mysteres_du_jour, COULEURS_TYPES, MYSTERES, get_mystere
 # v7.9.8 — UNE SEULE version pour TOUTE la vue : la carte d'accueil affichait
 # encore « v7.6 » (jamais suivie à chaque livraison) — désormais la carte et
 # le pied de page lisent la MÊME constante, mise à jour à chaque version.
-_VERSION_APPLI = "v7.17.0"
+_VERSION_APPLI = "v7.18.0"
 
 # v7.9.9 — la page Facebook du Mouvement / du diocèse : renseignée, l'icône
 # apparaît dans la barre de copyright du pied de page (même disposition que
@@ -5338,6 +5342,27 @@ def _dues_expeditions_membre(_lignes):
     return _dues
 
 
+def _suite_declaration_membre(dest_code, aut_etat):
+    """v7.18.0 — LA SUITE DU BADGE AMBRE du membre, au mot juste selon la
+    destination et l'état de l'autorisation : chez sa maison, le mot
+    d'antan ; au-delà, l'autorisation du responsable direct se dit —
+    attendue (« ⏳ »), accordée (« ✋ »), ou d'antan sans état."""
+    _d = str(dest_code or "").strip().lower()
+    _a = str(aut_etat or "").strip().lower()
+    if _d in ("paroisse", "diocese"):
+        _caisse = ("la caisse de la paroisse" if _d == "paroisse"
+                   else "la caisse du diocèse")
+        if _a == "attente":
+            _qui = ("ta responsable d'équipe" if _d == "paroisse"
+                    else "le responsable de ta paroisse")
+            return (f" — ⏳ l'autorisation de {_qui} attend : "
+                    f"{_caisse} confirmera après son ✋")
+        if _a == "accordee":
+            return f" — ✋ autorisée : {_caisse} confirmera"
+        return f" — {_caisse} confirme"
+    return " — ta responsable d'équipe confirme"
+
+
 def _etat_cotisations_membre(membre, _du=None):
     """v7.16.0 — « 💰 État de mes cotisations » : LE REGISTRE DU MEMBRE,
     posé en face de « 👤 Mon profil » sur la même ligne.
@@ -5438,6 +5463,10 @@ def _etat_cotisations_membre(membre, _du=None):
                 _mode_decl = _modes_lbls.get(_l[13] or "", _l[13] or "—")
                 _dest_decl = (cotis_destination_label(_l[14])
                               if (len(_l) > 14 and _l[14]) else None)
+                # v7.18.0 — la suite dit l'autorisation au mot juste
+                _suite_l = _suite_declaration_membre(
+                    _l[14] if len(_l) > 14 else None,
+                    _l[15] if len(_l) > 15 else None)
                 st.markdown(
                     "<span style='font-size:0.8rem; color:#8a6d1a;"
                     " background:#fff8e1; border:1px solid #ffe082;"
@@ -5445,8 +5474,8 @@ def _etat_cotisations_membre(membre, _du=None):
                     "inline-block; margin:1px 0;'>🕊️ versé et déclaré le "
                     f"{_d_decl} · {_mode_decl}"
                     + (f" · {_dest_decl}" if _dest_decl else "")
-                    + f"{_seg_prec} · {_fr(_l[2])} FCFA — ta responsable "
-                    "d'équipe confirme</span>", unsafe_allow_html=True)
+                    + f"{_seg_prec} · {_fr(_l[2])} FCFA"
+                    + _suite_l + "</span>", unsafe_allow_html=True)
                 if st.button("✖ Retirer ma déclaration",
                              key=f"cotis_decl_ret_{_l[0]}",
                              help="Tu t'es trompé de mode ou de caisse ? "
@@ -5507,6 +5536,10 @@ def _etat_cotisations_membre(membre, _du=None):
                     if _decl_mens["declare_dest"] else None)
                 _mois_decl_m = _fr_liste([_mois_lbls_z1.get(_m, str(_m))
                                           for _m in _decl_mens["mois"]])
+                # v7.18.0 — la suite dit l'autorisation au mot juste
+                _suite_m = _suite_declaration_membre(
+                    _decl_mens.get("declare_dest"),
+                    _decl_mens.get("autorisation_etat"))
                 st.markdown(
                     "<span style='font-size:0.8rem; color:#8a6d1a;"
                     " background:#fff8e1; border:1px solid #ffe082;"
@@ -5515,7 +5548,7 @@ def _etat_cotisations_membre(membre, _du=None):
                     f"{_d_decl_m} · 🧮 Mensuelle ({_mois_decl_m}) · "
                     f"{_fr(_decl_mens['montant'])} FCFA · {_mode_decl_m}"
                     + (f" · {_dest_decl_m}" if _dest_decl_m else "")
-                    + " — ta trésorerie confirme</span>",
+                    + _suite_m + "</span>",
                     unsafe_allow_html=True)
                 if st.button("✖ Retirer ma déclaration",
                              key="cotis_declret_mens",
@@ -5594,6 +5627,10 @@ def _etat_cotisations_membre(membre, _du=None):
                 _dest_decl_a = (cotis_destination_label(
                     _decl_abo["declare_dest"])
                     if _decl_abo["declare_dest"] else None)
+                # v7.18.0 — la suite dit l'autorisation au mot juste
+                _suite_a = _suite_declaration_membre(
+                    _decl_abo.get("declare_dest"),
+                    _decl_abo.get("autorisation_etat"))
                 st.markdown(
                     "<span style='font-size:0.8rem; color:#8a6d1a;"
                     " background:#fff8e1; border:1px solid #ffe082;"
@@ -5602,7 +5639,7 @@ def _etat_cotisations_membre(membre, _du=None):
                     f"{_d_decl_a} · 📅 {_nat_z1} {_annee} - {_annee + 1} · "
                     f"{_fr(_decl_abo['montant'])} FCFA · {_mode_decl_a}"
                     + (f" · {_dest_decl_a}" if _dest_decl_a else "")
-                    + " — ta trésorerie confirme (reçu numéroté)</span>",
+                    + _suite_a + " (reçu numéroté)</span>",
                     unsafe_allow_html=True)
                 if st.button("✖ Retirer ma déclaration",
                              key="cotis_declret_abo",
@@ -5976,14 +6013,34 @@ def _panneau_declaration_membre(membre):
                 if st.session_state.get('cotis_decl_cible'):
                     del st.session_state['cotis_decl_cible']
                 if _ok_c:
-                    st.session_state['cotis_decl_flash'] = (
-                        ("🕊️ Ta mensuelle est déclarée — ta trésorerie la "
-                         "confirmera dans sa caisse (« 💰 Versement »), et "
-                         "les mois déclarés se vendront à sa confirmation.")
-                        if _cible == "mensuelle" else
-                        "🕊️ Ton abonnement est déclaré — ta trésorerie le "
-                        "confirmera dans sa caisse (« 💰 Versement ») ; le "
-                        "reçu numéroté naît à sa confirmation.")
+                    # v7.18.0 — LE MOT JUSTE : au-delà de ta maison, la
+                    # déclaration attend l'accord du responsable direct
+                    # avant d'arriver à la caisse qui reçoit.
+                    _aut_niv = cotis_autorisation_requise(
+                        _dest_code, membre[10], membre[11])
+                    if _aut_niv:
+                        _qui = ("ta responsable d'équipe"
+                                if _aut_niv == "equipe"
+                                else "le responsable de ta paroisse")
+                        _caisse = ("la caisse de la paroisse"
+                                   if _dest_code == "paroisse"
+                                   else "la caisse du diocèse")
+                        st.session_state['cotis_decl_flash'] = (
+                            "🕊️ Ta " + ("mensuelle est déclarée"
+                                        if _cible == "mensuelle"
+                                        else "déclaration d'abonnement est posée")
+                            + " à " + _caisse + " — elle attend d'abord "
+                            "l'autorisation de " + _qui + " : une fois "
+                            "accordée, " + _caisse + " confirmera.")
+                    else:
+                        st.session_state['cotis_decl_flash'] = (
+                            ("🕊️ Ta mensuelle est déclarée — ta trésorerie la "
+                             "confirmera dans sa caisse (« 💰 Versement »), et "
+                             "les mois déclarés se vendront à sa confirmation.")
+                            if _cible == "mensuelle" else
+                            "🕊️ Ton abonnement est déclaré — ta trésorerie le "
+                            "confirmera dans sa caisse (« 💰 Versement ») ; le "
+                            "reçu numéroté naît à sa confirmation.")
                 else:
                     st.session_state['cotis_decl_flash'] = (
                         "La déclaration n'a pas pu être posée — réessaie.")
@@ -6057,11 +6114,29 @@ def _panneau_declaration_membre(membre):
                 del st.session_state['cotis_decl_tous']
             if _ok_n:
                 _plur = "s" if _ok_n > 1 else ""
-                st.session_state['cotis_decl_flash'] = (
-                    "🕊️ Ton versement est déclaré — ta responsable d'équipe "
-                    f"le confirmera dans sa caisse ({_ok_n} ligne{_plur}). "
-                    "La ligne porte ta déclaration dans « 💰 État de mes "
-                    "cotisations ».")
+                # v7.18.0 — LE MOT JUSTE : au-delà de ta maison, la
+                # déclaration attend l'accord du responsable direct avant
+                # d'arriver à la caisse qui reçoit.
+                _aut_niv = cotis_autorisation_requise(
+                    _dest_code, membre[10], membre[11])
+                if _aut_niv:
+                    _qui = ("ta responsable d'équipe"
+                            if _aut_niv == "equipe"
+                            else "le responsable de ta paroisse")
+                    _caisse = ("la caisse de la paroisse"
+                               if _dest_code == "paroisse"
+                               else "la caisse du diocèse")
+                    st.session_state['cotis_decl_flash'] = (
+                        "🕊️ Ton versement est déclaré à " + _caisse
+                        + f" ({_ok_n} ligne{_plur}) — il attend d'abord "
+                        "l'autorisation de " + _qui + " : une fois accordée, "
+                        + _caisse + " confirmera.")
+                else:
+                    st.session_state['cotis_decl_flash'] = (
+                        "🕊️ Ton versement est déclaré — ta responsable d'équipe "
+                        f"le confirmera dans sa caisse ({_ok_n} ligne{_plur}). "
+                        "La ligne porte ta déclaration dans « 💰 État de mes "
+                        "cotisations ».")
             else:
                 st.session_state['cotis_decl_flash'] = (
                     "La déclaration n'a pas pu être posée — réessaie.")
@@ -6342,6 +6417,21 @@ def _pont_memoire_hors_ligne(membre):
         return
     _nom = ((membre[1] or "") + " " + (membre[2] or "")).strip()
 
+    # ---- 0) LE MOT DOUX QUI SURVIT (v7.18.0) — la leçon du terrain ----
+    # Le versement des journées allège l'adresse (del pont_jours), ce qui
+    # relance la page AUSSITÔT : le mot doux rendu pendant le tour du
+    # versement s'effaçait au tour suivant — sur un écran lent, le fidèle
+    # ne le voyait JAMAIS et croyait le pointage perdu. Il est posé en
+    # session au moment du versement et rendu ICI, au tour suivant, une
+    # seule fois : il traverse le nettoyage de l'adresse et reste affiché.
+    _flash_pont = st.session_state.pop("pont_flash", None)
+    if _flash_pont:
+        try:
+            (st.success if _flash_pont[0] == "ok" else st.warning)(
+                _flash_pont[1])
+        except Exception:
+            pass
+
     # ---- 1) REÇOIR : les journées annoncées par le téléphone ----
     _pj = st.query_params.get("pont_jours")
     if isinstance(_pj, list):
@@ -6363,19 +6453,28 @@ def _pont_memoire_hors_ligne(membre):
                 st.session_state["pont_recues"] = int(_aj) + int(_dj)
                 # v7.15.2 — le mot doux naît ICI (sous l'entête, depuis que
                 # le pont vit après elle) et plus jamais au-dessus.
+                # v7.18.0 — il se pose AUSSI en session (« pont_flash ») :
+                # le nettoyage de l'adresse relance la page au tour suivant,
+                # le mot rendu pendant ce tour s'effaçait avant d'être lu —
+                # le fidèle croyait son pointage perdu. Le tour suivant le
+                # rend (section 0), une seule fois.
                 if _aj:
-                    st.success(
+                    _mot_pont = (
                         "🕊️ " + str(_aj)
                         + (" journée" if _aj == 1 else " journées")
                         + " priée(s) hors ligne "
                         + ("vient de rejoindre" if _aj == 1 else "viennent de rejoindre")
                         + " ta chaîne de prière — Merci Sainte Mère pour ta fidélité ! 📿")
+                    st.session_state["pont_flash"] = ("ok", _mot_pont)
+                    st.success(_mot_pont)
                 elif _dj:
                     _phr = ("Ta journée priée hors ligne était déjà dans la chaîne"
                             if _dj == 1 else
                             "Tes " + str(_dj) + " journées priées hors ligne étaient "
                             "déjà dans la chaîne")
-                    st.warning(_phr + " — rien n'a été recompté. 🕊️")
+                    _phr = _phr + " — rien n'a été recompté. 🕊️"
+                    st.session_state["pont_flash"] = ("warn", _phr)
+                    st.warning(_phr)
             except Exception:
                 logger.warning("_pont_memoire_hors_ligne : réception manquée")
         # l'adresse s'allège — le paramètre a vécu
