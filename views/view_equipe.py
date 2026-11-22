@@ -67,7 +67,17 @@ from database import (c, commit_and_sync, verifier_reparer_intentions, jours_dep
                       cotis_declarations_attente, cotis_declaration_retirer,
                       cotis_declaration_confirmer_mensuelle,
                       cotis_declaration_confirmer_abonnement,
-                      cotis_div_total_du)
+                      cotis_div_total_du,
+                      # v7.18.0 — L'AUTORISATION EN GESTE BLOQUANT : les
+                      # déclarations adressées au-delà de la maison du
+                      # membre attendent l'accord du responsable direct —
+                      # le bloc « ✋ Autorisations demandées » de sa caisse
+                      cotis_div_autorisations_attente,
+                      cotis_div_autorisation_accorder,
+                      cotis_div_autorisation_refuser,
+                      cotis_declaration_autorisations_attente,
+                      cotis_declaration_autorisation_accorder,
+                      cotis_declaration_autorisation_refuser)
 from services import (sauvegarder_photo, supprimer_photo, archiver_membre, safe_date, 
                       afficher_situation, enregistrer_abonnement, verifier_abonnement, 
                       periode_affichage, generer_matricule_unique, get_periode_pastorale,
@@ -2520,7 +2530,8 @@ def _section_versements_equipe(eid, annee):
     _attente_brute = c.execute(f"""SELECT d.id, d.montant, d.type_cotisation,
                                    d.date_versement, d.precision, d.enregistre_par,
                                    m.nom, m.prenom, m.matloc,
-                                   d.declare_le, d.declare_mode, d.declare_dest
+                                   d.declare_le, d.declare_mode, d.declare_dest,
+                                   d.autorisation_etat
                             FROM cotisations_diverses d
                             JOIN membres m ON d.membre_id=m.id
                             WHERE m.equipe_id=? AND m.statut='actif'
@@ -2534,6 +2545,17 @@ def _section_versements_equipe(eid, annee):
     for _a in _attente_brute:
         if _a[9] and (str(_a[11] or "").strip().lower()
                       in ("paroisse", "diocese")):
+            # v7.18.0 — L'AUTORISATION EN GESTE BLOQUANT : une déclaration
+            # à la trésorerie de la PAROISSE encore en attente d'accord
+            # quitte le bloc d'information — elle campe dans le bloc « ✋
+            # Autorisations demandées » du-dessous, où le responsable
+            # l'accorde. Les autres (diocèse, accordées, d'antan) restent
+            # là pour information.
+            _dest_ail = str(_a[11] or "").strip().lower()
+            _etat_ail = (str(_a[12] or "").strip().lower()
+                         if len(_a) > 12 else "")
+            if _dest_ail == "paroisse" and _etat_ail == "attente":
+                continue
             _attente_ailleurs.append(_a)
         else:
             _attente.append(_a)
@@ -2620,20 +2642,259 @@ def _section_versements_equipe(eid, annee):
                     st.session_state['cotis_decl_refus_id'] = _a[0]
                     st.rerun()
 
+    # v7.18.0 — LES AUTORISATIONS DEMANDÉES (l'autorisation en geste
+    # bloquant — la Note de la maison devient un geste) : un équipier qui
+    # déclare un versement à la trésorerie de la PAROISSE attend l'accord
+    # de son responsable direct — tant qu'il n'est pas posé, la caisse de
+    # la paroisse ne voit RIEN (le blocage est réel, pas une affiche).
+    # Les lignes du registre d'abord, puis la mensuelle et l'abonnement
+    # déclarés. L'accord se donne en deux temps ; le refus rend le dû au
+    # « ⏳ à régler » du membre. Le trésorier lit le bloc sans geste :
+    # l'autorisation appartient au responsable de l'équipe.
+    _auths_lignes = cotis_div_autorisations_attente(
+        "equipe", equipe_id=eid, annee_debut=annee)
+    _auths_decls = cotis_declaration_autorisations_attente(
+        "equipe", equipe_id=eid, annee_debut=annee)
+    if _auths_lignes or _auths_decls:
+        st.markdown(f"#### ✋ Autorisations demandées — "
+                    f"{len(_auths_lignes) + len(_auths_decls):02d} demande(s)")
+        st.caption("Un équipier déclare un versement à la trésorerie de la "
+                   "paroisse : tant que ton autorisation n'est pas posée, la "
+                   "caisse de la paroisse ne le voit pas. L'accord se donne "
+                   "en deux temps ; le refus rend le dû au « ⏳ à régler »."
+                   + ("" if st.session_state.get('role') == 'equipe' else
+                       " — le geste appartient au responsable de l'équipe."))
+        # le refus en deux temps (ligne du registre) — rien ne s'efface
+        # sans un deuxième geste
+        if st.session_state.get('cotis_auth_refus_id'):
+            _la_r = next((_x for _x in _auths_lignes
+                          if _x[0] == st.session_state['cotis_auth_refus_id']),
+                         None)
+            if _la_r:
+                st.warning(f"🕊️ Refuser l'autorisation pour {_la_r[6]} "
+                           f"{_la_r[7]} ({_la_r[8] or '—'}) — "
+                           f"{cotis_div_type_label(_la_r[2]) or _la_r[2]}"
+                           + (f" — {_la_r[4]}" if _la_r[4] else "")
+                           + f" · {_fr(_la_r[1])} FCFA déclarés à "
+                             f"{cotis_destination_label(_la_r[11]) or '—'} ? "
+                             "La déclaration s'efface et le dû reprend son "
+                             "« ⏳ à régler » — le membre peut déclarer à "
+                             "nouveau.")
+                _ra1, _ra2 = st.columns(2)
+                with _ra1:
+                    if st.button("✔️ Oui, refuser l'autorisation",
+                                 key="cotis_auth_refus_ok"):
+                        cotis_div_autorisation_refuser(
+                            st.session_state['cotis_auth_refus_id'])
+                        del st.session_state['cotis_auth_refus_id']
+                        st.session_state['cotis_div_flash'] = (
+                            "🕊️ Autorisation refusée — la déclaration "
+                            "s'est effacée, la ligne attend un nouveau "
+                            "versement (« ⏳ à régler ») et la caisse de la "
+                            "paroisse n'a jamais rien vu.")
+                        st.rerun()
+                with _ra2:
+                    if st.button("✖ Annuler", key="cotis_auth_refus_non"):
+                        del st.session_state['cotis_auth_refus_id']
+                        st.rerun()
+            else:
+                del st.session_state['cotis_auth_refus_id']
+        # l'accord en deux temps (ligne du registre)
+        if st.session_state.get('cotis_auth_id'):
+            _la_a = next((_x for _x in _auths_lignes
+                          if _x[0] == st.session_state['cotis_auth_id']), None)
+            if _la_a:
+                st.warning(f"🕊️ Accorder l'autorisation pour {_la_a[6]} "
+                           f"{_la_a[7]} ({_la_a[8] or '—'}) — "
+                           f"{cotis_div_type_label(_la_a[2]) or _la_a[2]}"
+                           + (f" — {_la_a[4]}" if _la_a[4] else "")
+                           + f" · {_fr(_la_a[1])} FCFA déclarés à "
+                             f"{cotis_destination_label(_la_a[11]) or '—'} ? "
+                             "La déclaration parvient aussitôt à la caisse "
+                             "de la paroisse, qui confirmera à son geste.")
+                _aa1, _aa2 = st.columns(2)
+                with _aa1:
+                    if st.button("✔️ Oui, autoriser ce versement",
+                                 key="cotis_auth_ok"):
+                        cotis_div_autorisation_accorder(
+                            st.session_state['cotis_auth_id'],
+                            accorde_par=st.session_state.get('username'))
+                        del st.session_state['cotis_auth_id']
+                        st.session_state['cotis_div_flash'] = (
+                            "✋ Autorisation accordée — la déclaration est "
+                            "arrivée chez la caisse de la paroisse, qui la "
+                            "confirmera dans « 💰 Versement ».")
+                        st.rerun()
+                with _aa2:
+                    if st.button("✖ Annuler", key="cotis_auth_non"):
+                        del st.session_state['cotis_auth_id']
+                        st.rerun()
+            else:
+                del st.session_state['cotis_auth_id']
+        for _x in _auths_lignes:
+            _dx = safe_date(_x[3])
+            _dx_txt = _dx.strftime("%d/%m/%Y") if _dx else (_x[3] or "—")
+            _dlx = safe_date(str(_x[9])[:10] if _x[9] else None)
+            _dlx_txt = (_dlx.strftime("%d/%m à %H:%M") if _dlx
+                        else str(_x[9] or "—")[:16])
+            _c1x, _c2x, _c3x = st.columns([5, 1, 1])
+            with _c1x:
+                st.info(f"🕊️ {_x[6]} {_x[7]} ({_x[8] or '—'}) déclare avoir "
+                        "versé à "
+                        f"{cotis_destination_label(_x[11]) or '—'} — "
+                        f"{cotis_div_type_label(_x[2]) or _x[2]}"
+                        + (f" — {_x[4]}" if _x[4] else "")
+                        + f" · {_fr(_x[1])} FCFA du {_dx_txt} · "
+                          f"{_modes_lbls.get(_x[10] or '', _x[10] or '—')} · "
+                          f"déclaré le {_dlx_txt} — ⏳ ton autorisation "
+                          "attend.")
+            with _c2x:
+                if st.button("✋", key=f"cotis_auth_{_x[0]}",
+                             help="Accorder l'autorisation (avec "
+                                  "confirmation) — la déclaration part "
+                                  "à la caisse de la paroisse.",
+                             disabled=(st.session_state.get('role')
+                                       != 'equipe')):
+                    st.session_state['cotis_auth_id'] = _x[0]
+                    st.rerun()
+            with _c3x:
+                if st.button("✖", key=f"cotis_auth_ref_{_x[0]}",
+                             help="Refuser l'autorisation (avec "
+                                  "confirmation) — la déclaration s'efface "
+                                  "et le dû reprend son « ⏳ à régler ».",
+                             disabled=(st.session_state.get('role')
+                                       != 'equipe')):
+                    st.session_state['cotis_auth_refus_id'] = _x[0]
+                    st.rerun()
+        # les déclarations de la MENSUELLE / ABONNEMENT qui attendent
+        # l'accord du responsable — le même deux temps
+        if st.session_state.get('cotis_authd_refus_id'):
+            _cd_r = next((_d for _d in _auths_decls
+                          if _d[0] == st.session_state['cotis_authd_refus_id']),
+                         None)
+            if _cd_r:
+                _cote_cd = ("🧮 Mensuelle (" + _lbl_mois_v(_cd_r[5]) + ")"
+                            if _cd_r[3] == "mensuelle"
+                            else "📅 " + ("Abonnement" if _cd_r[3] == "abonnement"
+                                          else _cd_r[3]))
+                st.warning(f"🕊️ Refuser l'autorisation pour {_cd_r[9]} "
+                           f"{_cd_r[10]} ({_cd_r[12] or '—'}) — {_cote_cd} · "
+                           f"{_fr(_cd_r[4])} FCFA déclarés à la trésorerie "
+                           "de la paroisse ? La déclaration s'efface et le "
+                           "dû reprend son « ⏳ à régler ».")
+                _rd1, _rd2 = st.columns(2)
+                with _rd1:
+                    if st.button("✔️ Oui, refuser l'autorisation",
+                                 key="cotis_authd_refus_ok"):
+                        cotis_declaration_autorisation_refuser(
+                            st.session_state['cotis_authd_refus_id'])
+                        del st.session_state['cotis_authd_refus_id']
+                        st.session_state['cotis_div_flash'] = (
+                            "🕊️ Autorisation refusée — la déclaration de "
+                            "la mensuelle/abonnement s'est effacée et la "
+                            "caisse de la paroisse n'a jamais rien vu.")
+                        st.rerun()
+                with _rd2:
+                    if st.button("✖ Annuler", key="cotis_authd_refus_non"):
+                        del st.session_state['cotis_authd_refus_id']
+                        st.rerun()
+            else:
+                del st.session_state['cotis_authd_refus_id']
+        if st.session_state.get('cotis_authd_id'):
+            _cd_a = next((_d for _d in _auths_decls
+                          if _d[0] == st.session_state['cotis_authd_id']), None)
+            if _cd_a:
+                _cote_cda = ("🧮 Mensuelle (" + _lbl_mois_v(_cd_a[5]) + ")"
+                             if _cd_a[3] == "mensuelle"
+                             else "📅 " + ("Abonnement" if _cd_a[3] == "abonnement"
+                                           else _cd_a[3]))
+                st.warning(f"🕊️ Accorder l'autorisation pour {_cd_a[9]} "
+                           f"{_cd_a[10]} ({_cd_a[12] or '—'}) — {_cote_cda} · "
+                           f"{_fr(_cd_a[4])} FCFA déclarés à la trésorerie "
+                           "de la paroisse ? La déclaration parvient "
+                           "aussitôt à la caisse de la paroisse.")
+                _ad1, _ad2 = st.columns(2)
+                with _ad1:
+                    if st.button("✔️ Oui, autoriser ce versement",
+                                 key="cotis_authd_ok"):
+                        cotis_declaration_autorisation_accorder(
+                            st.session_state['cotis_authd_id'],
+                            accorde_par=st.session_state.get('username'))
+                        del st.session_state['cotis_authd_id']
+                        st.session_state['cotis_div_flash'] = (
+                            "✋ Autorisation accordée — la déclaration est "
+                            "arrivée chez la caisse de la paroisse.")
+                        st.rerun()
+                with _ad2:
+                    if st.button("✖ Annuler", key="cotis_authd_non"):
+                        del st.session_state['cotis_authd_id']
+                        st.rerun()
+            else:
+                del st.session_state['cotis_authd_id']
+        for _d_au in _auths_decls:
+            _cote_dau = ("🧮 Mensuelle (" + _lbl_mois_v(_d_au[5]) + ")"
+                         if _d_au[3] == "mensuelle"
+                         else "📅 " + ("Abonnement" if _d_au[3] == "abonnement"
+                                       else _d_au[3]))
+            _dcl_au = safe_date(str(_d_au[6])[:10] if _d_au[6] else None)
+            _dcl_au_txt = (_dcl_au.strftime("%d/%m à %H:%M") if _dcl_au
+                           else str(_d_au[6] or "—")[:16])
+            _c1d, _c2d, _c3d = st.columns([5, 1, 1])
+            with _c1d:
+                st.info(f"🕊️ {_d_au[9]} {_d_au[10]} ({_d_au[12] or '—'}) "
+                        f"déclare avoir versé — {_cote_dau} · "
+                        f"{_fr(_d_au[4])} FCFA · "
+                        f"{_modes_lbls.get(_d_au[7] or '', _d_au[7] or '—')} "
+                        f"· déclaré le {_dcl_au_txt} — ⏳ ton autorisation "
+                        "attend.")
+            with _c2d:
+                if st.button("✋", key=f"cotis_authd_{_d_au[0]}",
+                             help="Accorder l'autorisation (avec "
+                                  "confirmation) — la déclaration part "
+                                  "à la caisse de la paroisse.",
+                             disabled=(st.session_state.get('role')
+                                       != 'equipe')):
+                    st.session_state['cotis_authd_id'] = _d_au[0]
+                    st.rerun()
+            with _c3d:
+                if st.button("✖", key=f"cotis_authd_ref_{_d_au[0]}",
+                             help="Refuser l'autorisation (avec "
+                                  "confirmation) — la déclaration s'efface "
+                                  "et le dû reprend son « ⏳ à régler ».",
+                             disabled=(st.session_state.get('role')
+                                       != 'equipe')):
+                    st.session_state['cotis_authd_refus_id'] = _d_au[0]
+                    st.rerun()
+
     # v7.16.6 — LES DÉCLARATIONS ADRESSÉES AILLEURS (information seule) :
     # le membre a déclaré son versement à la trésorerie de la paroisse ou
     # du diocèse — la confirmation se fait CHEZ ELLE, dans sa maison « 💰
     # Versement » (le registre ne dit réglé que par la maison qui porte le
     # versement). Ici, la ligne campe en attente d'ailleurs, sans geste.
+    # v7.18.0 — celles qui attendent encore l'accord du responsable
+    # PAROISSIAL (destination diocèse) le disent : l'autorisation se
+    # demande chez la paroisse, pas ici.
     if _attente_ailleurs:
         st.markdown(f"#### 🕊️ Déclarées à une autre maison — "
                     f"{len(_attente_ailleurs):02d} ligne(s)")
         st.caption("Ces déclarations portent le « Reçu par » de la trésorerie "
                    "de la paroisse ou du diocèse : elles se confirment chez "
-                   "elle — rien à noter ici.")
+                   "elle — rien à noter ici. (Une déclaration à la paroisse "
+                   "encore en attente de TON autorisation campe dans le bloc "
+                   "✋ au-dessus.)")
         for _a_ail in _attente_ailleurs:
             _d_ail = safe_date(_a_ail[3])
             _d_txt_ail = _d_ail.strftime("%d/%m/%Y") if _d_ail else (_a_ail[3] or "—")
+            _etat_ail = (str(_a_ail[12] or "").strip().lower()
+                         if len(_a_ail) > 12 else "")
+            _suite_ail = "— confirmation dans sa caisse."
+            if (str(_a_ail[11] or "").strip().lower() == "diocese"
+                    and _etat_ail == "attente"):
+                _suite_ail = ("— ⏳ l'autorisation du responsable paroissial "
+                              "est attendue : la caisse du diocèse ne la "
+                              "verra qu'après son ✋.")
+            elif _etat_ail == "accordee":
+                _suite_ail = "— ✋ autorisée, en course chez sa caisse."
             st.info(f"🕊️ {_a_ail[6]} {_a_ail[7]} ({_a_ail[8] or '—'}) déclare "
                     "avoir versé à "
                     f"{cotis_destination_label(_a_ail[11]) or '—'} — "
@@ -2641,7 +2902,7 @@ def _section_versements_equipe(eid, annee):
                     + (f" — {_a_ail[4]}" if _a_ail[4] else "")
                     + f" · {_fr(_a_ail[1])} FCFA du {_d_txt_ail} · "
                     f"{_modes_lbls.get(_a_ail[10] or '', _a_ail[10] or '—')} "
-                    "— confirmation dans sa caisse.")
+                    + _suite_ail)
 
 
 def _section_registre_equipe(eid, annee, membres_eq):
