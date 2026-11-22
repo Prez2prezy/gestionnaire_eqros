@@ -2758,6 +2758,65 @@ l'abonnement déclarables. »
   base de production n'est jamais touchée.
 - `_VERSION_APPLI = "v7.16.6"`.
 
+### 72. v7.16.9 — Le report d'échéance de l'abonnement — réabonnement, et la zone « ⏪ Avant septembre » chez le membre
+
+MOT DU USER : « Comment gérer les arriérés antérieurs à septembre 2026 ? » —
+et, en relisant le guide : « Celui que je viens d'évoquer ; "Vu". Le cas
+Abonnement - Réabonnement : ce cas, je l'avais mis en cotisation obligatoire
+pour dire que ça ne se discute pas ; c'est l'essence même de l'équipier. Tu
+n'es pas abonné ou réabonné, tu n'es plus équipier ---> tu ne recevras pas /
+plus de feuillets mensuels, ton MatLoc est gelé jusqu'à ton réabonnement.
+Mais cette cotisation est aussi à échéance puisqu'il y a une date butoir.
+Une fois clôturé, c'est pour la prochaine rentrée pastorale. La conséquence
+comme expliqué. Il est impérieux de faire un report d'échéance. »
+
+- **LE REPORT D'ÉCHÉANCE (il est impérieux, il est fait)** — l'abonnement —
+  réabonnement est ⛓️ obligatoire ET à échéance (la date butoir du diocèse :
+  délai de rigueur du 15/12, 31/12 pour les nouveaux). Quand la date ne peut
+  pas être tenue, la caisse de l'équipe accorde un REPORT : une nouvelle
+  date, un mot, une signature — membre par membre, dans l'expander du
+  membre non enregistré de l'onglet « 📅 Abonnement — Réabonnement » (du
+  défaut = échéance vivante + 15 jours, borné à la fin de l'année
+  pastorale). Une table douce `cotis_reports_abo` porte la trace (chaque
+  accord est une ligne, le DERNIER accord répond, le lever efface les
+  accords vivants) ; le report se REPOSITIONNE (la chaîne des origines
+  suit) et se LÈVE (l'échéance du diocèse reprend sa place). La règle est
+  affichée : « le report recule la date, jamais la dette » — et un report
+  qui ne recule rien est refusé.
+- **L'ÉCHÉANCE EFFECTIVE VOYAGE PARTOUT** — `cotis_echeance_effective` la
+  rend à qui la demande : la carte du membre dit « 🗓️ Report accordé — à
+  régler au plus tard le … » (et, passé le report, le vieux message du
+  délai dépassé revient avec la date REPORTÉE) ; la liste « ❌ Non
+  enregistrés » de la caisse porte désormais Nature + Échéance (⏳ la date
+  reportée, signée de qui l'a accordée) ; la relance individuelle part
+  avec « Report accordé » au lieu du délai de rigueur
+  (`cotis_relances_lignes` porte `report` + `report_par`). Les
+  conséquences de la clôture (plus équipier, feuillets suspendus, MatLoc
+  gelé) attendent la date REPORTÉE, pas avant — la caisse d'équipe le voit
+  en avertissement quand la date butoir est passée : « règle son cas —
+  paiement, ou report d'échéance ».
+- **LA ZONE « ⏪ AVANT SEPTEMBRE » CHEZ LE MEMBRE (le « Vu » de la maison)** —
+  quatrième zone de « 💰 État de mes cotisations », LECTURE SEULE, en
+  expander : « ⏪ Avant septembre — ce qui reste de l'année passée ». Elle
+  montre les impayés de l'année d'ORIGINE — les lignes du registre jamais
+  réglées (hors 🕊️ « à choix » éteintes d'antan : minuit après leur
+  échéance les a levées, elles ne sont plus des arriérés) et l'abonnement —
+  réabonnement de l'année passée non réglé — avec le renvoi : « ces
+  arriérés se règlent auprès de ta trésorerie, dans le registre de l'année
+  d'origine — ils ne pèsent pas sur l'année en cours ». Chaque année
+  pastorale vit sa propre vie : le sélecteur d'année des caisses reste la
+  porte du rattrapage, la zone ne pose AUCUN geste (aucun bouton, aucune
+  écriture).
+- **Banc d'épreuve** — `scripts/test_v7169.py` (32 vérifications : la
+  table et les cinq fonctions du report, la pose signée, l'échéance
+  effective, le refus du report qui ne recule rien, le repositionnement
+  et sa chaîne, la relance « Report accordé », le levé, le paiement qui
+  referme, la zone ⏪ lecture seule et son filtre — la 🕊️ éteinte exclue —,
+  la compile ×13, les mots bannis) ; régressions repassées et actualisées :
+  v7.16.5 (57 ✅), v7.16.6 (59 ✅), v7.16.7 (44 ✅), v7.16.8 (27 ✅). La
+  base de production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.16.9"`.
+
 ### 71. v7.16.8 — La note de la maison, les réglés des 24 heures, les archives dans leur expander — et le guide se mue avec
 
 MOT DU USER : « Modifications à apporter et dans le code et dans le guide.
