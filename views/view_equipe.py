@@ -44,6 +44,14 @@ from database import (c, commit_and_sync, verifier_reparer_intentions, jours_dep
                       cotis_echeance_nature, cotis_report_abo_poser,
                       cotis_report_abo_lire, cotis_report_abo_lever,
                       cotis_reports_abo_annee,
+                      # v7.17.0 — LES CONTRÔLES DU RESPONSABLE (lecture
+                      # pure) : le livre des reports, les arriérés d'une
+                      # année — la maison où il surveille sans jamais
+                      # écrire à la place des caisses
+                      cotis_reports_abo_livre, cotis_arrieres_annee,
+                      # v7.17.0 — le regard hors course relit le livre des
+                      # relances (la même source que la carte du membre)
+                      cotis_relances_lignes,
                       # v7.16.5 — LA NOTE DANS LES ONGLETS : le type
                       # d'expédition (« obligatoire » / « à choix » avec son
                       # échéance), le pas de doublon (-1), les « à choix »
@@ -1586,6 +1594,13 @@ def show_equipe():
                                  label_visibility="collapsed")
         st.markdown("---")
 
+        # v7.17.0 — LES CONTRÔLES DU RESPONSABLE : son regard propre sur
+        # les finances (lecture pure), au-dessus de la caisse — qui reste
+        # sa maison de gestes à l'identique (v7.16.7). Le trésorier, lui,
+        # garde sa caisse pure.
+        if st.session_state.get('role') == 'equipe':
+            _controles_responsable_equipe(eid, annee)
+
         if onglet_caisse == "💰 Versement":
             _section_versements_equipe(eid, annee)
         elif onglet_caisse == "✨ Cotisations diverses":
@@ -1711,6 +1726,108 @@ def show_equipe():
             st.info("Aucune archive.")
 
 
+def _controles_responsable_equipe(eid, annee):
+    """v7.17.0 — LES CONTRÔLES DU RESPONSABLE (« 💼 Ressources ») : la
+    maison où le responsable d'équipe fait SES contrôles sur les
+    finances — lecture PURE, la base n'est jamais écrite ici ; les
+    gestes restent à la caisse en dessous (qui lui reste ouverte à
+    l'identique, v7.16.7). Quatre regards : les déclarations qui
+    attendent la confirmation de la trésorerie, le livre des reports
+    d'échéance accordés par sa caisse, les membres hors course (l'échéance
+    effective passée sans règlement — feuillets suspendus, MatLoc gelé)
+    et les arriérés de l'année passée (le règlement vit dans l'année
+    d'origine — sélecteur d'année de la caisse)."""
+    _att_eq = cotis_declarations_attente(dest="equipe", annee_debut=annee,
+                                         equipe_id=eid)
+    _rel_eq = cotis_relances_lignes(equipe_id=eid, annee_debut=annee)
+    _hors_eq = [l for l in _rel_eq
+                if l.get("jours") is not None and l["jours"] < 0]
+    _livre_eq = cotis_reports_abo_livre(annee, equipe_id=eid)
+    _vivants = [l for l in _livre_eq if l["vivant"]]
+    _arr_avant = cotis_arrieres_annee(annee - 1, equipe_id=eid)
+
+    st.markdown("### 🧭 Les contrôles du responsable")
+    st.caption("🔎 Lecture pure — les gestes restent à la caisse, en dessous. "
+               "Les contrôles disent ce que la base sait déjà.")
+    _kc1, _kc2, _kc3, _kc4 = st.columns(4)
+    _kc1.metric("⏳ Déclarations attendues", len(_att_eq),
+                help="Les déclarations de tes équipiers qui attendent la "
+                     "confirmation de ta trésorerie (onglet « 💰 Versement »).")
+    _kc2.metric("⏳ Reports en course", len(_vivants),
+                help="Les reports d'échéance accordés par ta caisse et "
+                     "toujours vivants — la date reportée court encore.")
+    _kc3.metric("⛔ Hors course", len(_hors_eq),
+                help="Les équipiers dont l'échéance effective est passée "
+                     "sans règlement — feuillets suspendus, MatLoc gelé "
+                     "jusqu'au réabonnement.")
+    _kc4.metric(f"⏪ Arriérés {annee - 1} - {annee}", len(_arr_avant),
+                help="Les impayés de l'année passée que tes équipiers "
+                     "portent encore — le règlement vit dans l'année "
+                     "d'origine (sélecteur d'année de la caisse).")
+
+    with st.expander(f"📋 Le livre des reports d'échéance — {len(_livre_eq)} accord(s) posé(s)"):
+        st.caption("Chaque accord est une ligne : l'échéance d'origine → la "
+                   "reportée, la signature, le mot — et l'état du membre "
+                   "aujourd'hui. Le DERNIER accord répond pour lui ; les "
+                   "accords d'antan restent la mémoire du registre.")
+        if _livre_eq:
+            _df_rep = pd.DataFrame([{
+                "Membre": f"{l['nom']} {l['prenom']}",
+                "MatLoc": l["matloc"] or "—",
+                "D'origine": l["echeance_origine"],
+                "Reportée au": l["echeance_reportee"],
+                "Accordée par": (l["accordee_par_nom"] or "—")
+                                + (f" ({l['accordee_par_role']})"
+                                   if l["accordee_par_role"] else ""),
+                "Posée le": l["pose_le"][:10] if l["pose_le"] else "—",
+                "Le mot": l["motif"] or "—",
+                "État": l["etat"],
+            } for l in _livre_eq])
+            _df_rep.index = _df_rep.index + 1
+            st.dataframe(_df_rep, width="stretch")
+        else:
+            st.info("Aucun report posé pour cette année — les échéances "
+                    "du diocèse répondent pour tous.")
+
+    with st.expander(f"⛔ Hors course — {len(_hors_eq)} équipier(s) hors délai"):
+        st.caption("L'échéance EFFECTIVE est passée sans règlement : le "
+                   "membre n'est plus en course (feuillets suspendus, "
+                   "MatLoc gelé) jusqu'au réabonnement. Règle son cas à la "
+                   "caisse — paiement, ou report d'échéance.")
+        if _hors_eq:
+            _df_hc = pd.DataFrame([{
+                "Membre": f"{l['nom']} {l['prenom']}",
+                "MatLoc": l["matloc"] or "—",
+                "Nature": "Abonnement" if l["nature"] == "abonnement"
+                          else "Réabonnement",
+                "Échéance effective": l["echeance_aff"],
+                "Dépassée de": f"{-l['jours']} jour(s)",
+                "Report": ("expiré" if l["report"] else "—"),
+            } for l in _hors_eq])
+            _df_hc.index = _df_hc.index + 1
+            st.dataframe(_df_hc, width="stretch")
+        else:
+            st.success("✅ Personne hors délai — tous les équipiers sont en "
+                       "course ou réglés.")
+
+    with st.expander(f"⏪ Les arriérés de l'année passée ({annee - 1} - {annee}) — "
+                     f"{len(_arr_avant)} équipier(s)"):
+        st.caption("Chaque année pastorale vit sa propre vie : ces impayés "
+                   "dorment dans l'année où ils sont nés — ils ne pèsent pas "
+                   "sur l'année en cours. Le règlement se note au sélecteur "
+                   "d'année de la caisse, là où la dette est née.")
+        if _arr_avant:
+            _df_av = pd.DataFrame([{
+                "Membre": f"{a[1]} {a[2]}", "MatLoc": a[3] or "—",
+            } for a in _arr_avant])
+            _df_av.index = _df_av.index + 1
+            st.dataframe(_df_av, width="stretch")
+        else:
+            st.success("✅ Aucun arriéré de l'année passée chez tes "
+                       "équipiers.")
+    st.markdown("---")
+
+
 def _section_abonnement_equipe(eid, annee, membres_eq):
     """v7.16.4 — L'ONGLET « 📅 ABONNEMENT — RÉABONNEMENT » de la trésorerie :
     le contenu historique de la caisse, repris À L'IDENTIQUE (les deux
@@ -1725,6 +1842,10 @@ def _section_abonnement_equipe(eid, annee, membres_eq):
     # v7.14.0 — les réglages de la caisse (montants, échéance,
     # porteur des reçus)
     _reglages = cotis_parametres_lire()
+    # v7.16.9 — l'année pastorale EN COURS sert de frontière au report :
+    # dans une année close, plus aucun report ne se pose (le rattrapage
+    # vit dans le registre de son année d'origine).
+    _annee_cours = get_periode_pastorale()[0]
 
     def _fr(_n):
         return f"{int(_n):,}".replace(",", " ")
@@ -1871,10 +1992,18 @@ def _section_abonnement_equipe(eid, annee, membres_eq):
                             + f" · posé le {_d_rep_txt}"
                             + (f" · {_rep['motif']}" if _rep["motif"] else ""))
                 elif _ech_depassee:
-                    st.warning(f"⏰ La date butoir du {_ech_eff_aff} est passée — "
-                               "le membre n'est plus en course (feuillets "
-                               "suspendus, MatLoc gelé) : règle son cas — "
-                               "paiement, ou report d'échéance ci-dessous.")
+                    if annee < _annee_cours:
+                        # v7.16.9 — année CLOSE : le report n'y vit plus, le
+                        # rattrapage se note dans le registre de l'année.
+                        st.warning(f"⏰ La date butoir du {_ech_eff_aff} est passée — "
+                                   f"l'année {annee} - {annee + 1} est close : le "
+                                   "rattrapage se note ici (paiement ci-dessus) ; "
+                                   "le report d'échéance vit dans l'année en cours.")
+                    else:
+                        st.warning(f"⏰ La date butoir du {_ech_eff_aff} est passée — "
+                                   "le membre n'est plus en course (feuillets "
+                                   "suspendus, MatLoc gelé) : règle son cas — "
+                                   "paiement, ou report d'échéance ci-dessous.")
                 else:
                     st.caption(f"🗓️ Échéance de la maison : au plus tard le "
                                f"**{_ech_eff_aff}** — au-delà, le membre "
@@ -1909,8 +2038,19 @@ def _section_abonnement_equipe(eid, annee, membres_eq):
                 # une signature. Posé au-delà du délai de rigueur (ou du
                 # report vivant), il devient l'échéance qui répond pour le
                 # membre — sa carte, sa relance et les listes la portent.
-                with st.expander("⏳ Report d'échéance" +
-                                 (" — repositionner ou lever" if _rep else "")):
+                # Il ne se pose QUE dans l'année EN COURS (une année close
+                # n'accorde plus de report — le rattrapage vit dans son
+                # registre), et il ne franchit JAMAIS la clôture de l'année
+                # pastorale (le 31 août : au-delà, c'est la rentrée suivante).
+                if annee < _annee_cours:
+                    st.caption("📕 Année close — le report ne se pose plus ici : "
+                               "le rattrapage se note dans le registre de cette "
+                               "année (paiement ci-dessus ou sélecteur d'année "
+                               "de la caisse).")
+                else:
+                  with st.expander("⏳ Report d'échéance" +
+                                   (" — repositionner ou lever" if _rep else "")):
+                    _borne_max = date(annee + 1, 8, 31)
                     _def_rep = date.today() + timedelta(days=15)
                     try:
                         _d_cur = date.fromisoformat(str(_ech_eff)[:10])
@@ -1918,10 +2058,18 @@ def _section_abonnement_equipe(eid, annee, membres_eq):
                             _def_rep = _d_cur + timedelta(days=15)
                     except Exception:
                         pass
+                    # v7.16.9 — LES BORNES TIENNENT TOUJOURS : la valeur
+                    # proposée et les bornes du champ restent cohérentes
+                    # (aujourd'hui ≤ proposition ≤ clôture de l'année),
+                    # quel que soit le report vivant ou le jour même.
+                    if _def_rep > _borne_max:
+                        _def_rep = _borne_max
+                    if _def_rep < date.today():
+                        _def_rep = date.today()
                     _nouv_ech = st.date_input("Nouvelle échéance",
                                               value=_def_rep,
                                               min_value=date.today(),
-                                              max_value=date(_annee + 1, 8, 31),
+                                              max_value=_borne_max,
                                               key=f"cotis_rep_date_{m[0]}_{annee}")
                     _motif_rep = st.text_input("Le mot du report (facultatif)",
                                                key=f"cotis_rep_motif_{m[0]}_{annee}")
