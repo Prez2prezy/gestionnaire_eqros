@@ -37,6 +37,13 @@ from database import (c, commit_and_sync, verifier_reparer_intentions, jours_dep
                       # v7.16.4 — le « Reçu par » des versements (la Note
                       # de la maison : équipe / paroisse / diocèse)
                       COTIS_DESTINATIONS, cotis_destination_label,
+                      # v7.16.9 — LE REPORT D'ÉCHÉANCE : la caisse accorde,
+                      # membre par membre, une nouvelle date au-delà du
+                      # délai de rigueur — l'échéance effective du membre
+                      # devient la reportée jusqu'à son règlement
+                      cotis_echeance_nature, cotis_report_abo_poser,
+                      cotis_report_abo_lire, cotis_report_abo_lever,
+                      cotis_reports_abo_annee,
                       # v7.16.5 — LA NOTE DANS LES ONGLETS : le type
                       # d'expédition (« obligatoire » / « à choix » avec son
                       # échéance), le pas de doublon (-1), les « à choix »
@@ -1742,7 +1749,10 @@ def _section_abonnement_equipe(eid, annee, membres_eq):
     # membre ; les longues règles de la maison ne s'impriment plus ici.
     st.markdown('<div class="custom-info-box"><b>🗓️ Échéances :</b><br>'
                 f'&nbsp;&nbsp;• Abonnement (nouveaux) — {_ech_abo_aff}<br>'
-                f'&nbsp;&nbsp;• Réabonnement — {_ech_aff} (délai de rigueur)</div>', unsafe_allow_html=True)
+                f'&nbsp;&nbsp;• Réabonnement — {_ech_aff} (délai de rigueur)<br>'
+                '&nbsp;&nbsp;• Report d&#39;échéance — accordé membre par membre, '
+                'dans son expander (le report recule la date, jamais la '
+                'dette)</div>', unsafe_allow_html=True)
 
     _nb_membres = len(_membres_eq)
     # v7.14.3 — LE COMPTEUR COMPTE CE QU'IL DIT : les membres dont le
@@ -1824,7 +1834,52 @@ def _section_abonnement_equipe(eid, annee, membres_eq):
             _sug, _ = cotis_montant_suggere(m[0], _nature)
             _lbl_nature = ("📝 Abonnement (mention NOUVEAU)" if _nature == "abonnement"
                            else "🔄 Réabonnement")
+            # v7.16.9 — LE REPORT D'ÉCHÉANCE (la maison : « il est impérieux
+            # de faire un report d'échéance ») : l'abonnement est ⛓️
+            # obligatoire ET à échéance — quand la date butoir ne peut pas
+            # être tenue, la caisse accorde un report : une nouvelle date,
+            # signée, membre par membre. L'échéance EFFECTIVE du membre
+            # devient la reportée ; les conséquences de la clôture
+            # attendent la date reportée, pas avant. Le report recule la
+            # date, jamais la dette.
+            _rep = cotis_report_abo_lire(m[0], annee)
+            _ech_eff = (str(_rep["echeance_reportee"]) if _rep
+                        else cotis_echeance_nature(_nature))
+            try:
+                _ech_eff_aff = date.fromisoformat(_ech_eff[:10]).strftime("%d/%m/%Y")
+            except Exception:
+                _ech_eff_aff = str(_ech_eff)
+            _ech_depassee = False
+            try:
+                _ech_depassee = date.today() > date.fromisoformat(_ech_eff[:10])
+            except Exception:
+                pass
             with st.expander(f"{m[1]} {m[2]} ({m[3] or '—'}) – ❌ Non enregistré · {_lbl_nature}"):
+                if _rep:
+                    _d_rep = safe_date(_rep["pose_le"])
+                    _d_rep_txt = (_d_rep.strftime("%d/%m/%Y") if _d_rep
+                                  else (_rep["pose_le"] or "—"))
+                    try:
+                        _origine_aff = date.fromisoformat(
+                            str(_rep["echeance_origine"])[:10]).strftime("%d/%m/%Y")
+                    except Exception:
+                        _origine_aff = str(_rep["echeance_origine"]) or "—"
+                    st.info(f"⏳ Report d'échéance accordé — à régler au plus "
+                            f"tard le **{_ech_eff_aff}** (au lieu de {_origine_aff})"
+                            + (f" — par {_rep['accordee_par_nom']} "
+                               f"({_rep['accordee_par_role']})" if _rep["accordee_par_nom"] else "")
+                            + f" · posé le {_d_rep_txt}"
+                            + (f" · {_rep['motif']}" if _rep["motif"] else ""))
+                elif _ech_depassee:
+                    st.warning(f"⏰ La date butoir du {_ech_eff_aff} est passée — "
+                               "le membre n'est plus en course (feuillets "
+                               "suspendus, MatLoc gelé) : règle son cas — "
+                               "paiement, ou report d'échéance ci-dessous.")
+                else:
+                    st.caption(f"🗓️ Échéance de la maison : au plus tard le "
+                               f"**{_ech_eff_aff}** — au-delà, le membre "
+                               "n'est plus en course : un report peut être "
+                               "accordé ci-dessous.")
                 # v7.14.3 — le montant se montre, ne se discute plus :
                 # il suit la nature lue selon « 👤 Mon profil ».
                 _montant = st.number_input("Montant (FCFA)", value=int(_sug), disabled=True,
@@ -1850,6 +1905,49 @@ def _section_abonnement_equipe(eid, annee, membres_eq):
                     st.session_state['cotis_recu_panel'] = {
                         "numero": _num, "titre": f"{m[1]} {m[2]} — paiement noté"}
                     st.rerun()
+                # v7.16.9 — LE GESTE DU REPORT : une nouvelle date, un mot,
+                # une signature. Posé au-delà du délai de rigueur (ou du
+                # report vivant), il devient l'échéance qui répond pour le
+                # membre — sa carte, sa relance et les listes la portent.
+                with st.expander("⏳ Report d'échéance" +
+                                 (" — repositionner ou lever" if _rep else "")):
+                    _def_rep = date.today() + timedelta(days=15)
+                    try:
+                        _d_cur = date.fromisoformat(str(_ech_eff)[:10])
+                        if _d_cur >= date.today():
+                            _def_rep = _d_cur + timedelta(days=15)
+                    except Exception:
+                        pass
+                    _nouv_ech = st.date_input("Nouvelle échéance",
+                                              value=_def_rep,
+                                              min_value=date.today(),
+                                              max_value=date(_annee + 1, 8, 31),
+                                              key=f"cotis_rep_date_{m[0]}_{annee}")
+                    _motif_rep = st.text_input("Le mot du report (facultatif)",
+                                               key=f"cotis_rep_motif_{m[0]}_{annee}")
+                    if st.button("📝 Accorder le report", key=f"cotis_rep_go_{m[0]}_{annee}"):
+                        _ok_rep = cotis_report_abo_poser(
+                            m[0], annee, _nouv_ech.isoformat(),
+                            motif=_motif_rep or None,
+                            accordee_par_nom=st.session_state.get('username'),
+                            accordee_par_role="Responsable d'équipe",
+                            nature=_nature)
+                        if _ok_rep:
+                            st.success(f"⏳ Report accordé — {m[1]} {m[2]} est "
+                                       f"en course jusqu'au "
+                                       f"{_nouv_ech.strftime('%d/%m/%Y')}.")
+                            st.rerun()
+                        else:
+                            st.error("Le report n'a pas pu être posé — la "
+                                     "date recule-t-elle vraiment l'échéance ?")
+                    if _rep and st.button("🗑️ Lever le report",
+                                          key=f"cotis_rep_lever_{m[0]}_{annee}",
+                                          help="L'échéance du diocèse reprend "
+                                               "sa place (le délai de rigueur, "
+                                               "ou le 31 décembre pour les "
+                                               "nouveaux)."):
+                        cotis_report_abo_lever(m[0], annee)
+                        st.rerun()
 
     if 'modif_abo_id' in st.session_state:
         mod_id = st.session_state['modif_abo_id']
@@ -1894,12 +1992,36 @@ def _section_abonnement_equipe(eid, annee, membres_eq):
             df = pd.DataFrame(data); df.index = df.index + 1; st.dataframe(df, width="stretch")
         else: st.info("Aucun réabonné.")
     with tab_liste[2]:
-        non_inscrits = c.execute('''SELECT m.matloc, m.nom, m.prenom FROM membres m WHERE m.equipe_id=? AND m.statut='actif' AND m.id NOT IN (SELECT a.membre_id FROM abonnements a WHERE a.annee_debut=? AND a.statut='paye') ORDER BY m.nom''', (eid, annee)).fetchall()
+        # v7.16.9 — LA LISTE DIT L'ÉCHÉANCE EFFECTIVE : la nature de chaque
+        # non enregistré, sa date butoir — et, s'il en porte un, son report
+        # (⏳ la date reportée, signée de qui l'a accordée).
+        _reports_eq = cotis_reports_abo_annee(annee)
+        non_inscrits = c.execute('''SELECT m.id, m.matloc, m.nom, m.prenom,
+                                           m.mention_nouveau, m.mention_annee
+                                    FROM membres m
+                                    WHERE m.equipe_id=? AND m.statut='actif'
+                                    AND m.id NOT IN (SELECT a.membre_id FROM abonnements a WHERE a.annee_debut=? AND a.statut='paye') ORDER BY m.nom''', (eid, annee)).fetchall()
         if non_inscrits:
-            # CORRECTION AFFICHAGE : Suppression du champ "N°" en double
-            # v7.14.3 — l'identifiant de la maison : le MatLoc
-            data = [{"MatLoc": n[0], "Nom": n[1], "Prénom": n[2]} for n in non_inscrits]
-            df = pd.DataFrame(data); df.index = df.index + 1; st.dataframe(df, width="stretch")
+            _rows = []
+            for n in non_inscrits:
+                _nouv = (str(n[4] or "").strip().lower() == "nouveau"
+                         and n[5] is not None and int(n[5]) == int(annee))
+                _rep_n = _reports_eq.get(n[0])
+                _ech_n = (str(_rep_n["echeance_reportee"]) if _rep_n
+                          else (_ech_abo_aff if _nouv else _ech_aff))
+                try:
+                    _ech_n = date.fromisoformat(str(_ech_n)[:10]).strftime("%d/%m/%Y")
+                except Exception:
+                    _ech_n = str(_ech_n)
+                _rows.append({"MatLoc": n[1], "Nom": n[2], "Prénom": n[3],
+                              "Nature": ("Abonnement (NOUVEAU)" if _nouv
+                                         else "Réabonnement"),
+                              "Échéance": ("⏳ " + _ech_n + " — reporté" +
+                                           (f" par {_rep_n['accordee_par_nom']}"
+                                            if _rep_n and _rep_n.get("accordee_par_nom")
+                                            else "")
+                                           if _rep_n else _ech_n)})
+            df = pd.DataFrame(_rows); df.index = df.index + 1; st.dataframe(df, width="stretch")
         else: st.success("🎉 Tous les membres sont à jour !")
 
 
