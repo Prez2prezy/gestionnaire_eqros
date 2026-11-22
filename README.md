@@ -2758,6 +2758,46 @@ l'abonnement déclarables. »
   base de production n'est jamais touchée.
 - `_VERSION_APPLI = "v7.16.6"`.
 
+### 73. v7.17.0 — « 💼 Ressources » s'affine : les contrôles du responsable, le livre des reports d'échéance
+
+MOT DU USER : « Entame le 3. L'affinage de "💼 Ressources". » — la mue
+v7.16.7 avait posé la maison ; la maison reçoit maintenant SON contenu :
+les contrôles que le responsable fait lui-même sur les finances, sans
+jamais écrire à la place des caisses.
+
+- **LE BLOC « 🧭 LES CONTRÔLES DU RESPONSABLE » (équipe)** — dans « 💼
+  Ressources », au-dessus de la caisse (qui reste sa maison de gestes à
+  l'identique) : quatre compteurs (⏳ Déclarations attendues · ⏳ Reports
+  en course · ⛔ Hors course · ⏪ Arriérés de l'année passée) et trois
+  expanders — le livre des reports d'échéance (chaque accord : la chaîne
+  d'origine → reportée, la signature, le mot, et l'état du membre
+  aujourd'hui), les hors course (l'échéance effective passée sans
+  règlement — feuillets suspendus, MatLoc gelé) et le témoin des arriérés
+  de l'année passée (le règlement vit dans l'année d'origine). Lecture
+  PURE : la base n'est jamais écrite ici.
+- **CHEZ LA PAROISSE** — le même regard étendu à ses équipes, en bas de
+  « 💼 Ressources » : le livre des reports posés par les caisses de ses
+  équipes (colonne Équipe), les hors course paroissiaux, les arriérés
+  d'antan.
+- **CHEZ LE DIOCÈSE** — « 🧭 Le livre des reports d'échéance » dans « 💼
+  Ressources » : les accords posés par TOUTES les caisses d'équipe
+  (Paroisse, Équipe, la chaîne, la signature, l'état), les compteurs
+  globaux — le délai de rigueur reste celui du diocèse ; le report ne
+  fait que le reculer pour celui qui ne peut pas le tenir.
+- **EN BASE (lecture seule)** — `cotis_reports_abo_livre(annee_debut,
+  equipe_id, paroisse_id)` rend chaque accord avec sa maison et son état
+  (✅ Réglé / ⏳ En course / ⛔ Hors course) ; `cotis_arrieres_annee()`
+  rend les impayés d'une année donnée (le témoin ⏪) ;
+  `cotis_declarations_attente()` gagne `equipe_id` (le regard du
+  responsable sur SES membres seuls). Aucune migration, aucune écriture.
+- **Banc d'épreuve** — `scripts/test_v7170.py` (26 vérifications : le
+  livre et ses états, les arriérés, le bloc équipe, le regard paroisse
+  et diocèse, la lecture pure — aucun geste —, la compile ×13, les mots
+  bannis, pyflakes) ; régressions repassées : v7.16.5 (57 ✅), v7.16.6
+  (59 ✅), v7.16.7 (44 ✅), v7.16.8 (27 ✅), v7.16.9 (34 ✅). La base de
+  production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.17.0"`.
+
 ### 72. v7.16.9 — Le report d'échéance de l'abonnement — réabonnement, et la zone « ⏪ Avant septembre » chez le membre
 
 MOT DU USER : « Comment gérer les arriérés antérieurs à septembre 2026 ? » —
@@ -2807,12 +2847,15 @@ comme expliqué. Il est impérieux de faire un report d'échéance. »
   pastorale vit sa propre vie : le sélecteur d'année des caisses reste la
   porte du rattrapage, la zone ne pose AUCUN geste (aucun bouton, aucune
   écriture).
-- **Banc d'épreuve** — `scripts/test_v7169.py` (32 vérifications : la
+- **Banc d'épreuve** — `scripts/test_v7169.py` (34 vérifications : la
   table et les cinq fonctions du report, la pose signée, l'échéance
   effective, le refus du report qui ne recule rien, le repositionnement
   et sa chaîne, la relance « Report accordé », le levé, le paiement qui
   referme, la zone ⏪ lecture seule et son filtre — la 🕊️ éteinte exclue —,
-  la compile ×13, les mots bannis) ; régressions repassées et actualisées :
+  la compile ×13, les mots bannis, et les gardes du report : une année
+  close n'accorde plus de report — « 📕 Année close » —, la proposition
+  reste entre aujourd'hui et la clôture du 31 août, pyflakes ne relève
+  aucun nom indéfini) ; régressions repassées et actualisées :
   v7.16.5 (57 ✅), v7.16.6 (59 ✅), v7.16.7 (44 ✅), v7.16.8 (27 ✅). La
   base de production n'est jamais touchée.
 - `_VERSION_APPLI = "v7.16.9"`.
