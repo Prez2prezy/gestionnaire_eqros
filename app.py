@@ -274,7 +274,12 @@ st.markdown("""
         border-color: #C5CAE9 !important; }
     .stApp [data-testid="stCaptionContainer"],
     .stApp [data-testid="stCaptionContainer"] * { color: #3E517A !important; }
-    .stApp [data-testid="stAlert"] { background-color: #E8EAF6 !important; }
+    /* v7.18.1 — le fond se peint sur LES DEUX conteneurs (stAlert et le
+       stAlertContainer intérieur que Streamlit récent peint lui-même) :
+       ne peindre que stAlert laissait la boîte native sombre sous le texte
+       encre forcé chez les lecteurs en thème sombre — invisible aussi. */
+    .stApp [data-testid="stAlert"], .stApp [data-testid="stAlertContainer"],
+    .stApp .stAlertContainer { background-color: #E8EAF6 !important; }
     .stApp [data-testid="stAlert"] .stMarkdown,
     .stApp [data-testid="stAlert"] p,
     .stApp [data-testid="stAlert"] div,
