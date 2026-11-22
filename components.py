@@ -2969,17 +2969,25 @@ def cotis_relance_message_membre(ligne, annee_debut, reglages=None,
     _montant = cotis_relance_fcfa(ligne.get("montant", 0))
     _ech = ligne.get("echeance_aff", "")
     _jours = ligne.get("jours")
+    # v7.16.9 — LE REPORT D'ÉCHÉANCE DANS LA RELANCE : quand un report a
+    # été accordé au membre, la date qui répond est la SIENNE — la relance
+    # le dit (« Report accordé ») au lieu du délai de rigueur.
+    _rep = bool(ligne.get("report"))
     if ligne.get("nature") == "abonnement":
         _l_nature = f"📝 Abonnement (mention « Nouveau ») — {_montant} FCFA"
-        _l_ech = (f"⏰ Le {_ech} est passé — va voir ton responsable dès "
-                  "aujourd'hui." if (_jours is not None and _jours < 0) else
-                  f"🗓️ À régler au plus tard le {_ech}")
+        _l_ech = ((f"🗓️ Report accordé — à régler au plus tard le {_ech}")
+                  if (_rep and not (_jours is not None and _jours < 0)) else
+                  (f"⏰ Le {_ech} est passé — va voir ton responsable dès "
+                   "aujourd'hui." if (_jours is not None and _jours < 0) else
+                   f"🗓️ À régler au plus tard le {_ech}"))
     else:
         _l_nature = f"🔄 Réabonnement — {_montant} FCFA"
-        _l_ech = (f"⏰ Le délai de rigueur du {_ech} est passé — va voir ton "
-                  "responsable dès aujourd'hui."
-                  if (_jours is not None and _jours < 0) else
-                  f"🗓️ À régler au plus tard le {_ech} délai de rigueur")
+        _l_ech = ((f"🗓️ Report accordé — à régler au plus tard le {_ech}")
+                  if (_rep and not (_jours is not None and _jours < 0)) else
+                  (f"⏰ Le délai de rigueur du {_ech} est passé — va voir ton "
+                   "responsable dès aujourd'hui."
+                   if (_jours is not None and _jours < 0) else
+                   f"🗓️ À régler au plus tard le {_ech} délai de rigueur"))
     _resp = str(responsable_nom or "").strip()
     _sig = ((f"{_resp}\n" if _resp else "")
             + f"Votre responsable — {ligne.get('equipe', '')}")
