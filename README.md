@@ -2758,6 +2758,91 @@ l'abonnement déclarables. »
   base de production n'est jamais touchée.
 - `_VERSION_APPLI = "v7.16.6"`.
 
+### 74. v7.18.0 — L'autorisation en geste bloquant, et le mot doux du pont qui survit
+
+MOT DU USER : « Attaque l'autorisation en geste. » + « Une régression —>
+Pointage hors-ligne - sur le web : après la méditation en hors-ligne, le
+pointage ne se fait pas sur le web alors que j'ai la connexion. Normalement
+lorsque j'ai la connexion je ne devrais pas actualiser pour que le pointage
+s'affiche sur le web. »
+
+- **✋ L'AUTORISATION DEVIENT UN GESTE BLOQUANT** (la Note de la maison,
+  point 2 — « un paiement au-delà de son entité supérieure nécessite une
+  autorisation de son responsable direct » — jusqu'ici seulement affichée,
+  elle se pose en base et bloque réellement) : la déclaration du membre
+  adressée au-delà de sa maison naît avec `autorisation_etat`="attente" et
+  **ne parvient PAS à la caisse qui reçoit** tant que le responsable direct
+  n'a pas posé son ✋ — le filtre `COALESCE(autorisation_etat,'') !=
+  'attente'` la retient hors de « 💰 Versement » de la maison qui reçoit.
+  La règle (`cotis_autorisation_requise`) : la PAROISSE → le responsable
+  d'ÉQUIPE accorde ; le DIOCÈSE → le responsable PAROISSIAL accorde ;
+  chez soi (l'équipe) ou sans maison intermédiaire (le membre sans équipe
+  devant sa paroisse), rien n'est à demander — la déclaration arrive chez
+  sa maison comme avant. Les déclarations D'ANTAN (état NULL) ne sont
+  JAMAIS bloquées.
+- **LE BLOC « ✋ Autorisations demandées » chez l'ÉQUIPE** (onglet « 💰
+  Versement » de la caisse) : les déclarations de ses membres adressées à
+  la paroisse (lignes du registre ET mensuelle/abonnement déclarés) y
+  campent avec leur ✋ et leur ✖ — accord et refus se donnent EN DEUX
+  TEMPS (la leçon de la maison) ; l'accord ouvre la route vers la caisse
+  de la paroisse (« ✋ Autorisation accordée »), le refus efface la
+  déclaration et rend le dû au « ⏳ à régler » du membre. Le trésorier lit
+  le bloc sans geste : l'autorisation appartient au responsable de
+  l'équipe (rôle `equipe`).
+- **LE BLOC « ✋ Autorisations à accorder » chez la PAROISSE** (« 💼
+  Ressources », sous ses contrôles) : les déclarations des membres de sa
+  paroisse adressées au diocèse — même deux temps, même signature
+  (`accorde_par`). La caisse du diocèse ne voit la déclaration qu'après.
+- **EN BASE (migration douce et ré-exécutable)** : trois colonnes
+  `autorisation_etat` / `autorisation_le` / `autorisation_par` sur
+  `cotisations_diverses` ET sur `cotis_declarations` (posées à NULL — les
+  bases anciennes les reçoivent au premier démarrage, rien d'existant ne
+  bouge) ; les gestes `cotis_div_autorisation_accorder/refuser`,
+  `cotis_declaration_autorisation_accorder/refuser` ; les lecteurs
+  `cotis_div_autorisations_attente(niveau, equipe_id/paroisse_id, …)` et
+  `cotis_declaration_autorisations_attente(...)` ; `cotis_div_lignes`
+  rend l'état en 16ᵉ champ, `cotis_declaration_membre` le rend dans son
+  dict ; `cotis_div_declare` et `cotis_declaration_poser` posent
+  « attente » quand la règle le dit ; le retrait du membre et le
+  règlement de la trésorerie remettent les colonnes à leur place.
+- **LE MEMBRE DIT LA VÉRITÉ** : son badge ambre « 🕊️ versé et déclaré »
+  porte maintenant la suite au mot juste (`_suite_declaration_membre`) —
+  « ⏳ l'autorisation de ta responsable d'équipe attend : la caisse de la
+  paroisse confirmera après son ✋ », « ✋ autorisée : … confirmera », ou
+  le mot d'antan chez sa maison ; son flash après « 📮 Déclarer » dit
+  l'attente d'accord quand la destination est au-delà de sa maison. Chez
+  l'équipe, le bloc « 🕊️ Déclarées à une autre maison » dit désormais
+  l'état (« ⏳ l'autorisation du responsable paroissial est attendue » /
+  « ✋ autorisée, en course chez sa caisse »).
+- **📿 LE PONT DE LA MÉMOIRE — LE MOT DOUX SURVIT** (la régression du
+  terrain) : le versement des journées (`?pont_jours=…`) allège
+  l'adresse (`del`), ce qui relance la page AUSSITÔT — le mot doux rendu
+  pendant le tour du versement s'effaçait au tour suivant : sur un écran
+  lent le fidèle ne le voyait JAMAIS et croyait son pointage perdu (le
+  banc v7.13.12 le disait déjà : « le mot doux de réception est dit »
+  échouait). Il se pose AUSSI en session (`pont_flash`) et se rend au
+  tour suivant, UNE fois, sous l'entête (section 0 de
+  `_pont_memoire_hors_ligne`) : « 🕊️ N journées priée(s) hors ligne
+  viennent de rejoindre ta chaîne » reste affiché après le nettoyage de
+  l'adresse. Le versé DU JOUR marque toujours la présence du jour —
+  vérifié au banc AppTest (la journée d'aujourd'hui arrive, la présence
+  se coche, le mot survit, il ne se répète pas au tour d'après).
+- **Côté téléphone**, le Kit MA DIZAINE Union v10 complète la demande :
+  l'application ANNONCE TOUTE SEULE ses journées en attente dès que le
+  réseau revient (après la méditation, au retour du réseau, au réveil de
+  la page) — plus besoin d'« actualiser » ni de retoucher « 🌐 En ligne »
+  ; le web les reçoit par la même porte (`?pont_jours`), une seule fois
+  chacune.
+- **Banc d'épreuve** — `scripts/test_v7180.py` (79 vérifications : la
+  règle, le blocage réel chez les deux maisons, les gestes accord/refus,
+  chez soi et sans équipe, l'antan NULL, la mensuelle et l'abonnement, la
+  signature de l'accord, les mots des vues, la compile ×13, pyflakes) +
+  `scripts/test_v7180_pont.py` (9 vérifications AppTest) ; régressions
+  repassées et musées avec la règle : v7.16.5 (57 ✅), v7.16.6 (60 ✅),
+  v7.16.7 (44 ✅), v7.16.8 (27 ✅), v7.16.9 (34 ✅), v7.17.0 (26 ✅). La
+  base de production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.18.0"`.
+
 ### 73. v7.17.0 — « 💼 Ressources » s'affine : les contrôles du responsable, le livre des reports d'échéance
 
 MOT DU USER : « Entame le 3. L'affinage de "💼 Ressources". » — la mue
