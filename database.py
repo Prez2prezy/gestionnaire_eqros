@@ -4805,6 +4805,106 @@ def cotis_echeance_effective(membre_id, annee_debut, nature="reabonnement"):
     return cotis_echeance_nature(nature), None
 
 
+def cotis_reports_abo_livre(annee_debut, equipe_id=None, paroisse_id=None):
+    """v7.17.0 — LE LIVRE DES REPORTS (lecture pure — LES CONTRÔLES DU
+    RESPONSABLE) : chaque accord posé pour l'année, membre par membre,
+    avec sa maison (l'équipe, la paroisse), sa chaîne (l'échéance
+    d'origine → la reportée), sa signature (qui l'a accordée, quel rôle,
+    quand) et l'état du membre AUJOURD'HUI — ✅ Réglé (l'abonnement est
+    posé), ⏳ En course (le dernier accord court, la date n'est pas
+    passée), ⛔ Hors course (la date reportée est passée sans règlement).
+    Les accords d'antan du même membre restent la mémoire du registre ;
+    c'est le DERNIER accord qui répond. Borné à l'équipe si `equipe_id`
+    est donné, à la paroisse si `paroisse_id` est donné (le regard du
+    responsable paroissial sur les caisses de ses équipes)."""
+    _sql = """SELECT r.id, r.membre_id, r.echeance_origine,
+                     r.echeance_reportee, r.motif, r.accordee_par_nom,
+                     r.accordee_par_role, r.pose_le,
+                     m.nom, m.prenom, m.matloc, e.nom_equipe, p.nom
+              FROM cotis_reports_abo r
+              JOIN membres m ON r.membre_id=m.id
+              LEFT JOIN equipes e ON m.equipe_id=e.id
+              LEFT JOIN paroisses p ON m.paroisse_id=p.id
+              WHERE r.annee_debut=? AND m.statut='actif'"""
+    _args = [int(annee_debut)]
+    if equipe_id is not None:
+        _sql += " AND m.equipe_id=?"
+        _args.append(int(equipe_id))
+    if paroisse_id is not None:
+        _sql += " AND m.paroisse_id=?"
+        _args.append(int(paroisse_id))
+    _sql += " ORDER BY r.pose_le DESC, m.nom, m.prenom"
+    _out = []
+    try:
+        _payes = {r[0] for r in c.execute(
+            "SELECT DISTINCT membre_id FROM abonnements "
+            "WHERE annee_debut=? AND statut='paye'",
+            (int(annee_debut),)).fetchall()}
+        _auj = date.today()
+        for _r in c.execute(_sql, _args).fetchall():
+            (_rid, _mid, _org, _rep, _motif, _nom_acc, _role_acc, _pose,
+             _nom, _pre, _mat, _eq, _par) = _r
+            try:
+                _d_rep = date.fromisoformat(str(_rep)[:10])
+            except Exception:
+                _d_rep = None
+            if _mid in _payes:
+                _etat = "✅ Réglé"
+            elif _d_rep and _d_rep < _auj:
+                _etat = "⛔ Hors course"
+            else:
+                _etat = "⏳ En course"
+            _out.append({"id": _rid, "membre_id": _mid,
+                         "echeance_origine": str(_org or "")[:10],
+                         "echeance_reportee": str(_rep or "")[:10],
+                         "motif": _motif or "",
+                         "accordee_par_nom": _nom_acc or "",
+                         "accordee_par_role": _role_acc or "",
+                         "pose_le": str(_pose) if _pose else "",
+                         "nom": _nom or "", "prenom": _pre or "",
+                         "matloc": _mat or "", "equipe": _eq or "—",
+                         "paroisse": _par or "—", "etat": _etat,
+                         "vivant": bool(_mid not in _payes and _d_rep
+                                        and _d_rep >= _auj)})
+    except Exception as e:
+        logger.warning(f"cotis_reports_abo_livre : {e!r}")
+    return _out
+
+
+def cotis_arrieres_annee(annee_debut, equipe_id=None, paroisse_id=None):
+    """v7.17.0 — LES ARRIÉRÉS D'UNE ANNÉE (lecture pure — LE TÉMOIN DU
+    RESPONSABLE) : les équipiers actifs qui n'ont pas d'abonnement réglé
+    pour l'année donnée. Chaque année pastorale vit sa propre vie : la
+    dette dort dans l'année où elle est née — la liste sert de témoin
+    (« ⏪ l'année passée »), le règlement reste au sélecteur d'année de
+    la caisse, là où la dette est née. Bornée à l'équipe si `equipe_id`
+    est donné, à la paroisse si `paroisse_id` est donné. Chaque entrée :
+    (membre_id, nom, prenom, matloc, equipe, paroisse)."""
+    _sql = """SELECT m.id, m.nom, m.prenom, m.matloc, e.nom_equipe, p.nom
+              FROM membres m
+              LEFT JOIN equipes e ON m.equipe_id=e.id
+              LEFT JOIN paroisses p ON m.paroisse_id=p.id
+              WHERE m.statut='actif'
+                   AND m.id NOT IN (SELECT membre_id FROM abonnements
+                                        WHERE annee_debut=? AND statut='paye')"""
+    _args = [int(annee_debut)]
+    if equipe_id is not None:
+        _sql += " AND m.equipe_id=?"
+        _args.append(int(equipe_id))
+    if paroisse_id is not None:
+        _sql += " AND m.paroisse_id=?"
+        _args.append(int(paroisse_id))
+    _sql += " ORDER BY m.nom, m.prenom"
+    _out = []
+    try:
+        for _r in c.execute(_sql, _args).fetchall():
+            _out.append((_r[0], _r[1] or "", _r[2] or "", _r[3] or "",
+                         _r[4] or "—", _r[5] or "—"))
+    except Exception as e:
+        logger.warning(f"cotis_arrieres_annee : {e!r}")
+    return _out
+
+
 def cotis_relances_lignes(equipe_id=None, paroisse_id=None, annee_debut=None):
     """v7.14.4 — LE LIVRE DES RELANCES (lecture seule) : les membres actifs
     dont le paiement de l'année pastorale n'est pas posé, chacun avec la
@@ -5747,13 +5847,15 @@ def cotis_declaration_retirer(declaration_id):
 
 
 def cotis_declarations_attente(dest="equipe", paroisse_id=None,
-                               annee_debut=None):
+                               annee_debut=None, equipe_id=None):
     """v7.16.6 — LES DÉCLARATIONS QUI ATTENDENT UNE MAISON (lecture pure) :
     les déclarations de la mensuelle et de l'abonnement adressées à la
     trésorerie `dest` (« équipe » par défaut — les d'antan n'avaient pas
     de « Reçu par » et viennent chez elle), bornées à la paroisse si
-    `paroisse_id` est donné (la maison de la paroisse) et à l'année
-    pastorale si `annee_debut` est donné (None = toutes). Chaque entrée :
+    `paroisse_id` est donné (la maison de la paroisse), à l'équipe si
+    `equipe_id` est donné (v7.17.0 — le regard du responsable d'équipe)
+    et à l'année pastorale si `annee_debut` est donné (None = toutes).
+    Chaque entrée :
     (id, membre_id, annee_debut, cible, montant, mois [liste], declare_le,
     declare_mode, declare_dest, nom, prenom, matloc, equipe, paroisse_id,
     paroisse)."""
@@ -5772,6 +5874,10 @@ def cotis_declarations_attente(dest="equipe", paroisse_id=None,
     if paroisse_id:
         _sql += " AND m.paroisse_id=?"
         _args.append(int(paroisse_id))
+    if equipe_id:
+        # v7.17.0 — le regard du responsable d'équipe : ses membres seuls
+        _sql += " AND m.equipe_id=?"
+        _args.append(int(equipe_id))
     if annee_debut:
         _sql += " AND d.annee_debut=?"
         _args.append(int(annee_debut))
