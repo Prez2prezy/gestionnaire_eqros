@@ -2758,6 +2758,41 @@ l'abonnement déclarables. »
   base de production n'est jamais touchée.
 - `_VERSION_APPLI = "v7.16.6"`.
 
+### 75. v7.18.1 — Le mot doux redevient visible : le fond des alertes suit la refonte de Streamlit
+
+MOT DU USER : « "Ta journée priée hors ligne était déjà dans la chaîne —
+rien n'a été recompté. 🕊️" n'est pas visible à cause certainement de la
+couleur de fond. »
+
+- **LA CAUSE** — Streamlit a refondu le DOM des alertes : le fond natif se
+  peint désormais sur le CONTENEUR INTÉRIEUR (`stAlertContainer`, classe
+  `stAlertContainer`, inspecté dans le bundle 1.67), pas sur le div externe
+  `stAlert` que peignaient les règles de la maison depuis la v7.10.4. Chez
+  un lecteur dont le téléphone est en thème CLAIR, la boîte native ambre
+  restait visible sous le texte clair forcé `#e8eaf6` : le mot doux du pont
+  devenait illisible (« texte clair sur fond clair »). Le miroir existait
+  côté administration pour les lecteurs en thème SOMBRE : le texte encre
+  `#1A237E` forcé sur la boîte native sombre.
+- **LE CORRECTIF** — le fond se peint AUJOURD'HUI sur LES DEUX conteneurs,
+  quelle que soit la version de Streamlit : `.stApp [data-testid="stAlert"],
+  .stApp [data-testid="stAlertContainer"], .stApp .stAlertContainer` —
+  fond nuit `#151b3d` + texte clair dans l'Espace de Prière, fond clair
+  `#E8EAF6` + texte encre dans l'Administration. Le liseré de la nature de
+  l'alerte se lit par le contenu (`:has([data-testid="stAlertContent…"])` :
+  or pour ⚠️ attention, vert pour ✅ réussite, rouge pour ❌ erreur, bleu
+  pour ℹ️ info) — les navigateurs sans `:has()` gardent la boîte lisible,
+  simplement sans liseré.
+- **LA PREUVE** — reproduction du vrai DOM d'alerte 1.67 avant/après dans
+  les deux mondes (l'ancien rendu : message quasi invisible sur ambre ;
+  le nouveau : lisible, liseré conforme), capture vérifiée à l'œil.
+- **Banc d'épreuve** — `scripts/test_v7181.py` (14 vérifications : les deux
+  conteneurs peints dans les deux mondes, les quatre liserés, l'absence de
+  l'ancienne règle faible, les ancêtres v7.18.0 intacts, la compile ×13,
+  pyflakes) ; régressions repassées : v7.16.5 (57 ✅), v7.16.6 (60 ✅),
+  v7.16.7 (44 ✅), v7.16.8 (27 ✅), v7.16.9 (34 ✅), v7.17.0 (26 ✅),
+  v7.18.0 (79 ✅).
+- `_VERSION_APPLI = "v7.18.1"`.
+
 ### 74. v7.18.0 — L'autorisation en geste bloquant, et le mot doux du pont qui survit
 
 MOT DU USER : « Attaque l'autorisation en geste. » + « Une régression —>
