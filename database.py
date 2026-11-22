@@ -689,7 +689,10 @@ def init_tables_and_migrations():
         echeance TEXT,
         declare_le TEXT,
         declare_mode TEXT,
-        declare_dest TEXT
+        declare_dest TEXT,
+        autorisation_etat TEXT,
+        autorisation_le TEXT,
+        autorisation_par TEXT
     )""")
 
     # v7.16.0 — LA PRÉCISION DE LA COTISATION : les quatre types du registre
@@ -784,8 +787,33 @@ def init_tables_and_migrations():
         declare_le TEXT,
         declare_mode TEXT,
         declare_dest TEXT,
-        cree_le TEXT
+        cree_le TEXT,
+        autorisation_etat TEXT,
+        autorisation_le TEXT,
+        autorisation_par TEXT
     )""")
+
+    # v7.18.0 — L'AUTORISATION EN GESTE BLOQUANT (la Note de la maison,
+    # point 2 : « un paiement au-delà de son entité supérieure nécessite
+    # une autorisation de son responsable direct » — jusqu'ici seulement
+    # affichée, elle devient un GESTE) : chaque déclaration du membre
+    # adressée au-delà de sa maison porte trois colonnes d'autorisation —
+    # `autorisation_etat` (« attente » dès la pose, « accordee » au geste
+    # du responsable), `autorisation_le` (l'instant de l'accord) et
+    # `autorisation_par` (la signature). Tant que l'état dit « attente »,
+    # la déclaration ne parvient PAS à la caisse qui reçoit — le blocage
+    # est réel, pas une affiche. Migration douce et ré-exécutable sur les
+    # bases posées avant v7.18.0 : des colonnes à NULL, rien d'existant ne
+    # bouge — les déclarations d'antan (état NULL) arrivent chez leur
+    # maison comme avant. La base de production n'est JAMAIS touchée par
+    # l'atelier : la migration vit dans le code, elle s'exécute chez
+    # l'hébergeur au premier démarrage, comme les précédentes.
+    safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN autorisation_etat TEXT")
+    safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN autorisation_le TEXT")
+    safe_migrate("ALTER TABLE cotisations_diverses ADD COLUMN autorisation_par TEXT")
+    safe_migrate("ALTER TABLE cotis_declarations ADD COLUMN autorisation_etat TEXT")
+    safe_migrate("ALTER TABLE cotis_declarations ADD COLUMN autorisation_le TEXT")
+    safe_migrate("ALTER TABLE cotis_declarations ADD COLUMN autorisation_par TEXT")
 
     # v7.16.9 — LE REPORT D'ÉCHÉANCE DE L'ABONNEMENT — RÉABONNEMENT (la
     # maison : « cette cotisation est aussi à échéance puisqu'il y a une
@@ -5569,6 +5597,63 @@ def cotis_div_supprimer_groupe(equipe_id, annee_debut, type_cotisation,
             return 0
 
 
+# v7.18.0 — LA RÈGLE DE L'AUTORISATION (la Note de la maison, posée en
+# geste bloquant) : un paiement au-delà de l'entité supérieure du payeur
+# nécessite l'autorisation de son responsable direct — celui de la maison
+# juste en dessous de la trésorerie qui reçoit :
+#   · un membre qui déclare à la trésorerie de la PAROISSE → le
+#     responsable de SON équipe accorde (le geste vit chez l'équipe) ;
+#   · un membre qui déclare à la trésorerie du DIOCÈSE → le responsable
+#     de SA paroisse accorde (le geste vit chez la paroisse, « 💼
+#     Ressources »).
+# Chez soi (l'équipe pour le membre), ou sans maison intermédiaire (le
+# membre sans équipe devant sa paroisse), rien n'est à demander : la
+# déclaration arrive chez sa maison comme avant.
+def cotis_autorisation_requise(dest, equipe_id=None, paroisse_id=None):
+    """La maison qui autorise une déclaration à `dest` — « equipe » (le
+    responsable d'équipe), « paroisse » (le responsable paroissial) ou
+    None (rien à demander). Lecture pure, sans la base : l'appelant porte
+    les maisons du membre."""
+    _d = str(dest or "").strip().lower()
+    if _d == "paroisse":
+        try:
+            return "equipe" if (equipe_id is not None
+                                and int(equipe_id) > 0) else None
+        except (TypeError, ValueError):
+            return None
+    if _d == "diocese":
+        try:
+            return "paroisse" if (paroisse_id is not None
+                                  and int(paroisse_id) > 0) else None
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _membre_maisons(membre_id):
+    """Les deux maisons d'un membre (equipe_id, paroisse_id) — entiers ou
+    None. Lecture pure, silencieuse."""
+    try:
+        _r = c.execute("SELECT equipe_id, paroisse_id FROM membres "
+                       "WHERE id=?", (int(membre_id),)).fetchone()
+        if not _r:
+            return (None, None)
+        return (int(_r[0]) if _r[0] else None,
+                int(_r[1]) if _r[1] else None)
+    except Exception as e:
+        logger.warning(f"_membre_maisons : {e!r}")
+        return (None, None)
+
+
+def _membre_autorisation_etat(membre_id, dest):
+    """L'état d'autorisation à poser pour une déclaration de CE membre à
+    CETTE destination : « attente » quand la règle demande l'accord du
+    responsable direct, None quand la déclaration arrive chez sa maison
+    sans permission (chez soi, ou sans maison intermédiaire)."""
+    _eq, _pa = _membre_maisons(membre_id)
+    return ("attente" if cotis_autorisation_requise(dest, _eq, _pa) else None)
+
+
 def cotis_div_regler(ligne_id, mode_paiement, regle_par=None, destination=None):
     """v7.16.1 — LE VERSEMENT EST NOTÉ : la responsable pose le mode de
     paiement sur UNE ligne « ⏳ à régler » du registre (Espèces, Wave,
@@ -5626,7 +5711,13 @@ def cotis_div_declare(ligne_id, mode_paiement, destination=None):
     (cotis_div_regler) ou la refuser (cotis_div_declaration_annuler).
     Une ligne déjà réglée ne se déclare pas ; une déclaration en place se
     re-déclare (le membre corrige son mode). Retourne True si la
-    déclaration a été posée."""
+    déclaration a été posée.
+    v7.18.0 — L'AUTORISATION EN GESTE BLOQUANT : une déclaration adressée
+    au-delà de la maison du membre (la paroisse pour un équipier, le
+    diocèse pour le passage suivant) naît avec `autorisation_etat`=
+    "attente" — elle ne parvient à la caisse qui reçoit QU'APRÈS l'accord
+    du responsable direct (cotis_div_autorisation_accorder). Chez soi,
+    rien n'attend."""
     _mode = str(mode_paiement or "").strip().lower()
     if _mode not in ("especes", "wave", "orange_money", "mtn_momo", "autre"):
         logger.warning(f"cotis_div_declare : mode de paiement inconnu {_mode!r}")
@@ -5638,15 +5729,18 @@ def cotis_div_declare(ligne_id, mode_paiement, destination=None):
     _dest = (_dest or None)
     with _verrou_db:
         try:
-            _ex = c.execute("SELECT regle_le FROM cotisations_diverses "
+            _ex = c.execute("SELECT membre_id, regle_le FROM cotisations_diverses "
                             "WHERE id=?", (int(ligne_id),)).fetchone()
-            if not _ex or _ex[0]:
+            if not _ex or _ex[1]:
                 return False   # ligne inconnue ou déjà réglée : rien à déclarer
+            _aut_etat = _membre_autorisation_etat(_ex[0], _dest)
             c.execute("""UPDATE cotisations_diverses
-                         SET declare_le=?, declare_mode=?, declare_dest=?
+                         SET declare_le=?, declare_mode=?, declare_dest=?,
+                             autorisation_etat=?, autorisation_le=NULL,
+                             autorisation_par=NULL
                          WHERE id=? AND regle_le IS NULL""",
                       (datetime.now().isoformat(timespec="seconds"), _mode,
-                       _dest, int(ligne_id)))
+                       _dest, _aut_etat, int(ligne_id)))
             _apres = c.execute("SELECT declare_le FROM cotisations_diverses "
                                "WHERE id=?", (int(ligne_id),)).fetchone()
             commit_and_sync()
@@ -5661,8 +5755,9 @@ def cotis_div_declaration_annuler(ligne_id):
     (✖ Retirer) ou la trésorerie la refuse (✖ Refuser dans « 💰 Versement »)
     — les trois colonnes retournent à NULL et la ligne reprend son « ⏳ à
     régler » paisible. Une ligne déjà RÉGLÉE ne bouge pas (sa déclaration
-    a déjà été effacée par le règlement). Retourne True si une déclaration
-    a été effacée."""
+    a déjà été effacée par le règlement). v7.18.0 — l'autorisation voyage
+    avec sa déclaration : les trois colonnes d'autorisation retournent à
+    NULL avec elle. Retourne True si une déclaration a été effacée."""
     with _verrou_db:
         try:
             _ex = c.execute("SELECT regle_le, declare_le FROM cotisations_diverses "
@@ -5671,7 +5766,8 @@ def cotis_div_declaration_annuler(ligne_id):
                 return False   # ligne inconnue, réglée, ou rien déclaré
             c.execute("""UPDATE cotisations_diverses
                          SET declare_le=NULL, declare_mode=NULL,
-                             declare_dest=NULL
+                             declare_dest=NULL, autorisation_etat=NULL,
+                             autorisation_le=NULL, autorisation_par=NULL
                          WHERE id=? AND regle_le IS NULL
                                AND declare_le IS NOT NULL""",
                       (int(ligne_id),))
@@ -5683,6 +5779,110 @@ def cotis_div_declaration_annuler(ligne_id):
         except Exception as e:
             logger.warning(f"cotis_div_declaration_annuler : {e!r}")
             return False
+
+
+# v7.18.0 — LES DEUX GESTES DU RESPONSABLE DIRECT (la Note de la maison,
+# devenue un geste bloquant) : l'accord ouvre la route vers la caisse qui
+# reçoit ; le refus l'efface — la ligne reprend son « ⏳ à régler » et le
+# membre peut déclarer à nouveau. Le refus suit la maison en deux temps,
+# comme chaque retrait : rien ne s'efface sans un deuxième geste (les
+# confirmations d'écran vivent dans les vues).
+def cotis_div_autorisation_accorder(ligne_id, accorde_par=None):
+    """L'accord du responsable direct sur UNE déclaration en attente :
+    `autorisation_etat` passe à « accordee » (l'instant et la signature
+    voyagent) — la déclaration parvient alors à la caisse qui reçoit,
+    dans « 💰 Versement », pour sa confirmation ordinaire. Une ligne
+    réglée, sans déclaration ou pas en attente ne bouge pas. Retourne
+    True si l'accord a été posé."""
+    with _verrou_db:
+        try:
+            c.execute("""UPDATE cotisations_diverses
+                         SET autorisation_etat='accordee', autorisation_le=?,
+                             autorisation_par=?
+                         WHERE id=? AND regle_le IS NULL
+                               AND declare_le IS NOT NULL
+                               AND autorisation_etat='attente'""",
+                      (datetime.now().isoformat(timespec="seconds"),
+                       (str(accorde_par) if accorde_par else None),
+                       int(ligne_id)))
+            _apres = c.execute(
+                "SELECT autorisation_etat FROM cotisations_diverses "
+                "WHERE id=?", (int(ligne_id),)).fetchone()
+            commit_and_sync()
+            return bool(_apres and _apres[0] == "accordee")
+        except Exception as e:
+            logger.warning(f"cotis_div_autorisation_accorder : {e!r}")
+            return False
+
+
+def cotis_div_autorisation_refuser(ligne_id):
+    """Le refus du responsable direct : la déclaration s'efface ENTIÈREMENT
+    (les six colonnes — déclaration et autorisation — retournent à NULL)
+    et la ligne reprend son « ⏳ à régler » paisible — le membre peut
+    déclarer à nouveau. Une ligne réglée ne bouge pas. Retourne True si
+    le refus a été posé."""
+    with _verrou_db:
+        try:
+            _ex = c.execute(
+                "SELECT regle_le, declare_le FROM cotisations_diverses "
+                "WHERE id=?", (int(ligne_id),)).fetchone()
+            if not _ex or _ex[0] or not _ex[1]:
+                return False   # ligne inconnue, réglée, ou rien déclaré
+            c.execute("""UPDATE cotisations_diverses
+                         SET declare_le=NULL, declare_mode=NULL,
+                             declare_dest=NULL, autorisation_etat=NULL,
+                             autorisation_le=NULL, autorisation_par=NULL
+                         WHERE id=? AND regle_le IS NULL""",
+                      (int(ligne_id),))
+            commit_and_sync()
+            return True
+        except Exception as e:
+            logger.warning(f"cotis_div_autorisation_refuser : {e!r}")
+            return False
+
+
+def cotis_div_autorisations_attente(niveau, equipe_id=None, paroisse_id=None,
+                                    annee_debut=None):
+    """v7.18.0 — LES DÉCLARATIONS QUI ATTENDENT L'AUTORISATION (lecture
+    pure) — le bloc « ✋ Autorisations demandées » du responsable direct :
+      · niveau « equipe »  → les lignes déclarées par SES membres à la
+        trésorerie de la PAROISSE, autorisation en attente ;
+      · niveau « paroisse » → les lignes déclarées par les membres de sa
+        paroisse à la trésorerie du DIOCÈSE, autorisation en attente.
+    Chaque entrée : (id, montant, type_cotisation, date_versement,
+    precision, enregistre_par, nom, prenom, matloc, declare_le,
+    declare_mode, declare_dest, autorisation_etat, equipe, paroisse)."""
+    _n = str(niveau or "").strip().lower()
+    if _n not in ("equipe", "paroisse"):
+        return []
+    _dest = "paroisse" if _n == "equipe" else "diocese"
+    _sql = """SELECT d.id, d.montant, d.type_cotisation, d.date_versement,
+                     d.precision, d.enregistre_par, m.nom, m.prenom, m.matloc,
+                     d.declare_le, d.declare_mode, d.declare_dest,
+                     d.autorisation_etat, e.nom_equipe, p.nom
+              FROM cotisations_diverses d
+              JOIN membres m ON d.membre_id=m.id
+              LEFT JOIN equipes e ON m.equipe_id=e.id
+              LEFT JOIN paroisses p ON m.paroisse_id=p.id
+              WHERE m.statut='actif' AND d.regle_le IS NULL
+                    AND d.declare_le IS NOT NULL AND d.declare_dest=?
+                    AND d.autorisation_etat='attente'"""
+    _args = [_dest]
+    if _n == "equipe" and equipe_id:
+        _sql += " AND m.equipe_id=?"
+        _args.append(int(equipe_id))
+    if _n == "paroisse" and paroisse_id:
+        _sql += " AND m.paroisse_id=?"
+        _args.append(int(paroisse_id))
+    if annee_debut:
+        _sql += " AND d.annee_debut=?"
+        _args.append(int(annee_debut))
+    _sql += " ORDER BY d.declare_le DESC, m.nom, m.prenom"
+    try:
+        return c.execute(_sql, _args).fetchall()
+    except Exception as e:
+        logger.warning(f"cotis_div_autorisations_attente : {e!r}")
+        return []
 
 
 # ======================================================================
@@ -5700,7 +5900,9 @@ _COTIS_DECL_CIBLES = ("mensuelle", "abonnement")
 def _cotis_declarations_table():
     """La table douce existe dès le premier geste — ré-exécutable, sans
     bruit (les ateliers qui relisent une base ancienne la voient naître
-    ici plutôt qu'au démarrage)."""
+    ici plutôt qu'au démarrage). v7.18.0 — les trois colonnes de
+    l'autorisation naissent avec elle (les bases antérieures les reçoivent
+    par la migration douce du démarrage)."""
     try:
         c.execute("""CREATE TABLE IF NOT EXISTS cotis_declarations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5712,7 +5914,10 @@ def _cotis_declarations_table():
             declare_le TEXT,
             declare_mode TEXT,
             declare_dest TEXT,
-            cree_le TEXT
+            cree_le TEXT,
+            autorisation_etat TEXT,
+            autorisation_le TEXT,
+            autorisation_par TEXT
         )""")
     except Exception as e:
         logger.warning(f"_cotis_declarations_table : {e!r}")
@@ -5777,23 +5982,30 @@ def cotis_declaration_poser(membre_id, annee_debut, cible, montant,
     _cotis_declarations_table()
     with _verrou_db:
         try:
+            # v7.18.0 — LA RÈGLE D'AUTORISATION, la même que pour les
+            # lignes : au-delà de la maison du membre, l'accord du
+            # responsable direct bloque la route jusqu'à son geste.
+            _aut_etat = _membre_autorisation_etat(int(membre_id), _dest)
             _ex = c.execute("""SELECT id FROM cotis_declarations
                                WHERE membre_id=? AND annee_debut=? AND cible=?""",
                             (int(membre_id), int(annee_debut), _cib)).fetchone()
             if _ex:
                 c.execute("""UPDATE cotis_declarations
                              SET montant=?, mois=?, declare_le=?, declare_mode=?,
-                                 declare_dest=?
+                                 declare_dest=?, autorisation_etat=?,
+                                 autorisation_le=NULL, autorisation_par=NULL
                              WHERE id=?""",
                           (_montant, _mois_txt, _maintenant, _mode, _dest,
-                           _ex[0]))
+                           _aut_etat, _ex[0]))
             else:
                 c.execute("""INSERT INTO cotis_declarations
                              (membre_id, annee_debut, cible, montant, mois,
-                              declare_le, declare_mode, declare_dest, cree_le)
-                             VALUES (?,?,?,?,?,?,?,?,?)""",
+                              declare_le, declare_mode, declare_dest, cree_le,
+                              autorisation_etat)
+                             VALUES (?,?,?,?,?,?,?,?,?,?)""",
                           (int(membre_id), int(annee_debut), _cib, _montant,
-                           _mois_txt, _maintenant, _mode, _dest, _maintenant))
+                           _mois_txt, _maintenant, _mode, _dest, _maintenant,
+                           _aut_etat))
             commit_and_sync()
             return True
         except Exception as e:
@@ -5804,13 +6016,16 @@ def cotis_declaration_poser(membre_id, annee_debut, cible, montant,
 def cotis_declaration_membre(membre_id, annee_debut, cible):
     """v7.16.6 — La déclaration EN ATTENTE du membre pour une cible
     (lecture pure) : dict {id, montant, mois (liste), declare_le,
-    declare_mode, declare_dest} ou None si rien n'attend."""
+    declare_mode, declare_dest} ou None si rien n'attend.
+    v7.18.0 — l'état de l'autorisation voyage avec elle
+    (autorisation_etat, autorisation_le, autorisation_par)."""
     _cib = str(cible or "").strip().lower()
     if _cib not in _COTIS_DECL_CIBLES:
         return None
     try:
         _r = c.execute("""SELECT id, montant, mois, declare_le, declare_mode,
-                                 declare_dest
+                                 declare_dest, autorisation_etat,
+                                 autorisation_le, autorisation_par
                           FROM cotis_declarations
                           WHERE membre_id=? AND annee_debut=? AND cible=?""",
                        (int(membre_id), int(annee_debut), _cib)).fetchone()
@@ -5825,7 +6040,8 @@ def cotis_declaration_membre(membre_id, annee_debut, cible):
         _mois = []
     return {"id": _r[0], "montant": int(_r[1] or 0), "mois": _mois or [],
             "declare_le": _r[3], "declare_mode": _r[4],
-            "declare_dest": _r[5]}
+            "declare_dest": _r[5], "autorisation_etat": _r[6],
+            "autorisation_le": _r[7], "autorisation_par": _r[8]}
 
 
 def cotis_declaration_retirer(declaration_id):
@@ -5846,6 +6062,98 @@ def cotis_declaration_retirer(declaration_id):
             return False
 
 
+# v7.18.0 — LES GESTES DU RESPONSABLE PAROISSIAL (l'autorisation de la
+# mensuelle et de l'abonnement déclarés au diocèse) — jumeaux de ceux des
+# lignes : l'accord ouvre la route vers la caisse du diocèse, le refus
+# efface la déclaration (le dû reprend son « ⏳ à régler »).
+def cotis_declaration_autorisation_accorder(declaration_id, accorde_par=None):
+    """L'accord du responsable paroissial sur la déclaration d'une
+    mensuelle ou d'un abonnement adressée au diocèse : `autorisation_etat`
+    passe à « accordee » (instant et signature) — la déclaration parvient
+    alors à la caisse du diocèse pour sa confirmation ordinaire. Retourne
+    True si l'accord a été posé."""
+    _cotis_declarations_table()
+    with _verrou_db:
+        try:
+            c.execute("""UPDATE cotis_declarations
+                         SET autorisation_etat='accordee', autorisation_le=?,
+                             autorisation_par=?
+                         WHERE id=? AND declare_le IS NOT NULL
+                               AND autorisation_etat='attente'""",
+                      (datetime.now().isoformat(timespec="seconds"),
+                       (str(accorde_par) if accorde_par else None),
+                       int(declaration_id)))
+            _apres = c.execute(
+                "SELECT autorisation_etat FROM cotis_declarations "
+                "WHERE id=?", (int(declaration_id),)).fetchone()
+            commit_and_sync()
+            return bool(_apres and _apres[0] == "accordee")
+        except Exception as e:
+            logger.warning(f"cotis_declaration_autorisation_accorder : {e!r}")
+            return False
+
+
+def cotis_declaration_autorisation_refuser(declaration_id):
+    """Le refus du responsable paroissial : la déclaration s'efface
+    (jumelle de cotis_declaration_retirer) — le dû reprend son « ⏳ à
+    régler » et le membre peut déclarer à nouveau. Retourne True si le
+    refus a été posé."""
+    return cotis_declaration_retirer(declaration_id)
+
+
+def cotis_declaration_autorisations_attente(niveau, equipe_id=None,
+                                            paroisse_id=None, annee_debut=None):
+    """v7.18.0 — LES DÉCLARATIONS DE LA MENSUELLE ET DE L'ABONNEMENT QUI
+    ATTENDENT L'AUTORISATION (lecture pure) — la part du bloc « ✋
+    Autorisations demandées » qui porte ces deux dus :
+      · niveau « equipe »  → déclarées à la trésorerie de la PAROISSE par
+        les membres de l'équipe ;
+      · niveau « paroisse » → déclarées à la trésorerie du DIOCÈSE par
+        les membres de la paroisse.
+    Chaque entrée : (id, membre_id, annee_debut, cible, montant,
+    mois [liste], declare_le, declare_mode, declare_dest, nom, prenom,
+    matloc, equipe, paroisse_id, paroisse)."""
+    _n = str(niveau or "").strip().lower()
+    if _n not in ("equipe", "paroisse"):
+        return []
+    _dest = "paroisse" if _n == "equipe" else "diocese"
+    _sql = """SELECT d.id, d.membre_id, d.annee_debut, d.cible, d.montant,
+                     d.mois, d.declare_le, d.declare_mode, d.declare_dest,
+                     m.nom, m.prenom, m.matloc, e.nom_equipe, p.id, p.nom
+              FROM cotis_declarations d
+              JOIN membres m ON d.membre_id=m.id
+              LEFT JOIN equipes e ON m.equipe_id=e.id
+              LEFT JOIN paroisses p ON m.paroisse_id=p.id
+              WHERE m.statut='actif' AND d.declare_le IS NOT NULL
+                    AND d.declare_dest=? AND d.autorisation_etat='attente'"""
+    _args = [_dest]
+    if _n == "equipe" and equipe_id:
+        _sql += " AND m.equipe_id=?"
+        _args.append(int(equipe_id))
+    if _n == "paroisse" and paroisse_id:
+        _sql += " AND m.paroisse_id=?"
+        _args.append(int(paroisse_id))
+    if annee_debut:
+        _sql += " AND d.annee_debut=?"
+        _args.append(int(annee_debut))
+    _sql += " ORDER BY d.declare_le DESC"
+    _res = []
+    try:
+        _cotis_declarations_table()
+        for _r in c.execute(_sql, _args).fetchall():
+            try:
+                _mois = json.loads(_r[5]) if _r[5] else []
+            except Exception:
+                _mois = []
+            _res.append((_r[0], _r[1], _r[2], _r[3], int(_r[4] or 0),
+                         _mois or [], _r[6], _r[7], _r[8], _r[9], _r[10],
+                         _r[11], _r[12], _r[13], _r[14]))
+        return _res
+    except Exception as e:
+        logger.warning(f"cotis_declaration_autorisations_attente : {e!r}")
+        return []
+
+
 def cotis_declarations_attente(dest="equipe", paroisse_id=None,
                                annee_debut=None, equipe_id=None):
     """v7.16.6 — LES DÉCLARATIONS QUI ATTENDENT UNE MAISON (lecture pure) :
@@ -5858,7 +6166,11 @@ def cotis_declarations_attente(dest="equipe", paroisse_id=None,
     Chaque entrée :
     (id, membre_id, annee_debut, cible, montant, mois [liste], declare_le,
     declare_mode, declare_dest, nom, prenom, matloc, equipe, paroisse_id,
-    paroisse)."""
+    paroisse).
+    v7.18.0 — LE BLOCAGE RÉEL : celles qui attendent encore l'accord du
+    responsable direct (`autorisation_etat`='attente') ne parviennent PAS
+    ici — la maison qui reçoit ne les voit qu'après son geste (ou d'antan,
+    état NULL, arrivées comme avant)."""
     _d = str(dest or "equipe").strip().lower()
     _clause_dest = ("(d.declare_dest IS NULL OR d.declare_dest='equipe')"
                     if _d == "equipe" else "d.declare_dest=?")
@@ -5870,7 +6182,8 @@ def cotis_declarations_attente(dest="equipe", paroisse_id=None,
                JOIN membres m ON d.membre_id=m.id
                LEFT JOIN equipes e ON m.equipe_id=e.id
                LEFT JOIN paroisses p ON m.paroisse_id=p.id
-               WHERE m.statut='actif' AND {_clause_dest}"""
+               WHERE m.statut='actif' AND {_clause_dest}
+                     AND COALESCE(d.autorisation_etat,'')!='attente'"""
     if paroisse_id:
         _sql += " AND m.paroisse_id=?"
         _args.append(int(paroisse_id))
@@ -6035,7 +6348,11 @@ def cotis_div_declarations_maison(dest, paroisse_id=None, annee_debut=None):
     `annee_debut` est donné. Chaque entrée : (id, montant, type_cotisation,
     date_versement, precision, declare_le, declare_mode, declare_dest,
     nom, prenom, matloc, equipe, paroisse). Les « à choix » éteintes ne
-    s'affichent plus (minuit après leur échéance passé)."""
+    s'affichent plus (minuit après leur échéance passé).
+    v7.18.0 — LE BLOCAGE RÉEL : celles qui attendent encore l'accord du
+    responsable direct (`autorisation_etat`='attente') ne parviennent PAS
+    ici — la maison qui reçoit ne les voit qu'après son geste (ou
+    d'antan, état NULL, arrivées comme avant)."""
     _d = str(dest or "").strip().lower()
     if _d not in _COTIS_DEST_CODES:
         return []
@@ -6050,6 +6367,7 @@ def cotis_div_declarations_maison(dest, paroisse_id=None, annee_debut=None):
                LEFT JOIN paroisses p ON m.paroisse_id=p.id
                WHERE m.statut='actif' AND d.regle_le IS NULL
                      AND d.declare_le IS NOT NULL AND d.declare_dest=?
+                     AND COALESCE(d.autorisation_etat,'')!='attente'
                      AND {COTIS_DIV_CHOIX_VIVANT_SQL}"""
     if paroisse_id:
         _sql += " AND m.paroisse_id=?"
@@ -6142,17 +6460,21 @@ def cotis_div_lignes(membre_id, annee_debut, type_cotisation=None):
     pastorale (toutes, ou d'un seul type), du plus récent au plus ancien.
     (id, type_cotisation, montant, date_versement, mode_paiement,
     enregistre_par, origine, precision, regle_le, destination,
-    type_expedition, echeance, declare_le, declare_mode, declare_dest)
+    type_expedition, echeance, declare_le, declare_mode, declare_dest,
+    autorisation_etat)
     — v7.16.0 : la précision (le nom libre de la cotisation) voyage avec
     chaque ligne, None si absente. v7.16.1 : `regle_le` (None = ⏳ à
     régler) en 9ᵉ champ. v7.16.4 : `destination` (None = les lignes
     d'antan) en 10ᵉ champ. v7.16.5 : le type d'expédition (NULL =
     obligatoire), l'échéance des « à choix », puis la déclaration du
-    membre (instant, mode, « Reçu par ») en 11ᵉ à 15ᵉ champs."""
+    membre (instant, mode, « Reçu par ») en 11ᵉ à 15ᵉ champs.
+    v7.18.0 : l'état de l'autorisation (« attente », « accordee » ou
+    None) en 16ᵉ champ — le membre le relit dans son état."""
     _sql = """SELECT id, type_cotisation, montant, date_versement,
                      mode_paiement, enregistre_par, origine, precision,
                      regle_le, destination, type_expedition, echeance,
-                     declare_le, declare_mode, declare_dest
+                     declare_le, declare_mode, declare_dest,
+                     autorisation_etat
               FROM cotisations_diverses
               WHERE membre_id=? AND annee_debut=?"""
     _args = [membre_id, annee_debut]
