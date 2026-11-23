@@ -50,7 +50,8 @@ from components import (ajouter_evenement_agenda, afficher_agenda_complet_univer
                         afficher_etat_presences_paroisse, _qrcode_png_bytes,
                         afficher_reponses_questionnaire_feuillet,
                         recu_pdf_de_numero,  # v7.14.0 — reçus numérotés
-                        cotis_relance_ligne_urgence)  # v7.14.4 — relance
+                        cotis_relance_ligne_urgence,  # v7.14.4 — relance
+                        gestion_maintenance_site)  # v7.18.2 — panneau bleu
 
 
 def _gestionnaire_archives_espace(texte_intro, types_contenus, prefixe):
@@ -565,6 +566,11 @@ def show_diocese():
                         commit_and_sync()
                         st.session_state["flash_success"] = "Mis à jour ! ✅"
                         st.rerun()
+
+        # v7.18.2 — LE PANNEAU BLEU DE MAINTENANCE (la gestion, en bas du
+        # panneau de bord du diocèse) : la même annonce que la paroisse —
+        # la dernière maison qui écrit fait foi, le panneau est un seul mot.
+        gestion_maintenance_site()
 
     elif menu == "🏘️ Créer paroisses":
         st.markdown('<h2 style="color:#1A237E;">🏘️ Créer une paroisse</h2>', unsafe_allow_html=True)
