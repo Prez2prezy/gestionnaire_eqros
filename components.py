@@ -11,6 +11,8 @@ from database import (c, commit_and_sync, enregistrer_chaine_seance,
                       _assurer_dizaines_journal,
                       # v7.15.0 — la relance mue en onglet (lecture seule)
                       cotis_relances_lignes, cotis_parametres_lire,
+                      # v7.18.2 — le panneau bleu de maintenance
+                      maintenance_site_lire, maintenance_site_definir,
                       intentions_reserve_du_numero,
                       ajouter_intention_reserve, remplacer_intention_reserve,
                       reserve_lignes,
@@ -3963,4 +3965,41 @@ def formulaire_expedition_zone(zone, annee, key_prefix, paroisse_id=None,
         with _bb2:
             if st.button("✖ Annuler", key=f"{key_prefix}_batch_non"):
                 del st.session_state[f'{key_prefix}_batch']
+                st.rerun()
+
+
+def gestion_maintenance_site():
+    """v7.18.2 — LE PANNEAU BLEU DE MAINTENANCE (la gestion). La maison
+    écrit son annonce une fois depuis son panneau de bord (paroisse ou
+    diocèse) : le mot s'affiche AUSSITÔT à tous — visiteurs sur la page
+    d'accueil comme membres dans chaque vue — sans redéploiement, et un
+    geste « 🧹 » l'éteint quand la maintenance est rentrée. Aucune annonce
+    en réserve : le panneau dort, la lecture ne coûte rien."""
+    try:
+        _actuel = maintenance_site_lire()
+    except Exception:
+        return
+    st.markdown("---")
+    st.markdown("### 🛠️ Maintenance du site")
+    st.caption("L'annonce s'affiche aussitôt en panneau bleu à tous — visiteurs "
+               "et membres — sans redéploiement. Exemple : « Maintenance prévue "
+               "cette nuit de 23 h à 23 h 40 — le site sera momentanément "
+               "indisponible ; les Espaces de prière hors ligne restent ouverts. »")
+    if _actuel:
+        st.info("🛠️ Annonce affichée actuellement : " + _actuel)
+    _nouveau = st.text_area(
+        "L'annonce du panneau bleu (laisser vide pour éteindre le panneau)",
+        value=_actuel or "", height=90, key="maintenance_site_annonce")
+    _g1, _g2 = st.columns(2)
+    with _g1:
+        if st.button("📢 Poser l'annonce", key="maintenance_site_poser",
+                     disabled=not _nouveau.strip()):
+            if maintenance_site_definir(_nouveau):
+                st.success("L'annonce s'affiche à tous.")
+                st.rerun()
+    with _g2:
+        if st.button("🧹 Éteindre le panneau", key="maintenance_site_eteindre",
+                     disabled=not _actuel):
+            if maintenance_site_definir(""):
+                st.success("Le panneau est éteint — la maison est rentrée.")
                 st.rerun()
