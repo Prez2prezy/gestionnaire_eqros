@@ -2758,6 +2758,41 @@ l'abonnement déclarables. »
   base de production n'est jamais touchée.
 - `_VERSION_APPLI = "v7.16.6"`.
 
+### 76. v7.18.2 — Le panneau bleu de maintenance est revenu : la maison annonce sans redéployer
+
+MOT DU USER : « Il y avait un panneau bleu qui s'affichait pour signaler une
+maintenance du site qui a disparu. Est-il possible de continuer la
+maintenance sans que les membres et visiteurs ne soient pas dans la gêne ? »
+
+- **LE CONSTAT** — aucune version archivée de l'atelier ne porte le
+  panneau (le mot « maintenance » ne vit que dans le journal de la
+  v7.13.14) : il s'était éteint avant les copies dont la maison dispose.
+  Plutôt que de le ressusciter à l'aveugle, il est reconstruit EN MIEUX :
+  la maison écrit son annonce DEPUIS L'APPLICATION elle-même — plus
+  jamais besoin d'un redéploiement pour prévenir les fidèles.
+- **LE MÉCANISME** — l'annonce vit dans `parametres_app` (une seule clé,
+  `maintenance_site_message`) ; deux gestes de database
+  (`maintenance_site_lire`, `maintenance_site_definir`) ; le panneau est
+  un `st.info` bleu non bloquant posé en tête de la page d'accueil du
+  VISITEUR et au-dessus du routage des connectés. La gestion se fait au
+  bas du panneau de bord de la paroisse ET du diocèse (« 🛠️ Maintenance
+  du site » : 📢 poser / 🧹 éteindre) — l'annonce apparaît AUSSITÔT à
+  tous, aucun redéploiement, aucune gêne.
+- **LA PROCÉDURE SANS GÊNE** — prévenir la veille par le panneau
+  (« Maintenance prévue cette nuit de 23 h à 23 h 40 — le site sera
+  momentanément indisponible ; les Espaces de prière hors ligne restent
+  ouverts »), pousser le correctif dans la fenêtre nocturne (le
+  redéploiement Streamlit ne prend que 1 à 3 minutes), éteindre le
+  panneau le lendemain d'un geste. Les journées priées hors ligne
+  s'annoncent toutes seules au retour du réseau (v7.18.0) : la prière ne
+  s'arrête jamais pour la maintenance.
+- **Banc d'épreuve** — `scripts/test_v7182.py` (18 vérifications : les
+  deux gestes database, la clé unique, le panneau aux deux entrées,
+  la gestion dans les deux maisons, aucun geste bloquant, les ancêtres
+  v7.18.1 et v7.18.0 intacts, la compile ×13, pyflakes) ; zip 43 fichiers
+  aux empreintes vérifiées.
+- `_VERSION_APPLI = "v7.18.2"`.
+
 ### 75. v7.18.1 — Le mot doux redevient visible : le fond des alertes suit la refonte de Streamlit
 
 MOT DU USER : « "Ta journée priée hors ligne était déjà dans la chaîne —
