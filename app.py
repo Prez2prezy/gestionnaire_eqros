@@ -244,6 +244,24 @@ elif params.get("recu"):
 from components import injecter_icone_pwa
 injecter_icone_pwa(espace=False)
 
+def _panneau_maintenance_site():
+    """v7.18.2 — LE PANNEAU BLEU DE MAINTENANCE (l'annonce de la maison).
+    La maison pose son mot depuis son panneau de bord (paroisse ou
+    diocèse) : il s'affiche AUSSITÔT à tous — visiteurs sur la page
+    d'accueil comme membres dans chaque vue — sans redéploiement, et
+    s'efface d'un geste quand la maintenance est rentrée. Aucune annonce :
+    le panneau dort (la lecture reste muette et ne coûte rien).
+    Le panneau est un st.info : non bloquant — on PRÉVIENT avant la
+    fenêtre de maintenance, la nuit fait le reste."""
+    try:
+        from database import maintenance_site_lire
+        _msg = maintenance_site_lire()
+    except Exception:
+        return
+    if _msg:
+        st.info("🛠️ " + _msg)
+
+
 # --- CSS personnalisé ---
 st.markdown("""
 <style>
@@ -419,6 +437,7 @@ if 'logged_in' not in st.session_state:
 
 # --- AUTH ---
 if 'logged_in' not in st.session_state:
+    _panneau_maintenance_site()   # v7.18.2 — le panneau bleu du visiteur
     afficher_logo()
 
     st.caption("🔒 Application réservée aux gestionnaires autorisés.")
@@ -569,6 +588,10 @@ if st.sidebar.button("Déconnexion"):
 
 st.markdown('<a href="#" style="text-decoration: none; color: inherit;"><h1 style="color:#1A237E; cursor: pointer;">📿 GESTIONNAIRE DES ÉQUIPES DU ROSAIRE</h1></a>', unsafe_allow_html=True)
 st.markdown("---")
+
+# v7.18.2 — LE PANNEAU BLEU DE MAINTENANCE : chaque maison connectée voit
+# l'annonce de la maintenance au-dessus de sa vue, sans redéploiement.
+_panneau_maintenance_site()
 
 # --- ROUTAGE MVC ---
 if st.session_state['role'] == 'diocese':
