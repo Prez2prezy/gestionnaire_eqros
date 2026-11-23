@@ -6655,3 +6655,46 @@ def cotis_div_total_du(membre_id, annee_debut):
     except Exception as e:
         logger.warning(f"cotis_div_total_du : {e!r}")
         return _res
+
+
+# ─────────────────────────────────────────────────────────────────────
+# v7.18.2 — LE PANNEAU BLEU DE MAINTENANCE (l'annonce de la maison)
+# La maison annonce une maintenance du site SANS redéploiement : l'annonce
+# vit dans parametres_app (une seule clé, maintenance_site_message) — elle
+# se pose depuis l'application (panneau de bord de la paroisse ou du
+# diocèse) et s'affiche aussitôt à tous, visiteurs comme membres. Le
+# panneau est un st.info bleu NON bloquant : on prévient AVANT la fenêtre,
+# la nuit restée libre fait le reste — et le fidèle qui prie hors ligne ne
+# s'arrête jamais pour la maintenance.
+# ─────────────────────────────────────────────────────────────────────
+
+def maintenance_site_lire():
+    """L'annonce de maintenance posée par la maison (None si aucune)."""
+    try:
+        _r = c.execute("SELECT valeur FROM parametres_app WHERE cle=?",
+                       ("maintenance_site_message",)).fetchone()
+        if _r and str(_r[0] or "").strip():
+            return str(_r[0]).strip()
+    except Exception as e:
+        logger.warning(f"maintenance_site_lire : {e!r}")
+    return None
+
+
+def maintenance_site_definir(message):
+    """Pose l'annonce du panneau bleu (texte non vide) ou l'efface d'un
+    geste (message vide / None). Retourne True si la base a bien suivi."""
+    _assurer_parametres()
+    _msg = str(message or "").strip()
+    try:
+        if _msg:
+            c.execute("""INSERT INTO parametres_app (cle, valeur) VALUES (?, ?)
+                         ON CONFLICT(cle) DO UPDATE SET valeur=excluded.valeur""",
+                      ("maintenance_site_message", _msg))
+        else:
+            c.execute("DELETE FROM parametres_app WHERE cle=?",
+                      ("maintenance_site_message",))
+        commit_and_sync()
+        return True
+    except Exception as e:
+        logger.warning(f"maintenance_site_definir : {e!r}")
+        return False
