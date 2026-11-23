@@ -44,7 +44,9 @@ from components import ligne_intercession
 from components import (ajouter_evenement_agenda, afficher_agenda_complet_universel, afficher_historique_suivi, 
                         afficher_whatsapp_tabs, widget_type_abonnement, afficher_etat_presences_globales,
                         # v7.14.4 — le message de relance prêt à copier
-                        cotis_reglages_aff, cotis_relance_message_collectif)
+                        cotis_reglages_aff, cotis_relance_message_collectif,
+                        # v7.18.2 — la gestion du panneau bleu de maintenance
+                        gestion_maintenance_site)
 
 def _zone_du_jour_paroisse(pid, equipes):
     """🕯️ ZONE DU JOUR — LE SAS DES INTENTIONS (v7.9.10, déménagée du
@@ -728,6 +730,12 @@ def show_paroisse():
                 commit_and_sync()
                 st.success("Paroisse entièrement réinitialisée. Vous pouvez recréer vos équipes.")
                 st.rerun()
+
+        # v7.18.2 — LE PANNEAU BLEU DE MAINTENANCE (la gestion, en bas du
+        # panneau de bord de la paroisse) : la maison pose son mot une fois,
+        # tous le voient — visiteurs comme membres — et le geste « 🧹 »
+        # éteint le panneau quand la maintenance est rentrée.
+        gestion_maintenance_site()
 
     elif menu == "👥 Mes équipes":
         # v7.9.9 — le titre ne compte que les équipes (à la demande) :
