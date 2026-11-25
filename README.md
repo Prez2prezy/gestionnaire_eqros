@@ -2758,6 +2758,48 @@ l'abonnement déclarables. »
   base de production n'est jamais touchée.
 - `_VERSION_APPLI = "v7.16.6"`.
 
+### 77. v7.18.3 — Le panneau bleu part au dépôt : la colonne « N° » apaisée, les fondations verrouillées
+
+MOT DU USER : « go » — au sortir d'un week-end d'incidents (l'app à terre :
+Python 3.14 du Cloud face au libsql épinglé ; l'URL changée par le
+redéploiement ; l'alerte Arrow sur la colonne « N° »), le kit consolidé
+porte le panneau bleu de la v7.18.2 au dépôt avec les leçons du week-end.
+
+- **LE PANNEAU BLEU (hérité de la v7.18.2, inchangé)** — l'annonce vit dans
+  `parametres_app` (une clé, `maintenance_site_message`) ; elle se pose
+  depuis l'application (« 🛠️ Maintenance du site » au bas des panneaux de
+  bord de la paroisse et du diocèse : 📢 poser / 🧹 éteindre) et s'affiche
+  aussitôt en `st.info` bleu, en tête de la page d'accueil du visiteur et
+  au-dessus du routage des connectés — sans redéploiement, sans gêne.
+- **LA COLONNE « N° » APAISÉE (components.py)** — dans les bilans
+  d'engagement (équipe et paroisse), elle mélangeait les entiers 1, 2, 3…
+  avec le `''` de la ligne de synthèse : la conversion Arrow échouait et
+  Streamlit « réparait » seul (alerte au journal, colonne muée en texte).
+  Le « N° » du tableau affiché est désormais uniforme (`astype(str)`) ;
+  les exports Excel gardent leurs numéros numériques. Balayage des autres
+  tableaux (« N° reçu », « N° méditation ») : rien à corriger —
+  `numero_recu` est TEXT en base, les autres mélanges sont des None que
+  Arrow porte sans mot dire.
+- **LES FONDATIONS VERROUILLÉES (requirements.txt)** — `streamlit>=1.67`
+  (les correctifs d'affichage des relances chevauchées, la famille de
+  l'erreur « removeChild », garantis présents) ; `pandas>=2.0,<3` (la
+  lignée éprouvée — pandas 3, changements profonds de chaînes, sera jugé
+  sur le banc « formation » avant adoption). Les lignes commentées
+  orphelines du bas du fichier sont nettoyées.
+- **LE RITUEL DE DÉPLOIEMENT ÉCRIT** — en tête du requirements : Python
+  3.12 obligatoire dans « Advanced settings » (le libsql épinglé n'a pas
+  de binaire au-delà de 3.13 — le mur du week-end) ; ré-attribution du
+  sous-domaine après tout redéploiement (l'URL change sinon, elle se
+  réclame dans Settings). Le circuit devient : kit → branche « formation »
+  → app miroir → fusion vers « main ». Reboot / Rebuild pour un simple
+  redémarrage — jamais un delete sans raison majeure.
+- **Banc d'épreuve** — `scripts/test_v7183.py` (le panneau aux deux
+  entrées, les deux gestes database, la colonne « N° » uniforme aux deux
+  bilans, les bornes requirements, les ancêtres v7.18.1/v7.18.0 intacts,
+  la compile ×13, pyflakes) ; v7.18.2 repassé au vert sauf son contrôle de
+  version (v7.18.3 attendu par construction).
+- `_VERSION_APPLI = "v7.18.3"`.
+
 ### 76. v7.18.2 — Le panneau bleu de maintenance est revenu : la maison annonce sans redéployer
 
 MOT DU USER : « Il y avait un panneau bleu qui s'affichait pour signaler une
