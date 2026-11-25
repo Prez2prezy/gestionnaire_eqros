@@ -1213,6 +1213,7 @@ def afficher_etat_presences_globales(equipe_id):
     taux_equipe['Taux global'] = round(df['Est_Engage'].mean() * 100, 1)
 
     df_affichage = pivot.copy()
+    df_affichage['N°'] = df_affichage['N°'].astype(str)   # v7.18.3 — « N° » uniforme : les entiers et le '' du bilan ne cohabitent plus (fin de l'alerte Arrow)
     for col in TYPES_EVENEMENTS + ['Taux global']: df_affichage[col] = df_affichage[col].apply(lambda x: f"{x:.1f}%")
 
     df_ligne_equipe = pd.DataFrame([taux_equipe])
@@ -1314,6 +1315,7 @@ def afficher_etat_presences_paroisse(paroisse_id):
     taux_paroisse['Taux global'] = round(df['Est_Engage'].mean() * 100, 1)
 
     df_affichage = pivot.copy()
+    df_affichage['N°'] = df_affichage['N°'].astype(str)   # v7.18.3 — « N° » uniforme : les entiers et le '' du bilan ne cohabitent plus (fin de l'alerte Arrow)
     for col in TYPES_EVENEMENTS + ['Taux global']: df_affichage[col] = df_affichage[col].apply(lambda x: f"{x:.1f}%")
 
     df_ligne_paroisse = pd.DataFrame([taux_paroisse])
