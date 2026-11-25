@@ -1,7 +1,20 @@
 # Gestionnaire des Équipes du Rosaire — Diocèse de Grand-Bassam
 # Dépendances Python (déploiement Streamlit Cloud ou local)
-streamlit>=1.37
-pandas>=2.0
+#
+# v7.18.3 — RITUEL DE DÉPLOIEMENT (leçon du week-end) :
+#   1. Streamlit Cloud → Advanced settings → Python 3.12 OBLIGATOIRE
+#      (libsql-experimental==0.0.55 n'a pas de binaire au-delà de Python
+#      3.13 ; au-delà, pip tente de compiler du Rust et échoue sur le Cloud).
+#   2. Après tout redéploiement : ré-attribuer le sous-domaine de l'app
+#      dans Settings (l'URL change sinon ; elle est réclamable).
+#   3. Pour un simple redémarrage : Reboot / Rebuild — jamais un delete.
+streamlit>=1.67
+# v7.18.3 — >=1.67 : les correctifs d'affichage des relances chevauchées
+# (la famille de l'erreur « removeChild ») sont garantis présents.
+pandas>=2.0,<3
+# v7.18.3 — borné <3 : la lignée 2.x est celle éprouvée par l'application ;
+# pandas 3 (changements profonds de gestion des chaînes) sera jugé sur le
+# banc « formation » avant toute adoption.
 Pillow>=10.0
 requests>=2.31
 qrcode>=7.4
@@ -14,13 +27,3 @@ libsql-experimental==0.0.55
 reportlab>=4.0
 # v7.12.0 — les rappels de la dizaine par notification (🔔)
 pywebpush>=1.14
-
-
-# streamlit
-# pandas
-# openpyxl
-# Pillow
-# requests
-# libsql
-# cludinary
-# qrcode
