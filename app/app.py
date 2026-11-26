@@ -1,0 +1,626 @@
+import os
+import streamlit as st
+
+# --- v7.9.12 — LA SENTINELLE DU PAQUET COMPLET ----------------------------
+# Le paquet vit d'un seul souffle : si un versement chez l'hébergeur est
+# arrivé incomplet (un fichier ancien qui survit au milieu des nouveaux,
+# observé le 26 octobre 2026 — les vues nouvelles devant l'ancien cœur),
+# les pages s'emmêlent et le fidèle voit un mur de code. Désormais le cœur
+# se fait reconnaître AVANT tout autre import : si l'un des gestes récents
+# lui manque, la maison affiche sa note douce et s'arrête net — jamais de
+# traceback, ni pour la fondatrice, ni pour les fidèles.
+import database as _coeur_paquet
+_paquet_complet = all(hasattr(_coeur_paquet, _nom) for _nom in (
+    "tableau_pointages_equipe",               # v7.9.11 — le tableau de la chaîne
+    "tableau_pointages_visiteurs",            # v7.9.11 — les passages anonymes
+    "publier_reserve_due",                    # v7.9.10 — le réveil de 00h00
+    "envoyer_intention_du_jour_en_reserve",   # v7.9.10 — le sas des intentions
+    "feuillet_reponses_enregistrer",          # v7.10.0 — le questionnaire du feuillet
+    "mission_creer",                          # v7.10.0 — l'envoi en mission
+    "importer_dizaines_hors_ligne",           # v7.10.0 — les dizaines hors ligne
+    "cotis_enregistrer_paiement",             # v7.14.0 — la caisse de la cotisation
+))
+# ---------------------------------------------------------------------------
+
+# v7.8.16 — fin des avertissements « Please replace st.components.v1.html
+# with st.iframe » : rendu HTML centralisé dans stcompat.py (st.iframe si
+# disponible, repli components.v1.html sur les anciennes versions).
+from stcompat import comp_html as _comp_html
+from database import c, commit_and_sync
+from services import (hash_password, verifier_mot_de_passe,
+                      migrer_hash_si_legacy, definir_mot_de_passe,
+                      creer_token_session, verifier_token_session,
+                      supprimer_token_session)
+
+# --- Configuration de la page ---
+# v7.16.3 — LA CLEF DORÉE À L'ONGLET (dossier a — le bateau rouge se retire).
+# Sur le déploiement, l'application vit derrière la vitrine du portail :
+# les images incorporées de l'injection ne franchissent pas cette vitrine,
+# mais l'icône de set_page_config voyage par la même route que le titre de
+# l'onglet — celle-là porte désormais le VRAI visage, dès que l'application
+# respire : la clef dorée côté Gestionnaire, le chapelet doré côté Espaces
+# (?espace=1, ?e=…, matloc). L'injection dynamique reste en place pour les
+# serveurs où elle passe (elle peaufine le titre).
+def _icone_page_doree():
+    """v7.16.3 — l'icône de l'onglet en image incorporée : le visage de la
+    maison dès la première seconde, sans dépendre d'aucune adresse."""
+    try:
+        _espace_vu = bool(st.query_params.get("espace")
+                          or st.query_params.get("e")
+                          or st.query_params.get("matloc"))
+        _nom = "icon_espace_32.png" if _espace_vu else "icon_admin_32.png"
+        _chemin = os.path.join("static", _nom)
+        if not os.path.isfile(_chemin):
+            return "📿"
+        import base64 as _b64
+        with open(_chemin, "rb") as _f:
+            return "data:image/png;base64," + _b64.b64encode(_f.read()).decode("ascii")
+    except Exception:
+        return "📿"
+
+# v7.8.14 — l'icône du portail (le « bateau rouge ») ne montre plus le bout
+# de son nez : page_icon porte le visage de la maison (v7.16.3, ci-dessus).
+st.set_page_config(page_title="Gestionnaire des Équipes du Rosaire - Diocèse de Grand-Bassam",
+                   page_icon=_icone_page_doree(), layout="wide")
+
+# --- v7.9.12 — LA NOTE DOUCE DU VERSEMENT INCOMPLET ------------------------
+# (le drapeau _paquet_complet a été levé tout en haut, avant les imports ;
+#  la note s'affiche APRÈS set_page_config — première commande Streamlit)
+if not _paquet_complet:
+    st.markdown("""
+    <div style="min-height:58vh; display:flex; align-items:center; justify-content:center;">
+      <div style="background:linear-gradient(135deg,#241042 0%,#4A148C 100%);
+                  border-radius:20px; padding:2.6rem 2rem; text-align:center;
+                  border:1px solid rgba(255,255,255,0.14); max-width:540px;
+                  box-shadow:0 18px 50px rgba(20,8,45,0.45); margin:2rem auto;">
+        <div style="font-size:3rem; line-height:1;">🕊️</div>
+        <div style="color:#ffffff; font-size:1.2rem; font-weight:600; margin:0.9rem 0 0.6rem;">
+          Un instant — la maison se pare</div>
+        <div style="color:#eadcff; font-size:0.98rem; line-height:1.65;">
+          Quelque chose de beau se met en place derrière les murs et la
+          préparation n'est pas tout à fait achevée.<br>
+          Reviens nous voir dans quelques minutes : tout sera prêt.</div>
+        <div style="color:#c9b3f2; font-size:0.86rem; margin-top:1.2rem; font-style:italic;">
+          Sainte Marie, veille sur cette maison pendant qu'elle se prépare.</div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
+# ---------------------------------------------------------------------------
+
+# --- v7.8.8 : RÉVEIL des publications programmées (lazy cron) ---
+# Streamlit n'a pas de tâche de fond : chaque chargement de page vérifie
+# (au plus toutes les 60 s par session) si des publications programmées
+# par le diocèse sont arrivées à échéance et les publie.
+import time as _time_mod
+if _time_mod.time() - float(st.session_state.get("_reveil_programmes_ts", 0)) > 60:
+    st.session_state["_reveil_programmes_ts"] = _time_mod.time()
+    from services import executer_publications_programmees
+    executer_publications_programmees()
+
+# --- v7.12.0 : LA RONDE DES DIZAINES (lazy cron, même mécanique) ---
+# 4 fois par jour (06h00 · 12h00 · 18h00 · 21h00 — heures de Côte
+# d'Ivoire) : la liste des dizaines en attente est mise à jour et le
+# rappel part en notification push sur les téléphones qui ont dit oui.
+if _time_mod.time() - float(st.session_state.get("_reveil_rondes_ts", 0)) > 60:
+    st.session_state["_reveil_rondes_ts"] = _time_mod.time()
+    try:
+        from services import executer_rondes_dizaines
+        executer_rondes_dizaines()
+    except Exception:
+        pass
+
+# --- v7.13.1 : L'ÉCOUTE TELEGRAM (lazy, même mécanique) ---
+# Les « /start <MatLoc> » envoyés au bot sont récoltés au fil des
+# chargements de page (au plus une fois par minute) : c'est ce qui
+# appaire chaque compte à son membre, sans que personne n'ait à
+# taper son code. Rien ne part vers personne sans son /start.
+if _time_mod.time() - float(st.session_state.get("_reveil_telegram_ts", 0)) > 60:
+    st.session_state["_reveil_telegram_ts"] = _time_mod.time()
+    try:
+        from services import telegram_recolter_liaisons
+        telegram_recolter_liaisons()
+    except Exception:
+        pass
+
+
+# --- INTERCEPTION DES LIENS SPECIAUX ---
+params = st.query_params
+
+# Utilisation de .get() qui est la méthode moderne et fiable de Streamlit
+espace_val = params.get("espace", None)
+matloc_val = params.get("matloc", None)
+event_val = params.get("e", None)
+
+if espace_val:
+    # Au cas où Streamlit renvoie une liste au lieu d'une chaîne
+    if isinstance(espace_val, list): espace_val = espace_val[0]
+    if isinstance(matloc_val, list): matloc_val = matloc_val[0]
+
+    # v7.12.0 — le téléphone qui vient de dire « oui » aux rappels revient
+    # avec son abonnement dans l'adresse (?push_abo=…) : on le note, puis
+    # l'adresse est nettoyée — le fidèle ne voit rien, une seule fois.
+    _push_abo = params.get("push_abo", None)
+    if _push_abo:
+        try:
+            from database import push_abonnement_enregistrer
+            from views.view_espace_membre import _cle_lecteur_pdr, abonnement_depuis_url
+            abonnement_depuis_url(
+                _push_abo[0] if isinstance(_push_abo, list) else _push_abo,
+                _cle_lecteur_pdr(), matloc_val)
+        except Exception:
+            pass
+        try:
+            del params["push_abo"]
+        except Exception:
+            pass
+
+    # v7.8.14 — icône 📿 (favicon + titre d'onglet) pour les Espaces de
+    # Prière. v7.13.11 — le raccourci a pris sa retraite : il reste le
+    # visage de l'onglet, la mémoire du fidèle et le passeur des rappels.
+    from components import injecter_icone_pwa
+    injecter_icone_pwa(espace=True, matloc=matloc_val)
+
+    from views.view_espace_membre import show_espace_membre
+    show_espace_membre(matloc_val)
+    st.stop()
+    
+elif event_val:
+    if isinstance(event_val, list): event_val = event_val[0]
+    from components import afficher_page_reponse_membre, injecter_icone_pwa
+    injecter_icone_pwa(espace=True)   # page publique : icône 📿
+    afficher_page_reponse_membre(event_val)
+    st.stop()
+
+# v7.14.1 — L'ÉCRAN PUBLIC DE VÉRIFICATION D'UN REÇU (?recu=COT-2026-00001)
+# C'est l'écran que le QR de chaque reçu ouvre : n'importe qui (le fidèle,
+# le responsable, la comptabilité) peut scanner et voir l'authenticité du
+# reçu, sa nature et son montant — sans données sensibles, sans connexion.
+# UN QR INVENTÉ NE VÉRIFIE RIEN.
+elif params.get("recu"):
+    _recu_val = params.get("recu")
+    if isinstance(_recu_val, list):
+        _recu_val = _recu_val[0] if _recu_val else ""
+    from components import injecter_icone_pwa, COTIS_MODES
+    injecter_icone_pwa(espace=True)   # page publique : icône 📿
+    from database import cotis_recu_info, cotis_parametres_lire
+    from services import periode_affichage, safe_date
+
+    _num = str(_recu_val or "").strip().upper()
+    _reglages = cotis_parametres_lire()
+    _info = cotis_recu_info(_num)
+
+    st.markdown("""
+    <div style="background:linear-gradient(135deg,#241042 0%,#4A148C 100%);
+                border-radius:18px; padding:1.6rem 1.4rem; text-align:center;
+                border:1px solid rgba(255,255,255,0.14); max-width:560px;
+                margin:1.5rem auto;">
+      <div style="font-size:2.6rem; line-height:1;">🧾</div>
+      <div style="color:#ffffff; font-size:1.15rem; font-weight:600; margin-top:0.6rem;">
+        Vérification d'un reçu — Abonnement · Réabonnement</div>
+      <div style="color:#eadcff; font-size:0.9rem; margin-top:0.3rem;">
+        LES ÉQUIPES DU ROSAIRE — """ + str(_reglages.get("cotis_porteur")) + "</div>\n    </div>", unsafe_allow_html=True)
+
+    if _info:
+        _d_p = safe_date(_info[3])
+        _d_aff = _d_p.strftime("%d/%m/%Y") if _d_p else (_info[3] or "—")
+        _nature = "Abonnement" if _info[2] == "abonnement" else "Réabonnement"
+        _mode = COTIS_MODES.get(_info[5] or "", _info[5] or "—")
+        _mont = int(_info[1] or 0)
+        _mont_txt = f"{_mont:,}".replace(",", " ")
+        # v7.14.2 — l'échéance se montre au format français sur l'écran
+        # public et SUIT LA NATURE du reçu : les nouveaux (abonnement)
+        # jusqu'au 31 décembre, les anciens (réabonnement) au délai de
+        # rigueur du 15 décembre.
+        _ech_cle = ("cotis_echeance_abo" if (_info[2] or "") == "abonnement"
+                    else "cotis_echeance")
+        try:
+            _ech_pub = safe_date(_reglages.get(_ech_cle))
+            _ech_pub = _ech_pub.strftime("%d/%m/%Y") if _ech_pub else str(_reglages.get(_ech_cle))
+        except Exception:
+            _ech_pub = str(_reglages.get(_ech_cle))
+        st.success("✅ Reçu authentique — il est bien posé dans la caisse du Mouvement.")
+        st.markdown(f"""
+        <div style="background:#F5F6FF; border:1px solid #C5CAE9; border-radius:14px;
+                    padding:1.1rem 1.3rem; max-width:560px; margin:0.8rem auto;">
+          <p style="color:#1A237E; font-size:1.05rem; font-weight:700; margin:0 0 0.5rem;">
+             N° {_info[0]}</p>
+          <p style="color:#1A237E; margin:0.25rem 0; font-size:0.95rem;">👤 <b>{_info[6] or ""} {_info[7] or ""}</b> — équipe <b>{_info[9] or "—"}</b> · paroisse <b>{_info[10] or "—"}</b></p>
+          <p style="color:#1A237E; margin:0.25rem 0; font-size:0.95rem;">📿 {_nature} — année pastorale {periode_affichage(_info[4])}</p>
+          <p style="color:#1A237E; margin:0.25rem 0; font-size:0.95rem;">💰 Montant : <b>{_mont_txt} FCFA</b> · 💳 {_mode}</p>
+          <p style="color:#1A237E; margin:0.25rem 0; font-size:0.95rem;">📅 Payé le {_d_aff} — à jour jusqu'au {_ech_pub}</p>
+          <p style="color:#4527a0; margin:0.5rem 0 0; font-size:0.85rem; font-style:italic;">Reçu noté par {_info[11] or "le responsable d\u2019équipe"} — cet écran ne montre que ce qui figure sur le reçu.</p>
+        </div>""", unsafe_allow_html=True)
+        st.caption("🕊️ Merci de soutenir la mission des Équipes du Rosaire.")
+    else:
+        st.error("❌ Ce numéro de reçu n'est pas reconnu dans la caisse — un reçu "
+                 "inventé ne vérifie rien. Vérifiez le numéro imprimé sur le "
+                 "papier (format COT-2026-00001) et réessayez.")
+        st.caption("Si votre reçu vient d'être édité, patientez un instant puis "
+                   "rescannez : le numéro apparaît dès que le paiement est posé.")
+    st.stop()
+
+# v7.8.14 — Administration (connexion + rôles) : icône 🔑 (favicon + titre)
+from components import injecter_icone_pwa
+injecter_icone_pwa(espace=False)
+
+def _panneau_maintenance_site():
+    """v7.18.2 — LE PANNEAU BLEU DE MAINTENANCE (l'annonce de la maison).
+    La maison pose son mot depuis son panneau de bord (paroisse ou
+    diocèse) : il s'affiche AUSSITÔT à tous — visiteurs sur la page
+    d'accueil comme membres dans chaque vue — sans redéploiement, et
+    s'efface d'un geste quand la maintenance est rentrée. Aucune annonce :
+    le panneau dort (la lecture reste muette et ne coûte rien).
+    Le panneau est un st.info : non bloquant — on PRÉVIENT avant la
+    fenêtre de maintenance, la nuit fait le reste."""
+    try:
+        from database import maintenance_site_lire
+        _msg = maintenance_site_lire()
+    except Exception:
+        return
+    if _msg:
+        st.info("🛠️ " + _msg)
+
+
+# --- CSS personnalisé ---
+st.markdown("""
+<style>
+    .stApp { background-color: #FFFFFF !important; }
+    .main > div { background-color: #FFFFFF !important; }
+    .stMarkdown, .stMarkdown p, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 { color: #1A237E !important; }
+    .stMetric label, .stMetric .stMarkdown { color: #1A237E !important; }
+    .stSidebar { background-color: #FFFFFF !important; }
+    .stSidebar .stMarkdown, .stSidebar label { color: #1A237E !important; }
+    .stTextInput input, .stTextArea textarea, .stSelectbox select { background-color: #FFFFFF !important; color: #1A237E !important; }
+    /* === v7.10.4 — TOUT LISIBLE SUR BLANC (bat le thème sombre du navigateur) ===
+       L'Administration est peinte blanc : libellés des champs, notes,
+       alertes et titres d'expanders restent en encre bleue, les champs sur
+       fond blanc — quel que soit le mode (clair/sombre) du téléphone.
+       (Répare les textes invisibles de la chaîne d'une séance et du
+       questionnaire quand l'écran du lecteur est en mode sombre.) */
+    .stApp label, .stApp label p, .stApp label div { color: #1A237E !important; }
+    .stApp [data-testid="stWidgetLabel"] p { color: #1A237E !important; }
+    /* === v7.11.0 — libellés sous toutes leurs formes (toutes versions) === */
+    .stApp label *, .stApp [data-testid="stWidgetLabel"],
+    .stApp [data-testid="stWidgetLabel"] *,
+    .stApp [data-testid="stForm"] label, .stApp [data-testid="stForm"] label *,
+    .stApp [data-testid="stTextInput"] label, .stApp [data-testid="stTextArea"] label,
+    .stApp [data-testid="stRadio"] label, .stApp [data-testid="stCheckbox"] label,
+    .stApp [data-testid="stSelectbox"] label,
+    .stApp [data-testid="stDateInput"] label { color: #1A237E !important; }
+    .stApp [data-testid="stForm"] { background-color: #FFFFFF !important;
+        border-color: #C5CAE9 !important; }
+    .stApp [data-testid="stCaptionContainer"],
+    .stApp [data-testid="stCaptionContainer"] * { color: #3E517A !important; }
+    /* v7.18.1 — le fond se peint sur LES DEUX conteneurs (stAlert et le
+       stAlertContainer intérieur que Streamlit récent peint lui-même) :
+       ne peindre que stAlert laissait la boîte native sombre sous le texte
+       encre forcé chez les lecteurs en thème sombre — invisible aussi. */
+    .stApp [data-testid="stAlert"], .stApp [data-testid="stAlertContainer"],
+    .stApp .stAlertContainer { background-color: #E8EAF6 !important; }
+    .stApp [data-testid="stAlert"] .stMarkdown,
+    .stApp [data-testid="stAlert"] p,
+    .stApp [data-testid="stAlert"] div,
+    .stApp [data-testid="stAlert"] span,
+    .stApp [data-testid="stAlert"] li { color: #1A237E !important; }
+    .stApp details summary, .stApp details summary p,
+    .stApp details summary div { color: #1A237E !important; }
+    .stApp input, .stApp textarea { background-color: #FFFFFF !important;
+        color: #1A237E !important; }
+    .whatsapp-link {
+        display: inline-block;
+        background-color: #25D366;
+        color: white !important;
+        padding: 5px 12px;
+        border-radius: 30px;
+        text-decoration: none;
+        font-size: 13px;
+        margin-top: 5px;
+    }
+    .whatsapp-link:hover {
+        background-color: #128C7E;
+        color: white !important;
+    }
+
+    /* TITRE PRINCIPAL (h1) */
+    .stMarkdown h1, .stMarkdown h1 * {
+        color: #1A237E !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        font-size: clamp(1rem, 3vw, 2rem) !important;
+    }
+
+    /* TITRES DE SECTIONS (h2) */
+    .stMarkdown h2 {
+        color: #1A237E !important;
+        font-size: 1.4rem !important;
+    }
+
+    /* SOUS-TITRES (h3) */
+    .stMarkdown h3, .stMarkdown h3 * {
+        color: #1A237E !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        font-size: clamp(0.8rem, 4vw, 1.2rem) !important;
+        margin-bottom: 5px !important;
+    }
+    
+    /* BLOC D'INFORMATIONS */
+    .custom-info-box {
+        font-size: 0.9rem;
+        color: #1A237E;
+        margin-bottom: 40px !important;
+        line-height: 1.6;
+    }
+
+    /* Donne de l'air au bouton "Modifier" (expanders) */
+    .streamlit-expander {
+        margin-top: 20px !important;
+    }
+
+    /* ✅ RÉDUIRE LA TAILLE DES INDICATEURS (st.metric) */
+    [data-testid="stMetricLabel"] {
+        font-size: 0.9rem !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 1.3rem !important;
+    }
+    [data-testid="stMetricDelta"] {
+        font-size: 0.8rem !important;
+    }
+    
+    /* RÈGLES POUR LES PETITS ÉCRANS */
+    @media (max-width: 768px) {
+        .stMarkdown p, .stText {
+            font-size: 0.9rem !important;
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+def afficher_logo():
+    # v7.9.15 — LE LOGO PARTOUT : le fichier images/logo.png est désormais
+    # LIVRÉ avec l'application (c'est le chapelet doré des Équipes du
+    # Rosaire). Il est cherché à plusieurs adresses certaines : à côté du
+    # fichier app.py (où que l'application soit installée), puis depuis le
+    # dossier de lancement ; en dernier recours, le chapelet livré dans
+    # static/ prend le relais. Pour passer au logo officiel du Mouvement,
+    # il suffira de déposer la nouvelle image sous le même nom
+    # (images/logo.png) — aucun code à modifier.
+    _ici = os.path.dirname(os.path.abspath(__file__))
+    for _chemin in (os.path.join(_ici, "images", "logo.png"),
+                    os.path.join("images", "logo.png"),
+                    os.path.join(_ici, "static", "logo_equipes_rosaire.png"),
+                    os.path.join("static", "logo_equipes_rosaire.png")):
+        if os.path.exists(_chemin):
+            try:
+                st.sidebar.image(_chemin, width="stretch")
+            except Exception:
+                pass
+            break
+
+    st.sidebar.markdown("---\n#### 🏛️ DIOCÈSE DE GRAND-BASSAM\n---")
+
+# --- SESSION PERSISTANTE : rester connecté malgré le rafraîchissement ---
+if 'logged_in' not in st.session_state:
+    _tok = st.query_params.get("t")
+    if isinstance(_tok, list):
+        _tok = _tok[0] if _tok else None
+    if _tok:
+        _user = verifier_token_session(_tok)
+        if _user:
+            st.session_state.update({
+                'logged_in': True, 'user_id': _user[0], 'username': _user[1],
+                'role': _user[3], 'diocese_id': _user[4], 'paroisse_id': _user[5],
+                'equipe_id': _user[6]
+            })
+            # Restaurer la rubrique où l'utilisateur se trouvait avant le F5
+            # v7.16.7 — les caisses hors des entités : le trésorier d'une
+            # grande caisse retrouve sa maison après le rafraîchissement.
+            if _user[7]:
+                _cle_menu = {"diocese": "nav_dio", "paroisse": "nav_par",
+                             "equipe": "nav_eq",
+                             "tresorier_paroisse": "nav_cais",
+                             "tresorier_diocese": "nav_cais"}.get(_user[3])
+                if _cle_menu:
+                    st.session_state[_cle_menu] = _user[7]
+                st.session_state["_menu_sync"] = _user[7]
+        else:
+            # Jeton inconnu ou expiré : on le retire de l'URL
+            try:
+                del st.query_params["t"]
+            except Exception:
+                pass
+
+# --- AUTH ---
+if 'logged_in' not in st.session_state:
+    _panneau_maintenance_site()   # v7.18.2 — le panneau bleu du visiteur
+    afficher_logo()
+
+    st.caption("🔒 Application réservée aux gestionnaires autorisés.")
+    with st.expander("📜 Mentions Légales & Confidentialité"):
+        st.markdown("""
+        **Responsable de traitement :** Diocèse de Grand-Bassam.
+
+        **Finalité :** Gestion administrative, spirituelle et logistique des membres des équipes du Rosaire (contacts, présences, abonnements, photos).
+
+        **Données collectées :** Nom, prénom, date de naissance, numéro WhatsApp, photo d'identité.
+
+        **Durée de conservation :** Les données sont conservées tant que le membre est actif, puis archivées. Elles sont supprimées 3 ans après le départ définitif.
+
+        **Vos droits :** Vous pouvez demander au responsable de votre équipe de modifier ou supprimer vos informations en lui envoyant un message WhatsApp.
+
+        *Conformément aux principes de protection des données personnelles.*
+        """)
+
+    st.sidebar.title("🔐 Connexion")
+
+    # PARADE AUTOFILL (v2) : le gestionnaire de mots de passe remplit les champs
+    # sans déclencher l'événement que Streamlit écoute. On notifie Streamlit de
+    # TOUTE valeur présente au branchement (autofill déjà effectué) puis de tout
+    # changement ultérieur sans événement.
+    _comp_html("""
+        <script>
+        (function(){
+          function notifier(f){
+            try{
+              var natif = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;
+              natif.call(f, f.value);
+            }catch(e){}
+            f.dispatchEvent(new Event('input', {bubbles:true}));
+            f.dispatchEvent(new Event('change', {bubbles:true}));
+          }
+          var essais = 0;
+          var t = setInterval(function(){
+            essais++;
+            try {
+              var d = window.parent.document;
+              var zone = d.querySelector('[data-testid="stSidebar"]') || d;
+              var ins = zone.querySelectorAll('input[type="text"], input[type="password"]');
+              for(var i=0;i<ins.length;i++){
+                var f = ins[i];
+                if(f.dataset.pf77 === undefined){
+                  f.dataset.pf77 = f.value || '';
+                  if(f.value){ notifier(f); }
+                  f.addEventListener('input', function(){ this.dataset.pf77 = this.value; });
+                } else if(f.value !== (f.dataset.pf77 || '')){
+                  notifier(f);
+                  f.dataset.pf77 = f.value;
+                }
+              }
+            } catch(e) {}
+            if(essais > 600){ clearInterval(t); }
+          }, 300);
+        })();
+        </script>
+    """, height=0)
+
+    # v7.9.11 — LA CONNEXION D'UNE SEULE PIÈCE : les deux champs forment
+    # désormais UN formulaire — coller l'utilisateur puis le mot de passe
+    # ne déclenche plus de rechargement intermédiaire qui essuyait le
+    # premier champ (« Identifiants incorrects » alors que tout était
+    # pourtant collé). Tout part ensemble, au clic ; la parade AUTOFILL
+    # ci-dessus demeure pour les gestionnaires de mots de passe.
+    with st.sidebar.form("connexion_gestionnaire", clear_on_submit=False):
+        u = st.text_input("Utilisateur", key="login_user")
+        p = st.text_input("Mot de passe", type="password", key="login_pass")
+        _connecter = st.form_submit_button("Se connecter", use_container_width=True)
+    if _connecter:
+        row = c.execute("SELECT id, username, password, role, diocese_id, paroisse_id, equipe_id FROM utilisateurs WHERE username=?",
+                        ((u or "").strip(),)).fetchone()
+        if row and verifier_mot_de_passe(p or "", row[2]):
+            migrer_hash_si_legacy(row[0], row[2], p or "")
+            st.session_state.update({
+                'logged_in': True, 'user_id': row[0], 'username': row[1],
+                'role': row[3], 'diocese_id': row[4], 'paroisse_id': row[5], 'equipe_id': row[6]
+            })
+            # On force le menu de navigation sur la PREMIÈRE rubrique du rôle
+            # v7.16.3 — le 💼 Trésorier arrive sur sa trésorerie (le GO du
+            # dossier c) : un seul rubrique, la caisse, rien d'autre.
+            # v7.16.7 — les trésoriers des grandes caisses arrivent DANS
+            # leur maison (hors des entités, à la manière du compte
+            # communication) : la caisse, rien d'autre.
+            _entrees = {"diocese": ("nav_dio", "🏛️ Voir diocèse"),
+                        "paroisse": ("nav_par", "🏘️ Ma paroisse"),
+                        "equipe": ("nav_eq", "👥 Mon équipe"),
+                        "tresorier": ("nav_eq", "💼 Trésorerie"),
+                        "tresorier_paroisse": ("nav_cais", "💼 Caisse de la paroisse"),
+                        "tresorier_diocese": ("nav_cais", "💼 Caisse du diocèse")}
+            if row[3] in _entrees:
+                _cle, _val = _entrees[row[3]]
+                st.session_state[_cle] = _val
+            # Session persistante : jeton dans l'URL → le rafraîchissement
+            # ne déconnecte plus (30 jours, révoqué à la déconnexion)
+            _menu_premier = st.session_state.get({"diocese": "nav_dio", "paroisse": "nav_par",
+                                                  "equipe": "nav_eq",
+                                                  "tresorier_paroisse": "nav_cais",
+                                                  "tresorier_diocese": "nav_cais"}.get(row[3]))
+            st.query_params["t"] = creer_token_session(row[0], _menu_premier)
+            st.rerun()
+        else:
+            st.sidebar.error("Identifiants incorrects.")
+
+    # v7.13.11 — LE RACCOURCI PREND SA RETRAITE : la carte « Poser le
+    # raccourci » de l'écran de connexion part avec tout le reste — la
+    # plateforme ne propose plus rien à poser, d'aucun côté.
+
+    # 🔑 Secours « mot de passe oublié » — placé APRÈS le bouton Se connecter
+    _reset_token = None
+    try:
+        _reset_token = st.secrets.get("RESET_TOKEN")
+    except Exception:
+        pass
+    if _reset_token:
+        with st.sidebar.expander("🔑 Mot de passe oublié ?"):
+            tok = st.text_input("Clé de secours", type="password", key="rst_tok")
+            nu = st.text_input("Utilisateur", value="diocese", key="rst_user")
+            np1 = st.text_input("Nouveau mot de passe", type="password", key="rst_pwd")
+            if st.button("Réinitialiser"):
+                if tok != _reset_token or not np1:
+                    st.sidebar.error("Clé invalide ou mot de passe vide.")
+                elif not c.execute("SELECT 1 FROM utilisateurs WHERE username=?", ((nu or "").strip(),)).fetchone():
+                    st.sidebar.error("Utilisateur inconnu.")
+                else:
+                    c.execute("UPDATE utilisateurs SET password=? WHERE username=?",
+                              (definir_mot_de_passe(np1), (nu or "").strip()))
+                    commit_and_sync()
+                    st.sidebar.success("Mot de passe réinitialisé ! Connectez-vous.")
+
+    st.stop()
+
+afficher_logo()
+st.sidebar.success(f"Connecté : {st.session_state['username']}")
+if st.sidebar.button("Déconnexion"):
+    _tok = st.query_params.get("t")
+    if isinstance(_tok, list):
+        _tok = _tok[0] if _tok else None
+    if _tok:
+        supprimer_token_session(_tok)
+    for k in list(st.session_state.keys()): del st.session_state[k]
+    try:
+        del st.query_params["t"]   # retire le jeton de l'URL
+    except Exception:
+        pass
+    st.rerun()
+
+st.markdown('<a href="#" style="text-decoration: none; color: inherit;"><h1 style="color:#1A237E; cursor: pointer;">📿 GESTIONNAIRE DES ÉQUIPES DU ROSAIRE</h1></a>', unsafe_allow_html=True)
+st.markdown("---")
+
+# v7.18.2 — LE PANNEAU BLEU DE MAINTENANCE : chaque maison connectée voit
+# l'annonce de la maintenance au-dessus de sa vue, sans redéploiement.
+_panneau_maintenance_site()
+
+# --- ROUTAGE MVC ---
+if st.session_state['role'] == 'diocese':
+    from views.view_diocese import show_diocese
+    show_diocese()
+elif st.session_state['role'] == 'paroisse':
+    from views.view_paroisse import show_paroisse
+    show_paroisse()
+elif st.session_state['role'] == 'equipe':
+    from views.view_equipe import show_equipe
+    show_equipe()
+elif st.session_state['role'] == 'tresorier':
+    # v7.16.3 — LE RÔLE 💼 TRÉSORIER (dossier c, à la manière de la cellule
+    # communication) : le même cœur que l'équipe, mais le menu ne montre
+    # QUE la trésorerie — la caisse sans le reste du Gestionnaire.
+    from views.view_equipe import show_equipe
+    show_equipe()
+elif st.session_state['role'] == 'communication':
+    from views.view_communication import show_communication
+    show_communication()
+elif st.session_state['role'] == 'tresorier_paroisse':
+    # v7.16.7 — LES CAISSES HORS DES ENTITÉS (le mot de la maison : « pas
+    # en nouvelle rubrique ou en nouvelle section — les trésoreries
+    # existent en-dehors des entités, comme la cellule de communication
+    # pour le diocèse »). Le trésorier gère SA maison : confirmations,
+    # expéditions, registre. Le responsable suit de près chez lui et
+    # accorde l'autorisation (le compte se désigne chez lui).
+    from views.view_caisse import show_caisse
+    show_caisse("paroisse")
+elif st.session_state['role'] == 'tresorier_diocese':
+    from views.view_caisse import show_caisse
+    show_caisse("diocese")

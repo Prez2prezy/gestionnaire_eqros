@@ -1,0 +1,3584 @@
+# 📿 Gestionnaire des Équipes du Rosaire — Diocèse de Grand-Bassam
+
+Application **Streamlit** de gestion administrative, spirituelle et missionnaire
+des Équipes du Rosaire : paroisses, équipes, membres, abonnements, présences,
+agenda, espace spirituel (prières, méditations, musiques, thème pastoral,
+rosaire quotidien) et canal de communication avec validation diocésaine.
+
+---
+
+## 🗂️ Structure du projet
+
+```
+app.py                              # Point d'entrée : connexion, sessions, routage des rôles
+database.py                         # Connexion (Turso ou SQLite locale), schéma, migrations
+services.py                         # Sécurité, médias, Telegram, sessions, export Excel, stats
+components.py                       # Composants partagés : agenda, WhatsApp, QR, thème pastoral…
+mysteres.py                         # Les 20 mystères du Rosaire + calcul de la dizaine du jour
+views/
+    __init__.py
+    view_diocese.py                 # Administration diocèse (12 rubriques)
+    view_paroisse.py                # Administration paroisse (équipes, membres, abonnements)
+    view_equipe.py                  # Espace responsable d'équipe
+    view_communication.py           # Cellule Communication : préparation & soumission
+    view_communication_validation.py # SAS diocèse : validation & publication
+    view_espace_membre.py           # Espace communautaire public + espace membre (QR matloc)
+    livret_thematique.py            # Données du livret de méditation du mois du Rosaire
+images/                             # logo.png (livré — chapelet doré, remplaçable par le logo officiel, même nom)
+photos/                             # Photos locales (si pas de Cloudinary)
+```
+
+## 🚀 Lancer en local
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+Première connexion : utilisateur **diocese**, mot de passe **admin123**
+(changez-le immédiatement via l'écran de connexion si `RESET_TOKEN` est
+configuré, ou directement en base).
+
+## 🔑 Configuration (facultative)
+
+Copiez `.streamlit/secrets.toml.example` vers `.streamlit/secrets.toml` et
+renseignez ce dont vous disposez :
+
+| Clé | Utilité | Sans cette clé |
+|-----|---------|----------------|
+| `TURSO_URL` + `TURSO_AUTH_TOKEN` | Base Turso (multi-utilisateurs temps réel) | SQLite locale `gestion_religieuse.db` |
+| `RESET_TOKEN` | Encart « mot de passe oublié » sur l'écran de connexion | Encart masqué |
+| `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` | Notifications (soumissions, publications, évènements) | Notifications ignorées |
+| `CLOUDINARY_*` | Hébergement des photos / PDF / audio / vidéo | Champs « lien imgbb » à utiliser |
+
+## ☁️ Déployer sur Streamlit Cloud
+
+1. Poussez ce dossier dans un dépôt GitHub.
+2. Sur https://share.streamlit.io → **New app** → sélectionnez le dépôt,
+   fichier principal : `app.py`.
+3. Menu de l'app → **Settings → Secrets** → collez le contenu de votre
+   `secrets.toml` (au minimum les clés Turso en production).
+4. Le fichier `requirements.txt` installe automatiquement les dépendances.
+
+## 👥 Rôles et comptes
+
+| Rôle | Créé | Accède à |
+|------|------|----------|
+| `diocese` | Automatique au premier lancement | Administration complète (12 rubriques) |
+| `paroisse` | À la création d'une paroisse (rubrique « 🏘️ Créer paroisses ») | Équipes, membres, abonnements, agenda de sa paroisse |
+| `equipe` | À la création d'une équipe par la paroisse | Son équipe : membres, présences, agenda, WhatsApp |
+| `communication` | Rubrique « 🔐 Gérer les accès » du diocèse (section 📡 Service Communication) | Canal de soumission — tout passe par le SAS diocèse |
+
+Les identifiants `paroisse_*` sont affichés à la création et expédiables
+par WhatsApp en un clic ; les mots de passe peuvent être réinitialisés dans
+« 🔐 Gérer les accès ».
+
+## 🕊️ Espace communautaire (public)
+
+URL : `https://VOTRE-APP.streamlit.app/?espace=1`
+
+- Quatre rubriques publiques : Actualités, Rosaire, Thème, Archives.
+- **Dizaine du jour** : le visiteur saisit son jour de naissance → l'app
+  calcule le(s) mystère(s) du jour (portage fidèle de la règle Android).
+- **QR paroissiaux signés** : `?espace=1&p=ID_PAROISSE` — compte les visites
+  par paroisse d'origine (rubrique « 📋 Gérer paroisses » → QR de la paroisse).
+- **Espace membre** : `?espace=1&matloc=MATLOC` — le MatLoc du membre
+  (imprimé sur ses fiches/QR) débloque « Mes évènements », Réponses de
+  Communion, le feuillet mensuel en équipe et la dizaine personnalisée.
+- **📰 Actualités de la Paroisse (v7.8.6)** : dans le fil d'actualité, un
+  visiteur arrivé via le QR d'une paroisse (ou un membre de cette paroisse)
+  voit les prochains évènements créés par les équipes de SA paroisse (et par
+  la paroisse elle-même). Périmètre strict : jamais au-delà — un évènement
+  d'équipe n'apparaît ni pour les autres paroisses, ni pour le visiteur sans
+  contexte paroissial. La Réponse de Communion reste dans « 📅 Mes
+  évènements » côté membre ; le Coin Affiche applique le même filtre.
+
+## 📖 Le feuillet mensuel de prière (v7.8)
+
+La zone « 📅 Sous-thème du mois » de la page 🕯️ Thème → Vue d'ensemble est
+remplacée par le **feuillet mensuel de prière** :
+
+- **Vitrine** : badge « 📖 LE FEUILLET MENSUEL DE PRIÈRE N° X » (N° = rang du
+  mois pastoral : septembre = N°1 … août = N°12), « Mois de … », Sommaire du
+  feuillet, bouton **« 📖 Ouvrir le livret »**.
+- **Livret en autonomie** : comme la dizaine du jour, le livret s'ouvre en
+  plein écran — entête réduite au logo + carte de l'espace (Membre /
+  Communautaire), sans bandes défilantes ni thème de l'année. Le titre de la
+  page reste toujours visible en haut (barre fixe), la pagination seule
+  (« Page X / N ») clôt chaque page sous un trait fin.
+- **Soumission (v7.8.6)** : après la saisie des sections (Service
+  Communication → 🕯️ Thème pastoral → 2️⃣ bis), le bouton **« 📨 Soumettre le
+  feuillet au diocèse »** envoie le feuillet au SAS (« 🕊️ Soumissions du
+  Service Communication » → « 🟡 En attente de validation »). Le Service
+  Communication ne publie JAMAIS d'elle-même ; la resoumission reste
+  possible (mise à jour de l'alerte).
+- **Saisie unique (v7.8.7)** : les rubriques invariables d'un mois à
+  l'autre (Salve Regina, Prière à l'Esprit-Saint, Invocation à Marie…)
+  ne se saisissent qu'UNE fois. Pour un nouveau mois, la section vide
+  affiche **« ♻️ Reprendre le texte du mois précédent »** : un clic recopie
+  la dernière saisie connue de cette rubrique (mois précédents, années
+  antérieures). Le texte est ensuite ajustable avant enregistrement.
+- **Publication (diocèse seul)** : au SAS, le diocèse relit l'aperçu
+  (mois pastoral + sections saisies) puis **« ✅ Publier »** déclenche
+  l'alerte « 📖 Nouveau feuillet » en tête du fil d'actualité (visible
+  45 jours, masquable via « 📌 Marquer comme lue »). Le clic sur l'alerte
+  ouvre directement le livret du feuillet annoncé.
+- **Publication programmée (v7.8.8 — tous types de soumission)** : dans
+  chaque soumission en attente, le diocèse peut choisir **« 🗓️ Programmer
+  la publication »** (date + heure) au lieu de « ✅ Publier ». Le contenu
+  reste invisible jusqu'à l'échéance, puis est publié automatiquement :
+  chaque chargement de page sert de réveil (lazy cron, Abidjan = UTC).
+  Zone « 🗓️ Programmées » au SAS (avec ▶️ Publier maintenant / ↩️ Revenir
+  en attente) ; le Journal et le bloc feuillet affichent l'échéance.
+- **Retour en haut de page (v7.8.2)** : à chaque tour de page (Suivant,
+  Précédent, choix dans le Sommaire), la lecture reprend automatiquement en
+  haut — le titre est visible sans scroller.
+- **Archives (v7.8.2)** : les feuillets précédents sont archivés dans
+  🕯️ Thème → 🔭 Vue d'ensemble, sous forme d'**expanders** (« 📚 Les
+  feuillets précédents ») ; le lien « 📖 Relire ce feuillet » de chaque
+  expander rouvre le livret en autonomie via `?flt=1&fa=ANNÉE&fm=MOIS`.
+
+## 🎧 Lecteur compagnon — la musique suit la prière (v7.8.9)
+
+Avant v7.8.9, le bouton « 🎧 Ouvrir l'onglet d'écoute dédié » ouvrait un
+deuxième onglet : pratique sur PC, presque inutilisable sur téléphone (on ne
+revient pas aisément à l'appli). Le lecteur compagnon corrige cela :
+
+- **Téléphone (≤ 820 px)** : le bouton devient **« 🎧 Écouter en priant »** et
+  navigue dans le MÊME onglet. La page d'écoute porte une barre dorée
+  **« ◀️ Revenir à l'appli »** : un tap ramène à l'Espace de Prière.
+- **Mini-barre compagnon** : dès qu'une musique a été lancée, une barre
+  flottante (▶️/⏸️, titre, ⏭️) apparaît en bas de TOUTES les pages de
+  l'espace — accueil, 📿 Rosaire chez les Équipiers, livret, archives — et
+  **reprend automatiquement la musique là où elle s'était arrêtée**
+  (mémoire `sessionStorage` de l'onglet ; oubli automatique après 2 h).
+  La playlist continue même en passant d'une page à l'autre.
+- **PC** : le bouton dédié ouvre une **fenêtre/onglet compagnon nommé**
+  « rosaire_ecoute », réutilisé à chaque clic (jamais dupliqué) ; la page
+  d'écoute y affiche l'astuce « réduisez la fenêtre » à la place du bouton
+  Revenir.
+- **Contrôles système** : la piste en cours est déclarée à l'API Media
+  Session — titre + ⏮️ ⏯️ ⏭️ sur l'écran verrouillé et dans les
+  notifications (Android/iPhone), sans rouvrir l'appli.
+- **📺 Vignette flottante** (Picture-in-Picture) sur les lecteurs, quand le
+  navigateur le permet : la vignette reste au-dessus des autres onglets.
+- **Correctif sanitizeur** : Streamlit 1.66 injecte `target="_blank"` +
+  `rel="noopener"` dans toutes les ancres de `st.markdown` ; le fixer
+  `_fixer_liens_ecoute` rétablit `_self`/le nom de fenêtre en JS après
+  rendu (motif éprouvé `_liens_meme_onglet` v7.8.1) — sans lui, chaque clic
+  ouvrait un nouvel onglet et la mémoire de lecture se perdait.
+
+## 🎨 Couverture du livret & corrections facilitées (v7.8.10)
+
+- **Couverture du livret** : le feuillet mensuel a désormais une vraie
+  couverture, du même style que la couverture de la dizaine (bleu nuit +
+  or). Elle accompagne **① l'alerte « 📖 Nouveau feuillet »** du fil
+  d'actualité (mention « 🔔 Nouveau · publié le … » intégrée) et **② le
+  livret lui-même** : le sommaire s'ouvre sous la couverture, comme un
+  livret papier (couverture → sommaire → pages). La couverture affiche le
+  N° du feuillet, le mois pastoral, et le thème de l'année pastorale.
+- **Couverture personnalisée (facultatif)** : Service Communication →
+  🕯️ Thème pastoral → 2️⃣ bis → expander **« 🎨 Couverture du livret »** :
+  collez le lien imgbb de la couverture scannée du feuillet ; elle est
+  montrée au-dessus de la carte (alerte + sommaire). Sans image, la
+  couverture générée automatiquement suffit. Table `feuillets_couvertures`
+  (une image par mois pastoral, écrasable à volonté).
+- **Corrections facilitées** : chaque triplet (année, mois, section) a ses
+  propres clés de widget. Sélectionner une rubrique au vert ✅ (ex.
+  « 5. Prière à l'Esprit-Saint ») affiche IMMÉDIATEMENT son titre ET son
+  texte enregistré — fini les champs vides qui obligeaient à reprendre
+  toute la procédure. Le bouton ♻️ purge les clés contextuelles : le texte
+  repris s'affiche après le rerun.
+- **Republication d'une version corrigée** : après publication, le bloc
+  soumission ne disparaît plus (les `elif` court-circuités retiraient le
+  bouton) : un bouton **« 📨 Soumettre une version corrigée au diocèse »**
+  apparaît. La validation du diocèse met à jour `date_publication` —
+  l'alerte du fil se rafraîchit (nouvelle date) et la communauté lit le
+  livret corrigé. Idem après un refus : le bouton de soumission revient.
+- **Ouvrir le livret à la couverture** : depuis la vitrine (Vue
+  d'ensemble), le bouton « 📖 Ouvrir le livret » atterrit sur la couverture.
+  Depuis l'alerte, le clic ouvre toujours directement la lecture (la
+  couverture vient d'être vue dans l'alerte).
+
+## ✒️ Mise en page du livret, photos placées, alerte fiabilisée (v7.8.11)
+
+- **Typographie du feuillet (comme le livret papier)** — les pages du livret
+  sont mises en page automatiquement (`_mise_en_page_feuillet`) :
+  ① les marqueurs **R. / T. / 1. / 2. / 3+T.** (suivis de `.`, `:` ou `—`)
+  sont en gras ; ② le texte des réponses **T. / 3+T.** est entièrement en
+  gras (y compris les vers qui suivent, jusqu'à la ligne vide) ; ③ la
+  section **« 7. À l'écoute de la Parole de Dieu »** est tout en gras
+  SAUF le titre du passage (Évangile…, Au Livre des Psaumes…, Lecture… —
+  rendu en italique centré) ; ④ la section **« 11. Salve Regina »** est
+  tout en gras ; ⑤ un **interligne** plus généreux sépare deux marqueurs ;
+  ⑥ dans **« 4. Célébrons en équipe »**, la légende des rôles
+  (R — Responsable… / 1 — 1er lecteur · 2 — 2e lecteur · 3 — Chantre ·
+  T — Tous ensemble) est en gras et la ligne **« Accueil »** devient une
+  puce soulignée de taille sous-titre ; ⑦ les **titres de rubrique** sont
+  écrits en police manuscrite (Caveat via Google Fonts ; repli local
+  Segoe Print / Comic Sans MS si hors-ligne) ; ⑧ la barre fixe du livret
+  suit le même style.
+- **Cadre photo sous chaque titre de section** : chaque page porte un cadre
+  façon photo papier (image encadrée, bordure or) ou, à défaut d'image, un
+  emplacement pointillé « 📷 Photo de la rubrique » — comme un livret à
+  illustrer.
+- **Position de la photo (demande n°3)** : dans la saisie d'une section
+  (2️⃣ bis), un menu **« 🖼️ Position de la photo dans le livret »** propose
+  ⬆️ au-dessus du texte (centrée, défaut), ▶️ à droite ou ◀️ à gauche — la
+  photo flotte alors dans la page et le texte l'habille (empilement
+  automatique sur mobile). Colonne `feuillet_sections.pos_image`
+  (migration idempotente). Le bouton ♻️ reprend aussi la position.
+- **Photos du fil du jour** : à la soumission d'une Prière/Méditation, un
+  menu « Position de la photo » permet droite/gauche — le préfixe
+  `[droite]`/`[gauche]` du lien est interprété à l'affichage : l'image
+  flotte DANS la carte « Prière/Méditation du jour ». Sans préfixe,
+  l'image reste centrée au-dessus (comportement initial). Dans les
+  expanders (Actualités, etc.), le préfixe est simplement nettoyé.
+- **Alerte fiabilisée (demande n°2)** : l'alerte « 🔔 Nouveau feuillet »
+  annonce désormais le **dernier mois pastoral publié récemment** (et non
+  la dernière publication en date) : republier le feuillet de septembre
+  après celui d'octobre ne renvoie plus l'alerte sur septembre — la
+  couverture personnalisée d'octobre s'affiche bien dans l'alerte. Une
+  publication à date illisible est annoncée sans mention de date
+  (auto-réparation) ; hors délai de 45 jours, pas d'alerte.
+- **Publications de feuillets blindées** : la publication (et la
+  republication d'une version corrigée) passe par UPDATE puis INSERT —
+  robuste même si la base ancienne n'a pas la contrainte UNIQUE ; une
+  migration dédoublonne `feuillets_publications` et pose l'index unique
+  `(annee_debut, mois)` (fini les lignes jumelles qui embrouillaient
+  l'alerte).
+
+## 🟡 État de publication affiché — fin du mystère « alerte bloquée » (v7.8.12)
+
+- **Le constat** : la couverture d'octobre apparaissait au sommaire du
+  livret mais l'alerte 🔔 restait sur septembre. Cause établie (base en
+  main) : **octobre n'avait jamais traversé le circuit SAS** — aucune
+  soumission « 📨 » pour ce mois, donc pas de ligne dans
+  `feuillets_publications`. Le test « de bout en bout » du 18/10 portait
+  sur la version corrigée de SEPTEMBRE (les seules soumissions de
+  feuillet de l'historique). Et la couverture personnalisée enregistrée
+  l'avait été pour septembre aussi (mois resté dans le sélecteur).
+  L'alerte était donc **conforme au principe SAS** : elle annonce le
+  dernier mois PUBLIÉ par le diocèse.
+- **Le malentendu** : l'URL de test `?flt=1&fa=2026&fm=2` (lien profond)
+  ouvre le livret d'octobre même non publié — la vitrine aussi dès qu'une
+  section est saisie. On croyait donc le mois « publié » sans l'être.
+- **Correctifs (transparence d'état)** :
+  ① la **vitrine** du feuillet affiche un bandeau « 🟡 Livret en
+  préparation » quand le mois affiché n'a pas de publication diocèse
+  (avec rappel du dernier mois réellement publié) ;
+  ② l'expander **« 🎨 Couverture du livret »** (2️⃣ bis) affiche
+  désormais le **mois ciblé** (« 🖼️ Mois ciblé : N° 2 · Octobre 2026 »)
+  et un avertissement si ce mois n'est pas encore publié — la couverture
+  accompagnera l'alerte après validation diocèse.
+- **Pour faire basculer l'alerte sur octobre** : 2️⃣ bis → sélectionner
+  Octobre 2026 → enregistrer la couverture (mois ciblé affiché) →
+  « 📨 Soumettre le feuillet au diocèse » → côté diocèse « ✅ Valider » →
+  l'alerte 🔔 passe automatiquement à octobre avec sa couverture.
+
+## 📿🔑 2 icônes PWA · intentions aux équipes · photos nouvelle mise en page (v7.8.14)
+
+### 1. Deux icônes d'application — l'icône Streamlit a disparu des deux côtés
+- **📿 « Rosaire — Espaces de prière »** : ouverte via `?espace=…` (Membre,
+  Communautaire) ou la page Réponse de Communion (`?e=…`).
+- **🔑 « Rosaire — Administration »** : connexion + rôles diocèse / paroisse /
+  équipe / communication.
+- L'échange est **automatique selon la partie ouverte** : le favicon de
+  l'onglet, l'icône « Ajouter à l'écran d'accueil » (manifeste PWA) et
+  l'apple-touch-icon sont injectés à chaque chargement
+  (`components.injecter_icone_pwa`), le manifeste pointant l'icône
+  correspondante. Les icônes (chapelet doré / clé dorée, fond bleu nuit
+  liseré or) vivent dans **`static/`** (4 tailles chacune + 2 manifestes).
+- **Indispensable** : `.streamlit/config.toml` contient désormais
+  `server.enableStaticServing = true` (sinon `/app/static/…` renvoie du HTML).
+
+### 2. « 🙏 Vos intentions à une équipe » — le circuit complet
+- **Espace de Prière** (public ET membre) : la rubrique se présente dans le
+  langage du dépliant (bannière bleu-or « Un jour, une dizaine ») **juste
+  avant « 📰 Actualités de la Paroisse »** : choix de l'équipe (pré-sélection
+  de l'équipe du membre), texte (600 car. max), anonymat possible → la
+  table `intentions_equipes` reçoit l'intention, le flash confirme.
+- **Gestionnaire → « 📌 Suivi et Agenda - Équipe X »** : le 4ᵉ onglet
+  « 🙏 Vos intentions à une équipe » est la boîte de réception du
+  responsable — compteur (🆕 Reçues / 🕊️ En prière / 🗄️ Archivées),
+  🕊️ **Prise en prière**, 🗄️ **Archiver** (archivés consultables, supprimables),
+  et principe **« être une tombe »** rappelé en tête.
+
+### 3. Photos du livret — la nouvelle mise en page (remplace le centrage)
+- **a. Bande du titre** : la page ouvre sur une bande — titre manuscrit sur
+  les **¾ à gauche**, photo sur le **quart à l'extrême droite** ; sans photo,
+  emplacement pointillé 📷.
+- **b. Photos du corps** : **2 maximum**, chacune en 🡕 haut droite /
+  🡖 haut gauche / 🡘 bas droite / 🡗 bas gauche (~¼ de page, texte habillé,
+  **proportions d'origine** — aucun rognage). Schéma : `image_titre`,
+  `image_url2`, `pos_image2` (migration douce automatique).
+- **Couverture non rognée** : l'image de couverture s'affiche telle quelle
+  (proportions d'origine, bornée à 420 px de haut).
+
+### 4. A− / A+ en haut du livret
+Deux mini-boutons très petits règlent la taille du texte de **90 % à 150 %**
+(pas de 10), mémorisés pour la session (légende « 🔍 Taille du texte : N % »).
+
+### 5. Fin de la défaillance « retour à l'onglet primaire »
+Les onglets Streamlit n'ont **aucune mémoire** : chaque coche ou bouton
+(« 💾 Enregistrer la couverture », « 📨 Soumettre », année des rappels…)
+ramenait au 1er onglet. Tous les blocs à interaction sont remplacés par des
+**sélecteurs persistants** (st.radio avec clé de session) : 📡 Service
+Communication, 📌 Suivi et Agenda (équipe, paroisse, diocèse), 💬 WhatsApp.
+
+### 6. Correction au passage
+Le rappel ♻️ « Reprendre le texte du mois précédent » affichait la valeur de
+`pos_image` à la place de l'année (indice 4 au lieu de 5) — corrigé.
+
+## 🙏 Intentions : Espace communautaire + cadre doré (v7.8.15)
+
+### 1. « 🙏 Vos intentions à une équipe » réservée à l'Espace communautaire
+Le bloc n'apparaît **plus côté Membre** (vue `matloc`) : il est présenté
+UNIQUEMENT dans l'Espace communautaire de la paroisse (`?p=…` / QR paroissial),
+juste avant « 📰 Actualités de la Paroisse ». Côté code, `_render_fil_actualites`
+gagne un paramètre `intentions=True` — l'appel de la vue Membre passe
+`intentions=False`.
+
+### 2. Le bloc « comme le dépliant » — un seul cadre doré
+- **Cadre or** (bordure 2 px #FFD700, fond bleu nuit #121a45, coins arrondis,
+  ombre) englobant **tout** : bannière, badge, expanseur, champs, cases, bouton.
+- **Bannière** (dégradé #1A237E→#4527a0, titre Georgia doré) :
+  « 🙏 Vos intentions à une équipe » + **« Confie à Notre Dame du Rosaire ton
+  intention de prière par le canal d'une équipe »** + badge 🤫 « être une tombe ».
+- **👥 Choix de l'équipe** : expanseur au liseré or ; après clic, son titre
+  affiche le choix (« … — Équipe Espérance ») et le choix est mémorisé.
+- **Champs à liséré doré** (#C9A227 sur fond #0d1338) : **Nom et Prénom\***,
+  **Contact WhatsApp / Adresse mail\***, **Intention de prière\*** (600 car.),
+  précédés de « * » indique les champs obligatoires.
+- **☑ Case obligatoire** : « En envoyant cette intention, j'accepte que
+  certaines données techniques soient utilisées à des fins de sécurité et de
+  lutte contre les envois automatisés (spam) » + expanseur **🔒 Politique de
+  confidentialité**.
+- Soumission validée champ par champ (message « Il manque : … »), champs vidés
+  après succès **sans perdre la saisie** en cas de refus (clés par génération).
+
+### 3. Côté responsable — le contact arrive avec l'intention
+- La table `intentions_equipes` gagne la colonne `auteur_contact`
+  (migration douce automatique).
+- Dans « 📌 Suivi et Agenda » → onglet « 🙏 Vos intentions à une équipe » :
+  chaque carte affiche **📞 Contact : …** sauf si 🕊️ anonyme (le nom devient
+  « Anonyme » et le contact est masqué). Compteurs, Prise en prière, Archiver
+  et principe « être une tombe » inchangés.
+
+### 4. Techniquement
+Le cadre doré est posé par un mini-script (même mécanisme que
+`injecter_icone_pwa`) qui ajoute la classe `.int-cadre-or` au container bordé
+`st.container(border=True)` — le CSS par classe ne touche donc que ce bloc,
+quel que soit le thème ou la version de Streamlit.
+
+### 5. PWA — guide pas à pas
+La réalisation des 2 icônes (📿 Espaces / 🔑 Administration) est documentée
+pas à pas dans **`GUIDE_PWA_v7.8.15.md`** : ce qui est déjà dans le ZIP, la
+vérification sur ordinateur (F12 → Application → Manifest), l'installation
+Android/iPhone, le dépannage (cache, HTTPS, réinstallation) et le remplacement
+des icônes par vos dessins.
+
+## ☁️ Hotfix fiabilité Streamlit Cloud / Turso (v7.8.16)
+
+Correctif des trois incidents observés dans les journaux Cloud, **après un
+déploiement réussi, tout se répare tout seul au premier démarrage** :
+
+### 1. La base distante se répare automatiquement
+Sur la base Turso créée par une version antérieure, la table
+`intentions_equipes` existait **sans** les colonnes récentes
+(`anonyme`, `auteur_contact`) → la soumission plantait
+(« table intentions_equipes has no column named anonyme »). Désormais :
+- `database.py` crée la table à l'init et y applique 2 `safe_migrate`
+  idempotents (ils s'exécutent à chaque démarrage sans risque) ;
+- `_assurer_table_intentions` (vue membre) et
+  `_assurer_table_intentions_eq` (vue équipe) ajoutent elles aussi les
+  colonnes manquantes par `ALTER TABLE` doux — **sans toucher aux données**.
+
+### 2. Les micro-coupures Turso ne font plus planter les pages
+L'erreur Hrana « connection closed before message completed » (et les
+erreurs http / timeout transitoires) est désormais **rattrapée** : 3
+tentatives espacées d'une seconde avec reconnexion, puis seulement
+l'erreur remonte. La mini-barre musicale (mini-lecteur), purement
+décorative, s'escamote si la base ne répond pas — la page de l'Espace de
+Prière s'affiche quand même.
+
+### 3. Fin des avertissements « Please replace st.components.v1.html with st.iframe »
+Nouveau module **`stcompat.py`** (à la racine de `app/`) : TOUT le rendu
+HTML/JS (injection PWA, scripts de mesure, lecteurs, cadre doré) passe par
+`comp_html()` — `st.iframe` sur Streamlit récent (hauteur bornée à 1 px
+pour les scripts invisibles), repli automatique `components.v1.html` sur
+les anciennes versions. Les journaux Cloud redeviennent silencieux.
+
+### 4. La soumission d'intention est blindée
+Si l'envoi échoue malgré les tentatives (réseau), un **message doux** invite
+à réessayer et la saisie est **conservée** — plus jamais de traceback à
+l'écran du fidèle.
+
+### 5. v7.8.17 — la boîte de réception du responsable devient infaillible
+Symptôme : « Impossible de lire les intentions pour le moment. » dans
+l'onglet **🙏** de « 📌 Suivi et Agenda », sans aucune trace dans les
+journaux (un `except` muet). Cause : la base Cloud, créée par un brouillon
+antérieur, peut manquer de **n'importe quelle** colonne de
+`intentions_equipes` — la réparation v7.8.16 ne couvrait que deux d'entre
+elles (très probablement `date_statut` manquait aussi). Correctif :
+- **`database.verifier_reparer_intentions()`** — appelée par les 2 vues
+  avant toute lecture/écriture : sonde de lecture complète ; en cas d'échec,
+  ALTER doux de **chaque** colonne attendue puis re-sonde ; si ça échoue
+  encore, **reconnexion** de la base (cache de statements périmé) et
+  nouvelle sonde ; chaque incident est **journalisé** ;
+- l'onglet équipe journalise l'erreur réelle et explique quoi faire.
+
+### 6. v7.9.0 — LA CHAÎNE DE PRIÈRE UNIVERSELLE 🔗
+L'idée : **faire dire une dizaine au visiteur qui dépose une intention** —
+celui qui confie devient « le prochain » de celui qui prie.
+
+- **Formulaire d'intention** (Espace communautaire) :
+  - nouveau champ obligatoire **« Jour de naissance (1 - 31) »** : clé
+    discrète de la chaîne — il garantit que le fidèle ne priera **jamais
+    SA propre intention** (le livret écarte automatiquement les intentions
+    portant le même jour de naissance que le lecteur) ;
+  - la case « 🕊️ Rester anonyme » est **retirée** ; placeholders adaptés
+    (« Ex : N'guess KONÉ » / « …ou nguekon@exemple.com ») ; badge
+    « 🤫 Tu es le prochain de l'équipe qui prie pour toi… » ;
+  - après l'envoi : bandeau **« 📿 Prier ma dizaine maintenant »** qui
+    ouvre directement le livret — le fidèle participe aussitôt à la chaîne.
+- **Le livret « 🕯️ Un jour, une dizaine »** : la dernière intention de
+  chaque mystère (« Intention du prochain dans la chaine de prière ») est
+  désormais **DYNAMIQUE** — elle porte une vraie intention confiée par un
+  fidèle (idem dans le Rosaire complet de l'Espace). La chaîne ne se casse
+  jamais : sans intention disponible, elle retombe sur « La Paix dans le
+  monde ».
+- **Nouvel onglet « 🙏 Coins des Intentions »** (4ᵉ onglet de
+  « 📌 Suivi et Agenda » côté paroisse) :
+  - **bilan** de toutes les intentions confiées aux équipes
+    (🆕 reçues / 🕊️ prises en charge / 🗄️ archivées), détail par équipe
+    avec ancienneté ;
+  - règle rappelée partout : **une intention prise en charge dure au
+    minimum 20 jours (20 mystères), sinon jusqu'à la prochaine prière
+    mensuelle** (badge J+X/20, alerte « ✅ à archiver » à l'échéance) ;
+  - **réglage de la chaîne** : 1ᵉʳ choix = les intentions **reçues** (la
+    plus ancienne d'abord), 2ᵉ = les **prises en charge**, 3ᵉ = les
+    **intentions universelles** (« La Paix dans le monde », « Le Sacrement
+    de la réconciliation », « La gestion juste et durable de la ressource
+    vitale : l'eau » — choix fixe ou rotation quotidienne) ; aperçu en
+    direct de ce que lira le visiteur.
+- **SAS diocèse (v7.9.0 au passage)** : les soumissions déjà publiées qui
+  traînaient encore dans « 🟡 En attente de validation » sont désormais
+  **détectées** (titre/type déjà présent dans la table cible) et rangées
+  sans republication — section « 🧹 Déjà publiés — à ranger » ; le compteur
+  d'attente redevient exact ; si le rangement d'une publication échoue
+  (micro-coupure Turso), l'erreur est affichée au lieu d'un succès
+  mensonger.
+- Technique : colonne `jour_naissance` (migration idempotente + réparation
+  v7.8.17 étendue), table `parametres` (clé/valeur) pour les réglages de
+  la chaîne, fonction `intention_du_prochain()` dans `database.py`.
+
+### 7. v7.9.1 — La chaîne prend vie : lendemain, anonyme, Galerie + 🚦
+Retours de validation de la v7.9.0, tous intégrés :
+
+- **Le modèle d'intercession** — la ligne dynamique du livret devient :
+  « 🕯️ Vierge Marie, mère de Dieu, **intercède pour {Prénom - Nom du
+  visiteur} : {son intention}** » ; pour une intention anonyme :
+  « intercède pour **cet anonyme** : … » ; pour une intention universelle
+  (3ᵉ choix) : « intercède : … » (identique dans le Rosaire complet, le
+  livre page-à-page et l'aperçu paroisse).
+- **La case « 🕊️ Rester anonyme » est de retour** : le responsable voit
+  « Anonyme » et le contact reste masqué ; le nom devient facultatif
+  (au moins l'un des deux : nom OU anonyme). Le contact est toujours
+  enregistré — il porte la règle d'unicité.
+- **Règle du lendemain (automatique)** : chaque intention reçue passe
+  « 🕊️ Prise en charge » **au lendemain de sa réception, pour 20 jours**
+  (20 mystères) — `date_statut` est datée réception + 1, le décompte
+  J+X/20 ne dépend pas du moment du balayage. Le bouton 🕊️ du
+  responsable garde un sens : prise en charge **immédiate** le jour même.
+- **Unicité par numéro** : **un même numéro de téléphone ne peut pas
+  porter 2 intentions prises en charge** — vérifié à la soumission
+  (message doux, saisie conservée) ET au balayage automatique ; les
+  numéros sont comparés après normalisation (espaces, tirets, indicatif
+  +225 / 00 225).
+- **Tirage « selon le N° méd. »** : chaque visiteur reçoit l'intention
+  placée à SON rang dans la file (sa clé = jour de naissance), au sein
+  d'une fenêtre de 20 jours — il retrouve la même intention à chaque
+  dizaine de la période, et deux N° méd. différents portent des
+  intentions différentes dès que la file le permet. La règle d'or
+  (personne ne prie sa propre intention) est conservée.
+- **Rectifications de textes** : « Votre intention a été confiée à
+  l'Équipe … » (sans guillemets) ; CTA « 📿 À vous maintenant : égrenez
+  une dizaine et porter en prière votre prochain ».
+- **🖼️ Galerie +** — nouvelle rubrique des Espaces de Prière (public ET
+  membre), placée après « 🕯️ Thème », avec 2 sous-rubriques :
+  **🏞️ Souvenirs** (photos des évènements) et **💬 Témoignages**
+  (grâces reçues). Le diocèse publie et retire depuis son nouveau menu
+  « 🖼️ Galerie + » (titre, photo par lien https, date, lieu, signature) ;
+  la communauté lit des cartes style dépliant.
+- **🚦 Tableau de bord** — 2ᵉ onglet de « 📊 Statistiques - {paroisse} » :
+  effectifs, abonnements de l'année pastorale (recouvrement), intentions
+  (reçues / en prière / archivées / **20 mystères accomplis à archiver**),
+  prochaine prière de l'agenda, arrivées QR paroissial (30 jours) et
+  santé de chaque équipe.
+- Technique : table `galerie_plus` (créée à l'init + doucement pour les
+  bases distantes), `prise_en_charge_automatique()`, `contact_en_priere()`,
+  `intention_du_prochain_detail()` (texte + intercédé), rubrique placée
+  pour préserver les liens `?r=1` / `?r=2` existants.
+
+### 8. v7.9.2 — La chaîne en direct : dizaines pointées, Galerie + réorganisée, programmation traçable 📿
+Observations et suggestions des utilisateurs, toutes intégrées :
+
+- **« Y a-t-il une possibilité de savoir si un membre / un visiteur fait
+  sa dizaine ? » — OUI, désormais :**
+  - le **pointage volontaire** « ✅ J'ai égrené ma dizaine aujourd'hui »
+    apparaît sur la DERNIÈRE page du livre « 🕯️ Un jour, une dizaine » —
+    il atteste d'une dizaine égrenée DANS l'application (jamais du contenu
+    de la prière, qui reste personnel) ;
+  - **membre** : identifié par son MatLoc — 1 pointage par jour
+    (contrainte UNIQUE), avec flamme 🔥 (jours consécutifs) et total du
+    mois ; **visiteur** : compté comme un « passage » anonyme (1 par
+    session et par jour, sans identité exigée) ;
+  - le responsable d'équipe voit dans **« 📊 Engagement spirituel »** le
+    nouveau bloc **« 📿 Chaîne des dizaines — aujourd'hui »** : qui a
+    pointé, qui n'a pas encore pointé, la participation de l'équipe, la
+    série des 7 derniers jours ;
+  - le **🚦 Tableau de bord paroisse** affiche 2 nouveaux KPI
+    (« 📿 Dizaines pointées aujourd'hui » pour ses équipes + « 🔥
+    Passages visiteurs ») et la santé par équipe gagne la colonne
+    « 📿 Dizaines aujourd'hui » ;
+  - technique : table `dizaines_journal` (créée à l'init + doucement,
+    zéro action manuelle sur Cloud) et fonctions `pointer_dizaine()`,
+    `stats_dizaines_jour()`, `serie_dizaines()`, `compteur_dizaines_mois()`.
+- **🖼️ Galerie + réorganisée** :
+  - le menu autonome du diocèse **disparaît** ;
+  - la **SAISIE** rejoint un onglet « 🖼️ Galerie + » de la section
+    « 📡 Communication » (à côté du SAS « 🕊️ Soumissions ») ;
+  - l'**ARCHIVE après publication** devient un onglet « 🖼️ Galerie + » de
+    « 📋 Contenu existant », entre « 🙏 Prières / 📖 Méditations » et
+    « 🎵 Musiques » — même mécanique à coches avec confirmation, photo
+    distante supprimée avec l'entrée ;
+  - la rubrique communauté change de place dans l'**Espace Membre** :
+    « 🖼️ Galerie + » se situe maintenant **entre « 📅 Mes évènements » et
+    « 📖 Archives »** (l'Espace communautaire garde son ordre ; les liens
+    `?r=1` (Thème) restent valables).
+- **Publications programmées — fiabilisées et TRANSPARENTES** (signalement
+  « des publications programmées publiées avant l'échéance ») :
+  - le réveil automatique est **testé sain** (une soumission programmée
+    dans 5 jours n'est PAS publiée) ; il est en plus **blindé** :
+    double protection temporelle (filtre SQL + re-parsing Python — un
+    format de date inattendu n'est JAMAIS publié), **réclamation
+    anti-course** (deux sessions ouvertes en même temps ne publient
+    chacune leur copie), **auto-réparation** après 10 min d'une
+    réclamation bloquée par un crash, et plus aucune exception ne peut
+    casser une page ;
+  - **traçabilité totale** : chaque publication enregistre
+    `date_decision` + `auteur_decision` ; « 📔 Historique des décisions »
+    affiche désormais « publiée le {date} · 👤 diocèse — clic « ✅
+    Publier » » ou « · ⏰ publication automatique — programmation
+    respectée » — impossible de confondre un clic et une échéance ;
+  - **UX anti-erreur** : résumé LIVE avant de programmer (« → Résumé :
+    publication le 27/10/2026 à 23:59 (dans 5 jour(s)) »), mention
+    explicite que « ✅ Publier » reste une publication immédiate, flash
+    enrichi, compte à rebours « ⏳ dans 5 j 14 h » sur chaque élément de
+    « 🗓️ Programmées ».
+
+### 9. v7.9.3 — Accueil harmonisé, pied de page, pointage « Terminer », réserve des N° méd. 🔒
+Retours de validation v7.9.2, tous intégrés :
+
+- **Accueil harmonisé (le fil d'actualité allégé)** :
+  - « 🙏 Vos intentions à une équipe » **remonte** : elle quitte le fil
+    d'actualité et se place juste après le dépliant, **AVANT « 🕯️ Un
+    jour, une dizaine »**, dont elle reprend EXACTEMENT le langage
+    visuel (dégradé #1A237E→#283593, liseré or 2 px, titre Georgia) —
+    un Accueil homogène : dépliant → intentions → dizaine ;
+  - le fil d'actualité est **allégé à UNE section**, celle qui correspond
+    à nos attentes : la **prière/méditation du jour** (couronnée de
+    l'alerte feuillet). Le 📣 Coin Affiche, « 📰 Actualités de la
+    Paroisse » et « 📰 Actualités du diocèse » quittent l'Accueil (code
+    conservé : repassez `FIL_ALLEGEE = False` dans
+    `views/view_espace_membre.py` pour réafficher l'ancien fil) ;
+  - le texte du dépliant suit le nouvel ordre (« Juste en dessous :
+    confiez votre intention… puis entrez dans la dizaine »).
+- **Pied de page du site + « 🔒 Politique de confidentialité »** :
+  - un **pied de page** apparaît sur TOUTES les pages des Espaces de
+    Prière (communautaire, membre, livre ouvert) : signature du
+    Mouvement + la politique de confidentialité complète en encart
+    repliable (données recueillies / usage / vos droits) ;
+  - l'expander RGPD du formulaire des intentions reste en place (le
+    consentement doit être informé sur place).
+- **« ✕ Terminer » pointe la dizaine — cause incognito** :
+  - chaque mystère a sa fin (page GLORIA PATRI) : un bouton « ✕
+    Terminer » y figure désormais À CÔTÉ de « Suivant ▶ » ; **en
+    cliquant dessus, il est pointé** — sans demander qui prie (membre :
+    1 pointage/jour par MatLoc ; visiteur : un passage anonyme) — puis
+    le livre se referme ;
+  - le pointage explicite « ✅ J'ai égrené ma dizaine aujourd'hui »
+    s'affiche maintenant sur la VRAIE dernière page, chaque jour (le
+    livre du jour ne contient qu'UN mystère : la fin est la page
+    Gloria, l'outro « Salve Regina » n'existe que le jour du mystère
+    N° 20) ;
+  - les responsables le voient : la légende du bloc « 📿 Chaîne des
+    dizaines » mentionne les deux boutons.
+- **📚 La réserve d'intentions — 20 intentions par N° méd.** :
+  - « Les visiteurs du jour reçoivent les intentions de leurs prochains
+    selon leurs N° méd. et méditent sur 20 jours : il est capital d'avoir
+    AU PRÉALABLE 20 intentions pour chacun des N° méd. Ça sera l'affaire
+    des responsables d'équipe et paroissial. » — c'est fait ;
+  - nouvelle table **`intentions_reserve`** (N° méd. 1-20, texte,
+    auteur, équipe, paroisse, date) créée à l'init ET doucement — zéro
+    action manuelle sur Cloud ;
+  - **côté responsable d'équipe** (onglet « 🙏 Vos intentions à une
+    équipe ») et **côté responsable paroissial** (onglet « 🙏 Coins des
+    Intentions ») : une **grille des 20 emplacements** (X/20, or quand
+    l'objectif est atteint), le formulaire **« ➕ Ajouter une intention à
+    la réserve »** (membre choisi → son N° méd. désigne l'emplacement et
+    son nom signe l'intention), la liste des lignes posées avec retrait
+    🗑️, et la confirmation flash ;
+  - **la chaîne puise d'abord dans la réserve** : un visiteur dont le
+    N° méd. correspond à un emplacement nourri reçoit une intention de
+    CETTE réserve (rotation à chaque fenêtre de 20 jours) ; réserve
+    vide → la file des soumissions (comportement v7.9.1) ; mode
+    « universelle » choisi par la paroisse → prioritaire comme avant ;
+    la règle d'or reste garantie (la réserve n'a pas de jour de
+    naissance : elle n'entre jamais en conflit avec la clé du lecteur).
+- **Pages remontées à l'ouverture (comme les feuillets)** :
+  - à l'ouverture d'une page (changement de rubrique/sous-rubrique), la
+    lecture repart DU HAUT de l'écran — même mécanique « nonce » que le
+    retournement des pages du livret (`_scroll_top_si_nouvelle_page`) ;
+  - l'entête est un peu plus compacte (logo 190→170 px, 150→136 et
+    138→126 sur petits écrans) : la hauteur mesurée suit
+    automatiquement, le contenu commence un peu plus haut ;
+  - les interactions DANS une page (expander, bouton) ne repositionnent
+    pas l'écran — seul un changement de page le fait.
+
+## 🕊️ 10. v7.9.4 — La réserve affine son modèle (1 intention par N° méd., zone du jour, attachement 20 jours)
+
+- **Compteurs de dénombrement** (harmonisation « Équipe 5 → 1/12 membres ») :
+  - Paroisse « 👥 Mes équipes » : le titre devient **« 👥 Équipes de {paroisse} — N équipe(s) · M membre(s) »** ;
+  - Diocèse « 📋 Gérer paroisses » : **« 📋 Consultation des paroisses — N paroisse(s) »**,
+    et le détail interne **« 👥 Équipes de {paroisse} — N équipe(s) »** ;
+- **📚 Réserve d'intentions — 1 intention par N° méd.** (le modèle v7.9.3
+  s'affine) :
+  - **UNE seule intention par N° méd.** : chaque emplacement (1-20) porte
+    une intention — « Que chacun ait sa dernière intention selon son N°
+    méd. » ; un second ajout au même emplacement est refusé avec un
+    message doux (flash visible même l'encart refermé) ;
+  - **la ZONE DU JOUR** (`intentions_du_jour`) : toute intention confiée
+    dans « 🙏 Vos intentions à une équipe » y est recueillie en plus de
+    la boîte du responsable (dont le travail ne change pas) ;
+  - **LE LENDEMAIN**, chaque intention recueillie entre dans la réserve
+    en remplaçant AU HASARD l'une des intentions en place
+    (`traiter_intentions_du_jour`, idempotent, silencieux) ; l'ancienne
+    passe en historique (`active=0`) — et si les demandes abondent, le
+    stock tournant du N° méd. s'élargit d'autant (quota augmenté, la
+    rotation par cycle de 20 jours s'en charge) ;
+  - **L'ATTACHEMENT** (`attributions_prochain`) : l'intention du prochain
+    reçue S'ATTACHE à son lecteur — **période désignée du membre (clé
+    M:matloc) / 20 jours du visiteur (clé J:n° méd.)** — même si la
+    réserve se renouvelle entre-temps ; échue, le tirage reprend dans la
+    réserve renouvelée ;
+  - **la règle d'or vaut aussi dans la réserve** : le jour de naissance
+    du lecteur écarte l'intention qu'il a lui-même confiée ;
+  - les responsables d'équipe et paroissial gardent le même bloc
+    (grille 1/N°, or quand l'emplacement est pourvu, objectif « 20 au
+    total ») ;
+- **Message d'unicité repensé** (fidèle qui revient) : « 📿 Tu es déjà
+  porté(e) en prière depuis le {date}. Ne brise pas la CHAÎNE DE PRIÈRE.
+  Continue de méditer ta dizaine à CAUSE DE TON PROCHAIN. » suivie de
+  **Matthieu 7.12** — plus aucune formulation de contrôle ;
+- **« 🔒 Politique de confidentialité » retirée du formulaire** des
+  intentions : elle vit désormais UNIQUEMENT en pied de page (la case de
+  consentement renvoie « en pied de page ») ;
+- **Pointage au ton complice** (fin de méditation) :
+  - « 📿 La chaîne compte sur **Toi** — Marque ta présence du jour et ta
+    gratitude envers La Vierge Marie pour l'écoute » ;
+  - bouton **« ✅ Merci Sainte Mère pour ton aide de ce jour! »** ;
+  - remerciement **« 📿 Ta dizaine est capitale pour la chaîne — Merci
+    pour ta fidélité! — X dizaine(s) ce mois — À demain! 🕊️ »** (le
+    compteur du mois est montré au membre) ;
+  - les mentions de mécanisme disparaissent (« Le pointage enregistre… »,
+    « Pointée ! … est enregistrée », « Dizaine d'aujourd'hui pointée »,
+    info-bulle du « ✕ Terminer ») — jamais l'impression d'une
+    surveillance ;
+- **« J'ai honoré mon engagement de ce jour »** : au retour de la
+  méditation, le bouton s'affiche juste après « 📿 Égrener la dizaine »
+  (membre comme visiteur, quand la dizaine du jour est faite) — un clic,
+  et il s'efface jusqu'à demain, comme « 📌 Marquer comme lue » ;
+- tables nouvelles créées automatiquement (init + création douce,
+  zéro action Cloud) : `intentions_du_jour`, `attributions_prochain` ;
+  colonnes `active` / `qui` / `jour_naissance` ajoutées en ALTER doux à
+  `intentions_reserve`.
+
+### 11. v7.9.5 — « Chaîne des dizaines — aujourd'hui » : le même nom ne figure plus des deux côtés 📿
+
+- **Correctif** (onglet « 📊 Engagement spirituel » de l'équipe) :
+  « ⏳ Pas encore pointé aujourd'hui » listait **chaque** équipier actif,
+  y compris ceux qui viennent de pointer — le même nom s'affichait dans
+  « ✅ Ont pointé » ET dans « ⏳ Pas encore » (le rapprochement comparait
+  des noms à un ensemble de MatLoc ; il se lit désormais par **MatLoc**,
+  la clé unique qui a pointé) ;
+- la liste « ⏳ Pas encore » ne contient plus que ceux qui n'ont pas
+  encore marqué leur dizaine du jour, et « toute l'équipe est à jour
+  🎉 » revient dès que le dernier a pointé ; la métrique
+  « 📿 Dizaines pointées aujourd'hui » est inchangée ;
+- aucun changement de base, aucune donnée à retoucher : le pointage
+  existant était juste, seul l'affichage des listes est corrigé.
+
+### 12. v7.9.6 — Fin de dizaine : deux rôles bien distincts, une carte qui se referme 📿
+
+- **« ✕ Terminer » retrouve sa discrétion** : sa confirmation devient la
+  ligne courte **« 📿 À demain! 🕊️ »** — il ne répète plus le
+  remerciement complet avec le compteur du mois ; **le remerciement
+  complet (« 📿 Ta dizaine est capitale pour la chaîne — Merci pour ta
+  fidélité! — X dizaine(s) ce mois — À demain! 🕊️ ») reste la voix du
+  seul bouton « ✅ Merci Sainte Mère pour ton aide de ce jour! »** de la
+  dernière page — deux gestes, deux tonalités, plus de doublon ;
+- **« J'ai honoré mon engagement de ce jour » referme désormais LA CARTE
+  ENTIÈRE**, exactement comme « 📌 Marquer comme lue » referme la
+  sienne : la bannière « 📿 Ta dizaine du jour », le bouton
+  « 📿 Égrener la dizaine » et le bouton lui-même s'effacent jusqu'à
+  demain (membre comme visiteur) ; le livre déjà ouvert, lui, reste
+  prioritaire — on ne ferme pas une lecture en cours ;
+- aucun changement de base ni de migration : deux ajustements d'écran.
+
+### 13. v7.9.7 — Le raccourci de l'application : une vraie app, qui se souvient du fidèle 📿
+
+- **Plein écran, comme une vraie app** : les métas « capable »
+  (Android + iPhone) et la barre d'état sont posées à chaque chargement —
+  depuis « Ajouter à l'écran d'accueil », l'application s'ouvre SANS
+  barre de navigateur, avec le bon nom (« Rosaire — Espaces de prière »
+  côté fidèles, « Rosaire — Administration » côté gestionnaire) ;
+- **la mémoire du fidèle** : le raccourci posé depuis un lien personnel
+  ouvrait l'espace « générique » (le manifeste pointe `/?espace=1`,
+  sans matloc) — désormais le navigateur retient le dernier lien
+  personnel ouvert et le restitue à l'ouverture suivante : le fidèle
+  retrouve SON espace, sa bannière, sa dizaine du jour, sans rien
+  ressaisir ; un lien personnel rouvert rafraîchit la mémoire ;
+- **100 % navigateur** (localStorage du téléphone) : aucune table,
+  aucune donnée serveur, rien à migrer — un appareil qui n'a ouvert que
+  le lien public reste neutre, et l'administration n'a aucune mémoire ;
+- les deux manifestes gagnent leurs champs d'identité (`id`, `scope`,
+  `lang`) : Android distingue proprement l'app « Espaces » de l'app
+  « Administration » au moment de l'installation.
+
+### 14. v7.9.8 — Le raccourci porte le bon nom, l'icône se reconnaît d'un coup d'œil 📿
+
+- **Des noms distincts** : le navigateur nomme le raccourci d'après le
+  titre de l'onglet — identique des deux côtés avant (« Gestionnaire des
+  Équipes du Rosaire… »). Désormais **« Rosaire »** côté Espace de
+  prière et **« Rosaire Admin »** côté gestionnaire, onglet compris ;
+- **Une icône admin refondue** : la clé dorée passe sur **fond violet**
+  (la couleur de l'interface de gestion), l'Espace garde son chapelet
+  doré sur bleu nuit — plus aucune confusion une fois les pastilles
+  recadrées en rond et réduites ;
+- **Le bon geste, rappelé en page** : la carte « raccourcis » de la page
+  de recherche du navigateur n'écrit JAMAIS sur l'écran d'accueil — le
+  rappel « menu ⋮ → Ajouter à l'écran d'accueil » est affiché dans la
+  carte d'accueil de l'Espace et, en légende, sous la connexion ;
+- **Plus de version en retard** : la carte d'accueil, la carte membre, la
+  bannière « Rosaire selon le thème », la ligne N° méd. et le pied de
+  page lisent UNE constante (`_VERSION_APPLI`) — les « v7.6 » figés
+  disparaissent ;
+- aucun changement de base ni de migration.
+
+### 15. v7.9.9 — La zone du jour devient un écran, le pied de page porte la robe du Mouvement 🕯️
+
+- **🕯️ La zone du jour (diocèse → « 🕯️ Zone du jour »)** : la demande
+  « Afin d'harmoniser l'intention du prochain à l'affichage, il est
+  nécessaire de la traiter auparavant. Créer donc une zone qui recevra
+  toutes les intentions du jour » prend forme d'écran. La table
+  `intentions_du_jour` (v7.9.4) reçoit déjà chaque intention confiée ;
+  elle est désormais VISIBLE : compteurs (⏳ en attente · ✅ entrées en
+  réserve aujourd'hui · 🌙 écartées), puis chaque intention se déplie —
+  texte d'origine, **« ✨ Harmoniser le texte »** (l'entrée en réserve du
+  lendemain emporte le texte soigné, et c'est lui que la chaîne affiche)
+  et **« 🌙 Écarter de la chaîne »** (`traitee=2` : le transfert
+  automatique ne la prendra jamais). Aucune migration : la table
+  suffit ;
+- **🟣 Pied de page refondu sur le modèle du site du Mouvement**
+  (equipes-rosaire.org) : trois colonnes — la marque (📿 + nom +
+  diocèse), « LE ROSAIRE EN ÉQUIPE » (menus tirés de l'entête de
+  l'application), « NOUS CONTACTER » — sur fond **violet nuit**, celui
+  du badge « Bienvenue » (`#4A148C`), barre noire de copyright
+  (« © 2026 Les Équipes du Rosaire — Diocèse de Grand-Bassam ») et
+  emplacement Facebook (constante `LIEN_FACEBOOK` : renseignée → l'icône
+  apparaît ; vide → elle reste absente). La « 🔒 Politique de
+  confidentialité » complète y demeure, rejointe par une « 🍪 Politique
+  de cookies » ;
+- **Raccourci, suite** : l'adresse du manifeste porte désormais une
+  version (`manifest_*.json?v=799`) — le navigateur relit les bons noms
+  et les bonnes icônes au prochain « Ajouter à l'écran d'accueil ».
+  Rappel du geste sur le téléphone : **supprimer l'ancien raccourci**
+  (il garde pour toujours le visage qu'il avait au moment où il a été
+  posé), puis menu ⋮ → « Ajouter à l'écran d'accueil » APRÈS déploiement ;
+- **Dénombrement allégé** : le titre paroissial devient
+  « 👥 Équipes de {paroisse} — N équipe(s) » (le compte des membres
+  disparaît du titre, à la demande) ;
+- aucun changement de base ni de migration.
+
+### 16. v7.9.10 — Le sas des intentions, la publication à 00h00, le raccourci incassable 🕊️
+
+- **🕯️ La zone du jour DÉMÉNAGE chez la paroisse** (« Les intentions c'est
+  une affaire des paroisses et de ses équipes ») : elle quitte le menu du
+  diocèse et devient le **sas des intentions** en tête de « 🙏 Coins des
+  Intentions » (📌 Suivi et Agenda - Paroisse), portée sur les intentions
+  de LA maison (équipe de la paroisse ou paroisse notée). Chaque
+  intention confiée y transite — **aucune ne peut être publiée sans y
+  passer** ;
+- **🕊️ « Traiter & envoyer en réserve » (immédiat)** : le responsable
+  harmonise le texte (orthographe, dignité, clarté) et l'envoie en
+  réserve SUR LE CHAMP — plus d'attente du lendemain. **🌙 Écarter de la
+  chaîne** demeure (`traitee=2`) ;
+- **⏰ La publication se fait à 00h00 du jour suivant** : toute arrivée en
+  réserve naît `publiee=0` avec `date_publication` = demain ; le réveil
+  `publier_reserve_due()` — appelé à chaque tirage — la rend visible à
+  l'heure dite. Le transfert automatique du lendemain (v7.9.4) respecte
+  la même règle ; les intentions déjà en place avant v7.9.10 restent
+  publiées comme avant (`DEFAULT 1`) ;
+- **📱 Le raccourci devient incassable** : le favicon de l'onglet et
+  l'icône iPhone sont désormais INCORPORÉS à la page (images base64 —
+  ni 404, ni cache possible), le manifeste reste versionné
+  (`?v=7910`), et deux **pages d'installation** (`static/install_rosaire.html`
+  et `install_rosaire_admin.html`) portent le vrai visage — nom « Rosaire »
+  / « Rosaire Admin », chapelet doré / clé — DÈS LE PREMIER OCTET : le
+  raccourci posé depuis elles ne peut plus porter le nom ni l'icône de
+  Streamlit (c'était le cas quand il était posé pendant l'écran de
+  chargement bleu). Les liens vers ces pages sont dans la carte de
+  bienvenue (espaces) et sous la connexion (administration) ;
+- **🦶 Pied de page — la disposition demandée** : colonne 1 — 🔒
+  Politique de confidentialité · 🍪 Politique de cookies ; colonne 2 —
+  le logo, LES ÉQUIPES DU ROSAIRE, DIOCÈSE DE GRAND-BASSAM, le nom de la
+  paroisse du fidèle, « Contactez le responsable paroissial » (WhatsApp
+  quand il est renseigné) ; colonne 3 — 🏠 Actualités · 📿 Rosaire ·
+  🕯️ Thème · 🖼️ Galerie + · 📖 Archives (les cinq rubriques, dans
+  l'ordre, naviguant dans l'onglet courant). Fond violet nuit du badge
+  « Bienvenue », barre © 2026, Facebook conditionnel ;
+- **⚠️ Erreurs récurrentes du Cloud, traitées** : le veilleur de fichiers
+  est désarmé (`fileWatcherType = "none"` — fini les
+  « inotify instance limit reached » au démarrage) et le rattrapage des
+  micro-coupures embrasse la transaction rendue au repos trop longtemps
+  (SQLITE_BUSY / « idle for too long » / rollback) + un commit rejoué ;
+- **Migration douce** : deux colonnes ajoutées à `intentions_reserve`
+  (`publiee INTEGER DEFAULT 1`, `date_publication TEXT`) — idempotentes,
+  silencieuses, rien à faire manuellement.
+
+### 17. v7.9.11 — Le tableau de la chaîne, la paix des cinq téléphones, le pied de page assagi 📋
+
+- **📋 Le tableau de la chaîne, jour par jour** (à la demande du
+  fondateur) : dans « 📿 Chaîne des dizaines » (onglet 📊 Engagement
+  spirituel de l'équipe), les deux listes du jour (« ✅ Ont pointé » /
+  « ⏳ Pas encore pointé ») laissent place à une **grille jour × membre**
+  — « ✅ » dans la case du membre qui a fait sa méditation du jour, vide
+  sinon. La ligne du jour vit en tête (✨) ; **à 00h00 elle s'archive
+  toute seule** — les lignes passées demeurent consultables à souhait —
+  et la ligne du nouveau jour s'affiche. Une ligne « 📿 Total » résume
+  la période (7, 14 ou 30 jours au choix) ; **le même tableau sert aux
+  visiteurs** (passages anonymes, comptés jour par jour, sans jamais les
+  nommer) — `tableau_pointages_equipe()` / `tableau_pointages_visiteurs()`
+  dans `database.py`, le journal `dizaines_journal` relu tel quel (rien
+  n'est jamais effacé, aucun changement de schéma) ;
+- **🤝 La paix des cinq téléphones** (formation pastorale, cinq
+  téléphones sur toutes les pages) : toutes les requêtes partageaient le
+  même fil de la base — lectures croisées d'un fidèle à l'autre,
+  identifiants confondus, transactions rendues au repos (SQLITE_BUSY).
+  Désormais (`database.py`) : **un verrou sérialise chaque requête et
+  chaque commit**, et **les lignes sont capturées à l'instant de
+  l'exécution** — le résultat de chacun appartient à chacun
+  (`ResultatRequete`, `lastrowid`/`rowcount`/`description` par fil).
+  Aucun changement d'écran, aucune opération : la même prière, sans
+  bousculade. Le rattrapage des micro-coupures Hrana/Turso (v7.8.16,
+  v7.9.10) demeure à l'identique ;
+- **🔐 La connexion tient au copier-coller** (`app.py`) : les deux
+  champs forment désormais UN SEUL formulaire — coller l'utilisateur
+  puis le mot de passe ne déclenche plus de rechargement intermédiaire
+  qui essuyait le premier champ (« Identifiants incorrects » alors que
+  tout était pourtant collé). Tout part ensemble, au clic ; la parade
+  AUTOFILL (v2) demeure pour les gestionnaires de mots de passe ;
+- **🦶 Pied de page assagi** (`view_espace_membre.py`) : la colonne
+  centrale porte désormais le **logo des Équipes du Rosaire** (le
+  chapelet doré du Mouvement, dessiné pour lui :
+  `static/logo_equipes_rosaire.png`) et non plus l'icône de
+  l'application ; les trois phrases d'appel sont retirées (« Un jour,
+  une dizaine — la chaîne de prière universelle… », « Parle à ton
+  responsable d'équipe… », et la signature de version). Restent :
+  politiques, identité, paroisse du fidèle, contact responsable, les
+  cinq rubriques, © 2026, Facebook conditionnel ;
+- **🕯️ Zone du jour** (v7.9.10, vérifiée intacte) : le sas reste en tête
+  de 🙏 Coins des Intentions — « 🕊️ Traiter & envoyer en réserve »
+  immédiat, publication à 00h00 du jour suivant ;
+- **L'icône « Streamlit » du raccourci** : abandon respecté (décision du
+  fondateur) — plus aucune retouche de ce côté ; tout le dispositif
+  v7.9.8/7.9.10 (manifestes versionnés, pages d'installation, visages
+  incorporés) demeure en l'état ;
+- `_VERSION_APPLI = "v7.9.11"` ; aucun changement de base.
+
+### 18. v7.9.12 — La sentinelle du paquet complet 🕊️
+
+- **🕊️ La sentinelle du paquet complet** (`app.py`) : le 26 octobre au
+  soir, un versement arrivé incomplet chez l'hébergeur (les vues
+  nouvelles devant un `database.py` resté ancien) a fait voir un mur de
+  code à la place des pages. Désormais le cœur du paquet se fait
+  reconnaître AVANT tout autre import ; si l'un des gestes récents lui
+  manque (`tableau_pointages_equipe`, `tableau_pointages_visiteurs`,
+  `publier_reserve_due`, `envoyer_intention_du_jour_en_reserve`), la
+  maison affiche sa note douce — « 🕊️ Un instant — la maison se pare » —
+  et s'arrête net : jamais de traceback, ni pour la fondatrice, ni pour
+  les fidèles. La note signifie une seule chose : le versement est
+  incomplet — tout re-verser (d'abord vider le dépôt, ensuite verser le
+  paquet entier) ;
+- **Le scénario réel rejoué en test** : un arbre à l'ancien cœur (extrait
+  du zip v7.9.10) avec l'`app.py` actuel → la note douce s'affiche,
+  l'exécution s'arrête avant tout, zéro exception ; sur le dépôt complet,
+  la sentinelle se tait ;
+- `scripts/test_v795.py` réécrit à l'image du tableau de la chaîne
+  (v7.9.11) : le ✅ doit tomber dans SA case de la grille jour × membre,
+  le bug noms↔MatLoc (v7.9.2) reste mort ; cas limite de la membre sans
+  MatLoc précisé (pas de colonne, dénominateur des actifs) ;
+- `_VERSION_APPLI = "v7.9.12"` ; aucun changement de base.
+
+### 19. v7.9.13 — La main prudente du cœur 🤲
+
+- **🤲 La main prudente** (`database.py`) : le 26 octobre au soir, le
+  versement complet étant en place, les journaux du Cloud ont montré une
+  dernière pierre — chaque écriture (connexion, compteur de visites,
+  préparation de la mémoire) trébuchait au moment où le cœur relevait le
+  résultat de la requête, chez l'hébergeur seulement (les essais locaux,
+  au dialecte différent, ne pouvaient pas le voir). Désormais le cœur ne
+  demande plus de lignes à une écriture — une écriture n'en a pas à
+  rendre — et relève chaque métadonnée avec des gants : si le conducteur
+  distant se dérobe, la requête poursuit sa route au lieu de s'arrêter.
+  Les lectures restent exactement fidèles : une vraie erreur de lecture
+  remonte toujours, comme avant ;
+- **Le scénario de production rejoué en test** (`scripts/test_v7913.py`)
+  : un conducteur simulé au tempérament observé en production, branché
+  sur le vrai cœur — la chaîne du login (SELECT → INSERT → DELETE), le
+  CREATE TABLE de l'installation, les écritures aux métadonnées
+  dérobantes, la lecture honnête, sqlite3 réel et les fils concurrents :
+  24 contrôles, zéro exception ;
+- `_VERSION_APPLI = "v7.9.13"` ; aucun changement de base de données,
+  aucune migration.
+
+### 20. v7.9.14 — Le chapelet qui ne se perd plus, la paroisse qui est dite 📿
+
+- **📿 Le logo qui ne se perd plus** (`views/view_espace_membre.py`) : le
+  chapelet doré du pied de page est cherché d'abord À CÔTÉ DU MODULE
+  (l'adresse certaine, où que la maison soit installée), puis au coin
+  habituel ; relevé une seule fois puis gardé en mémoire, il ne dépend
+  plus du lieu d'où la page parle. S'il manque vraiment, un chapelet
+  emoji sobre le remplace — jamais de vide qui ressemble à un oubli ;
+- **🕯️ Le nom de la paroisse, dit quand il peut l'être** : le pied de
+  page montre désormais la paroisse chaque fois qu'il peut la connaître —
+  celle du fidèle reconnu (même si son statut dort : le pied ne décide
+  rien, il dit bonjour), sinon celle qui a ouvert la porte (QR / lien
+  paroissial qui a mené ici), avec le contact de son responsable ;
+  sinon, pied sobre — aucune placeholder, jamais ;
+- `scripts/test_v7914.py` : 28 contrôles — logo trouvé « ailleurs »
+  (maison installée dans un autre dossier), logo vraiment absent
+  (remplacement sobre), passant sans rien (pied net), passant accueilli
+  par une paroisse (nom + WhatsApp + adresse dans les liens), fidèle
+  reconnu, fidèle au statut endormi ;
+- `_VERSION_APPLI = "v7.9.14"` ; aucun changement de base de données,
+  aucune migration.
+
+### 21. v7.9.15 — Le logo partout, le menu du pied de page à droite 📿
+
+- **📿 Le fichier `images/logo.png` est désormais livré dans le paquet**
+  (c'est le chapelet doré sur fond violet). Jusqu'ici, l'application le
+  cherchait mais il n'était jamais livré : l'entête de l'Espace, la page
+  « Devenir membre » et l'écran de connexion affichaient un simple emoji
+  📿 à sa place. Pour passer un jour au logo officiel du Mouvement, il
+  suffira de déposer la nouvelle image sous le même nom — aucun code à
+  modifier ;
+- **📿 Recherche du logo renforcée** (`views/view_espace_membre.py`,
+  `app.py`) : le logo est cherché à côté des fichiers de l'application
+  (où qu'elle soit installée), puis depuis le dossier de lancement ; en
+  dernier recours, le chapelet livré dans `static/` prend le relais.
+  S'applique aux 4 emplacements : entête de l'Espace, page « Devenir
+  membre », pied de page, écran de connexion (colonne de gauche) ;
+- **➡️ Pied de page : la 3e colonne (menu) est décalée à droite** sur
+  les écrans larges : elle se cale sur le bord droit, bien séparée de la
+  colonne centrale (logo, nom, contact). Sur téléphone, les colonnes
+  s'empilent comme avant ;
+- `scripts/test_v7915.py` : logo trouvé depuis un autre dossier de
+  lancement, logo absent → emoji sobre (jamais de vide), entête et pied
+  de page rendus avec le chapelet incorporé, colonne droite présente ;
+- `_VERSION_APPLI = "v7.9.15"` ; aucun changement de base de données,
+  aucune migration.
+
+### 22. v7.9.16 — Le logo du pied de page en grand, la ligne « Paroisse » 📿
+
+- **📿 Logo du pied de page agrandi** : même largeur que le nom
+  « LES ÉQUIPES DU ROSAIRE » (≈ 240 px, proportion carrée conservée —
+  l'image est carrée) ; il se réduit proprement si l'écran est étroit
+  (`max-width:100%`). L'ombre suit désormais la forme ronde du chapelet
+  (`drop-shadow`) au lieu d'un carré (`box-shadow`) ; les attributs
+  figés `width="64"` sont retirés (taille pilotée par le CSS) ;
+- **🕯️ Ligne paroisse libellée** : « 🕯️ Paroisse : Nom de la paroisse »
+  (avant : le nom seul) ;
+- `scripts/test_v7916.py` : 12 contrôles (taille CSS 240 px + secours
+  `max-width`, ombre ronde, libellé paroisse, pied sobre sans paroisse,
+  colonne droite conservée) ; `test_v7914` mis à jour au nouveau
+  libellé ; vérification de version de `test_v7915` rendue insensible
+  au numéro ;
+- `_VERSION_APPLI = "v7.9.16"` ; aucun changement de base de données,
+  aucune migration.
+
+### 23. v7.9.18 — Republier, les actualités dans le fil, multi-photos, chaîne de séance ⛓️
+
+- **📤 Bouton « Republier »** (sceau du diocèse, section « 🧹 Déjà publiés —
+  à ranger ») : 2e bouton à côté de « ✅ Marquer comme publié (sans
+  republier) ». Il ajoute le contenu de la soumission comme une NOUVELLE
+  publication (utile quand la version en ligne diffère — ex. bande
+  défilante remplacée). L'insertion est factorisée (`_inserer_publie`,
+  partagée avec « ✅ Publier ») : une seule logique ;
+- **détection des doublons affinée** (`_deja_publie`) : pour prière,
+  méditation, bande défilante et actualité, le TEXTE doit correspondre en
+  plus du titre — un même titre avec un contenu différent est une NOUVELLE
+  version, elle repart dans « En attente de validation » (audio : titre +
+  fichier) ;
+- **📰 Actualités dans le fil d'actualité** : `_render_actualites` est
+  appelée DANS `_render_fil_actualites` (public + membre) — le fil allégé
+  v7.9.3 les masquait totalement (publications `actualite` invisibles
+  nulle part) ; titre « 📰 Actualités », appels extérieurs retirés ;
+- **📷 Multi-photos Galerie +** (Souvenirs / Témoignages) :
+  `file_uploader(accept_multiple_files=True)` dans la saisie diocèse
+  (téléversement Cloudinary via `sauvegarder_illustration`) ; les URLs
+  cohabitent dans `image_url` séparées par « | » (`urls_galerie`,
+  `supprimer_photos_galerie` dans services.py) ; l'affichage Espace de
+  Prière boucle sur toutes les photos ; rétrocompatible (1 URL = rendu
+  inchangé) ;
+- **⛓️ Chaîne de la dernière séance** : nouvelle table `chaine_seances`
+  (equipe_id, date_seance, ordre = N° méd. « 10,17,09,… », absents =
+  « présents spirituellement », date_enregistrement) + `_assurer_table_
+  chaine_seances` (création douce), `enregistrer_chaine_seance`,
+  `derniere_chaine_seance`, `historique_chaines_seance` (database.py) ;
+  bloc `bloc_chaine_seance(equipes, prefixe)` dans components.py :
+  traduction maillon par maillon (« X aura pour prochain Y — N° méd. Z,
+  méditera et priera son intention jusqu'à la prochaine séance », chaîne
+  refermée sur le premier), intention du prochain lue dans la réserve
+  (`intention_reserve_pour_numero`), saisie avec aperçu en direct
+  (virgules ou flèches), vérification des N°, historique 12 séances ;
+  intégré dans l'onglet intentions (équipe) et « 🙏 Coins des Intentions »
+  (paroisse) ;
+- `scripts/test_v7918.py` : parser de l'ordre (virgules/flèches, boucle
+  fermée, doublons), enregistrement + lecture de la dernière chaîne,
+  `_inserer_publie` par type, détection titre+texte, `urls_galerie` /
+  `supprimer_photos_galerie`, rendus AppTest (bloc chaîne, galerie,
+  fil) ;
+- `_VERSION_APPLI = "v7.9.18"` ; une seule nouveauté de base :
+  la table `chaine_seances` (création douce, idempotente).
+
+### 24. v7.9.19 — Chaîne YouTube, photos sans hébergeur, réserve réunie, carte repliée 📚
+
+- **▶️ Chaîne YouTube dans le pied de page** : la ligne « ▶️ Notre chaîne
+  YouTube » rejoint la colonne centrale, sous le contact du responsable
+  paroissial (constante `LIEN_YOUTUBE_CHAINE` en tête de
+  `view_espace_membre.py` ; vide = ligne absente) ;
+- **🛕 Carte vidéo juste avant le pied de page** : la carte « Annonce de
+  pèlerinage » quitte la tête du fil d'actualité et s'ouvre maintenant sur
+  toutes les pages de l'Espace de Prière, juste avant le pied de page
+  (appel dans `show_espace_membre`, entre le corps de page et
+  `_render_pied_de_page`) ;
+- **🖼️ Galerie + : plus d'échec qui bloque** — quand l'hébergement d'images
+  (Cloudinary) n'est pas configuré ou indisponible, chaque photo est quand
+  même acceptée : elle est réduite (800 px, JPG) et rangée dans
+  `static/galerie/` (nouveau `sauvegarder_photo_locale` dans services.py) ;
+  son adresse `/app/static/galerie/…` s'affiche comme n'importe quelle
+  photo (affichage Espace de Prière élargi, suppression locale avec
+  l'entrée) ; le message d'échec ne survient que si MÊME le rangement
+  local a échoué ;
+- **➕ Champs de lien additionnels** dans la saisie Galerie + : le bouton
+  « ➕ Ajouter un champ photo » (à côté du champ « LIEN de photo ») crée
+  autant de champs que voulu (« ➖ Un champ de moins » pour réduire) ; les
+  champs sont préservés quand on corrige une saisie (fin de
+  `clear_on_submit`, nettoyage par génération `gal_gen`) ;
+- **📚 Réserve d'intentions réunie** (paroisse) : titre simplifié
+  « 📚 Réserve d'intentions » ; la liste « 🗂️ Intentions en réserve —
+  toutes les équipes » réunit les réserves des équipes (membres comme
+  visiteurs), lecture seule ; retirés : « ➕ Ajouter une intention à la
+  réserve », l'ancienne liste paroissiale et « ⛓️ Chaîne de la dernière
+  séance » au niveau paroisse ;
+- **📚 Réserve d'équipe : la chaîne d'abord** : « ⛓️ Chaîne de la dernière
+  séance » passe AVANT la réserve (c'est elle qui la pourvoit) ; dans
+  « ⛓️ Enregistrer la chaîne d'une séance », la liste des membres s'affiche
+  à la verticale juste après la date, avec la zone de saisie de SON
+  intention en face de chaque membre — elle rejoint directement la réserve
+  (jamais par la 🕯️ Zone du jour) ; « ➕ Ajouter une intention à la
+  réserve » retiré (équipe et paroisse) ;
+- **⛓️ Phrase de chaîne** : « N° 10 — X prie pour Y — N° méd. 17. » (au
+  lieu de « X aura pour prochain Y… ») ; sous chaque maillon, TOUTES les
+  intentions du N° méd. (principale + surplus) ;
+- **➕ Le surplus est bienvenu** : `ajouter_intention_reserve` n'accepte
+  plus seulement une intention par N° méd. — un N° peut en porter
+  plusieurs ; le membre ou le visiteur qui médite ce N° voit ses
+  intentions augmentées selon le surplus (`intentions_reserve_du_numero`,
+  `intentions_reserve_surplus` dans database.py ; la ligne du livret
+  ajoute « 🕯️ Et elle intercède aussi … » pour chaque surplus) ; la grille
+  des compteurs affiche « 1/1 +2 » quand un N° porte un surplus ;
+- **🙏 « Vos intentions à une équipe » repliée à l'arrivée** : la rubrique
+  reste un expander habillé comme la carte « 📿 Découvrez les Équipes du
+  Rosaire ! » (dégradé, liseré or, coins arrondis), se présente repliée
+  sous forme de carte, avec la mini-ligne « cliquez pour ouvrir ▾ / cliquez
+  pour replier ▴ » (posée et retournée par le mini-script) ;
+- **Colonne centrale du pied équidistante** : sur les écrans larges, les
+  trois colonnes ont exactement la même largeur (le centre du logo tombe
+  au juste milieu des deux extrêmes, le menu reste calé à droite ; mobile
+  inchangé) ;
+- `_VERSION_APPLI = "v7.9.19"` ; aucun changement de schéma de base.
+
+### 25. v7.9.20 — La vidéo à la demande, la réserve qui se renouvelle, les cartes qui restent closes 📿
+
+- **🛕 La carte vidéo porte son nom d'aujourd'hui** : la date du pèlerinage
+  est passée — « Annonce de pèlerinage » devient **« Vidéo à la demande »**
+  partout : constante `LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE`, fonction
+  `_carte_vidéo_a_la_demande`, titre de la carte, phrase « Regardez la
+  vidéo à la demande sur la chaîne des Équipes du Rosaire — Diocèse de
+  Grand-Bassam », `title` du lecteur. Le lecteur, la place (juste avant le
+  pied de page) et le remplacement par un simple lien restent inchangés ;
+- **📚 La réserve d'intentions a une durée de vie** (`purger_reserve_expiree`
+  dans database.py, réveil paresseux appelé aux lectures comme aux tirages) :
+  une intention confiée par un **VISITEUR** (🕯️ Zone du jour) vit **20 jours
+  après sa prise en charge** — elle quitte la réserve à 00h00 du 21ᵉ jour ;
+  une intention de **MEMBRE** (posée en face de son N° dans la ⛓️ Chaîne)
+  vit **jusqu'à la prochaine séance** : la nouvelle saisie de la chaîne la
+  libère (`enregistrer_chaine_seance` ; celles notées à cette séance suivent
+  juste après, intouchées ; une correction de saisie le même jour ne
+  détruit rien) ; les vieilles lignes orphelines d'avant les réserves
+  d'équipe suivent la règle des 20 jours ; les libérées passent `active=0`
+  et quittent vues, compteurs et tirages ; le message d'enregistrement de
+  la chaîne signale combien d'intentions ont quitté la réserve ;
+- **🔔📿 La mémoire d'un jour des deux cartes tient EN BASE**
+  (`cartes_vues`, création douce ; `marquer_carte_vue` / `carte_deja_vue`) :
+  la session est vidée à chaque rechargement et les cookies sont refusés
+  quand l'Espace est vu depuis une page extérieure — la carte revenait
+  donc sans cesse. Désormais « 📌 Marquer l'alerte comme lue » et « J'ai
+  honoré mon engagement de ce jour » notent la fermeture en base, pour la
+  journée, via une clé du lecteur sans cookie ni session
+  (`_cle_lecteur_pdr` : MatLoc du membre dans l'adresse ; empreinte hachée
+  navigateur + adresse réseau pour un visiteur — aucune donnée personnelle
+  gardée) ; la carte revient le lendemain, ou dès qu'un NOUVEAU feuillet
+  paraît ; les cookies (v7.9.17) restent posés en secours quand ils
+  marchent ;
+- **📿 Le visiteur retrouve sa présence du jour** : après un rechargement,
+  « ✅ Merci Sainte Mère pour ton aide de ce jour ! » et le bouton « J'ai
+  honoré mon engagement de ce jour » reviennent (la présence du visiteur
+  est retrouvée en base par son jour de naissance,
+  `dizaine_visiteur_pointee`) — et un passage ne compte plus deux fois
+  dans la chaîne quand la page est rechargée ;
+- `_VERSION_APPLI = "v7.9.20"` ; un seul ajout de schéma, création douce :
+  la table `cartes_vues` (aucune opération demandée à l'hébergeur).
+
+### 26. v7.10.0 — Le questionnaire du feuillet, l'envoi en mission, les dizaines hors ligne 📝✈️📥
+
+- **📝 Le questionnaire du feuillet mensuel** : les questions et exercices du
+  feuillet deviennent un questionnaire répondu dans l'Espace de Prière.
+  *Composition* (Service Communication → 🕯️ Thème pastoral, zone « 1 Bis. » —
+  nommée « 2️⃣ ter » à sa naissance, renumérotée en v7.10.2,
+  `gerer_questionnaire_feuillet` dans components.py) : lignes en forme de
+  question repérées dans le texte des sections saisies (`feuillet_questions_detecter`,
+  reprise d'un clic) ou questions tapées à la main ; trois types de réponse
+  (texte libre / Oui-Non / choix proposés), question obligatoire ou non,
+  ordre ajustable (⬆️ ⬇️), question active ou retirée ; lecture des réponses
+  reçues, par question (compteurs pour Oui-Non et choix, réponses signées
+  ligne à ligne) et carnet Excel. *Réponse* (🕯️ Thème → Vue d'ensemble, sous
+  la vitrine du feuillet, `_render_questionnaire_mensuel` — appelée pour les
+  visiteurs comme pour les membres, la page Thème portant désormais le
+  contexte du lecteur) : un membre répond sous son MatLoc (clé « M:… », ses
+  réponses reviennent pré-remplies, il peut les corriger et renvoyer) ; un
+  visiteur signe du nom qu'il choisit (clé « N:nom-doux ») ; les questions
+  obligatoires sont exigées ; répondre à nouveau remplace SES réponses du
+  mois, jamais celles des autres (tables `feuillet_questions` et
+  `feuillet_reponses`, création douce dès l'init et à la volée) ;
+- **✈️ L'envoi en mission** (équipe → 📌 Suivi → onglet « ✈️ Envoi en
+  mission », `_onglet_missions` dans view_equipe.py) : le responsable ouvre
+  une mission (nom, objectif, date, lieu, personnes de l'équipe choisies
+  par cases à cocher + personnes venues d'ailleurs une par ligne) ; le
+  Gestionnaire en tire la **FICHE D'ENVOI EN MISSION** imprimable
+  (`_fiche_envoi_html` : entête Mouvement/diocèse avec logo, bandeau
+  équipe/paroisse/date/lieu, objectif, grille numérotée des envoyés avec
+  N° méd. et contact, Marc 16,15, signatures responsable d'équipe +
+  responsable paroissial) ; après la mission, le **RAPPORT DE MISSION** se
+  remplit (déroulement, grâces reçues, difficultés, propositions,
+  participants effectifs) et donne la **FICHE DE RAPPORT DE MISSION**
+  imprimable (`_fiche_rapport_html`). L'impression (`_rendre_fiche_imprimable`)
+  sort la fiche SEULE sur le papier (CSS @media print ciblé) via le bouton
+  « 🖨️ Imprimer la fiche (ou l'enregistrer en PDF) » ; chaque fiche
+  s'emporte aussi en fichier HTML autonome (bouton « 📥 Télécharger ») ;
+  les fiches se gardent dans l'équipe, re-imprimables à souhait ; mission
+  retirée = suppression définitive volontaire (tables `missions`,
+  `mission_creer` / `missions_equipe` / `mission_rapport_enregistrer` /
+  `mission_supprimer`) ;
+- **📥 Les dizaines priées hors ligne** (la récupération « comme ✕
+  Terminer ») : en fin de livre « 🕯️ Un jour, une dizaine », sous le
+  pointage du jour, l'expander « 📿 Tu as prié hors ligne ? Remets tes
+  journées dans la chaîne » (`_recuperer_dizaines_hors_ligne`) reçoit le
+  fichier exporté/partagé par l'application Android de méditation du
+  quotidien (fonctionne sans internet). Le lecteur (`_lire_jours_dans_fichier`)
+  est tolérant : JSON (liste de dates ou d'objets avec un champ
+  date/jour/date_prière/…) comme texte simple (une date par ligne, tout
+  séparateur) ; formats reconnus 2026-10-28, 28/10/2026, 28-10-2026,
+  28.10.2026, « 28 octobre 2026 » ; les dates à venir et les lignes
+  incompréhensibles sont écartées (plafond 400 journées par fichier,
+  `MAX_IMPORT_DIZAINES`). L'enregistrement (`importer_dizaines_hors_ligne`
+  dans database.py) est IDEMPOTENT : membre par MatLoc (UNIQUE matloc+jour)
+  et visiteur par (jrnais, jour) — repasser le même fichier ne recompte
+  rien ; le jour du fichier qui tombe aujourd'hui vaut présence du jour
+  (la bannière « J'ai honoré mon engagement » revient) ; message de
+  confirmation : ajoutées / déjà comptées / laissées de côté ;
+- `_VERSION_APPLI = "v7.10.0"` ; la sentinelle du paquet complet (app.py)
+  connaît désormais `feuillet_reponses_enregistrer`, `mission_creer` et
+  `importer_dizaines_hors_ligne` ; trois tables neuves à création douce
+  (`feuillet_questions`, `feuillet_reponses`, `missions`) — aucune
+  opération demandée à l'hébergeur.
+
+### 26. v7.10.1 — La vidéo reste à l'accueil, la règle d'or pour les membres, la maison rapide 🛕📜⚡
+
+- **🛕 La vidéo ne suit plus le lecteur partout** (demande : « la vidéo à la
+  demande se comporte comme un pied de page ») : la carte
+  (`_carte_vidéo_a_la_demande` dans `show_espace_membre`) ne s'ouvre PLUS
+  sur toutes les pages de l'Espace de Prière. Elle retrouve sa place de
+  carte d'accueil : visible uniquement sur la page d'arrivée
+  (« 🏠 Actualités », publique comme membre), juste avant le pied de page
+  — absente du livre ouvert (dizaine, méditation, prière des intentions,
+  livret mensuel) et des autres rubriques (Rosaire, Thème, Galerie,
+  Archives, Mes évènements). La prière reste toute à la prière ;
+- **⚡ Le lecteur vidéo se réveille en douceur** : `loading="lazy"` sur
+  l'iframe YouTube — la carte est en bas de page, le navigateur ne charge
+  plus la vidéo à l'ouverture, seulement quand le fidèle descend la voir ;
+- **📜 La règle d'or pour les MEMBRES** (demande : « je suis en train de
+  prier pour moi-même ») : jusqu'ici seul le VISITEUR était protégé par
+  son jour de naissance. Désormais la fiche du membre
+  (`fiche_membre(matloc)` : jour de naissance tiré de la date de
+  naissance — « 1990-05-17 » comme « 17/05/1991 » — ET nom complet
+  prénom+nom, lue une seule fois par visite) écarte SES PROPRES
+  intentions : au tirage principal (pool `intentions_equipes`, par jour
+  ET par nom), dans le surplus de la réserve
+  (`intentions_reserve_du_numero(..., nom_exclu=…)` — une intention notée
+  à son nom dans la chaîne de séance ne lui revient plus), et une
+  attachement ancienne qui serait la sienne n'est plus montrée (le tirage
+  la remplace tout seul). La clé de nom remet les mots en ordre
+  (`_nom_cle` : « Odette ONIBONKOU » = « ONIBONKOU Odette » — la fiche
+  porte Prénom Nom, la chaîne note Nom Prénom). Le visiteur du même N°
+  méd. continue de porter l'intention du membre, et rien ne change pour
+  lui ; s'il ne reste que la sienne, le membre reçoit le secours
+  universel (« La Paix dans le monde ») — la chaîne ne se casse jamais ;
+- **⚡ La maison rapide** (demande : « la lenteur au clic Égrener la
+  dizaine et à l'ouverture de l'Espace ») : les contrôles doux de tables
+  (`_assurer_*` : 7 fonctions) repartaient À CHAQUE PAGE — le contrôle de
+  `intentions_reserve` seul relançait 5 ALTER perdus à chaque appel, et
+  il était appelé plusieurs fois par page : jusqu'à 36 requêtes pour
+  ouvrir la dizaine, dont 20 allers-retours perdus (chez l'hébergeur
+  distant, chaque requête est un aller-retour réseau — c'était la
+  lenteur). Désormais chaque table est reconnue UNE FOIS par processus
+  (`_TABLES_RECONNUES`, `_table_reconnue` / `_table_averee`) : la même
+  ouverture descend à 18 requêtes, et sur un serveur en route chaude les
+  contrôles ne coûtent plus AUCUNE requête. Mesures réelles : accueil
+  16 → 15 requêtes, dizaine 36 → 18 (et 0 contrôle répété ensuite) ;
+- `_VERSION_APPLI = "v7.10.1"` ; AUCUN changement de schéma de base de
+  données, aucune opération demandée à l'hébergeur.
+
+### 27. v7.10.2 — La vidéo porte son nouveau lien, les paroisses se partagent les intentions, le questionnaire passe par le diocèse 🛕📚📋
+
+- **🛕 Nouveau lien de la vidéo à la demande** (lien changé par l'utilisatrice
+  sur l'application, adopté ici pour que les prochains paquets le portent) :
+  `LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE` =
+  `https://www.youtube.com/watch?v=hYv04JVIALI&list=RDhYv04JVIALI&start_radio=1`
+  (l'ancien `youtu.be/RHrIgEeepO8` disparaît). La carte extrait l'identifiant
+  du format `watch?v=` comme de `youtu.be/` : les deux écritures marchent.
+- **📚 Les paroisses se voient et se partagent les intentions** (demande :
+  « les paroisses ne se voient pas, par conséquent elles ne peuvent pas se
+  partager les intentions ») : la réserve était déjà LA MÊME pour tout le
+  diocèse (les tirages de l'Espace puisent dedans sans frontière) — ce qui
+  manquait, c'est la VUE. Désormais chaque intention en réserve porte le
+  NOM DE SA PAROISSE (celle de son équipe, ou celle notée à l'entrée en
+  réserve pour les visiteurs — `reserve_lignes_paroisse_nommee`) : la vue
+  paroisse (« 🙏 Coins des Intentions » → 📚 Réserve) liste « toutes les
+  paroisses » avec 🏘️ sur chaque ligne, et le diocèse reçoit UN MENU
+  PROPRE « 📚 Réserve d'intentions » (entre « 📌 Suivi » et « 🕯️ Espace
+  spirituel ») avec la grille des 20 N° méd. et la liste étiquetée par
+  paroisse. Chacune voit ce que les autres partagent ; la chaîne fait
+  circuler le reste.
+- **📋 Le questionnaire SOUMIS AU DIOCÈSE** (question : « le questionnaire
+  du feuillet n'est-il pas soumis au diocèse ? ») : SI, désormais — la
+  même règle que le feuillet (« le Service Communication ne publie JAMAIS
+  d'elle-même », v7.8.6). Zone « 1 Bis. » : après les questions, le bloc
+  « 📨 Soumettre le questionnaire au diocèse » (résumé lisible des questions
+  actives emporté dans la soumission ; statuts 🟡 attente / ✅ validé le…
+  / ❌ refusé + motif / 🗓️ programmée, comme le feuillet) ; côté diocèse au
+  SAS, la soumission « 📋 Questionnaire du feuillet » se lit (les questions
+  s'affichent une à une) et « ✅ Publier » lève le voile (« ❌ Refuser » le
+  garde posé, motif communiqué). TANT QUE le diocèse n'a pas validé le mois,
+  le questionnaire NE PARAÎT PAS dans l'Espace de Prière
+  (`feuillet_questionnaire_publie` en garde de `_render_questionnaire_mensuel`).
+  Une correction se resoumet (version corrigée) comme le feuillet. AUCUNE
+  nouvelle table : la soumission vit dans `soumissions_comm`
+  (type `questionnaire`, convention date_evenement=année / lieu=mois).
+- **✍️ Reprise d'une question d'un clic RÉPARÉE** (défaut : « Écris d'abord
+  la question. » au moment d'ajouter, obligeant à copier-coller) : la
+  question reprise par « ➕ Reprendre » rejoint le champ par SA CLÉ
+  (`qf_new_txt`, posée dans la session avant le dessin du champ) — avant,
+  la valeur passée en `value` était ignorée quand le champ avait déjà vécu.
+  Le clic remplit, on retouche si on veut, « 💾 Ajouter » prend.
+- **🔢 La numérotation redevient la nôtre** (proposition adoptée telle
+  quelle) : « 2️⃣ bis. Le feuillet mensuel en Équipe » → **« 1. Le feuillet
+  mensuel en Équipe »** et « 2️⃣ ter. Le questionnaire du feuillet » →
+  **« 1 Bis. Le questionnaire du feuillet »** — l'ancien préfixe « 2️⃣ »
+  portait le souvenir des zones 1️⃣/2️⃣/3️⃣ retirées en v7.8.5 (le « 2️⃣ est
+  resté » après l'import).
+- `_VERSION_APPLI = "v7.10.2"` ; AUCUN changement de schéma de base de
+  données (la soumission du questionnaire réutilise `soumissions_comm`),
+  aucune opération demandée à l'hébergeur.
+
+### 28. v7.10.3 — La réserve redevient l'affaire des paroisses, le diocèse s'efface 📚
+
+- **Correction de lecture de la v7.10.2 ②** : l'observation « les paroisses
+  ne se voient pas, par conséquent elles ne peuvent pas se partager les
+  intentions » n'était pas une demande de partage — c'était le rappel du
+  principe posé dès la v7.9.10 (« les intentions, c'est une affaire des
+  paroisses ») : **les intentions sont une affaire de paroisse, de ses
+  membres et de ses visiteurs ; le diocèse n'a rien à voir dedans.**
+- **La rubrique « 📚 Réserve d'intentions » QUITTE le menu du diocèse**
+  (entre « 📌 Suivi » et « 🕯️ Espace spirituel ») : l'écran et son entrée de
+  menu disparaissent. La réserve se lit là où elle vit : dans la vue
+  paroisse (« 🙏 Coins des Intentions » → 📚 Réserve) et dans chaque équipe.
+- **La vue paroisse reprend sa liste d'origine** : « 🗂️ Intentions en
+  réserve — toutes les ÉQUIPES », sans nom de paroisse sur les lignes
+  (la fonction d'étiquetage `reserve_lignes_paroisse_nommee`, v7.10.2, est
+  retirée). La réserve réunit les intentions des MEMBRES (posées en face de
+  chaque membre dans la ⛓️ Chaîne de la dernière séance) et des VISITEURS
+  (passées par la 🕯️ Zone du jour) ; lecture seule ici.
+- **Rien d'autre ne bouge** : la grille des 20 N° méd. et les compteurs
+  restent ceux de la chaîne universelle ; les tirages de l'Espace de
+  Prière, la 🕯️ Zone du jour (paroissiale, v7.9.10), les durées de vie
+  (visiteur 20 jours, membre jusqu'à la prochaine séance) et le surplus ne
+  changent pas. La vidéo (nouveau lien) et le questionnaire soumis au
+  diocèse (v7.10.2 ① et ③) restent tels quels.
+- `_VERSION_APPLI = "v7.10.3"` ; AUCUN changement de schéma de base de
+  données, aucune opération demandée à l'hébergeur.
+
+### 29. v7.10.4 — Le questionnaire vit sa vie après publication, et tout se lit à nouveau 📝🕯️👁️
+
+- **Le parcours du questionnaire, une fois publié** — il paraît sous le
+  feuillet (🕯️ Thème → 🔭 Vue d'ensemble), il y reste pendant son mois, et
+  il **revient avec son feuillet à la relecture** : à la FIN de la lecture
+  du livret (dernière page, comme les exercices au dos d'un livret papier),
+  le questionnaire du mois relu attend le lecteur — celui qui n'avait pas
+  répondu peut encore répondre, membre (sous son MatLoc) comme visiteur
+  (nom choisi). Les réponses nourrissent toujours le MÊME mois.
+- **Nouvel onglet « 🕯️ Thème »** dans « 🕊️ Gestion de l'Espace Spirituel →
+  📋 Contenu existant », entre « 🙏 Prières / 📖 Méditations » et
+  « 🖼️ Galerie + » : la gestion APRÈS publication, mois par mois (feuillet
+  du moment comme mois passés). L'onglet montre l'état du mois (feuillet
+  publié ? questionnaire voilé/soumis/paru ?), les questions telles que les
+  fidèles les voient, et **les réponses reçues question par question** avec
+  le carnet Excel. Les retouches de questions restent en « 1 Bis. » (📡
+  Communication) ; la parution reste au SAS.
+- **Qui voit les réponses ?** La cellule Communication et le diocèse, dans
+  cet onglet — jamais les fidèles entre eux : chacun ne retrouve que SES
+  réponses (elles l'attendent dans le formulaire, il peut les corriger et
+  renvoyer). Elles demeurent mois après mois ; le carnet les emporte à tout
+  moment. La lecture des réponses est devenue une fonction partagée : la
+  zone « 1 Bis. » et l'onglet « 🕯️ Thème » servent la même.
+- **Les textes invisibles sont revenus à la lumière** : l'Administration
+  est peinte sur fond blanc et l'Espace de Prière sur fond bleu nuit, mais
+  les libellés des champs, les notes, les alertes et les titres d'expanders
+  suivaient le mode (clair/sombre) du téléphone — sur un écran en mode
+  sombre, les textes de la ⛓️ chaîne d'une séance et du questionnaire
+  devenaient invisibles sur blanc ; sur un écran clair, c'était le tour des
+  questions dans l'Espace. Chaque espace verrouille désormais SES couleurs
+  de lecture (encre bleue sur blanc / clair sur bleu nuit), quel que soit
+  le mode du lecteur — les cartes jaunes gardent leur encre foncée (v7.7.4).
+- `_VERSION_APPLI = "v7.10.4"` ; AUCUN changement de schéma de base de
+  données, aucune opération demandée à l'hébergeur.
+
+### 30. v7.11.0 — L'intention appartient à celui qui est prié, et tout se lit quelle que soit la page ⛓️🕯️
+
+- **L'appartenance des intentions dans la chaîne** — sous chaque maillon
+  « X prie pour Y », l'intention affichée est celle de **Y** (la personne
+  PRIÉE), lue dans la 📚 réserve à SON N° méd. ; sans intention, la carte
+  ne dit plus « ajoutez-la dans la réserve » mais prie le membre PAR SON
+  NOM : « ⚠️ {Nom} — N° méd. Y est prié(e) de communiquer son intention au
+  responsable. »
+- **L'enregistrement d'une séance pose les intentions maillon par maillon**
+  (fin de la liste « une zone par membre » qui faisait écrire l'intention
+  du prochain en face du mauvais nom — c'est elle qui attribuait à tort les
+  intentions dans la réserve) : après la date, l'ordre et les absents, la
+  zone « 🕯️ L'intention de {Nom} (N° méd. Y) » apparaît sous chaque
+  maillon, et l'intention rejoint la réserve à la hauteur de Y.
+- **Pastorale ouverte à tous** : les « présents spirituellement » (hors
+  chaîne) ont aussi leur zone d'intention dans l'enregistrement — leurs
+  intentions sont accueillies comme celles des visiteurs, à leur N° méd.
+- **Les connecteurs de la carte** (« prie pour », « — N° méd. X. ») et les
+  textes d'intention portent leur couleur claire : posés sur la carte bleu
+  nuit, ils ne devaient plus rien hériter de l'encre foncée de la page.
+- **Les libellés du questionnaire restent lisibles sous toutes leurs
+  formes** : chaque espace verrouille ses couleurs de lecture pour TOUTES
+  les façons que Streamlit a de dessiner un champ (toutes versions), le
+  formulaire du questionnaire ne dessine plus de cadre clair dans l'Espace,
+  et ce qui s'écrit dans un champ reste foncé sur blanc — à la vitrine
+  comme à la fin de la lecture du livret.
+- **Onglet « 🕯️ Thème »** (📋 Contenu existant) : l'étiquette « 📝
+  questionnaire » ne se pose plus que sur les mois qui portent réellement
+  un questionnaire (questions ou soumission) — avant, tous les mois la
+  portaient.
+- `_VERSION_APPLI = "v7.11.0"` ; AUCUN changement de schéma de base de
+  données, aucune opération demandée à l'hébergeur.
+
+### 31. v7.11.1 — L'alerte d'une semaine, les missions en période et en groupes, les dizaines du jour ⏳✈️
+
+- **🔔 L'alerte « nouveau feuillet » vit UNE SEMAINE** (à la demande : «
+  maintenir l'alerte pendant une semaine après sa première diffusion ») :
+  la fenêtre passe de 45 jours à 7 jours, comptés depuis la PREMIÈRE
+  diffusion. Une nouvelle colonne `feuillets_publications.premiere_diffusion`
+  est posée UNE FOIS à la première publication ; républications d'une
+  version corrigée ne la touchent plus — l'alerte ne rallonge pas et ne
+  revient pas. Pendant la semaine, elle revient chaque jour tant qu'elle
+  n'est pas marquée lue ce jour-là (mémoire d'un jour inchangée) ; la
+  mention porte « en diffusion depuis le JJ/MM/AAAA » (la première
+  diffusion, pas la républication).
+- **✈️ Les missions se déroulent sur UNE PÉRIODE** : « une mission se
+  déroule sur une période débutant le lendemain de la dernière séance de
+  prière mensuelle jusqu'à la prochaine séance ». Le formulaire propose
+  d'office le lendemain de la dernière séance enregistrée (chaîne de
+  séance de l'équipe) ; la fin se laisse vide = « jusqu'à la prochaine
+  séance » — dès que la séance suivante est enregistrée, la période se
+  referme toute seule sur sa date (nouvelle fonction
+  `mission_prochaine_seance`). Nouvelles colonnes `missions.date_debut`,
+  `date_fin` (retro-remplies avec `date_mission`) ; les fiches d'envoi et
+  de rapport affichent « 🗓️ Période : du … au … / jusqu'à la prochaine
+  séance ».
+- **✈️ L'équipe se scinde en groupes** : chaque mission porte son groupe
+  (A…Z, choisi à la préparation) et l'onglet se range par groupe — « ✈️
+  Les missions de l'équipe : groupe A », « groupe B », … Les missions
+  anciennes sans groupe rejoint le groupe A (rien ne se perd). La fiche
+  d'envoi porte « Équipe : … — groupe X ».
+- **📿 Dizaines du jour (onglet 💬 WhatsApp)** : réponse directe à «
+  peut-on alerter une personne sur son téléphone pour faire sa dizaine ?
+  » — la liste de ceux qui n'ont PAS encore pointé leur dizaine du jour,
+  chacun avec son bouton « 📱 Rappeler sa dizaine » : le message WhatsApp
+  s'ouvre déjà écrit chez le membre (le canal qui marche partout,
+  aujourd'hui, sans rien installer). Tout le monde a prié ? Un vert «
+  merci pour la chaîne » le dit.
+- `_VERSION_APPLI = "v7.11.1"` ; changement de schéma : 3 colonnes
+  `missions` + 1 colonne `feuillets_publications` (migrations idempotentes,
+  rétro-compatibles — aucune opération demandée à l'hébergeur).
+
+### 32. v7.12.0 — La chaîne alerte les téléphones : rondes 4×/jour, visiteurs dénombrés, fiches en PDF 🔔📅📄
+
+- **⏰ La ronde des dizaines (4 fois par jour)** : à **06h00, 12h00,
+  18h00 et 21h00** (heures de Côte d'Ivoire — l'hébergeur tourne déjà à
+  l'heure ivoirienne), la liste de ceux qui n'ont pas encore fait leur
+  dizaine est mise à jour et le rappel part. Mécanisme « lazy cron »
+  comme les publications programmées : le premier chargement de page
+  après l'heure dite sert la ronde, une seule fois (réclamation en base
+  `dizaines_rondes`). L'onglet 💬 WhatsApp affiche la bannière des rondes
+  (dernière mise à jour + comptages + rappels partis).
+- **🕯️ Les visiteurs de la chaîne rejoignent la liste** : tout visiteur
+  ayant confié une intention (zone du jour non traitée + réserve active
+  et publiée) doit sa dizaine chaque jour ; il est identifié comme les
+  membres — les anonymes portent **« Anonyme 1, Anonyme 2, Anonyme 3, … »
+  selon l'index du dénombrement** (l'ordre d'entrée dans la chaîne, stable
+  d'un jour à l'autre ; un rang par jour de naissance). Le contact laissé
+  à l'envoi voyage désormais avec l'intention (colonne
+  `intentions_reserve.auteur_contact`, rétro-remplie depuis la zone du
+  jour) : le bouton « 📱 Rappeler sa dizaine » s'ouvre chez le visiteur.
+- **📅 Le rappel calendrier (.ics)** — dans la carte « 🔔 Me rappeler ma
+  dizaine sur mon téléphone » de l'accueil de l'Espace (membres ET
+  visiteurs) : un fichier rendez-vous récurrent « 📿 Ma dizaine du jour »
+  à ajouter UNE fois (heure au choix : 06h/12h/18h/21h) — le téléphone
+  sonne chaque jour, même sans internet.
+- **🔔 La notification de l'application (push PWA)** — même carte : le
+  téléphone qui dit oui est noté (`push_abonnements`) ; les rondes lui
+  envoient le rappel tant que sa dizaine attend. Clés VAPID nées et
+  vivant en base (`parametres_app`) — RIEN à configurer. Le service
+  worker `static/sw.js` porte la notification ; sur iPhone, l'appli doit
+  être installée (iOS 16.4+). Le jour de naissance dévoilé (dizaine ou
+  intention) alimente l'abonnement (`push_abonnement_note_jrnais`) pour
+  ne pas réveiller qui a déjà prié.
+- **📄 La fiche de mission s'enregistre en PDF** : bouton DÉDIÉ
+  « 📄 Enregistrer la fiche en PDF » — un vrai fichier A4 (en-tête du
+  mouvement, bandeau d'identité, tableau des envoyés, deux signatures,
+  pied) ; dépendance `reportlab` ajoutée. L'aperçu vit DANS SON CADRE
+  (document autonome à hauteur juste) : le bouton 🖨️ posé dedans
+  n'imprime que la fiche, jamais le reste de la page.
+- **✈️ Missions — retouches** : le groupe se choisit de **A à J** (12
+  membres max par équipe — 20 à Notre Dame de l'Assomption : même par
+  groupes de 2, J suffit) ; le titre identifie l'équipe et le compteur
+  disparaît : « ✈️ Les missions de l'équipe 3 : groupe A » ; la fiche de
+  rapport porte les DEUX signatures « Le Responsable du groupe » et
+  « Le Responsable de l'équipe ».
+- `_VERSION_APPLI = "v7.12.0"` ; changement de schéma : colonne
+  `intentions_reserve.auteur_contact` + tables `dizaines_rondes`,
+  `push_abonnements`, `parametres_app` (migrations douces idempotentes —
+  aucune opération demandée à l'hébergeur).
+
+### 33. v7.12.1 — Les messages des membres portent le lien de SON espace (MatLoc) 🙏🌹
+
+- **📿 Le message WhatsApp des dizaines reformulé comme demandé** — pour
+  chaque membre en attente, le responsable ouvre un message déjà écrit :
+
+  ```
+  Bonjour Ahua Innocent 🙏
+  Un petit rappel fraternel : ta dizaine du jour t'attend 🌹
+
+  https://…streamlit.app/?espace=1&matloc=GBA-OISOJ
+
+  Que la Vierge Marie veille sur toi! 🙏
+  ```
+
+  Le membre est salué EN ENTIER (nom + prénom) ; la rose 🌹 remplace le
+  chapelet sur la ligne du rappel ; et surtout le lien porte **son
+  MatLoc** (`?espace=1&matloc=…`) : en le touchant, il arrive DIRECTEMENT
+  sur son espace, sans taper son code. Un membre sans MatLoc reçoit le
+  lien public — personne n'est exclu.
+- **🕯️ Les visiteurs suivent la même voix** : « Bonjour Anonyme 1 🙏 »
+  (ou son nom signé), même rappel, même clôture — le lien reste public,
+  le visiteur n'ayant pas de MatLoc.
+- **🔔 La notification de la ronde s'accorde** : même corps (« Un petit
+  rappel fraternel… »), même clôture ; elle portait déjà le lien MatLoc
+  de l'abonnement.
+- `_VERSION_APPLI = "v7.12.1"` ; aucun changement de schéma.
+
+### 34. v7.12.2 — Les raccourcis, pour de bon
+
+Le dossier des raccourcis est refermé une fois pour toutes : la page
+d'installation ne propose plus seulement le geste du menu, elle **pose une
+vraie application**.
+
+- **📲 Le bouton or « Installer l'application »** : quand le téléphone
+  sait installer (Android, Chrome), un vrai bouton apparaît tout seul en
+  haut de la page d'installation — un toucher, une acceptation, et
+  l'application est posée : icône au bon visage (chapelet doré / clé
+  dorée), ouverture plein écran, directement dans l'Espace ou la
+  connexion.
+- **🕊️ La page d'installation s'efface ensuite** : quand on ouvre le
+  raccourci, elle revoit immédiatement vers l'Espace de Prière (en
+  conservant le fidèle mémorisé et sa paroisse) — la carte d'installation
+  ne réapparaît jamais après la pose. Idem côté administration.
+- **👁️ Veille navigateur intégré** : ouverte depuis WhatsApp, Instagram
+  ou Facebook, la page l'annonce et explique le premier geste (« ⋮ →
+  Ouvrir dans le navigateur ») — le raccourci ne se pose que depuis le
+  navigateur.
+- **🔔 Le passeur des rappels s'installe partout** : la page
+  d'installation comme l'Espace de Prière installent désormais le service
+  worker des rondes dès l'arrivée (silencieusement, sans jamais demander
+  la permission) — le téléphone tient une « vraie application », et les
+  rondes 06h00 · 12h00 · 18h00 · 21h00 peuvent frapper même app fermée.
+- **Versionnage** : manifestes et icônes passent à `?v=7122` (les
+  téléphones relisent noms et visages au prochain ajout), le sw.js
+  enregistré passe à `?v=7122` des deux côtés.
+- `sw.js` : un nouveau maillon « passeur » (chaque demande file au
+  réseau, rien n'est retenu) — c'est lui qui rend la page « installable »
+  aux yeux du téléphone ; rien d'autre ne change pour l'application.
+- `_VERSION_APPLI = "v7.12.2"` ; aucun changement de schéma.
+
+### 35. v7.12.3 — Le dossier invisible retrouvé
+
+La page d'installation tournait le dos aux téléphones : chaque demande
+de fichier (carte d'installation, manifeste, icônes, passeur) recevait
+en retour la coquille de l'application — d'où la page blanche. Cause :
+le réglage qui active le service du dossier `static/` voyage dans un
+dossier qui commence par un point (`.streamlit/`) ; invisible dans les
+sélections ordinaires, il s'est égaré au versement dans le dépôt.
+
+- **Le réglage est dans l'app depuis v7.8.14** : rien à changer dans le
+  code — il faut seulement que le dossier `.streamlit/` (avec son
+  `config.toml`) soit présent à la racine du dépôt ;
+- **Le geste de réparation** : sur GitHub, « Add file → Create new
+  file », nommer `.streamlit/config.toml` (le point crée le dossier),
+  coller le contenu et valider — l'application redémarre toute seule ;
+- **La chaîne de vérification** : le lien violet « page d'installation »
+  ouvre la carte dorée en 2-3 secondes, le bouton or « 📲 Installer
+  l'application » attend en haut ; le badge de l'Espace affichera
+  v7.12.3 après le versement de ce paquet ;
+- `_VERSION_APPLI = "v7.12.3"` ; aucun changement de schéma ; aucun
+  changement de comportement pour les membres.
+
+### 36. v7.12.4 — La note au mot près, et les intentions qui se remplacent
+
+- **La note de la ⛓️ Chaîne de la dernière séance au mot près** :
+  « le voisin de droite devient le "prochain" de celui de la gauche »,
+  « L'ordre peut varier d'une séance à l'autre », et le paragraphe du
+  remplacement — « une intention de la chaîne de la dernière séance
+  remplace l'ancienne et reste visible dès son enregistrement chez le
+  N° méd. qui la porte — c'est elle qui pourvoit la 📚 réserve
+  d'intentions ». 🤫 Les intentions se portent, elles ne se commentent
+  pas.
+- **✏️ Mettre à jour les intentions de la dernière séance** : sous la
+  carte de la chaîne en vigueur, un nouvel espace reprend maillon par
+  maillon « X prie pour Y » avec, préremplie, l'intention que Y porte
+  déjà — ce qui change est remplacé (l'ancienne s'efface, la nouvelle
+  devient visible aussitôt sous le maillon), le surplus du N° méd.
+  reste intact, et rien à refaire pour ce qui ne bouge pas.
+  `database.py` gagne `remplacer_intention_reserve` (remplacement en
+  place : l'ordre de la réserve est préservé, le surplus ne bouge pas ;
+  s'il n'y a rien en place, l'intention est posée).
+- `_VERSION_APPLI = "v7.12.4"` ; aucun changement de schéma.
+
+### 37. v7.13.0 — Les règles de la ⛓️ Chaîne au complet, le livre qui se termine en merci, et l'icône qui ouvre le bon côté
+
+- **⛓️ Les règles de la Chaîne de la dernière séance, encodees** :
+  * une intention de la Chaîne est **d'office prise en charge** (elle
+    reste visible dès son enregistrement, sans attendre le lendemain) ;
+  * une intention de la Chaîne d'une équipe **ne peut pas être portée par
+    un membre d'une autre équipe**, quand bien même ils auraient les N°
+    méd. identiques — le tirage du membre est désormais limité à la
+    réserve de SON équipe (et aux intentions sans équipe) ;
+  * la réserve est pourvue par les intentions de la Chaîne de l'équipe et
+    de celles des visiteurs ; elle **nourrit** l'intention du prochain du
+    visiteur (en premier), les présents spirituellement (en plus de leur
+    héritage), et le surplus chez les membres présents physiquement
+    **tant qu'il provient d'un visiteur** ;
+  * l'équipier absent garde **son héritage** — l'intention qu'il portait à
+    sa dernière présence physique — jusqu'à son retour : à
+    l'enregistrement d'une séance, l'intention portée est capturée AVANT
+    la libération et s'attache à lui sans échéance ; celui qui revient
+    dans la chaîne repart à neuf. Le membre EN chaîne lit désormais,
+    à chaque ouverture du livret, l'intention EN PLACE au N° méd. de son
+    prochain (le remplacement se voit aussitôt) ;
+  * la note de la carte ⛓️ porte les règles au mot près ; la carte ne
+    montre plus que les intentions de l'équipe (et `remplacer_intention_
+    reserve` ne touche jamais la rangée d'une autre équipe) ;
+  * colonne `source` sur `intentions_reserve` ('chaine' / 'visiteur',
+    migration idempotente) + `fiche_membre_chaine`, `contexte_chaine_
+    membre`, `_pose_heritages_equipe`, `serie_dizaines_membre`.
+- **🕯️ Lignes d'intercession sans coquille ni redondance** : quand
+  l'intention nomme déjà sa bénéficiaire (« pour Jeanne A. … »), la ligne
+  ne répète plus « pour {qui} : » — fini le « pour AKA Jeanne : pour
+  Jeanne A. … ». Le livret comme l'aperçu paroisse passent par le même
+  helper `ligne_intercession` (components.py).
+- **📖 Livret « 🕯️ Un jour, une dizaine » réorganisé** : la page du
+  pointage (« 📿 La chaîne compte sur Toi » + bouton « ✅ Merci Sainte
+  Mère pour ton aide de ce jour ! ») devient l'AVANT-dernière, réduite à
+  la présence du jour et à la gratitude ; une NOUVELLE dernière page
+  accueille « 📿 Ta dizaine est capitale pour la chaîne — Merci pour ta
+  fidélité! — N dizaine(s) ce mois — À demain! 🕊️ » (sans les textes de
+  prière) quand le bouton ✅ (ou « ✕ Terminer ») a été touché ; l'expander
+  « 📿 Tu as prié hors ligne ? » passe en veilleuse
+  (`_RECUP_HORS_LIGNE_ACTIVEE = False`).
+- **📿 Ma mémoire du tableau, cadre doré dans le fil** : le membre voit
+  dans le fil de l'actualité sa propre ligne du tableau de la chaîne —
+  les 14 derniers jours (✅/·), le compteur du mois et la flamme des
+  jours de suite (`_carte_memoire_membre` ; le fil des visiteurs ne
+  change pas).
+- **🙏 « Vos intentions à une équipe » extériorisée** : la carte dorée
+  interne devient le visage du dépliant replié — c'est elle que le
+  visiteur voit avant d'ouvrir (la bannière est hissée dans le titre du
+  dépliant, le vieux libellé texte s'efface).
+- **▷ Consignes vivantes des dépliants** : « cliquez pour replier ▴ »
+  déplié, « cliquez pour déplier ▾ » plié — sur le dépliant de découverte
+  comme sur la carte des intentions.
+- **📲 L'icône PWA ouvre le bon côté, même quand le statique trébuche** :
+  le manifeste voyage DANS la page (URI data:, adresses absolues, icônes
+  incorporées) — le raccourci posé depuis l'Espace ouvre l'Espace
+  (?espace=1) et porte le bon visage, même si /app/static/* répond mal ;
+  version du manifeste 7130.
+- `_VERSION_APPLI = "v7.13.0"` ; schéma : colonne `source` ajoutée à
+  `intentions_reserve` (ALTER doux idempotent, aucune autre migration).
+
+### 38. v7.13.1 — La programmation retrouvée, le parchemin qui porte le pointage
+
+- **⏰ LA PROGRAMMATION EN PANNE — trouvée et réparée** : le conducteur de
+  base distante (`libsql-experimental`, réinstallé à sa dernière version
+  lors du redéploiement de la réparation) rapporte un `rowcount` cumulatif
+  non fiable ; la réclamation anti-course du réveil (« != 1 ») se croyait
+  toujours devancée et le réveil devenait MUET — les publications
+  programmées n'étaient plus jamais effectuées. Désormais la réclamation
+  se fait PAR JETON relu (jamais par rowcount), le réveil journalise son
+  compte (dûes / publiées) et rend son compte à l'appelant ; les réservations
+  de rondes de rappels, le retrait en réserve et le compte des intentions
+  libérées passent eux aussi PAR LECTURE. `libsql-experimental` est épinglé
+  (`==0.0.55`). Un bouton « ⏰ Réveiller la programmation maintenant »
+  accompagne « 🗓️ Programmées » : il déclenche le réveil à la main et dit
+  ce qu'il a fait.
+- **📖 Le parchemin jaune porte le pointage** : la dernière page de contenu
+  du livre (le GLORIA PATRI et ses deux invocations — ou la Salve Regina le
+  jour du N° 20) accueille SOUS la prière « 📿 La chaîne compte sur Toi » et
+  le bouton « ✅ Merci Sainte Mère de Dieu pour ton aide de ce jour ! » —
+  sans Suivant, sans ✕ Terminer, sans expander. Le clic ouvre la page du
+  remerciement (« 📿 Ta dizaine est capitale… — À demain! 🕊️ ») dont le
+  bouton « ✕ Terminer » ramène au fil de l'actualité. La sortie « déjà
+  marquée » est prévue (message + ✕ Terminer).
+- **📿 « Mémoire de mes dizaines »** (ex « Ma mémoire du tableau ») : la
+  carte dorée se pose entre la carte de bienvenue et « 📿 Ta dizaine du
+  jour », les jours les plus récents d'abord (✨03/11 → 02/11 → …).
+- **🙏 La carte « Vos intentions à une équipe » n'est plus un pis-aller** :
+  le titre est DORÉ dès le premier rendu (CSS `:has` — plus d'attente du
+  script), et le script patiente jusqu'à 10 s pour hisser la carte dorée
+  complète en titre du dépliant.
+- **🌹 Les textes des rappels** (membre : « …Va sur ta page perso en
+  cliquant sur ce lien 🌹 » ; visiteur : « …Clique sur ce lien 🌹 ») —
+  posés directement dans le dépôt, confirmés.
+- `_VERSION_APPLI = "v7.13.1"` ; aucun changement de schéma.
+
+### 39. v7.13.2 — Le titre rendu à son or, la Ronde rendue à son équipe
+
+- **🙏 Le titre « Vos intentions à une équipe » est doré POUR DE BON** :
+  une fois la carte hissée en titre du dépliant, elle quittait le conteneur
+  où vivait sa règle d'or — et une règle blanche, plus spécifique, prenait
+  le dessus. L'or est désormais posé DEUX FOIS (dans le style de la page,
+  par identifiant, et dans la bannière elle-même, en ligne) : il suit la
+  carte partout, dès le premier rendu, sur tous les navigateurs.
+- **⏰ La Ronde des dizaines regarde la bonne maison** : au niveau d'une
+  équipe, la bannière (06h00 · 12h00 · 18h00 · 21h00) parle DÉSORMAIS DE
+  CETTE ÉQUIPE — sa liste d'attente (membres + visiteurs accueillis) et ses
+  rappels 🔔 partis ; au niveau d'une paroisse, les comptages de ses
+  équipes ; le niveau diocèse garde la ronde globale. Une petite table
+  miroir (`dizaines_rondes_equipes` — création douce idempotente, aucune
+  donnée existante touchée) est remplie par chaque ronde ; jusqu'à la
+  première ronde de la journée, la bannière d'une équipe retombe sur la
+  mention horaire simple.
+- `_VERSION_APPLI = "v7.13.2"` ; `libsql-experimental` reste épinglé.
+
+### 41. v7.13.4 — L'espace du visiteur (21 jours), les rappels qui portent l'adresse du cœur, et les guides de la maison
+
+*Merci La Vierge Marie — trois chantiers dans un même souffle : l'espace du
+fidèle qui confie son intention, le rappel Telegram qui porte enfin LE lien
+du membre (celui avec le MatLoc), et deux guides pour transmettre la
+maison.*
+
+- **🕊️ L'espace visiteur temporaire (21 jours)** — tout fidèle qui dépose
+  une intention dans « 🙏 Vos intentions à une équipe » reçoit, juste après
+  l'envoi, une clé et un lien (`?espace=1&vis=CLÉ`) : SA page à lui :
+  * son intention relue (datée, nommée à l'équipe, anonyme si anonyme) ;
+  * sa carte dorée « 📿 Mémoire de mes dizaines » (miroir visiteur de la
+    carte du membre : 14 jours, compteur du mois, flamme 🔥) — portée par
+    son jour de naissance, la même clé que le sas de la chaîne ;
+  * « 📿 Ta dizaine du jour » avec le CTA qui ouvre le livret DÉJÀ
+    positionné au mystère du jour — le sas est franchi d'avance (son jour
+    de naissance est posé en session) : rien à retaper ;
+  * la carte 🔔 des rappels (calendrier + notification), comme pour tous ;
+  * PAS les rubriques complètes — « comme un membre, mais juste pour
+    faire sa dizaine » : le reste de la vie de l'app ne le concerne pas ;
+  * à 21 jours, l'espace s'achève doucement : écran de remerciement et le
+    retour vers l'Espace de Prière (aucune suppression : la table garde
+    tout) ;
+  * les 21 jours sont affichés (« ouvert encore N jour(s), jusqu'au
+    JJ/MM/AAAA ») ; la page visiteur est épurée aussi de la carte vidéo ;
+    lien inconnu → un mot doux, et la porte de l'Espace de Prière reste
+    là.
+  * schéma : table `espaces_visiteurs` (création douce idempotente : cle,
+    nom, contact, jrnais, intention_id, equipe_id, paroisse_id,
+    date_creation, date_expiration) — aucune table existante touchée.
+- **✈️ Telegram — le lien du MEMBRE, celui avec le MatLoc, partout** :
+  * l'accueil apparié (« 📿 C'est noté ! ») porte désormais le lien de
+    l'Espace du membre pré-rempli (`?espace=1&matloc=…`) — celui qui
+    ouvrait l'Espace communautaire n'était pas LE sien ;
+  * le rappel de ronde annonce « Ouvre ton Espace tout prêt : » avant le
+    lien (le lien MatLoc était déjà là — la phrase le rend évident) ;
+  * **le bouton « ✈️ Recevoir le rappel par Telegram » est lisible pour
+    de bon** : le CSS global des liens (`.stApp .stMarkdown a`, lilas
+    `!important`) écrasait son style inline — le sélecteur l'épargne
+    désormais (`a:not(.btn-telegram-ro)`) et le bouton porte le bleu nuit
+    maison, l'encre blanche posée en `!important`, le liseré or : lisible
+    en mode clair comme sombre.
+- **📖 Les guides de la maison** (livrés à part, dans le dossier de la
+  livraison) : « Guide d'utilisation — Partie administrative » (les quatre
+  accès : équipe, paroisse, diocèse, communication) et « Guide
+  d'utilisation — Partie Espace » (visiteur, membre, espace visiteur de
+  21 jours) — à imprimer, partager, adapter.
+- `_VERSION_APPLI = "v7.13.4"` ; schéma : table `espaces_visiteurs`
+  (création douce idempotente, aucune table existante modifiée).
+
+### 40. v7.13.3 — Le fond bleu clair retrouvé, la Ronde qui parle sur Telegram
+
+- **⏰ Ronde des dizaines : le fond bleu clair est RETROUVÉ pour de bon** :
+  la bannière porte son fond bleu clair `#E8EAF6` (liseré `#9FA8DA`, encre
+  `#1A237E`) DANS son propre bloc HTML — plus par un `st.info` dont
+  l'habillage dépendait du thème de l'écran. **La mention horaire** (celle
+  qu'une équipe voyait en attendant sa première ronde notée depuis la
+  v7.13.2) **porte elle aussi le fond bleu clair en dur**. La portée de la
+  v7.13.2 est intacte : équipe / paroisse / diocèse. La bannière annonce
+  désormais « rappels partis — push et Telegram ».
+- **✈️ LA RONDE PARLE AUSSI SUR TELEGRAM (rappels 100 % automatiques)** :
+  * le bot de la maison (celui des notifications, token déjà en secrets)
+    gagne une OREILLE : `telegram_recolter_liaisons` lit au fil des
+    chargements de page (au plus une fois par minute, même charpente
+    lazy-cron que les rondes) les « /start <MatLoc> » — le membre n'a
+    qu'à toucher « Démarrer » sur le message déjà écrit par le lien ;
+  * table `telegram_liaisons` (migration douce idempotente) : chat_id,
+    matloc, nom, lie_le — un compte suit un membre, /stop le retire,
+    403 (porte fermée) aussi ;
+  * à chaque ronde (06h00 · 12h00 · 18h00 · 21h00), chaque compte
+    apparié dont la dizaine attend reçoit le même rappel fraternel que
+    sur WhatsApp — la voix de la maison, le lien avec MatLoc pré-rempli ;
+    les envois sont comptés ÉQUIPE PAR ÉQUIPE dans la miroir de la
+    v7.13.2 (comme les push) ;
+  * **confidentialité** : rien ne part vers personne sans son /start (la
+    porte ne s'ouvre que de l'intérieur) ; les publications restent au
+    chat des responsables — la boîte d'un membre ne reçoit QUE le rappel
+    de sa dizaine, jamais rien d'autre ;
+  * dans la carte « 🔔 Me rappeler ma dizaine sur mon téléphone » de
+    l'Espace, la troisième voie « ✈️ Ou par Telegram » : bouton
+    « ✈️ Recevoir le rappel par Telegram » (membres), état « Ton
+    Telegram est à l'écoute » quand c'est apparié ;
+  * `/stop` remet le silence ; un code inconnu n'appaire personne.
+- **💬 WhatsApp de paroisse : la fuite est fermée** — la vue paroisse
+  passe la paroisse courante aux quatre onglets (🎂 Anniversaires,
+  📢 Rappels réabonnement, 📿 Dizaines du jour, 📿 Espace de prière) :
+  les membres d'une autre paroisse n'y apparaissent plus jamais. Le
+  diocèse, lui, voit tout (voulu).
+- **📿 Dizaines du jour : la section se raconte** — ouverte sans équipe
+  ni paroisse (vue diocèse), elle dit enfin CE QU'ELLE CONTIENT : la
+  liste tenue ÉQUIPE PAR ÉQUIPE, les membres et visiteurs en attente,
+  le message WhatsApp prêt à partir, la bannière des rondes ; la ligne
+  d'invitation des vues équipe/paroisse est élargie au même ton.
+- **✅ Le bouton « ✅ Merci Sainte Mère de Dieu pour ton aide de ce
+  jour ! » est un vrai bouton** : une consigne l'annonce (« 👆 Touche ce
+  bouton pour marquer ta présence du jour — la page du remerciement
+  s'ouvrira ensuite ») pour le membre comme pour le visiteur — fini la
+  double perception confirmation/bouton.
+- `_VERSION_APPLI = "v7.13.3"` ; schéma : table `telegram_liaisons`
+  (création douce idempotente, aucune table existante modifiée).
+
+### 42. v7.13.7 — La page d'installation lisible pour de bon, et l'appel aux tests en deux visages
+
+- **🖍️ La zone des gestes Android/iPhone est redevenue lisible** : sur la
+  page d'installation intégrée (v7.13.6), la feuille de l'Espace repeignait
+  les étapes (`li`, `b`) en lavande clair sur la carte claire, et le bouton
+  « ◀️ Revenir à l'Espace de Prière » en lilas sur or — Streamlit retire
+  les `!important` des styles EN LIGNE (leçon déjà apprise avec le bouton
+  ✈️ en v7.13.4). Toute la page passe désormais par des classes de la
+  feuille (`inst-carte`, `inst-titre`, `inst-note`, `inst-pouce`,
+  `inst-retour`) : encre foncée garantie sur la carte claire, or et bleu
+  nuit garantis sur le bouton de retour ; le sélecteur des liens lilas
+  épargne le bouton (`:not(.inst-retour)`).
+- **👉 « Le plus simple » écrit en tête** : une carte jaune à liseré doré
+  annonce, AVANT les gestes de secours, le chemin court — toucher le bouton
+  or « Installer l'application », répondre « Installer » quand le
+  téléphone demande confirmation, l'icône 📿 se pose toute seule (et la
+  page confirme « ✅ Posée ! » toute seule).
+- **📨 L'appel aux tests existe en deux visages** : le texte WhatsApp de la
+  ronde (lien de l'Espace communautaire) et sa version personnelle — le
+  même message avec le lien de l'Espace de chaque équipier
+  (`?espace=1&matloc=…`). Textes livrés hors application.
+- `_VERSION_APPLI = "v7.13.7"` ; aucun changement de schéma ; aucun
+  changement de fichier statique (`_ver_pwa` reste 7136).
+
+### 43. v7.13.8 — Le bouton or qui ne disparaît plus, et les gestes de l'ordinateur
+
+- **📲 Le bouton or est là pour de bon, sur tous les écrans** : en
+  v7.13.6/7 il ne s'affichait que si le navigateur annonçait savoir
+  installer (`beforeinstallprompt`) — sur un navigateur silencieux
+  (ordinateur typiquement) il s'effaçait après quelques secondes et la
+  carte jaune promettait un bouton absent (constat du fidèle, capture à
+  l'appui : « Juste au-dessus, je ne vois pas aucun bouton »). Le bouton
+  reste désormais TOUJOURS visible ; la décision se prend au toucher :
+  installation native quand l'annonce est là, sinon le bouton conduit
+  LUI-MÊME aux gestes du menu (défilement doux + halo doré autour de la
+  carte des gestes), avec la note honnête sous le bouton.
+- **💻 Une carte « Ordinateur — Chrome / Edge » rejoint les gestes
+  Android/iPhone** : icône d'installation dans la barre d'adresse, menu
+  ⋮ → « Enregistrer et partager » → « Installer l'application » (ou
+  « Créer un raccourci ») — et le mot doux : sur ordinateur, l'Espace vit
+  très bien dans son onglet, l'icône de l'écran d'accueil attend les
+  téléphones.
+- **👉 La carte jaune dit la vérité des deux mondes** : « si le téléphone
+  demande confirmation, réponds "Installer" ; si rien ne s'ouvre, le
+  bouton t'emmène lui-même aux gestes du menu — même résultat, même
+  visage doré. »
+- `_VERSION_APPLI = "v7.13.8"` ; aucun changement de schéma ; aucun
+  changement de fichier statique (`_ver_pwa` reste 7136).
+
+### 44. v7.13.9 — Le manifeste de la même origine : l'icône porte enfin son nom, et les gestes viennent à la page
+
+- **📿 L'icône posée ne s'appelle plus « Streamlit »** : les captures du
+  terrain (dialogue d'installation nommant « Streamlit », bateau rouge ;
+  icône ouvrant la page des responsables) ont montré que l'URI `data:` —
+  une adresse SANS origine — était écartée par Chrome au moment
+  d'installer : le raccourci repartait sans manifeste et ouvrait la
+  racine… c'est-à-dire l'Administration. Le manifeste voyage désormais
+  en **`blob:`** — une pièce jointe fabriquée PAR la page, portant
+  l'adresse du site elle-même (même origine) — avec secours `data:` puis
+  `/app/static/` (`injecter_icone_pwa`, `_ver_pwa` → 7139). L'icône posée
+  depuis l'Espace ouvre l'Espace du fidèle (start_url avec matloc) ;
+  celle posée depuis l'Administration ouvre l'Administration.
+- **📲 Les gestes viennent à la page, plus aucun voyage obligatoire** :
+  les badges de bienvenue (membre et communautaire) portent un déplieur
+  « Les gestes, ici même — sans changer de page » (Android ⋮ / iPhone
+  Partager) ; le lien vers la page d'installation (bouton or) reste le
+  chemin doré. Fini l'attente qui tournait quand la salle dormait.
+- **🔑 La barre latérale de l'Administration dit les gestes elle-même** :
+  le lien vers `/app/static/install_rosaire_admin.html` (répondu par la
+  coquille HTML — le voyage tournait puis retenait l'Administration) est
+  remplacé par un expander « 📲 Poser le raccourci — les gestes », avec
+  le mot honnête : l'icône posée d'ici ouvre l'Administration ; celle de
+  l'Espace se pose depuis l'Espace.
+- **🕊️ La page d'installation dit les deux pièges** : la vieille icône
+  « Streamlit » posée par un essai d'avant (appui long → Supprimer, puis
+  reposer) et le temps de patience quand la page revient après une pause.
+- **Cohérence statique** : `manifest_*.json` (?v=7139) et pages
+  `install_rosaire*.html` passent au motif blob: — prêtes si le service
+  statique de la plateforme revient.
+- `_VERSION_APPLI = "v7.13.9"` ; aucun changement de schéma ; aucun
+  changement de données — la base vit chez l'hébergeur, on n'y touche
+  jamais.
+
+### 45. v7.13.10 — Fini le cache-cache : la carte d'identité vérifiée, et plus aucun lien qui fait tourner la roue
+
+- **📿 La carte d'identité est VÉRIFIÉE avant d'être gardée** : les
+  transports « exotiques » (URI `data:` en v7.13.0-8, pièce jointe
+  `blob:` en v7.13.9) dépendaient de la bonne volonté du téléphone au
+  moment d'installer — d'où l'icône « Streamlit » au bateau rouge,
+  teigneuse. Désormais la page pose D'EMBLÉE la carte de la maison même
+  — le fichier `/app/static/manifest_*.json` servi par l'application à
+  la MÊME origine que la page, le seul transport que tous les
+  téléphones acceptent — puis la relit elle-même (`fetch`, sans
+  mémoire) : si elle répond bien par une fiche Rosaire, rien ne bouge ;
+  si elle répond par autre chose, la page fabrique sa fiche en `data:`
+  (adresses absolues, icônes incorporées) et la pose à sa place
+  (`injecter_icone_pwa`, `_ver_pwa` → 71310). Plus aucune trace de
+  `blob:` ; plus aucune carte posée à l'aveugle.
+- **📲 Le lien qui faisait tourner la roue indéfiniment n'existe plus** :
+  la phrase « 📲 Garde-le sous la main… » des badges de bienvenue
+  (membre et communautaire) ne contenait plus d'ancre — mais elle
+  gardait un lien « page d'installation » qui RECHARGEAIT toute la
+  page (constat du terrain : « il tourne indéfiniment comme
+  précédemment de l'autre côté »). Les deux ancres disparaissent ;
+  un VRAI bouton de l'application « 📲 Ouvrir la page d'installation »
+  prend le relais : un simple changement de paramètre Streamlit
+  (`st.query_params`), l'onglet ne se recharge JAMAIS — donc plus
+  aucune roue, même quand la salle dort. Le Matloc reste dans
+  l'adresse.
+- **◀️ Le retour de la page d'installation ne voyage plus non plus** :
+  l'ancre « Revenir à l'Espace de Prière » (même famille de roue) est
+  remplacée par un bouton doré de l'application — le paramètre
+  `installer` s'efface, l'Espace revient, sans rechargement.
+- **🏛️ La config de la maison est lue PARTOUT** : `.streamlit/config.toml`
+  (enableStaticServing) voyage aussi à la racine du dépôt — les
+  versions de Streamlit qui ne lisent que la racine la trouvent, celles
+  qui lisent le dossier de l'application aussi. Le service statique
+  (carte d'identité, pages de secours, passeur) redevient déterministe.
+- **Cohérence statique** : `manifest_*.json` (?v=71310), pages
+  `install_rosaire*.html` (?v=71310) alignées sur la cascade vérifiée ;
+  passeur enregistré en `?v=71310` (même contenu, aucune surprise).
+- `_VERSION_APPLI = "v7.13.10"` ; aucun changement de schéma ; aucun
+  changement de données — la base vit chez l'hébergeur, on n'y touche
+  jamais.
+
+### 46. v7.13.11 — Le raccourci prend sa retraite ; la programmation se saisit sans rechargement
+
+- **📵 Le raccourci quitte la plateforme** (demande du fidèle : « retire
+  tout ce qui est en lien avec le raccourci ») : plus aucun manifeste
+  d'installation (`manifest_*.json` quittent le paquet), plus aucune
+  page d'installation (`install_rosaire*.html` partent), plus aucun
+  bouton ni geste ni déplieur (« 📲 Ouvrir la page d'installation »,
+  « 📲 Poser le raccourci — les gestes », « 📲 Garde-le / Garde-la sous
+  la main… »), plus aucune méta plein écran ni écoute d'annonce
+  d'installation — la plateforme ne propose plus rien à poser, d'aucun
+  côté. `injecter_icone_pwa` allégée : favicon 📿/🔑 de l'onglet, titre
+  court (guetteur v7.13.10), couleur du bandeau, mémoire du fidèle (une
+  icône déjà posée d'avant ouvre toujours « ton Espace, tout prêt ») et
+  passeur des rappels 🔔 (`?v=71311`) restent, eux. Les vieilles
+  adresses `?espace=1&installer=1` atterrissent simplement dans
+  l'Espace ; la phrase « astuce raccourci » du message WhatsApp des
+  liens personnels part aussi. Les rappels 🔔 et la Ronde (06h00 ·
+  12h00 · 18h00 · 21h00) continuent exactement comme avant.
+- **🗓️ « Programmer la publication » se saisit sans rechargement** :
+  date et heure vivent DANS UN FORMULAIRE — saisir la date puis
+  l'heure ne fait plus repartir la page au début (constat du terrain :
+  « la page se recharge et revient à la page primaire »). Au clic sur
+  « 🗓️ Programmer la publication », la programmation est enregistrée et
+  le résumé exact s'affiche. **Heure standard à 00h00** (au lieu de
+  08h00).
+- `_VERSION_APPLI = "v7.13.11"` ; fichiers statiques allégés (sw.js +
+  favicons 32 + icône des notifications + logo) ; aucun changement de
+  schéma ; aucun changement de données — la base vit chez l'hébergeur,
+  on n'y touche jamais.
+
+### 47. v7.13.12 — La mémoire unifiée : le téléphone et l'Espace se redonnent leurs journées
+
+- **🕊️ Le pont de la mémoire s'ouvre** (demande du fidèle : « ce qui est
+  saisi en hors-ligne se répercute dans le web et vice-versa sans
+  intervention extérieure »). À chaque ouverture de l'Espace membre, la
+  vue lit `?pont_jours=…` (les journées priées hors ligne que le
+  téléphone glisse dans l'adresse), les verse dans le journal par la
+  porte idempotente du livre (`importer_dizaines_hors_ligne` —
+  `UNIQUE(matloc, jour)`, jamais de recomptage), dit le mot doux
+  (« 🕊️ N journée(s) priée(s) hors ligne viennent de rejoindre ta chaîne »)
+  puis nettoie l'adresse. Et elle pose en retour, invisible dans la
+  page, la carte `#pont_memoire` portant `data-jours` (les 90 derniers
+  jours du membre, plus l'accusé de réception `data-recues`) : le
+  téléphone la lit dès que la page est peinte et sa « 📿 Mémoire de mes
+  dizaines » se met à jour — des deux côtés, sans intervention de
+  personne.
+- **📿 La porte de la récupération rouvre** (le mot demandé est venu) :
+  `_RECUP_HORS_LIGNE_ACTIVEE = True` et l'expander « Tu as prié hors
+  ligne ? Remets tes journées dans la chaîne » retrouve sa place en fin
+  de livre, à côté du pointage (l'appel s'était perdu depuis v7.13.1 —
+  il est reposé). Le fichier `ma_dizaine_fidelite.txt` du téléphone est
+  reçu comme prévu : chaque journée une seule fois, jamais recomptée.
+- **🧹 Le journal du README respire** : le double d'entrée v7.13.11
+  est retiré (une entrée, une fois).
+- `_VERSION_APPLI = "v7.13.12"` ; passeur des rappels en `?v=71312` ;
+  aucun changement de schéma ; aucun changement de données — la base
+  vit chez l'hébergeur, on n'y touche jamais.
+
+### 48. v7.13.13 — La porte du profil et la seconde berge : l'Espace rend sa fidélité au téléphone
+
+- **🕊️ La porte du profil (l'incursion demandée)** — quand l'adresse de
+  l'Espace membre porte `?pont=profil` (la toute première fois et chaque
+  changement de lien du Kit Union v7 se font « toujours sur le net »),
+  la vue pose une carte dorée « 🕊 Le pont vers l'application » avec un
+  bouton **« ✋ Reprendre dans l'application »** : la route
+  `madizaine://pont?…` porte en un seul voyage le profil complet (nom &
+  prénoms, Matloc, équipe, paroisse, WhatsApp, N° méd.), l'intention
+  portée (`intention_du_prochain_detail(matloc=…)` — lecture seule) et
+  la fidélité déjà cochée ici (90 derniers jours). Encodage
+  `%XX` (`quote_via=quote`) pour que le décodage du téléphone soit juste
+  (`Uri.getQueryParameter`), puis l'adresse s'allège (le paramètre part).
+- **📱 La seconde berge** — sous la carte « 📿 Mémoire de mes dizaines »,
+  un bouton HTML pur « 📱 N journée(s) de fidélité — reprendre dans
+  l'application » rend au téléphone la fidélité cochée sur le web ; le
+  téléphone la fond dans sa mémoire **en union** (`fusionnerJoursDuWeb`
+  du Kit v1.2 — ce qui y était reste, rien ne s'efface jamais, jamais
+  demain). La carte invisible `#pont_memoire` reste posée pour les
+  berges qui savent la lire.
+- **🔒 La confiance, inchangée** : la base n'est jamais touchée — la
+  réception des journées passe toujours par la porte du livre
+  (`importer_dizaines_hors_ligne`), le profil est lu, jamais écrit, et
+  seuls les jours véritables (ISO, jamais demain) voyagent.
+- `_VERSION_APPLI = "v7.13.13"` ; aucun changement de schéma ; aucun
+  changement de données — la base vit chez l'hébergeur, on n'y touche
+  jamais.
+
+### 49. v7.13.14 — Les boutons du pont à la maison, et la route qui sonne vraiment
+
+- **NOTE du pasteur** — plus de bouton doré improvisé sur l'Espace : les
+  deux boutons du pont (« ✋ Reprendre dans l'application » et
+  « 📱 N journée(s) de fidélité — reprendre dans l'application ») sont des
+  boutons de la maison — `st.link_button`, `type="primary"`,
+  `width="stretch"`, le même style que « 📿 Égrener la dizaine ». La carte
+  « 🕊 Le pont vers l'application » reste l'enseigne dorée du moment.
+- **La route qui sonne vraiment** — le lien nu `madizaine://…` laissait
+  certains Navigateurs sur une page muette (une nouvelle page s'ouvrait,
+  plus rien ne se passait, et au retour sur l'application rien n'était
+  rendu). Les routes partent maintenant emballées en
+  `intent://…#Intent;scheme=madizaine;package=com.example.madizaineapp;S.browser_fallback_url=…;end` :
+  le Navigateur sait QUI sonner, et s'il ne trouve pas l'application il
+  REVIENT à la page Espace du membre — jamais une page d'erreur. Chrome
+  reconstruit exactement `madizaine://pont?…` : le téléphone reçoit la
+  même route qu'avant, `recevoirPont` est intact.
+- **🔒 La confiance, inchangée** : lecture seule, la base n'est jamais
+  touchée ; l'UNION des journées, jamais d'effacement ; l'encodage `%XX`
+  reste celui que le téléphone décode.
+- `_VERSION_APPLI = "v7.13.14"` ; aucun changement de schéma ; aucun
+  changement de données.
+
+### 50. v7.13.15 — Le livret se feuillette, de la droite vers la gauche
+
+- **La demande** — « Transposer le modèle du livret — dans lequel les pages
+  se feuillettent de la droite vers la gauche — dans le web en lieu et
+  place de celui où l'on clique pour avoir une nouvelle page. »
+- **Le geste posé** — dans le livret du feuillet mensuel, chaque page entre
+  maintenant par la DROITE et se pose vers la GAUCHE (perspective douce,
+  le même mouvement que le livret de l'application « MA DIZAINE AU
+  QUOTIDIEN ») ; en revenant (« ◀ Précédent », « 📑 Sommaire »), la page
+  revient par la gauche. Le sommaire suit la même règle.
+- **La mécanique** — `_feuillement_livret` réutilise la mécanique « nonce »
+  de `_scroll_top` : le couple (page, sens) est injecté dans le style, donc
+  l'animation rejoue à chaque tour de page, et SEULEMENT à chaque tour (le
+  zoom A−/A+ et les interactions dans la page ne feuillettent pas).
+- **🔒 La confiance, inchangée** : lecture seule, la base n'est jamais
+  touchée ; aucun changement de schéma ; aucun changement de données.
+- `_VERSION_APPLI = "v7.13.15"`.
+
+### 51. v7.13.16 — Le livre de la dizaine se feuillette
+
+- **La demande** — « Côté web : je faisais allusion au livret de la dizaine
+  quand on clique sur “📿 Égrener la dizaine” du Fil de l'actualité. »
+- **Le geste posé** — le livre ouvert par « 📿 Égrener la dizaine » se
+  feuillette maintenant comme le livret du feuillet (v7.13.15) et comme le
+  téléphone : chaque page entre par la DROITE et se pose vers la GAUCHE —
+  à l'ouverture du livre, à chaque « Suivant ▶ », sur les pages
+  INTENTIONS, les dix « Je vous salue Marie », GLORIA PATRI et le
+  parchemin du pointage. Ici on ne recule jamais : chaque tour est un tour
+  en avant. La page du remerciement (interactive) garde son écran paisible.
+- **La mécanique** — la même aide `_feuillement_livret` (v7.13.15), la clé
+  portant la page du livre : l'animation rejoue à chaque tour, et
+  seulement à chaque tour.
+- **🔒 La confiance, inchangée** : lecture seule, la base n'est jamais
+  touchée ; aucun changement de schéma ; aucun changement de données.
+- `_VERSION_APPLI = "v7.13.16"`.
+
+### 52. v7.14.0 — La caisse de la cotisation et ses reçus numérotés (Phase 1 du paiement)
+
+- **La demande** — démarrage de la **Phase 1** du chantier « paiement des
+  abonnements / réabonnements / cotisations » : la caisse et les reçus,
+  **sans passerelle** — les montants et l'échéance étant posés par le
+  diocèse (adulte : abonnement 5 000 / réabonnement 5 000 FCFA ; jeune :
+  abonnement 3 500 / réabonnement 2 000 FCFA ; échéance de l'année
+  pastorale : **15 janvier 2027** ; en-tête des reçus : **Diocèse de
+  Grand-Bassam**).
+- **La migration douce** — la table `abonnements` (déjà chez elle) gagne
+  six colonnes de caisse posées idempotemment par `safe_migrate` :
+  `mode_paiement`, `numero_recu`, `origine`, `enregistre_par`,
+  `reference_ext`, `note`. Ni les membres, ni les intentions, ni aucun
+  écran existant ne bougent ; aucune valeur n'est écrite dans la base tant
+  que le diocèse n'a pas posé ses réglages.
+- **💼 Caisse de mon équipe** (rubrique « 📅 Abonnements » du responsable) —
+  les montants du diocèse affichés en tête, trois compteurs (cotisants,
+  total collecté, reste à régler), et pour chaque membre non à jour un
+  formulaire complet : nature (abonnement/réabonnement), montant
+  **pré-rempli selon le tarif de son équipe** (jeune/adulte), mode de
+  paiement (espèces, Wave, Orange Money, MTN MoMo, autre), note. Le clic
+  « Enregistrer le paiement + éditer le reçu » pose le paiement et ouvre
+  le **reçu numéroté** (COT-2026-00001, séquentiel par année pastorale) ;
+  le bouton 🧾 d'une ligne rouvre n'importe quel reçu.
+- **🧾 Le reçu PDF + QR** — une page A4 sobre : en-tête du porteur, numéro
+  en encadré, **QR de vérification publique**, fidèle, équipe, paroisse,
+  nature et année pastorale, montant, mode et date, situation à l'échéance,
+  signature du responsable. Le QR mène à l'écran public `?recu=N°` qui
+  confirme l'authenticité sans données sensibles — un reçu inventé ne
+  vérifie rien.
+- **🏛️ Caisse du diocèse** (rubrique « 📅 Abonnements » du diocèse) — les
+  réglages de la cotisation (montants, échéance, porteur), le total
+  collecté, l'**historique complet des reçus** (numéro, date, fidèle,
+  équipe, paroisse, nature, mode, signature), l'**export du trésorier
+  (Excel)** et le retéléchargement du PDF d'un reçu par son numéro.
+- **💳 Ma cotisation** (carte de l'accueil membre) — carte verte « à jour »
+  avec numéro de reçu et **reçu PDF téléchargeable**, ou carte ambrée « à
+  renouveler » avec les montants du diocèse (selon le tarif de l'équipe),
+  l'échéance et le chemin de la main propre ; l'écran annonce le Wave à
+  venir sans l'ouvrir encore (Phase 2).
+- **🔒 La confiance, inchangée** : une table existante augmentée par
+  migration douce ré-exécutable ; aucun écran existant ne change de sens ;
+  aucune donnée sensible dans l'écran public ; les montants, l'échéance et
+  le porteur ne s'écrivent en base QUE par le geste du diocèse.
+- `_VERSION_APPLI = "v7.14.0"`.
+
+### 53. v7.14.1 — « Abonnement - Réabonnement » : le titre rendu au module, l'échéance au 15 décembre 2026, la règle de la mention « NOUVEAU »
+
+- **Les observations du diocèse** — trois retouches demandées dès la mise
+  en service de la caisse : (1) le module porte son vrai titre
+  **« Abonnement - Réabonnement »** ; (2) l'échéance de l'année pastorale
+  est remise au **15 décembre 2026** ; (3) la règle des tarifs est
+  précisée sans ambiguïté.
+- **La règle de la maison (mention « NOUVEAU »)** — tout équipier déjà
+  dans la base se **RÉABONNE** : adulte (tout membre hors équipe Jeune)
+  à 5 000 FCFA, jeune (équipe Jeune) à 2 000 FCFA ; la mention
+  « NOUVEAU » seule ouvre l'**ABONNEMENT** : adulte à 5 000 FCFA,
+  nouveau Jeune à 3 500 FCFA.
+- **Les écrans qui suivent le titre** — la rubrique des deux caisses
+  s'appelle « 📅 Abonnement - Réabonnement », la carte de l'accueil
+  membre titre « 💳 Abonnement - Réabonnement — à jour / à renouveler »,
+  le reçu PDF s'intitule « REÇU D'ABONNEMENT » et l'écran public
+  « Vérification d'un reçu — Abonnement · Réabonnement » (avec l'échéance
+  au format français).
+- **Le formulaire de la caisse d'équipe** — la nature s'ouvre sur
+  **🔄 Réabonnement** (le cas courant, conformément à la règle) ; choisir
+  « 📝 Abonnement (mention NOUVEAU) » re-pré-remplit le montant selon le
+  tarif de l'équipe du membre, d'un clic. Le cadre de modification suit
+  les mêmes libellés.
+- **L'échéance repositionnée** — les défauts du code portent
+  **2026-12-15** (carte membre, réglages diocèse, reçu PDF) ; une
+  migration douce ne déplace en base QUE la valeur ANCIENNE
+  (2027-01-15) si elle s'y était posée d'un clic sur « Poser les
+  réglages » sans la changer — toute valeur posée volontairement reste
+  chez elle, et le diocèse peut reposer ses réglages à tout moment.
+- **🔒 La confiance, inchangée** : même table, mêmes six colonnes de
+  caisse ; la migration de l'échéance ne touche qu'une clé de réglage, et
+  seulement si elle porte exactement l'ancienne valeur par défaut.
+- `_VERSION_APPLI = "v7.14.1"`.
+
+### 54. v7.14.2 — La carte qui connaît son membre : « Rappel » / « Information », champ « Statut », deux échéances, la nuit violette
+
+- **La personnalisation demandée par le diocèse** — la carte d'accueil du
+  membre n'affiche plus les deux tarifs côte à côte : elle lit « 👤 Mon
+  profil » et dit SA situation, une seule ligne de tarif, avec les
+  libellés exacts :
+  - le membre hors équipe Jeune sans mention se lit adulte →
+    **« ⏳ Rappel - Réabonnement »** · Année pastorale 2026 - 2027 ·
+    🔄 Réabonnement 5 000 FCFA · 🗓️ À régler au plus tard le 15/12/2026
+    délai de rigueur · 💼 Paie auprès de ton responsable d'équipe — en
+    espèces ou en mobile money (Wave, Orange Money) : il note ton
+    paiement et t'édite ton reçu numéroté immédiatement ;
+  - l'équipe Jeune suit le même modèle à 2 000 FCFA (réabonnement) et
+    3 500 FCFA (nouveau Jeune) ;
+  - le membre portant la mention « Nouveau » reçoit
+    **« ⏳ Information - Abonnement »** · 📝 Abonnement (5 000 adulte /
+    3 500 Jeune) · 🗓️ À régler au plus tard le 31/12/2026 — la différence
+    entre les dates d'échéance est normale.
+- **Le champ « Statut »** — posé dans « ➕ Nouveau membre » (espace équipe),
+  « ✏️ Modification » de « 👤 Mes membres » et le formulaire d'ajout de
+  l'espace paroisse : options **Ancien / Nouveau**. Le membre porte la
+  mention « Nouveau » pour **une année pastorale** : deux colonnes posées
+  par migration douce (`mention_nouveau`, `mention_annee`), la mention
+  retombe d'elle-même quand l'année passe — aucun travail de nuit. La
+  liste des membres affiche « 🌱 Nouveau 2026-2027 » tant qu'elle porte ;
+  une mention retombée se rappelle au responsable dans le formulaire.
+- **Les deux échéances partout** — réabonnement : 15/12/2026 (délai de
+  rigueur) · abonnement des nouveaux : 31/12/2026. Carte du membre,
+  encadré de la caisse d'équipe, réglages du diocèse (deux cases de date),
+  reçu PDF (« Situation d'abonnement » suit la nature du reçu) et écran
+  public de vérification : chacun montre la date de SA nature.
+- **La caisse s'ouvre sur la bonne ligne** — le formulaire de paiement
+  d'un membre ouvre la nature que porte sa mention (Nouveau →
+  Abonnement, sinon Réabonnement) et son badge « 🌱 Nouveau » se voit
+  dans la liste des non enregistrés ; le reçu rouvert par 🧾 choisit son
+  échéance tout seul.
+- **La carte quitte le jaune** — fond **violet foncé du pied de page**
+  (dégradé #241042 → #3B1177 → #4A148C), liseré et titres dorés comme
+  « 📿 Mémoire de mes dizaines » : les boutons et textes dorés du web
+  gardent leur éclat sur cette nuit-là ; la carte verte « à jour » reste
+  verte — la réussite se voit d'un regard.
+- **🔒 La confiance, inchangée** : deux colonnes NULL sur `membres`, une
+  clé de réglage de plus ; AUCUNE ligne de membre modifiée par la
+  migration, tout le monde commence Ancien et le responsable pose ses
+  mentions en connaissance de cause.
+- `_VERSION_APPLI = "v7.14.2"`.
+
+### 55. v7.14.3 — La caisse lit le profil : nature plus jamais un choix, montant non modifiable, fini le « Reçu n° None », reçu PDF sobre
+
+- **La nature n'est plus un choix** — dans « 💼 Abonnement - Réabonnement
+  — Équipe », la radio « Nature (la mention « NOUVEAU » ouvre
+  l'abonnement) » a quitté la caisse : le champ « Statut » de « 👤 Mon
+  profil » décide seul (mention « Nouveau » → Abonnement, sinon
+  Réabonnement) et la ligne du membre porte sa nature d'un coup d'œil —
+  « – ❌ Non enregistré · 🔄 Réabonnement » ou « · 📝 Abonnement (mention
+  NOUVEAU) ». Les badges « 🧒 tarif jeune » / « 🧑 tarif adulte » ont
+  quitté la liste avec elle.
+- **Le montant se montre, ne se discute plus** — le champ « Montant
+  (FCFA) » est automatique et non modifiable : il suit le profil du
+  membre (5 000 adulte · 3 500 nouveau Jeune · 2 000 Jeune).
+  La ligne garde « Mode de paiement » et « Note (facultative) ».
+- **L'encadré de la caisse épuré** — l'encadré des montants et « 📌
+  Règle de la maison » ont quitté l'écran ; il reste « 🗓️
+  Échéances : • Abonnement (nouveaux) — 31/12/2026 · • Réabonnement —
+  15/12/2026 (délai de rigueur) », sous « Période : Sept 2026 – Août
+  2027 ».
+- **« Membres 09/09 »** — remplace « ✅ Cotisants 9/9 » (zéros devant).
+  Au passage le compteur compte enfin les payés : l'ancienne jointure
+  comptait tout le monde, payé ou non — d'où un « 9/9 » immuable.
+- **Fini le « Reçu n° None »** — le numéro de reçu est posé sur TOUTES
+  les routes de notation (caisse ET correction « ✏️ »), et une ligne
+  déjà « paye » sans numéro (nées avant la caisse) reçoit son numéro
+  séquentiel en douceur, la première fois que la caisse ou la carte du
+  membre la relit — une seule fois, jamais renumérotée. La carte verte
+  dit « 🧾 Reçu n° COT-2026-00001 » ; si un numéro se fait attendre,
+  elle dit « Reçu n° en cours d'attribution » au lieu de « None ».
+- **La carte verte au titre de la nature** — « ✅ Abonnement — à jour »
+  ou « ✅ Réabonnement — à jour » selon l'opération, la ligne se réduit à
+  « Abonnement · année pastorale 2026/2027 · 5 000 FCFA · payée le
+  07/11/2026 » (le mode de paiement reste sur le reçu), suivie du
+  « 🧾 Reçu n° … ».
+- **Le reçu PDF sobre** — « Nature de l'abonnement : Réabonnement » (la
+  phrase « — couvre l'année pastorale… » a quitté le bloc), « Situation
+  d'abonnement : À jour » (l'échéance et la règle des montants ne
+  voyagent plus sur le papier), la ligne de prière retirée, et
+  l'identifiant de la maison sur le papier : le bloc « Membre » porte
+  « MatLoc : GBA-OISOJ » (l'ancien champ « matricule » reste la roue de
+  secours). Le titre du
+  papier (« RÉABONNEMENT — Année pastorale Sept 2026 – Août 2027 ») et
+  le QR de vérification restent en place.
+- **🔒 La confiance, inchangée** : aucune migration, aucune colonne
+  nouvelle ; la seule écriture nouvelle est le numéro de reçu posé sur
+  des lignes DÉJÀ payées qui n'en portaient pas — séquentiel, unique,
+  idempotent.
+- `_VERSION_APPLI = "v7.14.3"`.
+
+### 56. v7.14.4 — La relance (lecture seule) : qui n'est pas à jour, SON échéance, le message prêt à copier pour WhatsApp, l'export du suivi
+
+- **« 📣 Relances » dans la caisse d'équipe** — sous les trois métriques,
+  l'expander liste les membres non à jour avec, pour chacun, la nature
+  posée par « 👤 Mon profil » (« 🔄 Réabonnement » / « 📝 Abonnement
+  (mention NOUVEAU) »), le montant attendu (réglages du diocèse selon la
+  catégorie adulte/jeune), SON échéance (réabonnement au délai de
+  rigueur du 15/12/2026, abonnement des nouveaux au 31/12/2026) et le
+  drapeau d'urgence (« dans 31 jour(s) », « aujourd'hui même », « ⚠️
+  dépassée depuis N jour(s) »). Aucune écriture : la relance RELIT la
+  base — elle n'est pas une caisse.
+- **Le message collectif prêt à copier** — le cadre noir porte le texte
+  WhatsApp entier : les deux échéances au mot du diocèse, les montants
+  par profil, le chemin du paiement (les mots de la carte : « Paie
+  auprès de ton responsable d'équipe — en espèces ou en mobile money
+  (Wave, Orange Money) : il note ton paiement et t'édite ton reçu
+  numéroté immédiatement »), la signature « Le responsable d'équipe ».
+  Le bouton de copie de `st.code` fait le geste.
+- **Le message pour UN membre** — un sélecteur parmi les en attente
+  produit son message individuel : sa nature, son montant, SON échéance
+  (réabonnement au délai de rigueur ; abonnement mention « Nouveau »
+  sans lui), l'appel au réveil si l'échéance est passée (« ⏰ … va voir
+  ton responsable dès aujourd'hui »).
+- **La paroisse relaie** — dans « 📅 Abonnements », chaque équipe en
+  attente ouvre « 📣 Message de relance (WhatsApp) » : le même message
+  collectif, prêt à porter au responsable d'équipe.
+- **Le diocèse tient le livre** — dans « 📅 Abonnement - Réabonnement »,
+  l'expander « 📣 Relances — N membre(s) en attente » dresse le tableau
+  de tous les en attente (Paroisse, Équipe, Nom, MatLoc, Nature, Montant
+  attendu, Échéance, Urgence) et pose « 📥 Export du suivi (Excel) » :
+  feuille « Suivi_AAAA » (tous les équipiers actifs avec leur situation
+  — à jour : nature, montant payé, date, N° reçu ; en attente : nature
+  attendue, montant attendu, échéance) + feuille « Relances » (les en
+  attente seuls). Le carnet du trésorier, prêt pour la fin de saison.
+- **Le moteur** — `database.cotis_relances_lignes(equipe_id=None,
+  paroisse_id=None, annee_debut=None)` : la lecture en bloc (une seule
+  requête, la nature lue sur les colonnes « mention » comme
+  `cotis_nature_membre`, la catégorie au nom de l'équipe) qui alimente
+  les trois écrans ; `components.cotis_reglages_aff` (échéances
+  formatées), `cotis_relance_ligne_urgence`, `cotis_relance_message_collectif`
+  et `cotis_relance_message_membre` (les textes).
+- **🔒 La confiance, inchangée** : aucune migration, aucune colonne
+  nouvelle, AUCUNE écriture — le geste entier est un SELECT ; les
+  réglages du diocèse restent où ils sont.
+- `_VERSION_APPLI = "v7.14.4"`.
+
+### 57. v7.14.5 — Le message de relance, retouché au mot du diocèse : plus de redondance, le nom du responsable signe
+
+MOT DU USER (le gabarit annoté du message de relance) : la salutation
+ne répète plus l'équipe (la signature la porte déjà) ; la parenthèse
+qui accompagnait « 💼 Montants » quitte TOUTE l'application ; le nom du
+responsable complète la signature ; la carte « 👤 Mon profil » est dite
+« dans ton Espace personnel ».
+
+- **Le message collectif, au mot près** — « 🙏 Chers équipiers, » (l'équipe
+  n'est plus dite deux fois) ; « 💼 Montants : » (la parenthèse qui
+  l'accompagnait est retirée de l'app entière : message de relance,
+  réglages du diocèse, README, commentaires) ; « Ta carte « 👤
+  Mon profil » dans ton Espace personnel te dit ta situation exacte. » ;
+  la signature devient le NOM du responsable (colonne « responsable » de
+  l'équipe — sinon le compte connecté) puis « Votre responsable —
+  {équipe} », séparés du corps par une ligne vide. Sans nom connu, la
+  signature garde « Votre responsable — {équipe} » seule.
+- **Le message pour UN membre signe pareil** — même signature (nom +
+  « Votre responsable — {équipe} »).
+- **Lecture seule, toujours** — aucun écrit de plus : on ne fait que
+  relire la colonne « responsable » qui existe déjà.
+- `_VERSION_APPLI = "v7.14.5"`.
+
+### 58. v7.15.0 — La relance mue en onglet, et le Samaritain reçoit sa carte : « 🛖 Mémoire de l'aubergiste : Luc 10,35 »
+
+MOT DU USER : « Je préconise que la section "📣 Relances — 09 en attente"
+soit déplacée et muée en onglet en remplacement de "💬 Messages WhatsApp -
+Équipe x / 📢 Rappels réabonnement". Penchons-nous sur « Mémoire de
+l'aubergiste ». »
+
+- **La relance déménage au menu (les trois espaces)** — la rubrique
+  « 💬 WhatsApp » devient « 📣 Relances », la page « 📣 Relances -
+  {équipe / paroisse / diocèse} » ; dans `afficher_whatsapp_tabs`, la
+  section « 📢 Rappels réabonnement » (l'ancêtre grossier : une liste et
+  un lien) cède sa place à l'onglet « 📣 Relances » qui porte le contenu
+  né en v7.14.4, déplacé de la caisse d'équipe (l'expander y est retiré —
+  déplacé, pas copié). Le libellé du radio reste STABLE (« 📣 Relances ») :
+  le compte changeant se dit dans la section (« 📣 Relances — NN en
+  attente »), jamais dans le libellé — un radio persistant ne survivrait
+  pas à un libellé vivant.
+- **Le meilleur des deux sections accueilli** — dans l'onglet, chaque en
+  attente reprend la ligne complète de la caisse (nature posée par
+  « 👤 Mon profil », montant, SON échéance, drapeau d'urgence) ET gagne le
+  lien « 📱 Rappeler {prénom} » de l'ancienne section quand le numéro
+  WhatsApp est connu (le message individuel signé voyage dans le lien).
+  Côté responsable d'équipe : une seule équipe, affichée à plat avec le
+  message collectif prêt à copier, signé du responsable (v7.14.5). Côté
+  paroisse et diocèse : les équipes en attente s'ouvrent en expanders
+  (« 📌 {équipe} — N en attente »), chacune avec son message collectif
+  signé de SON responsable. Lecture seule, comme toujours.
+- **Les quatre onglets respirent** — 🎂 Anniversaires, 📣 Relances,
+  📿 Dizaines du jour, 📿 Espace de prière : les trois autres gardent leur
+  place, ils n'ont pas déménagé.
+- **🛖 La carte de l'aubergiste** — dans l'Espace personnel, sous
+  « 📿 Mémoire de mes dizaines », sa sœur : « 🛖 Mémoire de l'aubergiste —
+  Luc 10,35 » (même nuit #121a45, même liseré d'or). Le Samaritain laissa
+  deux deniers à l'hôte : « Prends soin de cet homme. Et ce que tu
+  dépenseras en plus, je te le rendrai quand je reviendrai. » Dans la ⛓️
+  chaîne, chaque équipier est cet hôte : la carte dit le portage
+  d'aujourd'hui (la séance en vigueur, le N° méd. porté et SON
+  prochain), le dépôt posé à cet emplacement — la même voix que la ligne
+  de sa dizaine — ou la règle de la maison quand l'emplacement dort :
+  « La Paix dans le monde » veille jusqu'à la prochaine séance ; le
+  surplus des visiteurs (« ce que tu dépenseras en plus », v7.9.19) ;
+  l'héritage de l'absent (l'intention gardée jusqu'au retour, v7.13.0) ;
+  la fidélité du cahier (« Aucune dizaine notée n'est une prière absente »
+  — le ton est la promesse du Samaritain, jamais la vérification) ; et les
+  portages refermés, séance après séance (les dépôts tels que la base les
+  retient encore, les dizaines notées de chaque période), sous le sceau de
+  l'Écriture.
+- **Le moteur (lecture seule)** — `database.memoire_aubergiste(matloc,
+  limite=5)` relit le contexte ⛓️ (`contexte_chaine_membre`,
+  `historique_chaines_seance`), le dépôt en place
+  (`intention_reserve_pour_numero`, règle d'or v7.10.1 incluse), le
+  surplus (`intentions_reserve_surplus`), l'héritage (`prochain_attache`)
+  et le cahier (`dizaines_journal`) ; AUCUNE migration, AUCUNE écriture
+  nouvelle — les seuls réveils traversés (publication, purge) sont ceux
+  que la dizaine traverse déjà à chaque ouverture.
+- `_VERSION_APPLI = "v7.15.0"`.
+
+### 59. v7.15.1 — Le WhatsApp rétabli, l'aubergiste au mot près, et l'entête qui ne laisse plus de vide
+
+MOT DU USER : « 1 - La rubrique « 💬 WhatsApp » à rétablir. 2. 🛖 Mémoire
+de l'aubergiste — Luc 10,35 — la sœur de « 📿 Mémoire de mes dizaines »,
+de façon simplifiée, est la « 📿 Mémoire de mes dizaines » de celui qui me
+porte dans la chaîne de prière. […] La "🛖 Mémoire de l'aubergiste"
+présentera en réalité la « 📿 Mémoire de mes dizaines » de "N° 14 — AKESSÉ
+Bomo Bernadette". Tout simplement. Au cas où il n'a pas de séance alors
+les N° méd. entrent en action. La "🛖 Mémoire de l'aubergiste" doit être
+visible aussi dans l'application. 3. Il y'a toujours un vide dès que
+j'atterris sur la page web. Vois comment régler ce problème. »
+
+- **La rubrique « 💬 WhatsApp » rétablie (les trois espaces)** — le menu
+  reprend son nom d'origine et la page son titre « 💬 Messages WhatsApp -
+  {équipe / paroisse / diocèse} ». L'onglet « 📣 Relances » (déplacé de la
+  caisse, v7.15.0) reste à sa place dans la page, avec 🎂 Anniversaires,
+  📿 Dizaines du jour et 📿 Espace de prière : le meilleur des deux mondes.
+- **🛖 La carte de l'aubergiste redéfinie au mot près** — elle n'est plus
+  « mon portage » (v7.15.0) : elle est la « 📿 Mémoire de mes dizaines » de
+  CELUI / CELLE QUI ME PORTE dans la ⛓️ chaîne. La carte dit : SON maillon
+  au format de la séance (« ⛓️ Séance du 01/11/2026 — N° 14 — AKESSÉ Bomo
+  Bernadette prie pour MOTIAN TOFFÉ Ahua Innocent — N° méd. 10. »),
+  « 🕯️ Son intention (N° méd. 10) » — l'intention posée à MON N° méd.,
+  celle qu'il / elle veille pour moi (la règle d'or n'est PAS appliquée
+  ici, à dessein : c'est ma propre intention portée par mon aubergiste) —
+  puis SA fidélité des 14 derniers jours (« 📿 Sa mémoire de dizaines »),
+  simplifiée, avec le garde-fou de la maison (« Aucune dizaine notée
+  n'est une prière absente ») et le sceau de Luc 10,35. Les blocs surplus,
+  portages refermés et héritage de la v7.15.0 cèdent la place : la carte
+  est devenue « tout simplement » la mémoire de qui me porte.
+- **Les deux voies de l'aubergiste** — ① la séance en vigueur : dans
+  l'ordre des N° méd. enregistrés, mon aubergiste est le maillon QUI
+  PRÉCÈDE le mien (la chaîne se referme toute seule) ; ② sinon (aucune
+  séance enregistrée, ou hors de la chaîne du jour) LES N° MÉD. ENTRENT EN
+  ACTION : ordre croissant des N° méd. des membres actifs de l'équipe — le
+  N° méd. juste sous le mien me porte, et le plus petit N° est porté par
+  le plus grand. Sans intention posée à mon N° méd. : règle de la maison,
+  « La Paix dans le monde » veille jusqu'à la prochaine séance. La carte
+  se montre à coup sûr (elle ne se dérobe jamais — quand l'aubergiste
+  n'est pas encore identifiable, elle le dit). Moteur :
+  `database.aubergiste_du_membre(matloc)` — lecture seule, AUCUNE
+  migration, AUCUNE écriture ; la grille est partagée par
+  `_cases_memoire()` avec « 📿 Mémoire de mes dizaines ».
+- **LE VIDE D'ATERRISSAGE RÉGLÉ À LA RACINE** — le téléphone voyait un
+  grand vide sombre sous l'entête à chaque arrivée. La cause : l'entête
+  était « position: fixed » (hors flux) et le contenu poussé par un
+  padding-top de secours (330 à 380 px) que corrigeait un script qui
+  mesurait l'entête toutes les 400 ms — dès que ce script ne pouvait plus
+  joindre la page (montée de version Streamlit, iframe, navigateur), le
+  secours restait seul et le vide s'installait. Désormais : l'entête vit
+  DANS le flux (`.sticky-header` static), le contenu commence juste
+  dessous (padding-top: 0), et la colle au sommet est portée par SON
+  CONTENEUR Streamlit (« [data-testid="stElementContainer"]:has(
+  .sticky-header) { position: sticky; top: 0; } » — le parent
+  stVerticalBlock couvre toute la page, donc la colle tient de bout en
+  bout ; vérifié au navigateur, Streamlit 1.67, mobile 430 px). Plus
+  aucun script de mesure (`_mesure_entete` retiré), plus aucun padding de
+  secours, plus aucun vide possible — et si un vieux navigateur dort sur
+  :has(), l'entête reste simplement dans le flux, sans jamais laisser de
+  vide. En lecture (livre ouvert), l'entête s'efface en scrollant et la
+  barre du feuillet (.flt-barre) prend le relais, collée en haut.
+- `_VERSION_APPLI = "v7.15.1"`.
+
+### 60. v7.15.2 — La carte épurée, le sceau en gras, le pont sous l'entête, et l'aubergiste dans l'application
+
+MOT DU USER : « 1 - À retirer : "La 📿 mémoire de celui / celle qui me porte
+dans la ⛓️ chaîne" ; "Aucune dizaine notée n'est une prière absente : le
+cahier ne retient que ce qui se pointe — le Seigneur, lui, voit le cœur."
+2. Agrandir un peu et mettre en gras "Prends soin de cet homme. Et ce que
+tu dépenseras en plus, je te le rendrai quand je reviendrai." — Luc 10,35.
+3. 🛖 "Mémoire de l'aubergiste : Luc 10,35" pas visible dans l'application.
+4. Entête (voir captures d'écran). »
+
+- **🛖 La carte épurée** — le sous-titre « La 📿 mémoire de celui / celle
+  qui me porte dans la ⛓️ chaîne » et le garde-fou « Aucune dizaine notée
+  n'est une prière absente… » quittent la carte : le titre et le sceau
+  disent tout. La carte garde SON maillon (la voix même de la séance),
+  « 🕯️ Son intention (N° méd. …) », « 📿 Sa mémoire de dizaines » avec sa
+  grille, et ne se dérobe jamais (les deux « L'aubergiste attend »).
+- **Le sceau agrandi et en gras** — « Prends soin de cet homme. Et ce que
+  tu dépenseras en plus, je te le rendrai quand je reviendrai. » — Luc
+  10,35 : `font-size: 0.95rem` + `font-weight: bold` (il était en 0.75rem
+  fin), aux DEUX endroits — la carte pleine et la carte qui attend.
+- **LE PONT VIT SOUS L'ENTÊTE** — `_pont_memoire_hors_ligne` est appelé
+  APRÈS `_render_header` dans le flux membre : la carte « 🕊 Le pont vers
+  l'application », son bouton « ✋ Reprendre dans l'application » et le
+  flash des journées reçues ne poussent plus l'entête vers le bas (capture
+  1 du diocèse). Le flash naît en direct (`st.success`/`st.warning`) sous
+  l'entête — plus jamais posé en session au-dessus d'elle.
+- **LA MACHINERIE INVISIBLE NE LAISSE AUCUN VIDE** — le CSS du thème et le
+  div caché du pont (#pont_memoire) sont muets mais leurs conteneurs
+  Streamlit gardaient leur interligne de 16 px : quatre s'empilaient avant
+  l'entête à chaque atterrissage (66 à 150 px de vide sombre selon les
+  écrans, capture 2 du diocèse). Désormais ils remontent d'un interligne :
+  règle CSS `margin-top: -16px` sur `[data-testid="stElementContainer"]` qui
+  porte un `<style>` seul ou un `div[hidden]` ; le script des liens et le
+  mini-lecteur (flotter/escamoter) replient leur propre conteneur. Vérifié
+  au navigateur (Streamlit 1.67, mobile 430 px) : l'entête touche le haut
+  de l'écran sur le pont, l'accueil et la lecture ; la colle sticky reste
+  intacte ; le flash arrive sous l'entête.
+- **L'AUBERGISTE VOYAGE AVEC LE PROFIL (lecture pure)** — la route
+  `?pont=profil` porte en plus `aub` (SON N°), `aubnom` (SON nom),
+  `aubdate` (la séance en vigueur, s'il y en a une), `sitx` (« Son
+  intention » — l'intention posée à MON N° méd., la voix même de la carte
+  web) et `aubj` (SA fidélité des 14 derniers jours). La carte du pont dit
+  « N informations » de plus ; la base n'est jamais écrite.
+- **Dans l'APPLICATION (MA DIZAINE, kit v9)** — « 🛖 Mémoire de
+  l'aubergiste : Luc 10,35 » est posée sous « 📿 Mémoire de mes dizaines »
+  sur la page du membre : SON maillon (« ⛓️ Séance du 01/11/2026 — N° 14 —
+  … prie pour … — N° méd. 10. » ou « les N° méd. entrent en action »),
+  « 🕯️ Son intention », SA fidélité des 14 derniers jours (la même grille
+  2×7 que la mienne), puis le SCEAU agrandi et en gras. Quand
+  l'aubergiste n'est pas encore identifiable, la carte le dit — elle ne se
+  dérobe jamais. Le retour de l'Espace le dit : « 🛖 Mémoire de
+  l'aubergiste à jour ».
+- **La règle d'or du pont reste entière** — tout ce qui voyage est relu
+  (`aubergiste_du_membre`, `intention_reserve_pour_numero` en_place=True,
+  `serie_dizaines_membre`) : AUCUNE migration, AUCUNE écriture.
+- `_VERSION_APPLI = "v7.15.2"`.
+
+### 61. v7.15.3 — Le registre des cotisations : « 💰 État de mes cotisations » en face de « 👤 Mon profil »
+
+MOT DU USER : « Évoquant les abonnements et réabonnements, je voudrai rappeler qu'en dehors,
+il existe d'autres types de cotisations : mensuelles, spéciales, évènementielles et
+extraordinaires pour lesquelles je souhaiterai tenir un registre pour chaque membre. Il sera
+nommé "État des mes cotisations" et logé dans un expander comme "👤 Mon profil" et placé à son
+opposé sur la même ligne. » — Réponses du diocèse : la responsable d'équipe note ; chaque ligne
+porte le mode de paiement ; la mensuelle vit en grille des 12 mois ; quatre montants réglables
+par le diocèse (0 = libre) ; registre simple (pas de reçu) ; icône 💰.
+
+- **UNE TABLE NOUVELLE, POSÉE DOUCEMENT** — `cotisations_diverses`
+  (`CREATE TABLE IF NOT EXISTS`, ré-exécutable) : membre, année pastorale,
+  type (`mensuelle` / `speciale` / `evenementielle` / `extraordinaire`),
+  montant, date du versement, mode de paiement, signature de qui a noté,
+  origine. Rien d'existant ne bouge — ni les membres, ni les abonnements,
+  ni aucun écran.
+- **LES QUATRE MONTANTS DU DIOCÈSE** — dans « 📅 Abonnement - Réabonnement »
+  (diocèse), un nouvel expander « ⚙️ Réglages du registre des cotisations » :
+  mensuelle, spéciale, évènementielle, extraordinaire (0 = saisie libre).
+  Ils règlent les suggestions de la caisse d'équipe et le tarif affiché au
+  membre (le tarif de la mensuelle seulement — les trois autres restent des
+  montants notés au cas par cas).
+- **LA CAISSE D'ÉQUIPE NOTE** — section « 💰 Le registre des cotisations »
+  sous les onglets de la caisse annuelle : compteurs (lignes notées · total
+  du registre · tarif mensuel), puis membre par membre — les lignes
+  existantes (date · type · montant · mode · noté par), la GRILLE DES 12
+  MOIS de la mensuelle (sept. → août, cochée quand versée), la saisie (le
+  montant proposé suit le type choisi), la correction EN DEUX TEMPS
+  (🗑️ puis confirmation). Chaque ligne est signée du responsable
+  (`origine='caisse_equipe'`).
+- **LE MEMBRE RELIT, EN FACE DE SON PROFIL** — « 💰 État de mes
+  cotisations » campé sur la même ligne que « 👤 Mon profil »
+  (`st.columns(2)`, profil à gauche, registre à son opposé), même forme
+  (popover). LECTURE PURE : la grille des 12 mois de la mensuelle (mois
+  réglés · total · tarif posé), les lignes des trois autres types (date ·
+  montant · mode), le total de l'année. Le registre vide parle gentiment
+  (« 🕊️ Rien de noté pour l'instant… »). Pas de reçu numéroté ici : le
+  registre dit l'état, le reçu reste réservé à l'abonnement annuel.
+- **Banc d'épreuve** — `scripts/test_v7153.py` (42 vérifications : table,
+  réglages, écrire/lire/corriger, lecture pure de la vue, compile ×8) et
+  `scripts/test_v7153_vue.py` (AppTest, base NEUVE : le vrai geste de la
+  responsable jusqu'à l'œil du membre). Régressions repassées et
+  actualisées : v7.15.2 (27 ✅), v7.15.1 (29 ✅), v7.15.0 + vue, v7.14.5,
+  v7.14.3. La base de production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.15.3"`.
+
+### 68. v7.16.5 — La Note dans « 💰 État de mes cotisations » : les dus ligne à ligne, le « Régler » du membre, les « à choix » qui s'éteignent seules — et le décompte corrigé
+
+MOT DU USER : « b. Le livre de la dizaine, côté téléphone — le bouton
+« Suivant ▶ » quitte l'écran du livre ✅. Sur les dix pages « Je vous salue
+Marie », le décompte des 20 secondes prend le relais ✅ : la prière reste
+affichée ✅, la petite horloge dorée compte (barre qui s'écoule, chiffre
+qui descend), ??? ---> ne doit pas s'afficher ; le doigt peut toujours
+devancer ??? — puisque la page tourne toute seule il n'est pas utile de
+faire le geste. S'il devait tourner la page au geste, ça doit être quand
+le décompte est à zéro. En tout cas pour les 10 « Je vous salue Marie »,
+le geste ne doit pas être le roi. c. La trésorerie en trois onglets ✅ …
+Il y a ces 2 lignes avant le formulaire d'expédition, à éclaircir. » +
+LA NOTE de la maison : 1. toute expédition d'une trésorerie, qu'importe
+sa provenance hiérarchique, est un dû — ligne après ligne dans « 💰 État
+de mes cotisations », ajoutée au « 💰 Total dû à ce jour », un bouton
+« Régler » en bout de ligne et « Tout régler » au bout du total ; 2. deux
+types d'expéditions — « obligatoire » jusqu'au règlement total, « à
+choix » jusqu'à minuit après son échéance puis elle disparaît seule
+(champ de type à ajouter au formulaire) ; la mensuelle et « Abonnement —
+Réabonnement » suivent le même mode ; 3. pas de doublon dans une
+expédition ; 4. la relance n'est pas une expédition et ne s'affiche pas
+dans l'état ; 5. un montant réglé s'affiche 72 h dans une section de
+l'état puis rentre dans les archives.
+
+- **LE DÉCOMPTE, LA SUITE (dossier b)** — dans `_dizaine_ecran_telephone` :
+  l'HORLOGE ÉPURÉE (le rappel « 🕊️ Je vous salue Marie… » quitte la boîte —
+  la prière reste affichée sur la page, l'horloge ne porte que le chiffre
+  qui descend et la barre qui s'écoule : le « ??? » ne s'affiche plus) ;
+  JAMAIS DEUX HORLOGES (React peut garder le conteneur du bouton d'un tour
+  à l'autre : les horloges fantômes gelées sont purgées avant chaque pose
+  — classe `diz_cpt_box`) ; LE BOUTON SE CACHE POUR DE BON (recherche
+  patiente, 25 essais × 200 ms, caché sitôt tenu — fini la page où il
+  restait affiché et le décompte manquait) ; et LE GESTE N'EST PAS LE ROI :
+  le drapeau `__diz_grain__` (vrai sur un grain tant que le décompte
+  court, faux ailleurs) fait taire `_feuillette_geste(recul=False,
+  grain=…)` — la page tourne TOUTE SEULE à zéro, le doigt ne devance pas ;
+  si le décompte n'a jamais pu démarrer, le drapeau retombe et le geste
+  reste la sécurité. Le livret du feuillet (`recul=True`, sans grain) ne
+  bouge pas ; l'ordinateur garde son bouton.
+- **LA NOTE DANS LES ONGLETS (dossier c)** — les QUATRE lignes de
+  métriques éclaircies (« ⏳ Reste à régler » à la place de « ⏳ À régler »,
+  « libre — montant au choix » à la place du « libre » muet, « Tarif
+  mensuel posé en caisse ») + une légende qui dit ce que chacune pèse ;
+  le « reste à régler » ne compte plus les « à choix » éteintes.
+- **LE TYPE D'EXPÉDITION (la Note, point 2)** — le formulaire porte
+  « ⛓️ Obligatoire / 🕊️ À choix » et l'échéance ; colonnes douces
+  `type_expedition` + `echeance` (NULL = obligatoire, les lignes d'antan
+  vivent) ; une « à choix » s'affiche dans l'état du membre JUSQU'À MINUIT
+  APRÈS SON ÉCHÉANCE (le jour de l'échéance et le lendemain entier —
+  `cotis_div_echeance_vivante` et son jumeau SQL), puis disparaît SEULE de
+  l'état, de la dette (`cotis_div_total_du`) et des attentes de la caisse
+  — elle reste au registre de l'onglet cotisations. `cotis_div_lignes`
+  rend 15 champs.
+- **LE PAS DE DOUBLON (la Note, point 3)** — `cotis_div_envoyer_groupe`
+  regarde AVANT la pose : une ligne identique (catégorie, montant, date,
+  précision) déjà posée pour l'un des membres choisis et encore vivante
+  bloque la pose ENTIÈRE (-1) et l'écran le dit ; une expédition réglée ou
+  une « à choix » éteinte ne bloque pas (la caisse peut la reposer neuve).
+- **LE « RÉGLER » DU MEMBRE (la Note, point 1)** — l'état se réorganise
+  en TROIS ZONES : « ⏳ À régler — ligne par ligne » (chaque expédition due
+  de n'importe quelle trésorerie porte son bouton « Régler » ; la
+  mensuelle et l'abonnement suivent le même mode, affichés jusqu'au
+  règlement), « 💰 Total dû à ce jour » avec son « 💰 Tout régler »,
+  « ✅ Réglés — les dernières 72 heures » (point 5 : un montant réglé
+  s'affiche 72 h — `regle_le` du registre, `cree_le` de l'abonnement —
+  puis rejoint « 📚 Les archives — versement par versement »), et les
+  archives : le registre de l'année où les réglés dorment. La RELANCE
+  n'apparaît nulle part dans l'état (la Note, point 4).
+- **LA DÉCLARATION ET LA MAISON DE LA TRÉSORERIE** — « Régler » (une
+  ligne) ou « 💰 Tout régler » ouvre le PANNEAU DE LA DÉCLARATION dans la
+  page (il survit au popover, qui se replie à chaque tour) : le membre dit
+  son mode et son « Reçu par » (la Note : l'équipe en espèces ou Wave, la
+  paroisse avec l'accord de son responsable d'équipe, le diocèse avec
+  l'accord du responsable paroissial en Wave) et pose sa déclaration
+  (`cotis_div_declare` : `declare_le`, `declare_mode`, `declare_dest` —
+  colonnes douces). Le registre ne dit réglé QUE par la trésorerie : dans
+  « 💰 Versement », les déclarations campent en tête (« 🕊️ Jean déclare
+  avoir versé »), le formulaire arrive PRÉREMPLI avec le mode et le
+  « Reçu par » du membre, le règlement (`cotis_div_regler`) confirme et
+  EFFACE la déclaration ; le refus (✖) se pose en deux temps
+  (`cotis_div_declaration_annuler`). Le membre retire sa déclaration
+  (« ✖ Retirer ») tant qu'elle n'est pas confirmée.
+- **Banc d'épreuve** — `scripts/test_v7165.py` (57 vérifications :
+  l'horloge épurée, les fantômes, le drapeau du grain, les colonnes
+  douces, l'échéance à minuit après, le pas de doublon, la déclaration
+  confirmée puis effacée, les 72 h, les onglets, la vue membre, la
+  compile ×12, la base repart à zéro) et `scripts/test_v7165_vue.py`
+  (AppTest, base NEUVE : le type « à choix » au vrai form, le doublon
+  bloqué, l'état en trois zones, la déclaration du membre, la trésorière
+  préremplie, le refus, l'« à choix » éteinte qui disparaît seule, le
+  « Tout régler »). ÉPREUVE DU FEU navigateur (`scripts/test_web_v7165.sh`
+  + `prepare_banc_web_v7165.py`) : l'horloge sans le rappel, une seule
+  horloge, le bouton caché, et LE GESTE SILENCIÉ AU VRAI DOIGT — trois
+  glissements sur un grain ne dévient pas (15 s → 9 s → 3 s), la page
+  tourne TOUTE SEULE à zéro et le décompte repart de vingt ; le livret et
+  l'ordinateur ne bougent pas ; la clef dorée demeure. Régressions
+  repassées et actualisées : v7.14.3, v7.14.5, v7.15.0, v7.15.1 (29 ✅),
+  v7.15.2 (27 ✅), v7.15.3 (42 ✅) + vue, v7.15.4 (37 ✅) + vue, v7.16.0
+  (52 ✅) + vue, v7.16.1 (39 ✅) + vue, v7.16.2 (21 ✅) + vue, v7.16.3
+  (42 ✅) + vue, v7.16.4 (65 ✅) + vue. La base de production n'est jamais
+  touchée.
+- `_VERSION_APPLI = "v7.16.5"`.
+
+### 69. v7.16.6 — Le décompte secret et les maisons de la trésorerie
+
+MOT DU USER : « Dossier b — Le décompteur ne doit pas être visible. Il
+travaille secrètement. Quand il arrive à 0 et seulement à ce moment là, la
+page tourne elle seule. Dossier c — ta Note est devenue geste. … Je fais le
+constat la paroisse et le diocèse n'ont pas de trésorerie sinon où
+sont-elles générer ? Un choix à valider : le « Régler » du membre pose une
+déclaration (mode + « Reçu par ») que la trésorerie confirme dans sa maison
+« 💰 Versement » — le registre ne dit réglé que par elle. Je pense que
+cette voie est due à l'absence du système de paiement en ligne et se
+rétablira dès que possible. Toutes les expéditions sorties d'une trésorerie
+sont dues à l'exception de celle à choix. À ce titre, elles subissent le
+même mode opératoire que les autres cotisations. Je m'étonnais de l'absence
+de « Régler » "Abonnement - Réabonnement". Rendre aussi la mensuelle et
+l'abonnement déclarables. »
+
+- **LE DÉCOMPTE SECRET (dossier b)** — dans `_dizaine_ecran_telephone` :
+  l'HORLOGE QUITTE L'ÉCRAN — plus de boîte dorée, plus de chiffre, plus de
+  barre (le nettoyage des fantômes part avec : aucune boîte n'est jamais
+  posée) ; le décompte des 20 secondes coule INVISIBLE — « il travaille
+  secrètement » — et ne parle qu'à zéro (`reste<=0 → b.click()`) : la page
+  tourne ELLE SEULE, et seulement à ce moment là. Le drapeau
+  `__diz_grain__` fait toujours taire le geste tant que les vingt secondes
+  coulent (la note passée reste vraie) ; si le décompte n'a jamais pu
+  démarrer, le drapeau retombe et le geste reste la sécurité. La prière
+  reste affichée, le bouton reste caché côté téléphone, le jeton de page
+  rend muet le vieux décompte, le livret du feuillet ne compte pas,
+  l'ordinateur garde son bouton.
+- **LE CHOIX VALIDÉ (dossier c) — LES MAISONS** : chaque déclaration du
+  membre va DANS SA MAISON, celle que porte son « Reçu par ». L'équipe
+  confirme les siennes dans « 💰 Versement » ; celles adressées à la
+  paroisse ou au diocèse se confirment dans leurs caisses — chez l'équipe,
+  elles campent pour information seule (« 🕊️ Déclarées à une autre maison
+  »), sans aucun geste : le registre ne dit réglé que par la maison qui
+  porte le versement. La voie reste prête pour le paiement en ligne à
+  venir : il posera le règlement à la place de la confirmation, les
+  colonnes de la déclaration sont déjà la vérité du terrain.
+- **LES CAISSES DE LA PAROISSE ET DU DIOCÈSE (le constat : « où sont-elles
+  générées ? »)** — « 💼 Caisse de la paroisse » : NOUVELLE rubrique du
+  compte paroisse (après « 📅 Abonnements ») avec « 💰 Versement — la
+  maison de la paroisse » (déclarations « ⛪ » confirmées ou refusées ici,
+  versements réglés ici des dernières 72 h) et « ✨ Cotisations diverses —
+  l'expédition de la paroisse » (le form complet : catégorie, montant,
+  date, précision, « ⛓️ Obligatoire / 🕊️ À choix » + échéance ; toutes ses
+  équipes ou certaines ; retrait d'une expédition entière borné à la
+  maison). La maison du diocèse s'installe en tête de sa rubrique « 📅
+  Abonnement - Réabonnement » : « 💰 Versement — la maison du diocèse »
+  (déclarations « 🏘️ » de toutes les paroisses) + « ✨ Cotisations diverses
+  — l'expédition du diocèse » (toutes les paroisses ou certaines) ; les
+  réglages, l'historique et les relances restent plus bas, comme avant.
+  LES GRANDES MAISONS : le pas de doublon et le retrait travaillent par
+  tranches de 400 identifiants — la limite de variables de SQLite ne
+  bloquera jamais l'expédition d'un diocèse entier.
+- **LA MENSUELLE ET L'ABONNEMENT DÉCLARABLES (la Note : les dues suivent
+  le même mode opératoire)** — dans « ⏳ À régler — ligne par ligne », la
+  « 🧮 Mensuelle » et la « 📅 Abonnement » portent leur « Régler » : le
+  panneau de la déclaration s'ouvre dans la page — les mois que tu règles
+  (tous proposés par défaut, montant = tarif × mois) pour la mensuelle ; le
+  montant attendu pour l'abonnement (« le reçu numéroté naîtra à la
+  confirmation de ta trésorerie, pas avant »). La déclaration pose son ambre
+  avec son « ✖ Retirer », comme les lignes ; LA TABLE DOUCE
+  `cotis_declarations` les porte (une en attente par membre/année/cible,
+  re-déclarer remplace, la confirmation ou le refus l'efface). LA
+  CONFIRMATION MENSUELLE pose des lignes réglées UNE PAR MOIS, datées dans
+  leur mois (le 1ᵉʳ du mois, le courant au jour même) — la grille vend les
+  mois, la dette baisse ; les mois déjà réglés ne se posent pas deux fois.
+  LA CONFIRMATION ABONNEMENT note le paiement par le chemin de la caisse —
+  le reçu reçoit son numéro COT-… à ce moment-là. Les « à choix » restent
+  telles que validées (elles s'éteignent seules à minuit après leur
+  échéance) et la relance n'entre jamais dans l'état.
+- **Banc d'épreuve** — `scripts/test_v7166.py` (59 vérifications : le
+  décompte secret au mot près, la table douce, les confirmations et leurs
+  garde-fous, le routage des maisons, les tranches de 400, les rubriques,
+  la compile ×12, la base repart à zéro) et `scripts/test_v7166_vue.py`
+  (AppTest, base NEUVE : AUCUNE horloge visible à l'écran du livre, les
+  « Régler » des cibles, la maison d'équipe qui confirme reçu numéroté et
+  mois vendus, la route vers la paroisse confirmée par la vraie maison
+  paroissiale, l'expédition paroissiale et son pas de doublon, la maison du
+  diocèse rendue sans exception). Épreuve du feu navigateur préparée
+  (`scripts/test_web_v7166.sh` + `prepare_banc_web_v7166.py`) mais bloquée
+  par l'atelier : les iframes des composants ne s'hydratent plus dans le
+  navigateur sans tête (le banc témoin v7.16.5, inchangé, montre le même
+  symptôme) — la preuve du vrai doigt sera portée par le téléphone de la
+  maison. Régressions repassées et actualisées : v7.14.3, v7.14.5, v7.15.0,
+  v7.15.1 (29 ✅), v7.15.2 (27 ✅), v7.15.3 (42 ✅) + vue, v7.15.4 (37 ✅) +
+  vue, v7.16.0 (52 ✅) + vue, v7.16.1 (39 ✅) + vue, v7.16.2 (21 ✅) + vue,
+  v7.16.3 (42 ✅) + vue, v7.16.4 (65 ✅) + vue, v7.16.5 (57 ✅) + vue. La
+  base de production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.16.6"`.
+
+### 76. v7.18.2 — Le panneau bleu de maintenance est revenu : la maison annonce sans redéployer
+
+MOT DU USER : « Il y avait un panneau bleu qui s'affichait pour signaler une
+maintenance du site qui a disparu. Est-il possible de continuer la
+maintenance sans que les membres et visiteurs ne soient pas dans la gêne ? »
+
+- **LE CONSTAT** — aucune version archivée de l'atelier ne porte le
+  panneau (le mot « maintenance » ne vit que dans le journal de la
+  v7.13.14) : il s'était éteint avant les copies dont la maison dispose.
+  Plutôt que de le ressusciter à l'aveugle, il est reconstruit EN MIEUX :
+  la maison écrit son annonce DEPUIS L'APPLICATION elle-même — plus
+  jamais besoin d'un redéploiement pour prévenir les fidèles.
+- **LE MÉCANISME** — l'annonce vit dans `parametres_app` (une seule clé,
+  `maintenance_site_message`) ; deux gestes de database
+  (`maintenance_site_lire`, `maintenance_site_definir`) ; le panneau est
+  un `st.info` bleu non bloquant posé en tête de la page d'accueil du
+  VISITEUR et au-dessus du routage des connectés. La gestion se fait au
+  bas du panneau de bord de la paroisse ET du diocèse (« 🛠️ Maintenance
+  du site » : 📢 poser / 🧹 éteindre) — l'annonce apparaît AUSSITÔT à
+  tous, aucun redéploiement, aucune gêne.
+- **LA PROCÉDURE SANS GÊNE** — prévenir la veille par le panneau
+  (« Maintenance prévue cette nuit de 23 h à 23 h 40 — le site sera
+  momentanément indisponible ; les Espaces de prière hors ligne restent
+  ouverts »), pousser le correctif dans la fenêtre nocturne (le
+  redéploiement Streamlit ne prend que 1 à 3 minutes), éteindre le
+  panneau le lendemain d'un geste. Les journées priées hors ligne
+  s'annoncent toutes seules au retour du réseau (v7.18.0) : la prière ne
+  s'arrête jamais pour la maintenance.
+- **Banc d'épreuve** — `scripts/test_v7182.py` (18 vérifications : les
+  deux gestes database, la clé unique, le panneau aux deux entrées,
+  la gestion dans les deux maisons, aucun geste bloquant, les ancêtres
+  v7.18.1 et v7.18.0 intacts, la compile ×13, pyflakes) ; zip 43 fichiers
+  aux empreintes vérifiées.
+- `_VERSION_APPLI = "v7.18.2"`.
+
+### 75. v7.18.1 — Le mot doux redevient visible : le fond des alertes suit la refonte de Streamlit
+
+MOT DU USER : « "Ta journée priée hors ligne était déjà dans la chaîne —
+rien n'a été recompté. 🕊️" n'est pas visible à cause certainement de la
+couleur de fond. »
+
+- **LA CAUSE** — Streamlit a refondu le DOM des alertes : le fond natif se
+  peint désormais sur le CONTENEUR INTÉRIEUR (`stAlertContainer`, classe
+  `stAlertContainer`, inspecté dans le bundle 1.67), pas sur le div externe
+  `stAlert` que peignaient les règles de la maison depuis la v7.10.4. Chez
+  un lecteur dont le téléphone est en thème CLAIR, la boîte native ambre
+  restait visible sous le texte clair forcé `#e8eaf6` : le mot doux du pont
+  devenait illisible (« texte clair sur fond clair »). Le miroir existait
+  côté administration pour les lecteurs en thème SOMBRE : le texte encre
+  `#1A237E` forcé sur la boîte native sombre.
+- **LE CORRECTIF** — le fond se peint AUJOURD'HUI sur LES DEUX conteneurs,
+  quelle que soit la version de Streamlit : `.stApp [data-testid="stAlert"],
+  .stApp [data-testid="stAlertContainer"], .stApp .stAlertContainer` —
+  fond nuit `#151b3d` + texte clair dans l'Espace de Prière, fond clair
+  `#E8EAF6` + texte encre dans l'Administration. Le liseré de la nature de
+  l'alerte se lit par le contenu (`:has([data-testid="stAlertContent…"])` :
+  or pour ⚠️ attention, vert pour ✅ réussite, rouge pour ❌ erreur, bleu
+  pour ℹ️ info) — les navigateurs sans `:has()` gardent la boîte lisible,
+  simplement sans liseré.
+- **LA PREUVE** — reproduction du vrai DOM d'alerte 1.67 avant/après dans
+  les deux mondes (l'ancien rendu : message quasi invisible sur ambre ;
+  le nouveau : lisible, liseré conforme), capture vérifiée à l'œil.
+- **Banc d'épreuve** — `scripts/test_v7181.py` (14 vérifications : les deux
+  conteneurs peints dans les deux mondes, les quatre liserés, l'absence de
+  l'ancienne règle faible, les ancêtres v7.18.0 intacts, la compile ×13,
+  pyflakes) ; régressions repassées : v7.16.5 (57 ✅), v7.16.6 (60 ✅),
+  v7.16.7 (44 ✅), v7.16.8 (27 ✅), v7.16.9 (34 ✅), v7.17.0 (26 ✅),
+  v7.18.0 (79 ✅).
+- `_VERSION_APPLI = "v7.18.1"`.
+
+### 74. v7.18.0 — L'autorisation en geste bloquant, et le mot doux du pont qui survit
+
+MOT DU USER : « Attaque l'autorisation en geste. » + « Une régression —>
+Pointage hors-ligne - sur le web : après la méditation en hors-ligne, le
+pointage ne se fait pas sur le web alors que j'ai la connexion. Normalement
+lorsque j'ai la connexion je ne devrais pas actualiser pour que le pointage
+s'affiche sur le web. »
+
+- **✋ L'AUTORISATION DEVIENT UN GESTE BLOQUANT** (la Note de la maison,
+  point 2 — « un paiement au-delà de son entité supérieure nécessite une
+  autorisation de son responsable direct » — jusqu'ici seulement affichée,
+  elle se pose en base et bloque réellement) : la déclaration du membre
+  adressée au-delà de sa maison naît avec `autorisation_etat`="attente" et
+  **ne parvient PAS à la caisse qui reçoit** tant que le responsable direct
+  n'a pas posé son ✋ — le filtre `COALESCE(autorisation_etat,'') !=
+  'attente'` la retient hors de « 💰 Versement » de la maison qui reçoit.
+  La règle (`cotis_autorisation_requise`) : la PAROISSE → le responsable
+  d'ÉQUIPE accorde ; le DIOCÈSE → le responsable PAROISSIAL accorde ;
+  chez soi (l'équipe) ou sans maison intermédiaire (le membre sans équipe
+  devant sa paroisse), rien n'est à demander — la déclaration arrive chez
+  sa maison comme avant. Les déclarations D'ANTAN (état NULL) ne sont
+  JAMAIS bloquées.
+- **LE BLOC « ✋ Autorisations demandées » chez l'ÉQUIPE** (onglet « 💰
+  Versement » de la caisse) : les déclarations de ses membres adressées à
+  la paroisse (lignes du registre ET mensuelle/abonnement déclarés) y
+  campent avec leur ✋ et leur ✖ — accord et refus se donnent EN DEUX
+  TEMPS (la leçon de la maison) ; l'accord ouvre la route vers la caisse
+  de la paroisse (« ✋ Autorisation accordée »), le refus efface la
+  déclaration et rend le dû au « ⏳ à régler » du membre. Le trésorier lit
+  le bloc sans geste : l'autorisation appartient au responsable de
+  l'équipe (rôle `equipe`).
+- **LE BLOC « ✋ Autorisations à accorder » chez la PAROISSE** (« 💼
+  Ressources », sous ses contrôles) : les déclarations des membres de sa
+  paroisse adressées au diocèse — même deux temps, même signature
+  (`accorde_par`). La caisse du diocèse ne voit la déclaration qu'après.
+- **EN BASE (migration douce et ré-exécutable)** : trois colonnes
+  `autorisation_etat` / `autorisation_le` / `autorisation_par` sur
+  `cotisations_diverses` ET sur `cotis_declarations` (posées à NULL — les
+  bases anciennes les reçoivent au premier démarrage, rien d'existant ne
+  bouge) ; les gestes `cotis_div_autorisation_accorder/refuser`,
+  `cotis_declaration_autorisation_accorder/refuser` ; les lecteurs
+  `cotis_div_autorisations_attente(niveau, equipe_id/paroisse_id, …)` et
+  `cotis_declaration_autorisations_attente(...)` ; `cotis_div_lignes`
+  rend l'état en 16ᵉ champ, `cotis_declaration_membre` le rend dans son
+  dict ; `cotis_div_declare` et `cotis_declaration_poser` posent
+  « attente » quand la règle le dit ; le retrait du membre et le
+  règlement de la trésorerie remettent les colonnes à leur place.
+- **LE MEMBRE DIT LA VÉRITÉ** : son badge ambre « 🕊️ versé et déclaré »
+  porte maintenant la suite au mot juste (`_suite_declaration_membre`) —
+  « ⏳ l'autorisation de ta responsable d'équipe attend : la caisse de la
+  paroisse confirmera après son ✋ », « ✋ autorisée : … confirmera », ou
+  le mot d'antan chez sa maison ; son flash après « 📮 Déclarer » dit
+  l'attente d'accord quand la destination est au-delà de sa maison. Chez
+  l'équipe, le bloc « 🕊️ Déclarées à une autre maison » dit désormais
+  l'état (« ⏳ l'autorisation du responsable paroissial est attendue » /
+  « ✋ autorisée, en course chez sa caisse »).
+- **📿 LE PONT DE LA MÉMOIRE — LE MOT DOUX SURVIT** (la régression du
+  terrain) : le versement des journées (`?pont_jours=…`) allège
+  l'adresse (`del`), ce qui relance la page AUSSITÔT — le mot doux rendu
+  pendant le tour du versement s'effaçait au tour suivant : sur un écran
+  lent le fidèle ne le voyait JAMAIS et croyait son pointage perdu (le
+  banc v7.13.12 le disait déjà : « le mot doux de réception est dit »
+  échouait). Il se pose AUSSI en session (`pont_flash`) et se rend au
+  tour suivant, UNE fois, sous l'entête (section 0 de
+  `_pont_memoire_hors_ligne`) : « 🕊️ N journées priée(s) hors ligne
+  viennent de rejoindre ta chaîne » reste affiché après le nettoyage de
+  l'adresse. Le versé DU JOUR marque toujours la présence du jour —
+  vérifié au banc AppTest (la journée d'aujourd'hui arrive, la présence
+  se coche, le mot survit, il ne se répète pas au tour d'après).
+- **Côté téléphone**, le Kit MA DIZAINE Union v10 complète la demande :
+  l'application ANNONCE TOUTE SEULE ses journées en attente dès que le
+  réseau revient (après la méditation, au retour du réseau, au réveil de
+  la page) — plus besoin d'« actualiser » ni de retoucher « 🌐 En ligne »
+  ; le web les reçoit par la même porte (`?pont_jours`), une seule fois
+  chacune.
+- **Banc d'épreuve** — `scripts/test_v7180.py` (79 vérifications : la
+  règle, le blocage réel chez les deux maisons, les gestes accord/refus,
+  chez soi et sans équipe, l'antan NULL, la mensuelle et l'abonnement, la
+  signature de l'accord, les mots des vues, la compile ×13, pyflakes) +
+  `scripts/test_v7180_pont.py` (9 vérifications AppTest) ; régressions
+  repassées et musées avec la règle : v7.16.5 (57 ✅), v7.16.6 (60 ✅),
+  v7.16.7 (44 ✅), v7.16.8 (27 ✅), v7.16.9 (34 ✅), v7.17.0 (26 ✅). La
+  base de production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.18.0"`.
+
+### 73. v7.17.0 — « 💼 Ressources » s'affine : les contrôles du responsable, le livre des reports d'échéance
+
+MOT DU USER : « Entame le 3. L'affinage de "💼 Ressources". » — la mue
+v7.16.7 avait posé la maison ; la maison reçoit maintenant SON contenu :
+les contrôles que le responsable fait lui-même sur les finances, sans
+jamais écrire à la place des caisses.
+
+- **LE BLOC « 🧭 LES CONTRÔLES DU RESPONSABLE » (équipe)** — dans « 💼
+  Ressources », au-dessus de la caisse (qui reste sa maison de gestes à
+  l'identique) : quatre compteurs (⏳ Déclarations attendues · ⏳ Reports
+  en course · ⛔ Hors course · ⏪ Arriérés de l'année passée) et trois
+  expanders — le livre des reports d'échéance (chaque accord : la chaîne
+  d'origine → reportée, la signature, le mot, et l'état du membre
+  aujourd'hui), les hors course (l'échéance effective passée sans
+  règlement — feuillets suspendus, MatLoc gelé) et le témoin des arriérés
+  de l'année passée (le règlement vit dans l'année d'origine). Lecture
+  PURE : la base n'est jamais écrite ici.
+- **CHEZ LA PAROISSE** — le même regard étendu à ses équipes, en bas de
+  « 💼 Ressources » : le livre des reports posés par les caisses de ses
+  équipes (colonne Équipe), les hors course paroissiaux, les arriérés
+  d'antan.
+- **CHEZ LE DIOCÈSE** — « 🧭 Le livre des reports d'échéance » dans « 💼
+  Ressources » : les accords posés par TOUTES les caisses d'équipe
+  (Paroisse, Équipe, la chaîne, la signature, l'état), les compteurs
+  globaux — le délai de rigueur reste celui du diocèse ; le report ne
+  fait que le reculer pour celui qui ne peut pas le tenir.
+- **EN BASE (lecture seule)** — `cotis_reports_abo_livre(annee_debut,
+  equipe_id, paroisse_id)` rend chaque accord avec sa maison et son état
+  (✅ Réglé / ⏳ En course / ⛔ Hors course) ; `cotis_arrieres_annee()`
+  rend les impayés d'une année donnée (le témoin ⏪) ;
+  `cotis_declarations_attente()` gagne `equipe_id` (le regard du
+  responsable sur SES membres seuls). Aucune migration, aucune écriture.
+- **Banc d'épreuve** — `scripts/test_v7170.py` (26 vérifications : le
+  livre et ses états, les arriérés, le bloc équipe, le regard paroisse
+  et diocèse, la lecture pure — aucun geste —, la compile ×13, les mots
+  bannis, pyflakes) ; régressions repassées : v7.16.5 (57 ✅), v7.16.6
+  (59 ✅), v7.16.7 (44 ✅), v7.16.8 (27 ✅), v7.16.9 (34 ✅). La base de
+  production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.17.0"`.
+
+### 72. v7.16.9 — Le report d'échéance de l'abonnement — réabonnement, et la zone « ⏪ Avant septembre » chez le membre
+
+MOT DU USER : « Comment gérer les arriérés antérieurs à septembre 2026 ? » —
+et, en relisant le guide : « Celui que je viens d'évoquer ; "Vu". Le cas
+Abonnement - Réabonnement : ce cas, je l'avais mis en cotisation obligatoire
+pour dire que ça ne se discute pas ; c'est l'essence même de l'équipier. Tu
+n'es pas abonné ou réabonné, tu n'es plus équipier ---> tu ne recevras pas /
+plus de feuillets mensuels, ton MatLoc est gelé jusqu'à ton réabonnement.
+Mais cette cotisation est aussi à échéance puisqu'il y a une date butoir.
+Une fois clôturé, c'est pour la prochaine rentrée pastorale. La conséquence
+comme expliqué. Il est impérieux de faire un report d'échéance. »
+
+- **LE REPORT D'ÉCHÉANCE (il est impérieux, il est fait)** — l'abonnement —
+  réabonnement est ⛓️ obligatoire ET à échéance (la date butoir du diocèse :
+  délai de rigueur du 15/12, 31/12 pour les nouveaux). Quand la date ne peut
+  pas être tenue, la caisse de l'équipe accorde un REPORT : une nouvelle
+  date, un mot, une signature — membre par membre, dans l'expander du
+  membre non enregistré de l'onglet « 📅 Abonnement — Réabonnement » (du
+  défaut = échéance vivante + 15 jours, borné à la fin de l'année
+  pastorale). Une table douce `cotis_reports_abo` porte la trace (chaque
+  accord est une ligne, le DERNIER accord répond, le lever efface les
+  accords vivants) ; le report se REPOSITIONNE (la chaîne des origines
+  suit) et se LÈVE (l'échéance du diocèse reprend sa place). La règle est
+  affichée : « le report recule la date, jamais la dette » — et un report
+  qui ne recule rien est refusé.
+- **L'ÉCHÉANCE EFFECTIVE VOYAGE PARTOUT** — `cotis_echeance_effective` la
+  rend à qui la demande : la carte du membre dit « 🗓️ Report accordé — à
+  régler au plus tard le … » (et, passé le report, le vieux message du
+  délai dépassé revient avec la date REPORTÉE) ; la liste « ❌ Non
+  enregistrés » de la caisse porte désormais Nature + Échéance (⏳ la date
+  reportée, signée de qui l'a accordée) ; la relance individuelle part
+  avec « Report accordé » au lieu du délai de rigueur
+  (`cotis_relances_lignes` porte `report` + `report_par`). Les
+  conséquences de la clôture (plus équipier, feuillets suspendus, MatLoc
+  gelé) attendent la date REPORTÉE, pas avant — la caisse d'équipe le voit
+  en avertissement quand la date butoir est passée : « règle son cas —
+  paiement, ou report d'échéance ».
+- **LA ZONE « ⏪ AVANT SEPTEMBRE » CHEZ LE MEMBRE (le « Vu » de la maison)** —
+  quatrième zone de « 💰 État de mes cotisations », LECTURE SEULE, en
+  expander : « ⏪ Avant septembre — ce qui reste de l'année passée ». Elle
+  montre les impayés de l'année d'ORIGINE — les lignes du registre jamais
+  réglées (hors 🕊️ « à choix » éteintes d'antan : minuit après leur
+  échéance les a levées, elles ne sont plus des arriérés) et l'abonnement —
+  réabonnement de l'année passée non réglé — avec le renvoi : « ces
+  arriérés se règlent auprès de ta trésorerie, dans le registre de l'année
+  d'origine — ils ne pèsent pas sur l'année en cours ». Chaque année
+  pastorale vit sa propre vie : le sélecteur d'année des caisses reste la
+  porte du rattrapage, la zone ne pose AUCUN geste (aucun bouton, aucune
+  écriture).
+- **Banc d'épreuve** — `scripts/test_v7169.py` (34 vérifications : la
+  table et les cinq fonctions du report, la pose signée, l'échéance
+  effective, le refus du report qui ne recule rien, le repositionnement
+  et sa chaîne, la relance « Report accordé », le levé, le paiement qui
+  referme, la zone ⏪ lecture seule et son filtre — la 🕊️ éteinte exclue —,
+  la compile ×13, les mots bannis, et les gardes du report : une année
+  close n'accorde plus de report — « 📕 Année close » —, la proposition
+  reste entre aujourd'hui et la clôture du 31 août, pyflakes ne relève
+  aucun nom indéfini) ; régressions repassées et actualisées :
+  v7.16.5 (57 ✅), v7.16.6 (59 ✅), v7.16.7 (44 ✅), v7.16.8 (27 ✅). La
+  base de production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.16.9"`.
+
+### 71. v7.16.8 — La note de la maison, les réglés des 24 heures, les archives dans leur expander — et le guide se mue avec
+
+MOT DU USER : « Modifications à apporter et dans le code et dans le guide.
+1. Quatre sortes de cotisations peuvent ainsi naître : ---> Deux sortes de
+cotisations peuvent ainsi naître : ⛓️ La cotisation obligatoire : due par
+chacun, sans condition ni discussion. 🕊️ La cotisation à choix : due elle
+aussi, mais portée avec une échéance ; si elle n'est pas honorée, elle
+s'efface seule à minuit le lendemain de cette échéance. La mensuelle et
+L'abonnement — réabonnement font partie de la cotisation obligatoire et
+doivent être traités comme telle.
+2. La zone des réglés des 72 heures : ---> La zone des réglés des 24 heures
+ce qui vient d'être confirmé reste trois jours sous les yeux, le temps de
+vérifier tranquillement.
+3. 📚 Les archives — versement par versement ---> dans un expander.
+4. Dans la maison : la confirmation — une note certainement omise :
+- Un membre paie directement à la trésorerie de son équipe
+- Une équipe paie directement à la trésorerie de sa paroisse
+- Une paroisse paie directement à la trésorerie de son diocèse
+- Un paiement au-delà de son entité supérieure nécessite une autorisation
+  de son responsable direct.
+Manquant dans le guide : la trésorerie, qui la crée ? Qui génère les mots
+de passe ? Comment y accéder ? »
+
+- **LA NOTE DE LA MAISON (les quatre règles du chemin des fonds)** — elle
+  campe là où la confirmation se fait, dans TOUTES les maisons : un membre
+  paie directement à la trésorerie de son équipe ; une équipe paie
+  directement à la trésorerie de sa paroisse ; une paroisse paie
+  directement à la trésorerie de son diocèse ; un paiement au-delà de son
+  entité supérieure nécessite une autorisation de son responsable direct.
+  La caisse d'équipe porte la sienne dans « 💰 Versement » (le vieux
+  caption verbeux s'efface, remplacé par la note + le rappel « chaque
+  déclaration se confirme DANS SA MAISON ») ; `maison_versement` la porte
+  pour les deux grandes caisses (paroisse + diocèse) — trois maisons, une
+  seule note, posée avant la file des déclarations.
+- **LES RÉGLÉS DES DERNIÈRES 24 HEURES** — le titre change des deux côtés :
+  le membre lit « ✅ Réglés — les dernières 24 heures », la maison lit « ✅
+  Reçus ici — les dernières 24 heures » ; et LA FENÊTRE RESTE DE TROIS
+  JOURS (les requêtes `timedelta(hours=72)` côté membre et
+  `datetime('now', '-3 days')` côté maison ne bougent pas) — les légendes
+  le disent au mot de la maison : « ce qui vient d'être confirmé reste
+  trois jours sous les yeux, le temps de vérifier tranquillement ». Le
+  suivi de près du responsable garde son « 72 heures » honnête (= 3 jours).
+- **LES ARCHIVES DANS LEUR EXPANDER** — le registre de l'année se replie
+  dans SON `st.expander("📚 Les archives — versement par versement")` : la
+  boucle des catégories, l'abonnement réglé avec son reçu numéroté et la
+  caption du total versé s'indendent sous lui ; le titre gras d'antan
+  n'existe plus (aucun doublon). Le tiroir s'ouvre quand on veut, il ne
+  dérange plus la lecture des dues.
+- **DEUX SORTES DE COTISATIONS (le code n'a jamais contredit)** — les
+  expéditions naissent « ⛓️ Obligatoire / 🕊️ À choix » (échéance, effacement
+  seule à minuit le lendemain) et rien d'autre ; la mensuelle et
+  l'abonnement n'ont PAS ce sélecteur : obligatoires par nature, ils se
+  déclarent et se confirment comme les autres. La retouche « Quatre sortes
+  ---> Deux sortes » vit dans le GUIDE, qui désormais présente ⛓️ et 🕊️ et
+  range la mensuelle et l'abonnement dans l'obligatoire.
+- **LE GUIDE SE MUE AVEC (et rattrape son manquant)** —
+  Guide_tresorerie_et_caisse.docx / .pdf : « Deux sortes de cotisations »,
+  la zone des réglés des 24 heures (trois jours sous les yeux), les
+  archives dans leur tiroir, la note de la maison au chapitre de la
+  confirmation — et UNE SECTION NEUVE « Qui ouvre la caisse : la création
+  et l'accès » : qui crée chaque trésorerie (le responsable désigne, la
+  demande se fait chez lui), qui fabrique les mots de passe (l'app les
+  génère au geste du responsable, montrés une fois, réinitialisables),
+  comment on y accède (identifiant + mot de passe → la caisse seule, rien
+  d'autre autour). Les chapitres se renumérotent (dix chapitres).
+- **Banc d'épreuve** — `scripts/test_v7168.py` (27 vérifications : la note
+  dans les trois maisons posée avant la file, les titres 24 heures des
+  deux côtés, la fenêtre de trois jours conservée, les légendes au mot,
+  l'expander qui porte tout le registre, ⛓️/🕊️ seuls à naître, la
+  compile ×13, les mots bannis) ; régressions repassées et actualisées :
+  v7.16.5 (57 ✅ + vue — les checks zone 2/zone 3 mués au nouveau nom et au
+  tiroir), v7.16.6 (59 ✅ + vue), v7.16.7 (44 ✅ + vue). La base de
+  production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.16.8"`.
+
+### 70. v7.16.7 — Les caisses hors des entités, le trésorier gère, le responsable suit et accorde — et le rôle se mue « 💼 Ressources »
+
+MOT DU USER : « Encore 🙏 pour les efforts consentis ! Observations &
+Suggestions. Dossier b — le décompte secret ✅ et clos. Dossier c — les
+maisons de la trésorerie : Ton choix est validé et va plus loin : chaque
+déclaration se confirme dans sa maison — celle que porte son « Reçu par ».
+Chez l'équipe, une déclaration « paroisse » ou « diocèse » campe pour
+information seule, sans aucun geste. Le jour du paiement en ligne, il
+posera le règlement à la place de la confirmation, sans rien casser. La
+paroisse et le diocèse ont leur caisse : ---> Pas en nouvelle rubrique ou
+en nouvelle section. Les trésoreries doivent exister en-dehors des entités
+comme la cellule de communication pour le diocèse. Le trésorier gère et le
+responsable suit de près, accorde les autorisations quand il le faut. La
+mensuelle et l'abonnement sont déclarables ✅. Je préconise que le rôle
+"Abonnement - Réabonnement" au niveau des entités se mue "Ressources". Le
+responsable pourra y faire ses contrôles et autres tâches qui lui sont
+dévolues concernant les finances. Fais-moi des propositions, je semble
+être à court d'idées. »
+
+- **LES CAISSES QUITTENT LES ENTITÉS (le mot de la maison : « pas en
+  nouvelle rubrique ou en nouvelle section — les trésoreries doivent
+  exister en-dehors des entités comme la cellule de communication pour le
+  diocèse »)** — NOUVEAU `views/view_caisse.py` : UNE vue, DEUX maisons
+  (`show_caisse("paroisse")` / `show_caisse("diocese")`), routées dans
+  `app.py` par deux rôles neufs à la manière du compte communication —
+  `tresorier_paroisse` (porteur de `paroisse_id`) et `tresorier_diocese`
+  (porteur de `diocese_id`). La porte ne s'ouvre qu'au rôle de CETTE
+  maison et à sa clé portée ; chaque maison tient SES deux pièces aux
+  clefs d'état inchangées depuis la v7.16.6 — « 💰 Versement »
+  (`mvpar`/`mvdio` : les déclarations adressées à « ⛪ Trésorerie de la
+  paroisse » / « 🏘️ Trésorerie du diocèse » se confirment ici — le
+  registre ne dit réglé que par elle — avec formulaire prérempli, refus
+  en deux temps, « ✅ Reçus ici — les dernières 72 heures ») et « ✨
+  Cotisations diverses » (`exppar`/`expdio` : l'expédition de la maison,
+  toutes les équipes de la paroisse / toutes les paroisses du diocèse ou
+  certaines, « ⛓️ Obligatoire / 🕊️ À choix » avec son échéance, pas de
+  doublon, retrait entier par tranches de 400). Le sélecteur d'année
+  pastorale de la caisse d'équipe s'y est invité ; la rubrique unique
+  (« 💼 Caisse de la paroisse » / « 💼 Caisse du diocèse ») suit le
+  modèle du 💼 Trésorier d'équipe — la caisse, rien d'autre ; la
+  connexion pose le trésorier DANS sa maison et le jeton le y retrouve
+  au F5 (`nav_cais`). Chez l'équipe, la déclaration « paroisse » ou «
+  diocèse » campe pour information seule — confirmée ICI, dans sa maison
+  à elle. Le jour du paiement en ligne, il posera le règlement à la
+  place de la confirmation, sans rien casser.
+- **LES VUES DES ENTITÉS SE VIDENT** — la vue paroisse perd la rubrique
+  « 💼 Caisse de la paroisse » (les neuf rubriques d'antan reviennent) ;
+  la vue diocèse perd les deux maisons de sa caisse ; LES RÉGLAGES,
+  L'HISTORIQUE DES REÇUS ET LES RELANCES Y RESTENT — le responsable suit
+  de près par là, en lecture pure. Les maisons ne s'écrivent plus nulle
+  part dans les entités.
+- **L'AUTORISATION SE DONNE CHEZ LE RESPONSABLE** — chez la paroisse :
+  la carte « 💼 Caisse de la paroisse (hors des rubriques) » dans « 🏘️
+  Ma paroisse » (l'accès se donne — identifiant prérempli, mot de passe
+  généré ou choisi, montré une fois —, se renouvelle
+  (réinitialisation), se retire (avec confirmation) ; le suivi de près
+  se lit en tête de carte : « 👀 ⏳ N déclaration(s) attendent sa
+  confirmation · ✅ N versement(s) réglé(s) ici ces dernières 72 heures
+  »). Au diocèse : la section « 💼 Caisse du diocèse » dans « 🔐 Gérer
+  les accès », le même motif que « 📡 Service Communication » (créer le
+  compte, réinitialiser son mot de passe, retirer l'accès, suivi de
+  près) ; la rubrique « 💼 Ressources (Diocèse) » annonce qui tient la
+  caisse. La base n'est écrite que par ces gestes d'autorisation et par
+  le trésorier dans sa maison.
+- **LA MUE DU RÔLE : « 💼 RESSOURCES »** — « le rôle "Abonnement -
+  Réabonnement" au niveau des entités se mue "Ressources". Le
+  responsable pourra y faire ses contrôles et autres tâches qui lui sont
+  dévolues concernant les finances » : équipe (« 💼 Ressources — {nom de
+  l'équipe} », la même caisse à trois onglets — le 💼 Trésorier garde SA
+  maison « 💼 Trésorerie »), paroisse (« 💼 Ressources — {nom de la
+  paroisse} » : l'état des abonnements, le recouvrement équipe par
+  équipe, les relances prêtes à copier) et diocèse (« 💼 Ressources
+  (Diocèse) » : les réglages, les totaux, l'historique des reçus, le
+  livre des relances). La mémoire des sessions suit : « 📅 Abonnements »
+  et « 📅 Abonnement - Réabonnement » portent « 💼 Ressources », « 💼
+  Caisse de la paroisse » ramène paisiblement à « 🏘️ Ma paroisse ».
+- **LES PROPOSITIONS DES « 💼 RESSOURCES » (à valider, prêtes à poser)**
+  — la maison des contrôles peut encore accueillir : ① l'export
+  financier d'un seul geste (reçus + registre + relances en un classeur
+  Excel daté) ; ② le rapprochement déclaré/réglé (ce que les membres ont
+  DÉCLARÉ à côté de ce que la maison a CONFIRMÉ — les écarts se voient,
+  rien ne s'écrit) ; ③ la fiche de synthèse imprimable de l'année
+  (totaux par maison, par catégorie, par mois) ; ④ la mémoire des
+  échéances (le rappel doux des années passées pour préparer le
+  réabonnement) ; ⑤ l'accueil du paiement en ligne (la maison pose déjà
+  les colonnes).
+- **Banc d'épreuve** — `scripts/test_v7167.py` (44 vérifications : les
+  maisons hors des entités, la porte et sa clé, les clefs d'état
+  conservées, les vues vidées qui gardent leurs contrôles, les cartes
+  d'autorisation et le suivi de près, le routage des maisons, la mue
+  « Ressources » aux trois niveaux, la compile ×13, la base repart à
+  zéro) et `scripts/test_v7167_vue.py` (AppTest, base NEUVE :
+  l'autorisation au vrai geste — le compte naît porteur de SA paroisse —,
+  la porte qui tient les rôles et la clé, la maison du diocèse créée
+  depuis « 🔐 Gérer les accès », « 💼 Ressources » rendu aux trois
+  niveaux, la mémoire d'antan qui porte le nouveau nom, le 💼 Trésorier
+  qui garde SA maison). Régressions repassées et actualisées :
+  v7.14.3, v7.14.5, v7.15.0, v7.15.1, v7.15.2 (27 ✅), v7.15.3 + vue,
+  v7.15.4 + vue, v7.16.0 + vue, v7.16.1 + vue, v7.16.2 + vue, v7.16.3 +
+  vue, v7.16.4 + vue, v7.16.5 + vue, v7.16.6 (59 ✅) + vue (réécrite :
+  les maisons au vrai écran, hors des entités) — les bancs retirés
+  v7.14.4 / v7.14.5-vue (gelés à leur version d'antan) restent hors
+  chaîne. La base de production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.16.7"`.
+
+### 67. v7.16.4 — Le décompte des 20 secondes, la trésorerie en trois onglets, le « Reçu par » des versements
+
+MOT DU USER : « a. La clef dorée à l'onglet 🔑 — ✅ et le chapelet doré
+(Espaces) ✅. b. Les pages qu'on tourne 📿 — ✅ le geste du téléphone est
+posé sur le livret du feuillet ET sur le livre de la dizaine 👍🏽. Cependant,
+je souhaite que, dans le livre de la dizaine seulement (côté téléphone) :
+la décompte des 20 secondes après chaque "Je vous salue Marie" soit
+intégrée. Le bouton "Suivant" soit supprimé. c. La trésorerie hors du
+responsable : créer 3 onglets — 01 pour "Abonnement — Réabonnement", 01
+pour "Cotisations diverses", 01 pour "Versement". Comment supprimer une
+ligne entrée pour tous les membres d'une équipe ? Membre par membre ?
+Mécanisme adéquat à créer ! Que devrait voir concrètement le membre dans
+"💰 État de mes cotisations" ? Le tableau des cotisations mensuelles est à
+retirer. » — avec la Note de la maison : le membre verse à la trésorerie
+de son équipe (espèces ou Wave), à la trésorerie de la paroisse avec
+l'accord de son responsable d'équipe (espèces ou Wave), ou à la trésorerie
+du diocèse avec l'accord du responsable paroissial (Wave).
+
+- **B. LE DÉCOMPTE DES 20 SECONDES DANS LE LIVRE DE LA DIZAINE (côté
+  téléphone)** — `_dizaine_ecran_telephone()` : sur le téléphone, le
+  bouton « Suivant ▶ » quitte l'écran du livre de la dizaine SEULEMENT —
+  les pages se tournent au doigt (le geste v7.16.3, validé, reste roi) —
+  et sur les dix pages « Je vous salue Marie » le DÉCOMPTE prend le
+  relais : la prière reste affichée, la petite horloge dorée compte vingt
+  secondes (barre qui s'écoule, chiffre qui descend), puis la page tourne
+  TOUTE SEULE vers la suivante. Le livret du feuillet ne bouge pas ; sur
+  l'ordinateur, « Suivant ▶ » reste là pour la souris et par sécurité. Le
+  décompte porte un jeton de page (la mécanique « nonce » des feuillets) :
+  si la page a tourné entre-temps, le vieux décompte se tait. L'adresse
+  ?…&tel=1 force le côté téléphone (banc d'essai). Vérifié au vrai
+  navigateur : le grain compte 15 s → 10 s → la page tourne seule vers la
+  suivante, le décompte repart ; l'intro ne compte pas ; le livret garde
+  son bouton ; l'ordinateur garde le sien ; zéro erreur page.
+- **C. LA TRÉSORERIE EN TROIS ONGLETS** — le sélecteur PERSISTANT et à
+  clé `caisse_onglet` (la leçon v7.8.14 : st.tabs ne garde AUCUNE
+  mémoire) : « 📅 Abonnement — Réabonnement » (le contenu historique de la
+  caisse, repris à l'identique dans `_section_abonnement_equipe` : les
+  deux échéances, les compteurs, les reçus numérotés et leur panneau, les
+  trois listes), « ✨ Cotisations diverses » (le registre : les quatre
+  métriques, l'expédition en un seul form, les expanders, la correction en
+  deux temps), « 💰 Versement » (`_section_versements_equipe` : le form du
+  règlement de la v7.16.1 reçoit sa maison propre, avec la Note en
+  devanture, et la liste des versements en attente de toute l'équipe).
+  Tant qu'un versement attend sa note, l'onglet « 💰 Versement » s'ouvre
+  AVANT le rendu — le geste ne se perd pas en chemin.
+- **LE « REÇU PAR » DES VERSEMENTS (la Note de la maison)** — colonne
+  douce `destination` sur `cotisations_diverses` ET `abonnements`
+  (migration douce ré-exécutable, rien d'existant ne bouge) ; les trois
+  trésoreries portent leur libellé (🏠 équipe / ⛪ paroisse / 🏘️ diocèse,
+  `COTIS_DESTINATIONS` + `cotis_destination_label`). Le versement noté au
+  geste « ✅ Régler » porte son mode ET son « Reçu par » (l'équipe par
+  défaut) ; l'abonnement noté dans son onglet porte le sien ; la ligne
+  réglée du registre et la ligne d'abonnement réglé les montrent, côté
+  caisse comme côté membre ; une destination inconnue est refusée.
+- **LE MÉCANISME ADÉQUAT DE SUPPRESSION D'UNE EXPÉDITION** — plus besoin
+  de retirer membre par membre : dans l'onglet « ✨ Cotisations diverses »,
+  « 🗑️ Retirer une expédition » liste les poses du registre (catégorie,
+  précision, montant, date, nombre de lignes, réglées) ; choisir,
+  confirmer (« ✔️ Oui, tout retirer »), et `cotis_div_supprimer_groupe()`
+  emporte TOUTES les lignes de cette expédition-là — retrouvée au mot
+  près (même catégorie, montant, date, précision, signature, instant),
+  comptées avant le geste (le rowcount n'est pas lu), le DELETE borné aux
+  membres actifs de l'équipe ; les autres expéditions et les hors-équipe
+  ne bougent pas. Le 🗑️ ligne à ligne reste là pour les retouches fines.
+- **« 💰 ÉTAT DE MES COTISATIONS » — LE TABLEAU MENSUEL RETIRÉ** (demande
+  de la maison) : la mensuelle se lit comme les trois autres catégories,
+  VERSEMENT PAR VERSEMENT — date · précision · montant · mode · « Reçu
+  par » — le titre garde le compte des mois soldés et le tarif réglé
+  s'il en a posé un ; les relances restent EN VERT « ⏳ à régler » ; les
+  lignes réglées portent leur destination ; l'abonnement réglé porte son
+  mode et son « Reçu par » ; le « 💰 Total dû à ce jour » et le « 🕊️ Déjà
+  versé » closent l'état. Lecture pure gardée.
+- **RÉPARATION DÉCOUVERTE AU BANC** — le script des rappels (« 🔔 Dire oui
+  aux rappels ») cassait à la pose : un apostrophe non échappé dans la
+  chaîne JS (« Le oui n'a pas pu être noté… ») rendait le script entier
+  muet (SyntaxError à chaque rendu dès que les clefs VAPID existent — la
+  fonction `activer_push_ro()` n'existait jamais). L'apostrophe
+  typographique le répare : le script respire, zéro erreur page.
+- **Banc d'épreuve** — `scripts/test_v7164.py` (65 vérifications : le
+  décompte au source — jeton, vingt pas, horloge, tel=1 — la destination
+  des deux tables et du règlement, la suppression d'expédition qui emporte
+  les siennes et épargne les autres, les trois onglets, la vue membre sans
+  grille, compile ×12) et `scripts/test_v7164_vue.py` (AppTest, base
+  NEUVE : les trois onglets au vrai écran, l'expédition puis le retrait
+  d'un seul geste, le versement avec mode et « Reçu par », l'abonnement
+  avec le sien, l'état du membre sans le tableau, la trésorière aux mêmes
+  onglets) et `scripts/test_web_v7164.sh` (navigateur réel : le livret ne
+  bouge pas côté téléphone forcé, la dizaine compte et tourne seule, le
+  PC garde son bouton, la clef dorée reste à l'onglet, zéro erreur page).
+  Régressions repassées et ACTUALISÉES (épingles de version → v7.16.4 ; la
+  vérification 20 de v7.15.3 et la 27 de v7.15.4 retournées — la grille
+  mensuelle est retirée de la vue membre ; la ligne réglée de v7.16.1 porte
+  son « Reçu par » ; les bancs vue choisissent l'onglet cotisations) :
+  v7.16.3 (42 ✅) + vue, v7.16.2 (21 ✅) + vue, v7.16.1 (39 ✅) + vue,
+  v7.16.0 (52 ✅) + vue, v7.15.4 (37 ✅) + vue, v7.15.3 (42 ✅) + vue,
+  v7.15.2 (27 ✅), v7.15.1 (29 ✅), v7.15.0, v7.14.5, v7.14.3. La base de
+  production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.16.4"`.
+
+### 66. v7.16.3 — La clef dorée à l'onglet, les pages qu'on tourne, la trésorerie hors du responsable
+
+MOT DU USER : « Jusqu'ici tout va pour le mieux mais en regardant dans le
+rétroviseur, je crois que nous avons laissé en suspens 3 dossiers — enfin 2
+dossiers et 1/4, car avec l'union des 2 applications, le problème des icônes
+s'est réglé au 3/4. Nous avons donc à régler : a. Remplacer le bateau rouge
+de Streamlit par la clef dorée. b. Les pages qu'on tourne de la droite vers
+la gauche. c. La préouverture sur la trésorerie pour lequel je te donne le
+go. » — les trois dossiers du rétroviseur, réglés d'une seule livraison.
+
+- **A. LA CLEF DORÉE À L'ONGLET (le bateau rouge se retire)** — sur le
+  déploiement, l'application vit derrière la vitrine du portail : les
+  images incorporées de l'injection ne franchissent pas cette vitrine
+  (origines séparées) ; l'icône de `set_page_config`, elle, voyage par la
+  même route que le titre de l'onglet. `_icone_page_doree()` lit la face
+  (?espace / ?e / matloc) et pose une image INCORPORÉE (data URI) : la
+  clef dorée côté Gestionnaire, le chapelet doré côté Espaces, repli 📿 si
+  le fichier manque. Dès que l'application respire, l'onglet porte le vrai
+  visage — la seconde d'attente du portail reste la sienne (l'hôte du
+  nuage peint son propre écran d'attente), tout ce qui est à nous porte la
+  clef. L'injection dynamique reste en place pour les serveurs où elle
+  passe (elle peaufine le titre).
+- **B. LES PAGES QU'ON TOURNE D'UN GLISSEMENT** — `_feuillette_geste` pose
+  le geste du téléphone sur le livret du feuillet ET sur le livre de la
+  dizaine : le doigt glisse de la DROITE vers la GAUCHE, la page tourne
+  (elle entre par la droite, comme un feuillet qu'on soulève) ; vers la
+  droite elle revient (livret seulement — dans la dizaine on ne recule
+  jamais, le GO de la règle de la maison reste). Le geste commande les
+  MÊMES boutons (« Suivant ▶ », « ◀ Précédent » restent là pour la souris
+  et par sécurité). Le geste ne naît jamais sur ce qui réclame le doigt
+  (champs, formulaires, boutons, expanders, envois de fichiers) ni d'un
+  mouvement vertical (le défilement reste le défilement) ; un seul couple
+  d'écouteurs vit sur la page (le précédent retiré avant que le nouveau
+  ne s'installe). Vérifié au vrai navigateur : le livret tourne dans les
+  deux sens, la dizaine tourne sans reculer, le glissement trop court ne
+  tourne rien, zéro erreur page.
+- **C. LE RÔLE 💼 TRÉSORIER (le GO du dossier c)** — la trésorerie hors du
+  responsable, à la manière du compte de la cellule communication : la
+  PAROISSE désigne, réinitialise ou retire le trésorier dans « 👥 Mes
+  équipes » (identifiant pré-rempli « <connexion équipe>-tres », mot de
+  passe généré, retrait en deux gestes confirmés) ; le compte naît lié à
+  SON équipe (role `tresorier`, `equipe_id`) ; à la connexion, le menu ne
+  montre QUE « 💼 Trésorerie » — la caisse rend à l'identique (titre
+  « 💼 Trésorerie — Équipe », les quatre métriques, l'abonnement/réabonne-
+  ment, les reçus numérotés, le registre des cotisations), le reste du
+  Gestionnaire ne s'ouvre pas ; le responsable voit QUI tient sa caisse
+  (ligne « 💼 Trésorier de la caisse » dans « 👥 Mon équipe ») ; la
+  suppression d'équipe emporte l'accès trésorier comme les autres.
+- **Banc d'épreuve** — `scripts/test_v7163.py` (42 vérifications : la clef
+  dorée au source, le geste complet — seuils, gardes, un seul couple
+  d'écouteurs —, le rôle trésorier au source ET en base : naissance liée à
+  l'équipe, mot de passe vérifié, réinitialisation, retrait, compile ×12)
+  et `scripts/test_v7163_vue.py` (AppTest, base NEUVE : l'app tourne des
+  deux côtés avec l'icône incorporée, la paroisse désigne au vrai geste,
+  la trésorière ouvre sa rubrique unique, la caisse rend, le responsable
+  lit la ligne, le versement noté depuis SON accès naît « ⏳ à régler »)
+  et `scripts/test_web_v7163.sh` (navigateur réel : les glissements tour-
+  nent les pages des deux livres, les gardes tiennent, le favicon est un
+  PNG incorporé et non le SVG du portail). Régressions repassées et
+  actualisées (épingles de version → v7.16.3) : v7.16.2 (21 ✅) + vue,
+  v7.16.1 (39 ✅) + vue, v7.16.0 (52 ✅) + vue, v7.15.4 (37 ✅) + vue,
+  v7.15.3 (42 ✅) + vue, v7.15.2 (27 ✅), v7.15.1 (29 ✅), v7.15.0,
+  v7.14.5, v7.14.3 — les échecs des bancs anciens (v7101…v71316, v79xx)
+  préexistaient et sont caducs, prouvés contre les sources v7.16.2 d'avant
+  livraison. La base de production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.16.3"`.
+
+### 65. v7.16.2 — Les encarts reviennent au fil de l'actualité
+
+MOT DU USER : « Tout est au vert à l'exception de : les encarts "👤 Mon
+profil" / "💰 État de mes cotisations" suivent le membre dans toutes les
+rubriques — Thème, Rosaire, Mes évènements, Galerie, Archives, et même
+pendant la lecture d'un feuillet. Voici qui avait été exprimé : 2. Les
+encarts "👤 Mon profil" et "💰 État de mes cotisations" restent visibles
+UNIQUEMENT qu'en fil de l'actualité ; pas dans les autres rubriques. »
+
+- **LES ENCARTS NE CAMPENT PLUS QU'AU FIL (v7.16.2)** — retour à
+  l'expression d'origine : « 👤 Mon profil » et « 💰 État de mes
+  cotisations » se voient sur l'accueil (rubrique « 🏠 Actualités »)
+  seulement — ils ne suivent plus le membre dans 🕯️ Thème, 📿 Rosaire,
+  📅 Mes évènements, 🖼️ Galerie +, 📖 Archives, ni pendant la lecture du
+  feuillet ou de la dizaine (l'écran reste tout à la prière) ; de retour au
+  fil, ils reparaissent. La v7.16.1 les avait élargis partout en lisant
+  l'observation comme un défaut ; elle était la demande elle-même.
+- **RIEN D'AUTRE NE BOUGE** — même place sous l'entête de l'accueil, même
+  contenu mot pour mot (le « 💰 Total dû à ce jour » dans le titre sur deux
+  lignes, l'empilement téléphone), l'accueil garde toutes ses cartes, et
+  tout le reste de la v7.16.1 (relances « ⏳ à régler », « ✅ Régler »,
+  dette, verset, sommaire, passeur `?v=71611`) est gardé tel quel — un seul
+  fichier patché (`views/view_espace_membre.py`).
+- **Banc d'épreuve** — `scripts/test_v7162.py` (21 vérifications : l'ordre
+  du corps pont < livre ouvert < garde accueil < encarts < badge, le
+  contenu intact des deux encarts, l'accueil complet, la version, la
+  compile ×12, les mots gardés) et `scripts/test_v7162_vue.py` (AppTest,
+  base NEUVE : les deux encarts se relient au fil, plus AUCUN encart sur
+  les cinq autres rubriques, ni au feuillet, ni à la dizaine ouverte, et le
+  retour au fil les rend de nouveau). Régressions repassées et actualisées :
+  v7.16.1 (39 ✅) + sa vue (B4 retourné), v7.16.0 (52 ✅) + sa vue,
+  v7.15.4 (37 ✅) + sa vue, v7.15.3 (42 ✅) + sa vue, v7.15.2 (27 ✅),
+  v7.15.1 (29 ✅), v7.15.0 + vue, v7.14.5, v7.14.3. La base de production
+  n'est jamais touchée.
+- `_VERSION_APPLI = "v7.16.2"`.
+
+### 64. v7.16.1 — Les relances du registre : « ⏳ à régler » en vert, le versement noté au bon endroit
+
+MOT DU USER : « Une clarification concernant ces messages envoyés vers les
+équipiers : « 15/12/2026 · Évènementielle — Épiphanie · 3 000 FCFA · 💵 Espèces ·
+noté par famkoueq3 ». Ce sont en réalité des relances pour dire (notre exemple
+ici) qu'il y a une contribution de 3 000 F CFA pour la fête de l'épiphanie. Elle
+saurait être en vert tant que ce n'est pas encore réglé. Le mode de paiement ne
+devrait pas faire partie du formulaire par-conséquent. — Reste à le mettre en
+gras et en blanc [le verset]. Réduire la longueur du bouton « 💰 État de mes
+cotisations » pour qu'il ne soit pas hors marge (téléphone surtout). Faire le
+titre et le message sur 2 lignes. — 1. Tous les liens suivants [?espace=1,
+?espace=1&p=1, l'icône Streamlit] me redirigent vers mon lien personnel pc comme
+téléphone (même phénomène sur 2 autres téléphones). 2. Les encarts « 👤 Mon
+profil » et « 💰 État de mes cotisations » restent visibles UNIQUEMENT qu'en fil
+de l'actualité ; pas dans les autres rubriques. 3. Cliquer sur « 📖 Relire ce
+feuillet » doit nous renvoyer vers le sommaire. »
+
+- **LES RELANCES DU REGISTRE (v7.16.1)** — ce qui part de « 💰 Le registre des
+  cotisations » est une RELANCE : la ligne naît « ⏳ à régler » (colonne douce
+  `regle_le`, NULL = à régler) SANS mode de paiement — le champ « Mode de
+  paiement » a QUITTÉ le formulaire d'expédition (la « Date de la cotisation »
+  remplace « Date du versement »). La relance s'affiche EN VERT (st.success
+  côté caisse, pastille verte côté membre) tant que le versement n'est pas
+  noté ; le geste « ✅ Régler » (bouton sur chaque ligne à régler) ouvre le
+  formulaire du versement — le mode de paiement vit ICI désormais
+  (`cotis_div_regler` : mode + instant, une seule fois, refusé si déjà
+  réglé) — et la ligne passe réglée avec son mode ✅. Les lignes posées avant
+  cette version (qui portaient leur mode) sont réglées d'office par la
+  migration douce (UPDATE idempotent borné à la table).
+- **LA DETTE DIT TOUT** — `cotis_div_total_du` porte désormais `autres` :
+  les relances des catégories spéciale / évènementielle / extraordinaire
+  encore « ⏳ à régler » entrent dans le « 💰 Total dû à ce jour » (la
+  mensuelle vit toujours par les mois écoulés sans versement réglé — jamais
+  deux fois la même dette) ; la grille ne coche un mois qu'au versement
+  réglé ; « 🕊️ Déjà versé cette année pastorale » lit les lignes réglées
+  (`total_regle`) ; la caisse ajoute la 4ᵉ métrique « ⏳ À régler ».
+- **LE VERSET EN GRAS ET EN BLANC** — Luc 10,35 quitte le gris-violet pour
+  `color:#ffffff; font-weight:bold` (italique et trait doré gardés) dans les
+  DEUX cartes mémoire (membre et écho visiteur).
+- **LE BOUTON HORS MARGE SE REPLIE** — le libellé de « 💰 État de mes
+  cotisations » se déplie sur DEUX LIGNES (« 💰 État de mes cotisations » /
+  « — doit : X FCFA » ou « ✅ À jour ») : CSS `white-space: pre-line` +
+  hauteur auto ; sur téléphone (≤640 px), les deux encarts s'empilent l'un
+  sous l'autre (`:has()` sur le bloc à popover — dégradation gracieuse sans
+  `:has()`).
+- **CHAQUE LIEN MÈNE À SA DESTINATION** — la « mémoire du fidèle »
+  (localStorage `rosaire_matloc`, qui réécrivait toute adresse d'Espace sans
+  matloc vers le dernier lien personnel retenu) est RETIRÉE de
+  `components.py` : `?espace=1` ouvre l'Espace communautaire, `?espace=1&p=1`
+  l'espace de la paroisse, le lien personnel reste lui-même — PC comme
+  téléphone, quelle que soit l'icône posée d'avant. Version du passeur des
+  rappels rafraîchie (`sw.js?v=71611`).
+- **LES ENCARTS SUIVENT LE MEMBRE PARTOUT** — « 👤 Mon profil » et « 💰 État
+  de mes cotisations » campent juste sous l'entête AVANT le livre ouvert :
+  visibles sur toutes les rubriques (fil, Thème, Rosaire, Mes évènements,
+  Galerie, Archives) et même pendant la lecture du feuillet ou de la
+  dizaine.
+- **« RELIRE CE FEUILLET » ENVOIE AU SOMMAIRE** — le lien profond des
+  « 📚 Les feuillets précédents » ouvre le livret sur la couverture et son
+  sommaire (`flt_page = -1`, sens « avant »), comme « 📖 Ouvrir le livret ».
+- **Banc d'épreuve** — `scripts/test_v7161.py` (39 vérifications : migration
+  douce et lignes anciennes réglées d'office, expédition sans mode, le
+  geste « ✅ Régler » et son refus du double-règlement, la grille qui ne
+  coche qu'au versement réglé, la dette avec `autres` sans double compte,
+  le source — form sans mode, lignes vertes, label 2 lignes, verset gras
+  blanc, sommaire, encarts avant le livre, CSS, mémoire retirée, version,
+  compile ×12) et `scripts/test_v7161_vue.py` (AppTest, base NEUVE : le
+  form sans mode, les relances vertes, le règlement au vrai geste, les
+  encarts sur TOUTES les rubriques et le livre ouvert, le sommaire). 
+  Régressions repassées et actualisées : v7.16.0 (52 ✅) + sa vue,
+  v7.15.4 (37 ✅) + sa vue, v7.15.3 (42 ✅) + sa vue, v7.15.2 (27 ✅),
+  v7.15.1 (29 ✅), v7.15.0 + vue, v7.14.5, v7.14.3 — et la tournure
+  d'autorité qui s'était glissée dans l'entrée 63 de ce README est retirée.
+- `_VERSION_APPLI = "v7.16.1"`.
+
+### 63. v7.16.0 — Le « 💰 Total dû à ce jour », l'abonnement dans l'état, la précision libre et le verset
+
+MOT DU USER : « 1. Mettre "« Prends soin de cet homme. Et ce que tu dépenseras
+en plus, je te le rendrai quand je reviendrai. » — Luc 10 35" dans la grille de
+"📿 Mémoire de mes dizaines" juste en dessous et au dessus de "Ta fidélité du
+jour — les 14 derniers jours". 2. La caisse et "💰 État de mes cotisations" —
+a. l'état fait le point des cotisations pas encore réglé, comment cela est-il
+géré lorsqu'il s'acquitte de cette dette ? b. Remplacer "💰 Total de l'année"
+par "💰 Total dû à ce jour". c. Afficher le montant du total dû dans
+l'expander. d. Chaque sortie de champ réactualise le formulaire et rend
+laborieux les saisies. e. les types de cotisation (Mensuelle, Spéciale,
+Évènementielle et Extraordinaire) sont en fait des catégories — est-il
+possible de spécifier ladite cotisation par saisie ? f. Les abonnements et
+réabonnements doivent partir de "💰 État de mes cotisations" / "💰 Total dû à
+ce jour". »
+
+- **LE VERSET LUC 10,35** — posé dans « 📿 Mémoire de mes dizaines » juste
+  sous le titre et juste au-dessus de « Ta fidélité du jour — les 14 derniers
+  jours » : « Prends soin de cet homme. Et ce que tu dépenseras en plus, je
+  te le rendrai quand je reviendrai. » — Luc 10,35 (citation au trait doré,
+  en italique) — dans la carte du membre ET dans son écho visiteur.
+- **LE « 💰 TOTAL DÛ À CE JOUR »** — à la place du total de l'année, la
+  dette du membre : les mois ÉCOULÉS de l'année pastorale qu'aucun versement
+  mensuel ne couvre × le tarif mensuel réglé (0 = saisie libre → rien n'est
+  dû de ce chef) + l'abonnement non réglé (au montant réglé pour CE membre :
+  « NOUVEAU » → abonnement au 31/12, sinon réabonnement au délai de rigueur ;
+  adulte/jeune selon l'équipe). Rien de dû → la carte passe au vert « ✅ À
+  jour » ; le « 🕊️ Déjà versé cette année pastorale » le rappelle en dessous.
+  Le montant campe aussi dans le TITRE de l'encart (« 💰 État de mes
+  cotisations — dû : 6 000 FCFA »), visible sans ouvrir.
+- **L'ABONNEMENT DANS L'ÉTAT** — le « 📅 Abonnement / Réabonnement » fait
+  partie de « 💰 État de mes cotisations » : réglé → « ✅ réglé » avec le
+  montant, la date et le reçu numéroté ; à régler → « ⏳ à régler » avec le
+  montant attendu et l'échéance qui concerne le membre.
+- **QUAND LE MEMBRE S'ACQUITTE** — dès que la responsable note son versement
+  (expédition du registre, ou abonnement réglé dans sa caisse), la ligne
+  apparaît à l'instant, le mois passe en vert et le « Total dû à ce jour »
+  baisse d'autant — la grille et le total dû disent la même chose.
+- **LES QUATRE TYPES deviennent des catégories, NOMMABLES** — le champ
+  « Précision — nomme la cotisation (facultatif) » (texte libre, 80
+  caractères) voyage dans chaque ligne expédiée et se relit dans la caisse
+  (« 01/11 · Mensuelle — Cotisation des fêtes · 500 FCFA … ») comme dans
+  l'état du membre. Colonne douce `precision` posée en migration idempotente
+  sur `cotisations_diverses`.
+- **LES SAISIES deviennent tranquilles** — l'expédition vit dans UN SEUL
+  `st.form` : catégorie, montant, date, mode, précision et destinataires se
+  remplissent sans AUCUNE réactualisation ; rien ne part qu'au « 📮
+  Expédier ». Les tarifs réglés voyagent dans le libellé de chaque catégorie
+  (« Mensuelle — 500 FCFA (tarif réglé) », « Spéciale — saisie libre ») et
+  dans l'aide du montant.
+- **La règle d'or** — lecture pure côté membre, tournures d'autorité
+  toujours bannies, la base de production jamais montée (bancs sur copies
+  neuves, fixtures nettoyées).
+- **Banc d'épreuve** — `scripts/test_v7160.py` (52 vérifications : la
+  précision, la migration douce, le total dû — mensuelle écoulée non versée,
+  abonnement payé/à régler, nature NOUVEAU, tarif jeune, fenêtre pas ouverte
+  ou entière, tarif libre —, le form, les libellés, le verset aux deux
+  cartes, la version, la compile ×8) et `scripts/test_v7160_vue.py` (AppTest,
+  base NEUVE : le form d'expédition, la précision en base, le verset entre
+  le titre et la fidélité, l'abonnement à régler, la dette qui baisse à
+  chaque versement jusqu'à « ✅ À jour »). Régressions repassées et
+  actualisées : v7.15.4 (37 ✅) + sa vue, v7.15.3 (42 ✅) + sa vue,
+  v7.15.2 (27 ✅), v7.15.1 (29 ✅), v7.15.0 + vue, v7.14.5, v7.14.3.
+- `_VERSION_APPLI = "v7.16.0"`.
+
+### 62. v7.15.4 — La coquille corrigée et l'expédition du registre (« Tous ou certains »)
+
+MOT DU USER : « 💰 une coquille — "État de mes cotisations". Chez le responsable
+d'équipe, une section "Le registre des cotisations" dans sa caisse ✅ : il choisit
+le type, saisit le montant proposé, sélectionne ceux qui vont recevoir (Tous ou
+certains), "expédie" — le membre le voit à l'instant même. »
+
+- **LA COQUILLE CORRIGÉE** — « État des mes cotisations » devient « 💰 État de
+  mes cotisations » (le popover du membre, la caisse d'équipe, les
+  commentaires) : la grammaire reprend sa place, les deux registres restent
+  dos à dos sur la même ligne. Le MOT DU USER de l'entrée 61 garde son
+  orthographe d'alors, mot pour mot — c'est de l'archive.
+- **L'EXPÉDITION, UN SEUL GESTE** — dans « 💰 Le registre des cotisations »
+  de la caisse d'équipe, la saisie membre par membre s'efface : le type
+  d'abord, le montant proposé suit le type (réglé dans « 💼 Caisse du
+  diocèse », 0 = libre), la date et le mode de paiement, puis CEUX QUI
+  REÇOIVENT — « 👥 Toute l'équipe — chaque membre reçoit » d'une seule coche,
+  ou « 👥 Ceux qui reçoivent » (multiselect, certains seulement) — et
+  « 📮 Expédier ». Une ligne par membre choisi, signée à ton nom, posée d'un
+  bloc en base (`cotis_div_envoyer_groupe` : un verrou, un commit, doublons
+  fondus) ; sans destinataire choisi, le geste reste prudent (avertissement).
+- **LE MOT DE L'EXPÉDITION** — après le geste, le retour dit combien de
+  membres ont reçu (« ✅ Mensuelle de 500 FCFA du 01/11/2026 expédiée à
+  2 membres — chacun la voit aussitôt dans « 💰 État de mes cotisations » »).
+  Le membre relit à l'instant même (lecture pure inchangée) ; la correction
+  en deux temps (🗑️ puis confirmation) et la grille des 12 mois restent à
+  leur place.
+- **Banc d'épreuve** — `scripts/test_v7154.py` (37 vérifications :
+  l'expédition en base — doublons fondus, certains seulement, signatures —,
+  la coquille bannie des quatre fichiers, la section au source, la version,
+  la compile ×8) et `scripts/test_v7154_vue.py` (AppTest, base NEUVE : toute
+  l'équipe d'un geste, puis certains seulement, et l'œil de Jean et de
+  Marie). Régressions repassées et actualisées : v7.15.3 (42 ✅) + sa vue
+  (le geste relu en expédition), v7.15.2 (27 ✅), v7.15.1 (29 ✅), v7.15.0 +
+  vue, v7.14.5, v7.14.3. La base de production n'est jamais touchée.
+- `_VERSION_APPLI = "v7.15.4"`.
+
+## 🛠️ Maintenance
+
+- Les migrations de schéma sont **idempotentes** : elles s'exécutent une fois
+  par session sans risque (`safe_migrate` ignore les doublons).
+- « 🗑️ Réinitialiser » (diocèse) purge TOUTES les données opérationnelles —
+  confirmation par saisie du mot « SUPPRIMER ».
+- Sauvegarde : pour Turso utilisez `turso db export` ; en local copiez
+  `gestion_religieuse.db`.
