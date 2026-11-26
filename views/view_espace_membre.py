@@ -198,9 +198,9 @@ LIEN_FACEBOOK = ""
 # la vidéo reste disponible à la demande), avec le lecteur incorporé et un
 # lien d'ouverture. Mettre "" dans la constante pour retirer la carte d'un
 # seul geste, sans toucher au reste.
-LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE = "https://vt.tiktok.com/ZSsMKVX97/"
+LIEN_YOUTUBE_VIDÉO_A_LA_DEMANDE = "https://www.youtube.com/watch?v=lfQkOIukZME&list=RDKf_ErCeNmAs&index=23"
 
-# v7.9.19 — L'ADRESSE DE LA CHAÎNE YOUTUBE (demande : « le lien de la "https://www.youtube.com/watch?v=lfQkOIukZME&list=RDKf_ErCeNmAs&index=23"
+# v7.9.19 — L'ADRESSE DE LA CHAÎNE YOUTUBE (demande : « le lien de la
 # chaîne youtube.com à ajouter comme adresse dans le pied de page ») :
 # elle apparaît dans la colonne centrale du pied, sous le contact du
 # responsable paroissial. Vide, elle reste discrètement absente.
