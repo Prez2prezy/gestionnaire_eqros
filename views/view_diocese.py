@@ -1452,7 +1452,8 @@ def show_diocese():
     elif menu == "🔐 Gérer les accès":
         st.markdown('<h2 style="color:#1A237E;">🔐 Gestion des accès</h2>', unsafe_allow_html=True)
         afficher_messages_flash()
-        _afficher_mot_de_passe_diocese()
+        with st.expander("🔐 Modifier le mot de passe du diocèse", expanded=False):
+            _afficher_mot_de_passe_diocese()
         st.markdown("### 🏘️ Paroisses")
         for p in c.execute("SELECT id, nom, responsable FROM paroisses").fetchall():
             user = c.execute("SELECT id, username FROM utilisateurs WHERE paroisse_id=? AND role='paroisse'", (p[0],)).fetchone()
