@@ -63,6 +63,30 @@ def _icone_page_doree():
 st.set_page_config(page_title="Gestionnaire des Équipes du Rosaire - Diocèse de Grand-Bassam",
                    page_icon=_icone_page_doree(), layout="wide")
 
+# --- REPÈRE VISUEL DE L'ATELIER (activation propre à chaque application) ---
+def _mode_atelier_actif():
+    """Inactif par défaut ; aucun secret ni contenu fourni n'est affiché."""
+    try:
+        return st.secrets.get("ATELIER_MODE", False) is True
+    except Exception:
+        return False
+
+
+def _afficher_bandeau_atelier():
+    if not _mode_atelier_actif():
+        return
+    st.warning(
+        "🧪 ATELIER — Données d’essai\n\n"
+        "Vous êtes dans l’espace de test, pas dans l’application des utilisateurs. "
+        "Utilisez des données fictives ; ne diffusez pas les liens ou QR de cet atelier.")
+    st.sidebar.warning("🧪 ATELIER\n\nEspace réservé aux essais.")
+
+
+_afficher_bandeau_atelier()
+# Ce bandeau est un repère : il ne change ni la connexion à la base,
+# ni les droits, ni les liens. Les secrets Turso doivent rester séparés.
+# ---------------------------------------------------------------------------
+
 # --- v7.9.12 — LA NOTE DOUCE DU VERSEMENT INCOMPLET ------------------------
 # (le drapeau _paquet_complet a été levé tout en haut, avant les imports ;
 #  la note s'affiche APRÈS set_page_config — première commande Streamlit)
