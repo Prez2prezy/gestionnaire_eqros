@@ -497,6 +497,107 @@ def _galerie_plus_saisie():
                 st.rerun()
 
 
+
+def _modifier_mot_de_passe_diocese(actuel, nouveau, confirmation):
+    """Change uniquement le mot de passe du responsable authentifié."""
+    from services import verifier_mot_de_passe, definir_mot_de_passe
+    from database import conn, _verrou_db
+
+    if not st.session_state.get("logged_in") or st.session_state.get("role") != "diocese":
+        return False, "🕊️ Cette porte est réservée au responsable du diocèse connecté."
+    uid = st.session_state.get("user_id")
+    nom = st.session_state.get("username")
+    if uid is None or not nom:
+        return False, "🕊️ Merci de vous reconnecter avant de changer votre mot de passe."
+    if not actuel or not nouveau or not confirmation:
+        return False, "🕊️ Merci de remplir les trois champs."
+    if nouveau != confirmation:
+        return False, "🕊️ Les deux nouveaux mots de passe ne sont pas identiques."
+    if len(nouveau) < 12:
+        return False, "🕊️ Choisissez un mot de passe d’au moins 12 caractères."
+    if nouveau == actuel:
+        return False, "🕊️ Choisissez un mot de passe différent de l’actuel."
+
+    # Le verrou existant protège la lecture, la modification et l'enregistrement.
+    # Le commit est explicite : aucune confirmation en cas d'échec d'enregistrement.
+    with _verrou_db:
+        compte = c.execute(
+            "SELECT password FROM utilisateurs WHERE id=? AND username=? AND role='diocese'",
+            (uid, nom)).fetchone()
+        if not compte:
+            return False, "🕊️ Votre accès doit être vérifié. Merci de vous reconnecter."
+        if not verifier_mot_de_passe(actuel, compte[0]):
+            return False, "🕊️ Le mot de passe actuel n’est pas reconnu. Réessayez tranquillement."
+        empreinte = definir_mot_de_passe(nouveau)
+        try:
+            c.execute(
+                "UPDATE utilisateurs SET password=? WHERE id=? AND username=? AND role='diocese' AND password=?",
+                (empreinte, uid, nom, compte[0]))
+            controle = c.execute(
+                "SELECT password FROM utilisateurs WHERE id=? AND username=? AND role='diocese'",
+                (uid, nom)).fetchone()
+            if not controle or controle[0] != empreinte:
+                conn.rollback()
+                return False, "🕊️ Le changement n’a pas abouti. Merci de réessayer."
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return False, "🕊️ Le changement n’a pas pu être enregistré. Merci de réessayer plus tard."
+    return True, "🔐 Votre nouveau mot de passe est enregistré. Gardez-le dans un endroit sûr."
+
+
+def _generer_mot_de_passe_diocese():
+    """Prépare une proposition aléatoire, sans modifier aucun compte."""
+    if not st.session_state.get("logged_in") or st.session_state.get("role") != "diocese":
+        return
+    from services import generer_mot_de_passe
+    proposition = generer_mot_de_passe(20)
+    generation = st.session_state.get("dio_mdp_generation", 0) + 1
+    st.session_state["dio_mdp_generation"] = generation
+    st.session_state[f"dio_mdp_nouveau_{generation}"] = proposition
+    st.session_state["dio_mdp_genere"] = proposition
+
+
+def _afficher_mot_de_passe_diocese():
+    """Section du compte diocésain, avant les accès paroissiaux."""
+    st.markdown("### 🏛️ Mot de passe du diocèse")
+    st.caption("Cette porte protège votre compte. Le changement concerne uniquement l’application utilisée.")
+    if not st.session_state.get("logged_in") or st.session_state.get("role") != "diocese":
+        st.warning("🕊️ Merci de vous connecter comme responsable du diocèse.")
+        return
+    st.write("Identifiant :", st.session_state.get("username", ""))
+    st.button("🎲 Générer un mot de passe sécurisé", key="dio_mdp_generer",
+              on_click=_generer_mot_de_passe_diocese)
+    if st.session_state.get("dio_mdp_genere"):
+        st.info("🔐 Voici votre proposition. Copiez-la dans un endroit privé et dans le champ de confirmation. Elle n’est pas encore enregistrée.")
+        st.code(st.session_state["dio_mdp_genere"], language=None)
+        if st.button("🙈 Masquer la proposition", key="dio_mdp_masquer"):
+            st.session_state.pop("dio_mdp_genere", None)
+            st.rerun()
+    generation = st.session_state.get("dio_mdp_generation", 0)
+    cles = [f"dio_mdp_{champ}_{generation}" for champ in ("actuel", "nouveau", "confirmation")]
+    with st.form(f"form_mdp_diocese_{generation}", clear_on_submit=True):
+        actuel = st.text_input("Mot de passe actuel", type="password", key=cles[0])
+        nouveau = st.text_input("Nouveau mot de passe", type="password", key=cles[1],
+                                help="Au moins 12 caractères. Choisissez un mot de passe réservé à cet accès.")
+        confirmation = st.text_input("Confirmer le nouveau mot de passe", type="password", key=cles[2])
+        valide = st.form_submit_button("🔐 Enregistrer mon nouveau mot de passe")
+    if valide:
+        try:
+            ok, message = _modifier_mot_de_passe_diocese(actuel, nouveau, confirmation)
+        except Exception:
+            ok, message = False, "🕊️ Le changement est momentanément indisponible. Merci de réessayer plus tard."
+        if ok:
+            st.session_state["flash_success"] = message
+            st.session_state.pop("dio_mdp_genere", None)
+            st.session_state["dio_mdp_generation"] = generation + 1
+            st.rerun()
+        else:
+            st.warning(message)
+
 def show_diocese():
     d_info = c.execute("SELECT nom, responsable, bureau FROM diocese WHERE id=?", (1,)).fetchone()
     nom_dio = d_info[0] if d_info else "Diocèse"
@@ -1351,6 +1452,7 @@ def show_diocese():
     elif menu == "🔐 Gérer les accès":
         st.markdown('<h2 style="color:#1A237E;">🔐 Gestion des accès</h2>', unsafe_allow_html=True)
         afficher_messages_flash()
+        _afficher_mot_de_passe_diocese()
         st.markdown("### 🏘️ Paroisses")
         for p in c.execute("SELECT id, nom, responsable FROM paroisses").fetchall():
             user = c.execute("SELECT id, username FROM utilisateurs WHERE paroisse_id=? AND role='paroisse'", (p[0],)).fetchone()
